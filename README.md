@@ -1,0 +1,230 @@
+# Farm Network Asset Identifier (Netwatch)
+
+A self-contained network scanner + dashboard for a farm/site LAN, packaged as a
+single Docker container that runs on **Raspberry Pi 3 and newer** (and any
+Debian/amd64 host). It discovers every device on the network, identifies what
+each one is (camera / NVR / access point / router / server / IoT), tracks
+uptime over time, and pushes a phone alert when something new joins or a known
+device drops offline.
+
+## Highlights
+
+- **Real discovery** — `nmap` ARP sweep on the local segment (gets MAC + vendor)
+  plus ICMP/TCP discovery for remote/routed subnets.
+- **Two scan depths** — fast *quick scan* every interval (top ports), and an
+  on-demand *deep scan* (`-p- -sV -O`: all 65535 ports + service/version + OS
+  guess) for the best possible identification.
+- **Smart identification** — MAC vendor (offline OUI table + online lookup),
+  reverse DNS, HTTP title/`Server` banner, and port fingerprints combined into a
+  device type. Unknown devices show up as **Mystery Nodes** you can name once.
+- **Uptime history** — every scan is recorded in SQLite; the device panel shows
+  24h / 7d / 30d uptime and a sparkline. Great for spotting a camera that keeps
+  dropping.
+- **Connection-quality test** — a per-device ping burst reporting packet loss,
+  average latency, and jitter, graded excellent / good / fair / poor — so you can
+  tell *how good* a link is, not just whether it's up.
+- **Local discovery (WiFiman-style)** — mDNS/Bonjour, SSDP/UPnP, NetBIOS and the
+  ARP cache enrich the local segment: finds devices that ignore ping, and pulls
+  friendly hostnames, models, and even **serial numbers** (many UPnP cameras
+  advertise their serial). No credentials needed.
+- **Hikvision deep info** — a "Camera info" button (and auto, on deep scans) pulls
+  model / serial / firmware straight from a Hikvision camera/NVR via ISAPI using
+  its saved login.
+- **Asset details + photo** — serial number, model, and a **photo** per device
+  (auto-filled by discovery/ISAPI where possible, editable otherwise); the photo
+  shows on the grid card and in the details panel for quick visual identification.
+- **Device linking** — link a device that has two or more MACs (wired + WiFi, or
+  multiple interfaces) to another so they're recognised as one unit.
+- **Adaptive deep scan** — optionally auto-run a full deep scan the first time a
+  device responds, to identify it accurately without deep-scanning everything
+  every cycle. Scans are serialised so they never overlap.
+- **Save device logins** — store a username/password/notes per device (handy for
+  camera, NVR, and router web UIs). Secrets are kept out of the polled device feed,
+  obfuscated at rest, and masked in the UI with reveal/copy buttons. A 🔑 marks
+  devices that have a saved login.
+- **Presence watch** — toggle 🔔 on any device (e.g. your phone) to get a push when
+  it goes **offline** *and* when it comes **back online**.
+- **Per-category alerts** — in Settings, choose per device type (camera, network,
+  printer, IoT, …) whether to alert on offline, offline+online, or not at all — so
+  important gear notifies while noisy IoT stays quiet. Precedence: a watched device
+  always alerts; otherwise the category rule applies; otherwise the global default.
+- **Push alerts + remote control** — new-device/offline alerts via [ntfy](https://ntfy.sh),
+  with a **Test** button to confirm delivery. You can also reply to the topic (or tap
+  an alert's action buttons) to run `ping`, `port`, `tracert`, `quickscan`, or
+  `deepscan` against a device from anywhere — results come back to your phone.
+- **Selective deep scan** — deep-scan a single device from its panel, or multi-select
+  several devices on the grid and deep-scan just those.
+- **Live dashboard** — the grid repaints automatically the moment a scan
+  finishes (no manual refresh), polls faster while a scan is running, and shows a
+  green "Live" indicator.
+- **Stable device identity** — devices are tracked by MAC, so when one changes IP
+  (DHCP reassignment) its record just moves to the new address — it is **not**
+  marked offline and re-added as a new device. An occasional ARP miss won't fork a
+  device either, and an IP-only host that later reveals a MAC is merged in place.
+- **Uptime Kuma integration** — optionally run [Uptime Kuma](https://github.com/louislam/uptime-kuma)
+  in the same stack and feed it Netwatch's per-device status (push) or let it poll
+  Netwatch health endpoints (pull) for polished history graphs & status pages.
+- **Multi-subnet** — scan several networks from one Pi; switch between them in
+  the header.
+- **Remote access VPN** (optional) — bring up **Tailscale** (zero-config) or
+  **WireGuard** (self-hosted, `wg-easy`) to reach the cameras/gear from anywhere.
+- **Offline-friendly** — Tailwind CSS and the OUI table are baked into the image;
+  no CDN needed at runtime.
+
+## Quick install (any Raspberry Pi)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh | sudo bash
+```
+
+Then open **`http://<pi-ip>:8090/setup`** and walk through the wizard
+(site name → subnets → scan interval → alerts → VPN). First scan starts
+automatically.
+
+With a VPN at install time:
+
+```bash
+COMPOSE_PROFILES=tailscale  sudo -E bash -c \
+  'curl -fsSL https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh | bash'
+```
+
+## Manual / from source
+
+```bash
+git clone https://github.com/Riaan007/farm-netwatch.git
+cd farm-netwatch
+docker compose up -d --build          # builds locally
+# dashboard on http://<host>:8090
+```
+
+## Configuration
+
+The wizard writes `/opt/netwatch/data/config.json`. You can also edit scan
+interval, primary network, and the ntfy topic from the dashboard gear menu, or
+re-run the full wizard at `/setup`. All state (config, device names, uptime DB)
+lives in the `./data` volume and survives image updates.
+
+| Setting | Where | Notes |
+|---|---|---|
+| Scan targets (CIDRs) | wizard | local subnets auto-detected; add remote ones |
+| Scan interval | wizard / gear | 5–60 min |
+| Online lookups | wizard | turn off for air-gapped sites |
+| ntfy topic | wizard / gear | blank = alerts off |
+| History retention | wizard | default 90 days |
+| VPN | wizard + compose profile | none / tailscale / wireguard |
+
+### VPN notes
+
+- **Tailscale**: `docker compose --profile tailscale up -d`, then
+  `docker exec netwatch-tailscale tailscale up --advertise-routes=192.168.88.0/24`
+  and approve the route in the Tailscale admin. No router changes needed.
+- **WireGuard** (`wg-easy`): set `WG_HOST` (public IP / DDNS) in
+  `/opt/netwatch/.env`, `docker compose --profile wireguard up -d`, open the
+  admin UI on **:51821**, add a client, and forward **UDP 51820** on your router.
+
+## Remote control via ntfy
+
+Set an ntfy topic in the wizard (or the gear menu) and hit **Test** to confirm your
+phone receives it. With "Allow remote commands" enabled, send any of these as a
+message to the topic and the result is posted back:
+
+| Command | Example | Does |
+|---|---|---|
+| `ping <ip>` | `ping 192.168.88.5` | host up/down + latency |
+| `port <ip> <port>` | `port 192.168.88.5 554` | TCP port state |
+| `tracert <ip>` | `tracert 192.168.88.254` | route hops |
+| `test <ip>` | `test 192.168.88.5` | connection quality (loss/latency/jitter) |
+| `quickscan [cidr]` | `quickscan` | fast scan |
+| `deepscan <ip\|cidr>` | `deepscan 192.168.88.5` | full deep scan |
+| `status` / `help` | `status` | summary / command list |
+
+New-device and offline alerts also carry tap-to-run action buttons (Deep scan, Ping).
+
+> Security: ntfy topics are public by default — anyone who knows the topic name can
+> send these commands. They are **read-only probes** and are **restricted to IPs inside
+> your configured scan networks** (external IPs are refused), but use a hard-to-guess
+> topic name, or a self-hosted ntfy server with auth, and turn off "Allow remote
+> commands" if you only want alerts.
+
+## Uptime Kuma integration
+
+[Uptime Kuma](https://github.com/louislam/uptime-kuma) adds long-term uptime
+graphs, public status pages, and many notification channels. Netwatch (discovery +
+presence) feeds it; Kuma does the history/status-page side.
+
+Run it alongside Netwatch:
+
+```bash
+docker compose --profile kuma up -d        # Kuma on http://<pi>:3001
+```
+
+> **Version:** pinned to **Uptime Kuma 1.23.17** (newest 1.x). Kuma **2.x** is a
+> rewrite that removed the Socket.IO API this integration uses, so on 2.x Netwatch
+> can't auto-create, tag, or delete monitors (push + the pull health URL still
+> work, but you'd manage monitors by hand in Kuma). Stay on 1.x unless `kuma.py`
+> is re-ported to a 2.x API. You can silence Kuma's "new update" prompt in its
+> Settings → General.
+
+To keep it running on every `up`, add `COMPOSE_PROFILES=kuma` to `.env`.
+
+**Auto-provisioning (per device you select).** Open `http://<pi>:3001` once to
+create the Kuma admin account. In Netwatch → Settings → **Integrations · Uptime
+Kuma**, set the base URL (`http://localhost:3001`), enter the Kuma admin
+**username + password**, and hit **Test**. Then open a device and tick
+**"Monitor in Uptime Kuma"**.
+
+Netwatch then **creates the Kuma Push monitor for you** (via Kuma's Socket.IO API),
+stores the monitor ID + token, and pushes up/down + latency every scan. Kuma does
+the rest — uptime graphs, status pages, and its own notifications. Untick to delete
+the monitor. (Monitor heartbeat interval is set to your scan interval automatically.)
+
+Monitors are created **only for devices you tick** — never automatically during a
+scan. Netwatch pushes status each scan for the devices that have a monitor.
+
+Each monitor is **tagged with its device category** (Camera, Network, Printer,
+Server, …) so you can filter/group on a Kuma status page. New monitors are tagged
+at creation; **"Tag existing monitors by category"** in Settings back-fills tags
+onto monitors you made earlier (idempotent — safe to run again).
+
+**Manual / pull (no admin creds).** Under a device's "Manual / pull setup" you can
+instead paste a token from a Kuma *Push* monitor you made yourself, or copy the
+device's **health URL** into a Kuma *HTTP* monitor (200 = up, 503 = down).
+
+## How it works
+
+```
+nmap scan ──> parse ──> identify (OUI + DNS + HTTP banner + ports) ──> device records
+                                  │
+              SQLite history <────┤────> ntfy alerts (new / offline)
+                                  │
+                       Flask API (:8090) ──> dashboard + wizard
+```
+
+| File | Role |
+|---|---|
+| `app/scanner.py` | scheduler, quick/deep nmap, multi-target, state |
+| `app/identify.py` | MAC vendor, HTTP banner, type heuristics |
+| `app/history.py` | SQLite uptime samples + rollups |
+| `app/notify.py` | ntfy push |
+| `app/server.py` | Flask API + serves the UI |
+| `app/static/` | dashboard + setup wizard |
+
+## Security
+
+This is a **LAN tool**: the dashboard has no auth, so keep it on a trusted
+network and reach it remotely via the VPN rather than exposing port 8090 to the
+internet. Scanning is read-only discovery — it never logs into devices.
+
+**Saved credentials** are stored in `/data/credentials.json`, obfuscated at rest
+with a per-install key (`/data/secret.key`, mode 600) and kept out of the
+`/api/devices` feed. Be clear-eyed about the threat model: obfuscation protects
+against casual reading of the file or a backup, but anyone who can reach the
+(unauthenticated) dashboard can request a stored password via the API. Only use
+this on a trusted LAN / behind the VPN. Both files live in the `./data` volume —
+exclude them from any public backup.
+
+## Requirements
+
+- Raspberry Pi 3/3B+/4/5 or any 64-bit (arm64) / 32-bit (armv7) / amd64 Linux host
+- Docker with the Compose v2 plugin (the installer adds it if missing)
+- Runs with `network_mode: host` + `NET_RAW`/`NET_ADMIN` (required for ARP/OS scans)

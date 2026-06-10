@@ -1,0 +1,626 @@
+"""Scan engine: runs nmap across one or more targets (local + remote), parses the
+results, identifies devices, records uptime history, and fires ntfy alerts.
+
+Local segments are discovered via ARP (nmap reports MACs); remote/routed subnets
+are discovered via ICMP/TCP probes (no MAC available at L3 — identification then
+falls back to hostname + open ports + HTTP banner).
+"""
+import ipaddress
+import json
+import os
+import subprocess
+import threading
+import time
+import xml.etree.ElementTree as ET
+
+import config
+import creds
+import discovery
+import hikvision
+import history
+import identify
+import kuma
+import notify
+
+DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
+STATE_PATH = os.path.join(DATA_DIR, "scan_state.json")
+REGISTRY_PATH = os.path.join(DATA_DIR, "devices.json")
+SEED_PATH = os.path.join(os.path.dirname(__file__), "defaults", "devices.json")
+
+QUICK_PORTS = "22,53,80,443,515,554,631,1883,2000,5000,5060,8000,8080,8291,8443,9000,9100"
+
+
+def _now_str():
+    return time.strftime("%H:%M:%S")
+
+
+def _read_json(path, default):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+
+
+def _write_json(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
+
+
+class Scanner:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.status = {
+            "is_scanning": False,
+            "mode": None,
+            "target": None,
+            "progress": "",
+            "last_scan": "--:--:--",
+            "last_scan_ts": None,
+        }
+        self.devices = {}          # key -> live device record
+        self.miss = {}             # key -> consecutive missed scans
+        self.seen_keys = set()     # every key ever observed (for "new device")
+        self.registry = self._load_registry()
+        self._wake = threading.Event()
+        self._stop = False
+        self._scan_lock = threading.Lock()   # serialise scans (no concurrent runs)
+        self._load_state()
+
+    # ---- persistence ---------------------------------------------------
+    def _load_registry(self):
+        reg = _read_json(REGISTRY_PATH, None)
+        if reg is None:
+            reg = _read_json(SEED_PATH, {})
+            _write_json(REGISTRY_PATH, reg)
+        return reg
+
+    def save_registry(self):
+        _write_json(REGISTRY_PATH, self.registry)
+
+    def _load_state(self):
+        st = _read_json(STATE_PATH, {})
+        self.devices = st.get("devices", {})
+        self.miss = st.get("miss", {})
+        self.seen_keys = set(st.get("seen_keys", []))
+        self.status["last_scan"] = st.get("last_scan", "--:--:--")
+        self.status["last_scan_ts"] = st.get("last_scan_ts")
+
+    def _save_state(self):
+        _write_json(STATE_PATH, {
+            "devices": self.devices,
+            "miss": self.miss,
+            "seen_keys": sorted(self.seen_keys),
+            "last_scan": self.status["last_scan"],
+            "last_scan_ts": self.status["last_scan_ts"],
+        })
+
+    # ---- network helpers ----------------------------------------------
+    def local_networks(self):
+        nets = []
+        try:
+            out = subprocess.run(["ip", "-o", "-4", "addr", "show"],
+                                 capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                for i, tok in enumerate(parts):
+                    if tok == "inet" and i + 1 < len(parts):
+                        try:
+                            nets.append(ipaddress.ip_network(parts[i + 1], strict=False))
+                        except ValueError:
+                            pass
+        except (subprocess.SubprocessError, OSError):
+            pass
+        return nets
+
+    def _is_local(self, cidr, target_flag):
+        if target_flag in (True, False):
+            return target_flag
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+        except ValueError:
+            return False
+        return any(net.overlaps(n) for n in self.local_networks() if not n.is_loopback)
+
+    def _is_local_ip(self, ip):
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return False
+        return any(addr in n for n in self.local_networks() if not n.is_loopback)
+
+    def _target_for_ip(self, ip, cfg):
+        """Which configured target CIDR an IP belongs to (for grouping); /32 fallback."""
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return ip
+        for t in cfg["targets"]:
+            try:
+                if addr in ipaddress.ip_network(t["cidr"], strict=False):
+                    return t["cidr"]
+            except ValueError:
+                pass
+        return f"{ip}/32"
+
+    # ---- nmap ----------------------------------------------------------
+    def _nmap(self, targets, mode, is_local):
+        """`targets` is a list of nmap target tokens (a CIDR, or several IPs)."""
+        if mode == "deep":
+            args = ["nmap", "-n", "-T4", "-p-", "-sV", "-O", "--osscan-guess",
+                    "--max-retries", "2", "-oX", "-"] + list(targets)
+        else:
+            args = ["nmap", "-n", "-T4", "-p", QUICK_PORTS, "-oX", "-"] + list(targets)
+        if not is_local:
+            # routed target: standard host discovery probes instead of ARP
+            args[1:1] = ["-PE", "-PS80,443,22", "-PA80"]
+        timeout = 3600 if mode == "deep" else 600
+        try:
+            res = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+            return self._parse_nmap(res.stdout)
+        except subprocess.TimeoutExpired:
+            return []
+        except (OSError, subprocess.SubprocessError):
+            return []
+
+    @staticmethod
+    def _parse_nmap(xml_text):
+        hosts = []
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return hosts
+        for h in root.findall("host"):
+            st = h.find("status")
+            if st is None or st.get("state") != "up":
+                continue
+            ip = mac = vendor = ""
+            for addr in h.findall("address"):
+                t = addr.get("addrtype")
+                if t == "ipv4":
+                    ip = addr.get("addr", "")
+                elif t == "mac":
+                    mac = addr.get("addr", "")
+                    vendor = addr.get("vendor", "")
+            if not ip:
+                continue
+            hostname = ""
+            hn = h.find("hostnames")
+            if hn is not None:
+                first = hn.find("hostname")
+                if first is not None:
+                    hostname = first.get("name", "")
+            ports, services = [], {}
+            pe = h.find("ports")
+            if pe is not None:
+                for p in pe.findall("port"):
+                    ps = p.find("state")
+                    if ps is None or ps.get("state") != "open":
+                        continue
+                    portid = int(p.get("portid"))
+                    ports.append(portid)
+                    svc = p.find("service")
+                    if svc is not None:
+                        services[str(portid)] = " ".join(
+                            x for x in (svc.get("name"), svc.get("product"), svc.get("version")) if x
+                        )
+            osname = ""
+            oe = h.find("os")
+            if oe is not None:
+                m = oe.find("osmatch")
+                if m is not None:
+                    osname = m.get("name", "")
+            rtt = None
+            times = h.find("times")
+            if times is not None and times.get("srtt"):
+                try:
+                    rtt = round(int(times.get("srtt")) / 1000.0, 1)  # us -> ms
+                except ValueError:
+                    pass
+            hosts.append({"ip": ip, "mac": mac, "nmap_vendor": vendor,
+                          "hostname": hostname, "ports": sorted(ports),
+                          "services": services, "os": osname, "rtt": rtt})
+        return hosts
+
+    # ---- scan orchestration -------------------------------------------
+    def run_scan(self, mode="quick", only_target=None, only_hosts=None):
+        with self._scan_lock:                # only one scan runs at a time
+            self._run_scan(mode, only_target, only_hosts)
+
+    def _run_scan(self, mode, only_target, only_hosts):
+        cfg = config.load()
+        online_ok = cfg["scan"]["online_lookup"]
+
+        # Build the list of nmap jobs: (group_label, [target tokens], is_local).
+        if only_hosts:
+            jobs = [(None, list(only_hosts), self._is_local_ip(only_hosts[0]))]
+        else:
+            targets = cfg["targets"]
+            if only_target:
+                targets = [t for t in targets if t["cidr"] == only_target] or targets
+            jobs = [(t["cidr"], [t["cidr"]], self._is_local(t["cidr"], t.get("local", "auto")))
+                    for t in targets]
+
+        label = only_target or (",".join(only_hosts) if only_hosts else "all")
+        with self.lock:
+            self.status.update(is_scanning=True, mode=mode, target=label, progress="starting")
+
+        found = {}
+        new_devices = []
+        superseded = set()
+        reg_changed = False
+        # Snapshot of which device currently sits at each IP, to reconcile a
+        # device that moved IP or whose MAC wasn't resolved this round.
+        ip_index = {d["ip"]: k for k, d in self.devices.items() if d.get("ip")}
+        try:
+            for group, tokens, is_local in jobs:
+                with self.lock:
+                    self.status["progress"] = f"{mode} scan {group or ' '.join(tokens)}"
+                for h in self._nmap(tokens, mode, is_local):
+                    tgt = group if group else self._target_for_ip(h["ip"], cfg)
+                    key, old_key = self._resolve_key(h, ip_index)
+                    rec = self._build_record(h, tgt, is_local, online_ok, (mode == "deep"), key)
+                    prev = self.devices.get(key, {})
+                    # keep deep-scan detail across quick scans
+                    if not rec.get("deep") and prev.get("deep"):
+                        for f in ("services", "os", "deep"):
+                            if prev.get(f):
+                                rec[f] = prev[f]
+                        if "+" not in rec["features"]:
+                            rec["features"].append("+")
+                    # a sparse sighting (e.g. ARP miss → no MAC/vendor) must not wipe identity
+                    for f in ("vendor", "mac", "hostname"):
+                        if not rec.get(f) and prev.get(f):
+                            rec[f] = prev[f]
+                    if rec["category"] == "unknown" and prev.get("category") not in (None, "unknown"):
+                        rec["category"], rec["type"] = prev["category"], prev.get("type", rec["type"])
+                    rec["first_seen"] = prev.get("first_seen", rec["last_seen"])
+
+                    was_seen = key in self.seen_keys
+                    if old_key:  # this device used to be tracked under a different key (IP→MAC)
+                        superseded.add(old_key)
+                        old_rec = self.devices.get(old_key, {})
+                        if old_key in self.registry and key not in self.registry:
+                            self.registry[key] = self.registry.pop(old_key)
+                            reg_changed = True
+                        if old_rec.get("first_seen"):
+                            rec["first_seen"] = min(rec["first_seen"], old_rec["first_seen"])
+                        if not rec["name"] and old_rec.get("name"):
+                            rec["name"] = old_rec["name"]
+                        if old_key in self.seen_keys:
+                            was_seen = True
+
+                    found[key] = rec
+                    if not was_seen:
+                        if key not in self.registry:
+                            new_devices.append(rec)
+                    self.seen_keys.add(key)
+
+            # Local L2 discovery: enrich + surface devices nmap missed.
+            if mode == "quick" and not only_hosts and cfg["scan"].get("discovery", True):
+                if self._discovery_pass(found, new_devices, superseded, ip_index, jobs, cfg, online_ok):
+                    reg_changed = True
+
+            if reg_changed:
+                self.save_registry()
+
+            # Devices that were *expected* in this scan's scope (for offline detection).
+            if only_hosts:
+                host_set = set(only_hosts)
+                expected = {k for k, v in self.devices.items() if v.get("ip") in host_set}
+            elif only_target:
+                expected = {k for k, v in self.devices.items() if v.get("target") == only_target}
+            else:
+                expected = set(self.devices)
+            scanned_keys = (expected | set(found)) - superseded
+            self._finalize(found, new_devices, scanned_keys, superseded, cfg)
+            # Adaptive identification: a regular scan that turns up a *new* device
+            # queues a deep scan of just that host to identify it accurately.
+            if mode == "quick" and cfg["scan"].get("deep_on_new"):
+                fresh = [d["ip"] for d in new_devices if d.get("ip")]
+                if fresh:
+                    self.trigger("deep", hosts=fresh)
+        finally:
+            with self.lock:
+                self.status.update(is_scanning=False, progress="", mode=None, target=None)
+
+    def _resolve_key(self, h, ip_index):
+        """Pick a stable device key for an nmap host, returning (key, old_key).
+
+        MAC is the identity when available. A sighting with no MAC is matched to
+        whatever device was last at that IP (so an ARP miss doesn't fork the
+        device). When an IP-keyed device gains a MAC, old_key flags the previous
+        IP key to be superseded (migrated, not orphaned)."""
+        mac = identify.normalize_mac(h["mac"])
+        ip = h["ip"]
+        prev_at_ip = ip_index.get(ip)
+        if mac:
+            key = ":".join(mac[i:i + 2] for i in range(0, 12, 2))
+            old_key = prev_at_ip if (prev_at_ip and prev_at_ip != key and ":" not in prev_at_ip) else None
+            return key, old_key
+        if prev_at_ip and ":" in prev_at_ip:  # reuse the known MAC key for this IP
+            return prev_at_ip, None
+        return ip, None
+
+    def _build_record(self, h, cidr, is_local, online_ok, deep, key):
+        mac = identify.normalize_mac(h["mac"])
+        mac_disp = (":".join(mac[i:i + 2] for i in range(0, 12, 2)) if mac
+                    else (key if ":" in key else ""))
+        vendor = h["nmap_vendor"] or (identify.vendor_for_mac(mac, online_ok) if mac else "")
+        hostname = h["hostname"] or identify.reverse_dns(h["ip"])
+        banner = identify.http_banner(h["ip"], h["ports"], online_ok)
+        category, type_label, conf = identify.classify(vendor, h["ports"], banner, hostname)
+        features = identify.features_for_ports(h["ports"], deep)
+        # Prefer a MAC-keyed registry entry; fall back to an IP-keyed one so the
+        # seeded names (gateway/NVR identified only by IP) still attach.
+        reg = self.registry.get(key) or self.registry.get(h["ip"], {})
+        ts = int(time.time())
+        rec = {
+            "key": key, "ip": h["ip"], "mac": mac_disp,
+            "vendor": vendor, "hostname": hostname,
+            "ports": h["ports"], "services": h["services"], "os": h["os"],
+            "banner": banner, "features": features,
+            "category": reg.get("category") or category,
+            "type": reg.get("type") or type_label,
+            "confidence": conf,
+            "name": reg.get("name", ""),
+            "watch": reg.get("watch", False),
+            "serial": reg.get("serial", ""),
+            "model": reg.get("model", ""),
+            "firmware": reg.get("firmware", ""),
+            "link": reg.get("link", ""),
+            "target": cidr, "local": is_local,
+            "online": True, "status": "online",
+            "last_seen": ts, "rtt": h["rtt"], "deep": deep,
+        }
+        if deep:
+            self._enrich_hik(rec)
+        return rec
+
+    def _enrich_hik(self, rec):
+        """On a deep scan, pull model/serial/firmware from a Hikvision device
+        using its saved credentials (best-effort)."""
+        v = (rec.get("vendor") or "").lower()
+        if not (any(x in v for x in ("hikvision", "hangzhou")) or rec.get("category") in ("camera", "nvr")):
+            return
+        c = creds.get(rec["key"])
+        if not (c["username"] or c["password"]):
+            return
+        res = hikvision.fetch(rec["ip"], c["username"], c["password"], timeout=5)
+        if not res.get("ok"):
+            return
+        info = res["info"]
+        if info.get("model"):
+            rec["model"] = info["model"]
+        if info.get("serialNumber"):
+            rec["serial"] = info["serialNumber"]
+        if info.get("firmwareVersion"):
+            rec["firmware"] = info["firmwareVersion"]
+        if info.get("deviceName") and not rec.get("hostname"):
+            rec["hostname"] = info["deviceName"]
+        self.set_device_meta(rec["key"], serial=rec.get("serial") or None,
+                             model=rec.get("model") or None)
+
+    # ---- local L2 discovery (mDNS / SSDP / NetBIOS / ARP) --------------
+    def _apply_disc(self, rec, info):
+        if info.get("hostname") and not rec.get("hostname"):
+            rec["hostname"] = info["hostname"]
+        if info.get("model") and not rec.get("model"):
+            rec["model"] = info["model"]
+        if info.get("serial") and not rec.get("serial"):
+            rec["serial"] = info["serial"]
+        if info.get("manufacturer") and not rec.get("vendor"):
+            rec["vendor"] = info["manufacturer"]
+        if info.get("mdns_category") and rec.get("category") == "unknown":
+            rec["category"] = info["mdns_category"]
+            rec["type"] = info["mdns_category"].upper()
+        rec["discovery"] = info.get("source", "")
+
+    def _discovery_pass(self, found, new_devices, superseded, ip_index, jobs, cfg, online_ok):
+        """Enrich found records and surface devices that answered only mDNS/SSDP/
+        ARP. Returns True if the registry changed (a phantom was superseded)."""
+        local_nets = []
+        for group, _tokens, is_local in jobs:
+            if is_local and group:
+                try:
+                    local_nets.append(ipaddress.ip_network(group, strict=False))
+                except ValueError:
+                    pass
+        if not local_nets:
+            return False
+        with self.lock:
+            self.status["progress"] = "discovery (mDNS / SSDP / NetBIOS)"
+        rec_by_ip = {r["ip"]: r for r in found.values()}
+        disc = discovery.gather(live_ips=list(rec_by_ip), timeout=3)
+        reg_changed = False
+        for ip, info in disc.items():
+            try:
+                addr = ipaddress.ip_address(ip)
+            except ValueError:
+                continue
+            if not any(addr in n for n in local_nets):
+                continue
+            if ip in rec_by_ip:
+                self._apply_disc(rec_by_ip[ip], info)
+                continue
+            # a device nmap missed but that answered discovery
+            h = {"ip": ip, "mac": info.get("mac", ""), "nmap_vendor": "",
+                 "hostname": info.get("hostname", ""), "ports": [],
+                 "services": {}, "os": "", "rtt": None}
+            key, old_key = self._resolve_key(h, ip_index)
+            rec = self._build_record(h, self._target_for_ip(ip, cfg), True, online_ok, False, key)
+            self._apply_disc(rec, info)
+            prev = self.devices.get(key, {})
+            rec["first_seen"] = prev.get("first_seen", rec["last_seen"])
+            was_seen = key in self.seen_keys
+            if old_key:
+                superseded.add(old_key)
+                if old_key in self.registry and key not in self.registry:
+                    self.registry[key] = self.registry.pop(old_key)
+                    reg_changed = True
+                if old_key in self.seen_keys:
+                    was_seen = True
+            found[key] = rec
+            rec_by_ip[ip] = rec
+            if not was_seen and key not in self.registry:
+                new_devices.append(rec)
+            self.seen_keys.add(key)
+        return reg_changed
+
+    def _finalize(self, found, new_devices, scanned_keys, superseded, cfg):
+        """Update state for the scanned scope only; carry untouched devices over.
+        `superseded` keys (a device re-identified under a new key) are dropped so
+        they are neither marked offline nor counted as a separate device."""
+        offline_after = cfg["alerts"]["offline_after"]
+        alerts = cfg["alerts"]
+        g_offline = alerts.get("notify_offline", True)
+        g_online = alerts.get("notify_online", False)
+        cats = alerts.get("categories") or {}
+
+        def gate(category, kind):
+            """Per-category override ('offline'/'online'); else the global default."""
+            rule = cats.get(category)
+            if rule is not None:
+                return bool(rule.get(kind, False))
+            return g_offline if kind == "offline" else g_online
+
+        for k in superseded:
+            self.miss.pop(k, None)
+            self.seen_keys.discard(k)
+        samples, offline_now, online_now = [], [], []
+        for key in scanned_keys:
+            watched = self.registry.get(key, {}).get("watch", False)
+            prev_miss = self.miss.get(key, 0)
+            if key in found:
+                # A device that had been counted offline is now back.
+                if prev_miss >= offline_after and (watched or gate(found[key].get("category", "unknown"), "online")):
+                    online_now.append(found[key])
+                self.miss[key] = 0
+                samples.append((key, True, found[key]["ip"], found[key].get("rtt")))
+            else:
+                self.miss[key] = prev_miss + 1
+                old = self.devices.get(key)
+                ip = old["ip"] if old else (key if ":" not in key else "")
+                samples.append((key, False, ip, None))
+                if old:
+                    old = dict(old)
+                    old.update(online=False, status="offline")
+                    found[key] = old
+                if self.miss[key] == offline_after and old and (watched or gate(old.get("category", "unknown"), "offline")):
+                    offline_now.append(found[key])
+
+        # Carry over devices that were out of this scan's scope, unchanged;
+        # drop any superseded keys so a moved/re-keyed device leaves no phantom.
+        result = {k: v for k, v in self.devices.items()
+                  if k not in scanned_keys and k not in superseded}
+        result.update(found)
+        # forget miss counters for devices we no longer track (e.g. stale seeds)
+        self.miss = {k: v for k, v in self.miss.items() if k in result}
+
+        history.record(samples)
+        for dev in new_devices:
+            notify.notify_new_device(alerts, dev)
+        for dev in offline_now:
+            notify.notify_offline(alerts, dev)
+        for dev in online_now:
+            notify.notify_online(alerts, dev)
+
+        with self.lock:
+            self.devices = result
+            self.status["last_scan"] = _now_str()
+            self.status["last_scan_ts"] = int(time.time())
+        self._save_state()
+        self._kuma_push(cfg, result)   # only push devices you've selected (have a monitor)
+        try:
+            history.prune(cfg["scan"]["history_days"])
+        except Exception:
+            pass
+
+    @staticmethod
+    def _kuma_name(dev):
+        label = dev.get("name") or dev.get("type") or "device"
+        return f"{label} ({dev.get('ip', '')})"[:150]
+
+    def _kuma_push(self, cfg, devices):
+        """Push each tokened device's status to its Uptime Kuma push monitor.
+        A device having a token IS the opt-in, so no global enable gate here."""
+        ki = cfg.get("integrations", {}).get("kuma", {})
+        if not ki.get("base_url"):
+            return
+        for key, dev in devices.items():
+            token = self.registry.get(key, {}).get("kuma_token")
+            if not token:
+                continue
+            up = dev.get("online", False)
+            label = dev.get("name") or dev.get("type") or dev.get("ip", "")
+            kuma.push(ki["base_url"], token, up,
+                      msg=f"{label} {dev.get('ip', '')}".strip(),
+                      ping_ms=dev.get("rtt") if up else None)
+
+    # ---- public api ----------------------------------------------------
+    def trigger(self, mode="quick", target=None, hosts=None):
+        threading.Thread(
+            target=self.run_scan,
+            kwargs={"mode": mode, "only_target": target, "only_hosts": hosts},
+            daemon=True,
+        ).start()
+
+    def get_devices(self):
+        with self.lock:
+            return list(self.devices.values())
+
+    def get_status(self):
+        with self.lock:
+            return dict(self.status)
+
+    def set_device_meta(self, key, name=None, category=None, type_label=None,
+                        watch=None, serial=None, model=None, link=None, kuma_token=None,
+                        kuma_monitor_id=None):
+        reg = self.registry.get(key, {})
+        for field, val in (("name", name), ("category", category), ("type", type_label),
+                           ("serial", serial), ("model", model)):
+            if val is not None:
+                reg[field] = val
+        if watch is not None:
+            reg["watch"] = bool(watch)
+        if link is not None:
+            reg["link"] = link or ""        # "" clears the link
+        if kuma_token is not None:
+            reg["kuma_token"] = kuma_token.strip()
+        if kuma_monitor_id is not None:
+            reg["kuma_monitor_id"] = kuma_monitor_id or 0
+        self.registry[key] = reg
+        self.save_registry()
+        with self.lock:
+            if key in self.devices:
+                self.devices[key].update({k: v for k, v in
+                                          (("name", name), ("category", category),
+                                           ("type", type_label), ("watch", watch),
+                                           ("serial", serial), ("model", model), ("link", link))
+                                          if v is not None})
+        return reg
+
+    # ---- background loop ----------------------------------------------
+    def loop(self):
+        while not self._stop:
+            cfg = config.load()
+            if cfg.get("configured"):
+                try:
+                    self.run_scan("quick")
+                except Exception as e:
+                    print("scan error:", e, flush=True)
+            interval = max(1, int(config.load()["scan"]["interval_min"]))
+            self._wake.wait(timeout=interval * 60)
+            self._wake.clear()
+
+    def wake(self):
+        self._wake.set()
+
+    def start(self):
+        threading.Thread(target=self.loop, daemon=True).start()
+
+
+scanner = Scanner()

@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farm Network Asset Identifier</title>
+    <link rel="stylesheet" href="/app.css">
+    <style>
+        .ip-card { transition: all 0.2s ease; }
+        .ip-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .stat-card { transition: all 0.2s ease; }
+        .stat-card:hover { transform: scale(1.02); border-color: #3b82f6; }
+        .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; }
+        .feature-badge { width: 14px; height: 14px; font-size: 8px; font-weight: bold; display: flex; align-items: center; justify-content: center; border-radius: 2px; color: white; text-transform: uppercase; }
+        @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .scanning { animation: pulse-soft 2s infinite; color: #3b82f6; }
+        .offline-blink { animation: pulse-soft 1.6s infinite; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans text-slate-900 flex flex-col">
+
+    <header class="bg-slate-900 text-white p-6 shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-4">
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight">Farm Network Asset Identifier</h1>
+                    <p id="system-status" class="text-slate-400 text-xs mt-1 italic">Service Active</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <select id="target-select" onchange="onTargetChange()" class="hidden md:block bg-slate-800 text-white text-xs rounded-lg px-3 py-2 border border-slate-700"></select>
+                <button id="select-btn" onclick="toggleSelectMode()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">Select</button>
+                <button onclick="quickScan()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold uppercase">Scan</button>
+                <button onclick="openSetup()" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-full transition-colors" title="Settings">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6 flex-grow w-full">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div onclick="filterGrid('identified')" class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm cursor-pointer">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Identified</p>
+                <p id="stat-identified" class="text-3xl font-bold">0</p>
+            </div>
+            <div onclick="filterGrid('unidentified')" class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm cursor-pointer">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Mystery Nodes</p>
+                <p id="stat-unidentified" class="text-3xl font-bold text-amber-600">0</p>
+            </div>
+            <div onclick="filterGrid('offline')" class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm cursor-pointer">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Offline</p>
+                <p id="stat-offline" class="text-3xl font-bold text-red-600">0</p>
+            </div>
+            <div class="bg-blue-600 p-4 rounded-xl shadow-md text-white">
+                <p class="text-blue-100 text-xs font-semibold uppercase">Last Scan</p>
+                <p id="stat-last-scan" class="text-lg font-bold mt-1 tracking-tighter truncate">--:--:--</p>
+            </div>
+        </div>
+
+        <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
+            <h2 id="current-view-title" class="text-lg font-bold text-slate-700 uppercase tracking-tight">All Subnet Addresses</h2>
+            <div class="flex gap-2 flex-wrap items-center">
+                <div id="filter-bar" class="flex gap-2 flex-wrap items-center"></div>
+                <button onclick="deepScan()" class="px-3 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold uppercase">Deep Scan</button>
+            </div>
+        </div>
+
+        <div id="network-grid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3"></div>
+    </main>
+
+    <!-- Floating selection action bar -->
+    <div id="select-bar" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden z-40 bg-slate-900 text-white rounded-full shadow-2xl px-5 py-3 flex items-center gap-4">
+        <span id="select-count" class="text-sm font-bold">0 selected</span>
+        <button onclick="deepScanSelected()" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-full text-xs font-bold uppercase">🔬 Deep scan</button>
+        <button onclick="quickScanSelected()" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-full text-xs font-bold uppercase">⚡ Quick</button>
+        <button onclick="clearSelection()" class="text-slate-400 hover:text-white text-xs">Clear</button>
+    </div>
+
+    <!-- Setup / Settings Modal -->
+    <div id="setup-modal" onclick="if(event.target===this) closeSetup()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-6 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                <h2 class="text-xl font-bold">Settings</h2>
+                <button onclick="closeSetup()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+            </div>
+            <div class="p-6 space-y-5 overflow-y-auto grow">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Scan Frequency</label>
+                    <select id="setup-interval" class="w-full p-3 bg-slate-50 border rounded-lg font-medium">
+                        <option value="5">Every 5 Minutes</option>
+                        <option value="10">Every 10 Minutes</option>
+                        <option value="15">Every 15 Minutes</option>
+                        <option value="30">Every 30 Minutes</option>
+                        <option value="60">Every 60 Minutes</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Primary Network Range</label>
+                    <input id="setup-network" type="text" class="w-full p-3 bg-slate-50 border rounded-lg font-mono text-sm" value="192.168.88.0/24">
+                    <label class="flex items-center gap-2 mt-3 text-xs text-slate-600">
+                        <input id="setup-deep-on-new" type="checkbox" class="w-4 h-4"> Auto deep-scan a device the first time it's seen (better identification)
+                    </label>
+                    <label class="flex items-center gap-2 mt-2 text-xs text-slate-600">
+                        <input id="setup-discovery" type="checkbox" class="w-4 h-4"> Local discovery (mDNS / SSDP / NetBIOS) — finds devices that ignore ping &amp; pulls names
+                    </label>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">ntfy Alert Topic <span class="text-slate-300 normal-case">(blank = off)</span></label>
+                    <div class="flex gap-2">
+                        <input id="setup-ntfy" type="text" class="flex-grow p-3 bg-slate-50 border rounded-lg font-mono text-sm" placeholder="farm-netwatch-xyz">
+                        <button onclick="testNtfy()" class="px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs uppercase whitespace-nowrap">Test</button>
+                    </div>
+                    <p id="ntfy-test-result" class="text-xs mt-2"></p>
+                    <label class="flex items-center gap-2 mt-3 text-xs text-slate-600">
+                        <input id="setup-notify-online" type="checkbox" class="w-4 h-4"> Alert when <b>any</b> device comes back online (watched devices always do)
+                    </label>
+                    <label class="flex items-center gap-2 mt-2 text-xs text-slate-600">
+                        <input id="setup-allow-commands" type="checkbox" class="w-4 h-4"> Allow remote commands from this topic (ping / scan / tracert)
+                    </label>
+                    <p class="text-[10px] text-slate-400 mt-1">Send <code>help</code> to the topic from your phone to list commands. Only IPs inside your scan networks are allowed.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Alerts per category</label>
+                    <div id="cat-alerts" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+                    <p class="text-[10px] text-slate-400 mt-1">"Default" follows the global toggles above. A 🔔 watched device always alerts both ways regardless.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Integrations · Uptime Kuma</label>
+                    <div class="flex gap-2">
+                        <input id="setup-kuma-url" type="text" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm font-mono" placeholder="http://localhost:3001">
+                        <a id="kuma-open" href="#" target="_blank" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold whitespace-nowrap self-center">Open Kuma ↗</a>
+                    </div>
+                    <div class="flex gap-2 mt-2">
+                        <input id="setup-kuma-user" type="text" autocomplete="off" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Kuma admin username">
+                        <input id="setup-kuma-pass" type="password" autocomplete="new-password" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Kuma admin password">
+                        <button onclick="testKuma()" class="px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold whitespace-nowrap">Test</button>
+                    </div>
+                    <p id="kuma-test-result" class="text-xs mt-1"></p>
+                    <p class="text-[10px] text-slate-400 mt-1">Run it with <code>docker compose --profile kuma up -d</code>, create the Kuma admin account, and enter it above. Then open a device and tick <b>"Monitor in Uptime Kuma"</b> — Netwatch builds that monitor (tagged with its category) and pushes its status each scan. Only devices you tick are added.</p>
+                    <button onclick="syncKumaTags()" class="mt-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">🏷️ Tag existing monitors by category</button>
+                    <span id="kuma-tag-result" class="text-xs ml-2"></span>
+                </div>
+                <div class="pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
+                    <button onclick="quickScan(); closeSetup();" class="py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🚀</span> Quick Scan</button>
+                    <button onclick="deepScan(); closeSetup();" class="py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🔬</span> Deep Scan</button>
+                </div>
+                <a href="/setup" class="block text-center text-slate-500 text-xs underline">Re-run full deployment wizard</a>
+            </div>
+            <div class="p-4 bg-slate-50 text-center shrink-0 border-t border-slate-100">
+                <button onclick="saveSetup()" class="text-blue-600 font-bold text-sm">Apply &amp; Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Device Detail Modal -->
+    <div id="modal" onclick="if(event.target===this) closeModal()" class="fixed inset-0 bg-slate-900/50 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] sm:max-h-[88vh] flex flex-col overflow-hidden">
+            <div id="modal-header" class="p-5 text-white bg-slate-800 shrink-0">
+                <div class="flex justify-between items-start gap-3">
+                    <div class="min-w-0">
+                        <a id="modal-ip-link" href="#" target="_blank" class="block hover:underline decoration-cyan-400">
+                            <h2 id="modal-ip" class="text-2xl sm:text-3xl font-mono font-bold truncate">192.168.88.1</h2>
+                        </a>
+                        <p id="modal-type-header" class="opacity-80 uppercase tracking-widest text-xs mt-1 truncate">DEVICE TYPE</p>
+                    </div>
+                    <button onclick="closeModal()" aria-label="Close" class="shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-white text-xl leading-none transition-colors">&times;</button>
+                </div>
+            </div>
+            <div class="overflow-y-auto p-6 grow">
+                <div class="space-y-4">
+                    <div class="flex items-center gap-3">
+                        <img id="device-photo" class="w-20 h-20 rounded-lg object-cover border bg-slate-100 hidden" alt="device photo">
+                        <div id="photo-placeholder" class="w-20 h-20 rounded-lg border bg-slate-50 flex items-center justify-center text-slate-300 text-3xl shrink-0">📷</div>
+                        <div class="flex flex-col gap-1">
+                            <label class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold cursor-pointer text-center">
+                                Upload photo<input id="photo-input" type="file" accept="image/*" class="hidden" onchange="uploadPhoto()">
+                            </label>
+                            <button id="photo-remove" onclick="removePhoto()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold hidden">Remove</button>
+                            <span id="photo-status" class="text-[10px] text-slate-400"></span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 uppercase">Identity</label>
+                        <p id="modal-desc" class="text-lg font-medium text-slate-800 leading-tight">Loading...</p>
+                        <p id="modal-friendly-name" class="text-xs text-blue-600 font-bold mt-1 italic"></p>
+                    </div>
+                    <div id="modal-features-list" class="flex flex-wrap gap-2"></div>
+
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-slate-50 rounded-lg p-2 border"><div class="text-[10px] text-slate-400 uppercase font-bold">24h</div><div id="up-24h" class="text-sm font-bold">--</div></div>
+                        <div class="bg-slate-50 rounded-lg p-2 border"><div class="text-[10px] text-slate-400 uppercase font-bold">7d</div><div id="up-7d" class="text-sm font-bold">--</div></div>
+                        <div class="bg-slate-50 rounded-lg p-2 border"><div class="text-[10px] text-slate-400 uppercase font-bold">30d</div><div id="up-30d" class="text-sm font-bold">--</div></div>
+                    </div>
+                    <div><svg id="spark" viewBox="0 0 240 40" class="w-full h-10 bg-slate-50 rounded-lg border"></svg><p class="text-[10px] text-slate-400 text-center mt-1">Uptime · last 24h</p></div>
+
+                    <div id="modal-web-action" class="hidden">
+                        <a id="web-action-button" href="#" target="_blank" class="w-full flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 transition-colors font-bold uppercase text-xs shadow-md"><span>🌐</span> Open Web Interface</a>
+                    </div>
+
+                    <div id="modal-extra-info" class="p-3 bg-slate-50 rounded-lg border border-slate-200 hidden">
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-1">Hardware Metadata</label>
+                        <div id="modal-extended" class="text-slate-600 text-[11px] font-mono whitespace-pre-wrap leading-relaxed"></div>
+                    </div>
+
+                    <div class="pt-3 border-t border-slate-100">
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">Diagnostics</label>
+                        <div class="flex gap-2 flex-wrap">
+                            <button onclick="connTest()" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">📶 Connection test</button>
+                            <button onclick="runCommand('ping')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Ping</button>
+                            <button onclick="runCommand('port')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Port…</button>
+                            <button onclick="runCommand('tracert')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Tracert</button>
+                            <button id="hik-btn" onclick="fetchHik()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold hidden">📷 Camera info</button>
+                            <button onclick="deepScanDevice()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold">🔬 Deep scan</button>
+                        </div>
+                        <div id="quality-panel" class="hidden mt-3"></div>
+                        <pre id="cmd-result" class="hidden mt-2 p-2 bg-slate-900 text-emerald-300 rounded-lg text-[11px] whitespace-pre-wrap leading-snug max-h-40 overflow-auto"></pre>
+                    </div>
+
+                    <div class="pt-3 border-t border-slate-100">
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">Asset details</label>
+                        <div class="flex gap-2 mb-2">
+                            <input id="edit-serial" type="text" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Serial number">
+                            <input id="edit-model" type="text" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Model">
+                        </div>
+                        <select id="edit-link" class="w-full p-2 bg-slate-50 border rounded-lg text-sm mb-2">
+                            <option value="">🔗 Not linked to another device</option>
+                        </select>
+                        <div class="flex gap-2">
+                            <input id="edit-name" type="text" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm" placeholder="e.g. Front Gate Camera">
+                            <select id="edit-category" class="p-2 bg-slate-50 border rounded-lg text-sm">
+                                <option value="camera">📷 Camera</option>
+                                <option value="nvr">🎥 NVR / Recorder</option>
+                                <option value="network">📶 Network (AP / switch)</option>
+                                <option value="internet-ap">🌎 Internet AP / Router</option>
+                                <option value="router">🧭 Router / Gateway</option>
+                                <option value="printer">🖨️ Printer / MFP</option>
+                                <option value="nas">💾 NAS / Storage</option>
+                                <option value="voip">☎️ VoIP / Phone</option>
+                                <option value="solar">☀️ Solar / Inverter</option>
+                                <option value="media">📺 Media / TV</option>
+                                <option value="iot">💡 IoT / Smart device</option>
+                                <option value="pc">💻 Computer / Host</option>
+                                <option value="server">🖥️ Server</option>
+                                <option value="unknown">❓ Unknown</option>
+                            </select>
+                            <button onclick="saveDevice()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">Save</button>
+                        </div>
+                        <label class="flex items-center gap-2 mt-3 text-sm bg-amber-50 border border-amber-200 rounded-lg p-2 cursor-pointer">
+                            <input id="edit-watch" type="checkbox" class="w-4 h-4" onchange="toggleWatch()">
+                            <span>🔔 <b>Watch this device</b> — alert me when it goes offline <i>and</i> when it comes back online</span>
+                        </label>
+                    </div>
+
+                    <div id="cred-section" class="pt-3 border-t border-slate-100">
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">🔑 Login credentials</label>
+                        <div class="space-y-2">
+                            <input id="cred-user" type="text" autocomplete="off" class="w-full p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Username">
+                            <div class="flex gap-2">
+                                <input id="cred-pass" type="password" autocomplete="new-password" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Password">
+                                <button onclick="toggleCredPass()" id="cred-eye" class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm" title="Show / hide">👁</button>
+                                <button onclick="copyCred('cred-pass')" class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm" title="Copy password">📋</button>
+                            </div>
+                            <input id="cred-notes" type="text" class="w-full p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Notes (optional) — e.g. web admin / RTSP">
+                            <div class="flex gap-2 items-center">
+                                <button onclick="saveCreds()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">Save login</button>
+                                <button onclick="clearCreds()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-bold">Clear</button>
+                                <span id="cred-status" class="text-xs"></span>
+                            </div>
+                            <p class="text-[10px] text-slate-400 leading-snug">Stored on the Pi, obfuscated at rest. Anyone who can open this dashboard can reveal it — keep port 8090 on a trusted LAN / behind the VPN.</p>
+                        </div>
+                    </div>
+
+                    <div id="kuma-section" class="pt-3 border-t border-slate-100">
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">📈 Uptime Kuma</label>
+                        <label class="flex items-center gap-2 text-sm bg-blue-50 border border-blue-200 rounded-lg p-2 cursor-pointer">
+                            <input id="kuma-monitor" type="checkbox" class="w-4 h-4" onchange="toggleKumaMonitor()">
+                            <span><b>Monitor in Uptime Kuma</b> — auto-create the monitor &amp; push status each scan</span>
+                        </label>
+                        <p id="kuma-status" class="text-xs mt-1"></p>
+                        <details class="mt-2">
+                            <summary class="text-[11px] text-slate-400 cursor-pointer">Manual / pull setup</summary>
+                            <div class="space-y-2 mt-2">
+                                <div>
+                                    <label class="text-[10px] text-slate-400">Health URL — paste into a Kuma <b>HTTP</b> monitor (200=up, 503=down)</label>
+                                    <div class="flex gap-2">
+                                        <input id="kuma-health" type="text" readonly class="flex-grow p-2 bg-slate-50 border rounded-lg text-xs font-mono">
+                                        <button onclick="copyCred('kuma-health')" class="px-3 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm" title="Copy">📋</button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-slate-400">Push token — paste from a Kuma <b>Push</b> monitor you made yourself</label>
+                                    <div class="flex gap-2">
+                                        <input id="kuma-token" type="text" class="flex-grow p-2 bg-slate-50 border rounded-lg text-xs font-mono" placeholder="paste push token">
+                                        <button onclick="saveKuma()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold">Save</button>
+                                    </div>
+                                    <p id="kuma-pushurl" class="text-[10px] text-slate-400 mt-1 break-all"></p>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let DATA = { targets: [], devices: [] };
+        let DEV_BY_IP = {};
+        let DEV_BY_KEY = {};
+        let SELECTED = null;
+        let FILTER = 'all';
+        let CURRENT_KEY = null;
+        let MODAL_IP = null;
+        let SELECT_MODE = false;
+        let SELECTED_IPS = new Set();
+
+        const featureColors = { "G":"bg-orange-500","W":"bg-cyan-500","U":"bg-blue-600","P":"bg-green-500","S":"bg-yellow-500","R":"bg-rose-600","H":"bg-amber-800","M":"bg-indigo-700","Q":"bg-teal-600","6":"bg-purple-600","+":"bg-slate-900" };
+        const featureNames = { "W":"Web UI","S":"SSH","R":"RTSP video","H":"Hik API","M":"MikroTik","Q":"MQTT","+":"Deep scanned" };
+
+        const catStyle = {
+            camera:      "bg-rose-50 border-rose-200 text-rose-900 border-2 shadow-sm",
+            nvr:         "bg-rose-100 border-rose-300 text-rose-900 border-2 shadow-sm",
+            network:     "bg-indigo-50 border-indigo-200 text-indigo-900 border-2 shadow-sm",
+            "internet-ap":"bg-purple-50 border-purple-200 text-purple-900 border-2 shadow-sm",
+            router:      "bg-indigo-50 border-indigo-200 text-indigo-900 border-2 shadow-sm",
+            printer:     "bg-cyan-50 border-cyan-200 text-cyan-900 border-2 shadow-sm",
+            nas:         "bg-blue-50 border-blue-200 text-blue-900 border-2 shadow-sm",
+            voip:        "bg-green-50 border-green-200 text-green-900 border-2 shadow-sm",
+            solar:       "bg-yellow-50 border-yellow-300 text-yellow-900 border-2 shadow-sm",
+            media:       "bg-orange-50 border-orange-200 text-orange-900 border-2 shadow-sm",
+            iot:         "bg-teal-50 border-teal-200 text-teal-900 border-2 shadow-sm",
+            pc:          "bg-slate-100 border-slate-300 text-slate-800 border-2 shadow-sm",
+            server:      "bg-emerald-50 border-emerald-200 text-emerald-900 border-2 shadow-sm",
+            unknown:     "bg-amber-50 border-amber-300 text-amber-900 border-2"
+        };
+        const catIcon = { camera:"📷", nvr:"🎥", network:"📶", "internet-ap":"🌎", router:"🧭",
+            printer:"🖨️", nas:"💾", voip:"☎️", solar:"☀️", media:"📺", iot:"💡", pc:"💻",
+            server:"🖥️", unknown:"❓" };
+        const catLabel = { camera:"Camera", nvr:"NVR", network:"Network", "internet-ap":"Internet AP",
+            router:"Router", printer:"Printer", nas:"NAS", voip:"VoIP", solar:"Solar", media:"Media",
+            iot:"IoT", pc:"PC", server:"Server", unknown:"Unknown" };
+        // The two groups the user watches most closely (shown with online/offline counts).
+        const GROUPS = {
+            camera:  { label:"Cameras", icon:"📷", cats:["camera","nvr"] },
+            network: { label:"Network", icon:"📶", cats:["network","internet-ap","router"] }
+        };
+
+        function fmtUptime(v){ return (v===null||v===undefined) ? "--" : v+"%"; }
+        function isIdentified(d){ return d.name || (d.category && d.category!=='unknown'); }
+
+        function getFeatureBadges(feats){ return (feats||[]).map(f=>`<span class="feature-badge ${featureColors[f]||'bg-slate-400'}" title="${featureNames[f]||f}">${f}</span>`).join(''); }
+
+        function targetBase(cidr){ // returns "a.b.c" for a /24, else null
+            const m = (cidr||'').match(/^(\d+\.\d+\.\d+)\.\d+\/24$/);
+            return m ? m[1] : null;
+        }
+
+        async function loadDevices(){
+            try {
+                const res = await fetch('/api/devices');
+                DATA = await res.json();
+            } catch(e){ return; }
+            DEV_BY_IP = {}; DEV_BY_KEY = {};
+            DATA.devices.forEach(d => { DEV_BY_IP[d.ip] = d; DEV_BY_KEY[d.key] = d; });
+            buildTargetSelect();
+            if(!SELECTED && DATA.targets.length) SELECTED = DATA.targets[0].cidr;
+            renderGrid();
+        }
+
+        function buildTargetSelect(){
+            const sel = document.getElementById('target-select');
+            sel.innerHTML = DATA.targets.map(t=>`<option value="${t.cidr}">${t.label} · ${t.cidr}</option>`).join('');
+            if(SELECTED) sel.value = SELECTED;
+        }
+        function onTargetChange(){ SELECTED = document.getElementById('target-select').value; renderGrid(); }
+
+        function renderGrid(){
+            const grid = document.getElementById('network-grid');
+            grid.innerHTML = '';
+            const base = targetBase(SELECTED);
+            let identCount=0, mysteryCount=0, offlineCount=0;
+
+            const makeCard = (ip, dev) => {
+                let statusClass = "bg-white border-slate-200 text-slate-400 opacity-50";
+                let badge = ""; let type = "available"; let category = "none";
+                if(dev){
+                    const online = dev.online;
+                    if(!online){
+                        statusClass = "bg-red-50 border-red-300 text-red-900 border-2 offline-blink";
+                        badge = `<span class="block text-[9px] font-bold uppercase truncate text-red-600">⚠ ${dev.name||dev.type||'offline'}</span>`;
+                        offlineCount++; type="offline"; category=dev.category||'unknown';
+                    } else if(isIdentified(dev)){
+                        statusClass = catStyle[dev.category] || catStyle.unknown;
+                        const icon = catIcon[dev.category] || "•";
+                        badge = `<span class="block text-[9px] font-bold uppercase truncate px-1 rounded bg-white/50">${icon} ${dev.name||dev.type}</span>`;
+                        identCount++; type="identified"; category=dev.category;
+                    } else {
+                        statusClass = "bg-amber-50 border-amber-300 text-amber-900 border-2";
+                        badge = `<span class="block text-[9px] font-bold uppercase truncate text-amber-600">?? ${dev.vendor||'Mystery'}</span>`;
+                        mysteryCount++; type="unidentified"; category="unidentified";
+                    }
+                }
+                const hasWeb = dev && (dev.features||[]).includes('W');
+                const label = base ? '.'+ip.split('.').pop() : ip;
+                const ipDisplay = hasWeb
+                    ? `<a href="http://${ip}" target="_blank" class="text-blue-700 underline decoration-blue-300 hover:decoration-blue-700" onclick="event.stopPropagation()">${label}</a>`
+                    : `<span>${label}</span>`;
+                const card = document.createElement('div');
+                const ring = SELECTED_IPS.has(ip) ? ' ring-4 ring-blue-500' : '';
+                card.className = `ip-card p-2 rounded-xl border cursor-pointer flex flex-col items-center justify-between text-center h-28 ${statusClass}${ring}`;
+                card.dataset.type = type; card.dataset.category = category;
+                card.onclick = () => onCardClick(dev, ip, card);
+                const credKey = (dev && dev.has_credentials) ? '<span class="text-[10px]" title="Login saved">🔑</span>' : '';
+                const watchKey = (dev && dev.watch) ? '<span class="text-[10px]" title="Watched for offline/online">🔔</span>' : '';
+                const linkKey = (dev && dev.link) ? '<span class="text-[10px]" title="Linked to another device">🔗</span>' : '';
+                const kumaKey = (dev && dev.has_kuma) ? '<span class="text-[10px]" title="Synced to Uptime Kuma">📈</span>' : '';
+                const photoThumb = (dev && dev.has_photo) ? `<img src="/api/devices/${encodeURIComponent(dev.key)}/photo" class="w-7 h-7 rounded object-cover" loading="lazy" alt="">` : '';
+                card.innerHTML = `<div class="flex flex-wrap gap-1 w-full justify-center items-center">${photoThumb}${dev?getFeatureBadges(dev.features):''}${credKey}${watchKey}${linkKey}${kumaKey}</div>
+                    <span class="text-base font-mono font-bold leading-none">${ipDisplay}</span>${badge}`;
+                applyFilter(card);
+                grid.appendChild(card);
+            };
+
+            if(base){
+                for(let i=1;i<=254;i++){ const ip = base+'.'+i; makeCard(ip, DEV_BY_IP[ip]); }
+                document.getElementById('current-view-title').innerText = `Subnet ${base}.0/24`;
+            } else {
+                const devs = DATA.devices.filter(d=>d.target===SELECTED);
+                if(!devs.length){ grid.innerHTML = `<p class="col-span-full text-slate-400 text-sm">No devices discovered yet on ${SELECTED}.</p>`; }
+                devs.forEach(d=>makeCard(d.ip, d));
+                document.getElementById('current-view-title').innerText = SELECTED || 'Network';
+            }
+            document.getElementById('stat-identified').innerText = identCount;
+            document.getElementById('stat-unidentified').innerText = mysteryCount;
+            document.getElementById('stat-offline').innerText = offlineCount;
+            buildFilterChips(devicesInView());
+        }
+
+        function devicesInView(){
+            const base = targetBase(SELECTED);
+            if(base) return DATA.devices.filter(d => d.ip.startsWith(base + '.'));
+            return DATA.devices.filter(d => d.target === SELECTED);
+        }
+
+        function buildFilterChips(devs){
+            const bar = document.getElementById('filter-bar');
+            if(!bar) return;
+            const catCount = {};
+            devs.forEach(d => { catCount[d.category] = (catCount[d.category]||0) + 1; });
+            const grouped = new Set([...GROUPS.camera.cats, ...GROUPS.network.cats]);
+            const offlineN = devs.filter(d => !d.online).length;
+
+            const chip = (filter, inner) => {
+                const active = FILTER === filter;
+                const cls = active ? 'bg-blue-100 text-blue-900 border-blue-400'
+                                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100';
+                return `<button onclick="filterGrid('${filter}')" class="px-3 py-1.5 rounded-lg text-xs font-bold border ${cls}">${inner}</button>`;
+            };
+            const groupChip = (key) => {
+                const g = GROUPS[key]; let on=0, off=0;
+                devs.forEach(d => { if(g.cats.includes(d.category)){ d.online ? on++ : off++; } });
+                return chip(key, `${g.icon} ${g.label} `
+                    + `<span class="text-green-600" title="online">${on}↑</span>`
+                    + `<span class="text-red-600 ml-1" title="offline">${off}↓</span>`);
+            };
+
+            let html = chip('all', `All <span class="opacity-50">${devs.length}</span>`);
+            html += groupChip('camera');
+            html += groupChip('network');
+            Object.keys(catCount)
+                .filter(c => !grouped.has(c) && c !== 'unknown')
+                .sort((a,b) => catCount[b]-catCount[a])
+                .forEach(c => { html += chip(c, `${catIcon[c]||'•'} ${catLabel[c]||c} <span class="opacity-50">${catCount[c]}</span>`); });
+            const mysteryN = devs.filter(d => !isIdentified(d)).length;
+            if(mysteryN) html += chip('unidentified', `❓ Mystery <span class="opacity-50">${mysteryN}</span>`);
+            if(offlineN) html += chip('offline', `🔴 Offline <span class="opacity-50">${offlineN}</span>`);
+            bar.innerHTML = html;
+        }
+
+        function applyFilter(card){
+            if(FILTER==='all'){ card.style.display=''; return; }
+            const t = card.dataset.type, c = card.dataset.category;
+            let show = (t===FILTER) || (c===FILTER) || (FILTER==='camera' && (c==='camera'||c==='nvr')) || (FILTER==='network' && (c==='network'||c==='internet-ap'||c==='router'));
+            card.style.display = show ? '' : 'none';
+        }
+        function filterGrid(f){ FILTER = (FILTER===f && f!=='all') ? 'all' : f; document.querySelectorAll('#network-grid .ip-card').forEach(applyFilter); buildFilterChips(devicesInView()); }
+
+        // ---- multi-select ----
+        function onCardClick(dev, ip, card){
+            if(SELECT_MODE){
+                if(!dev) return;
+                if(SELECTED_IPS.has(ip)){ SELECTED_IPS.delete(ip); card.classList.remove('ring-4','ring-blue-500'); }
+                else { SELECTED_IPS.add(ip); card.classList.add('ring-4','ring-blue-500'); }
+                updateSelectBar();
+            } else { openModal(dev ? dev.key : null, ip); }
+        }
+        function toggleSelectMode(){
+            SELECT_MODE = !SELECT_MODE;
+            const b = document.getElementById('select-btn');
+            b.classList.toggle('bg-blue-600', SELECT_MODE);
+            b.innerText = SELECT_MODE ? 'Selecting…' : 'Select';
+            if(!SELECT_MODE) clearSelection(); else updateSelectBar();
+        }
+        function clearSelection(){ SELECTED_IPS.clear(); renderGrid(); updateSelectBar(); }
+        function updateSelectBar(){
+            const n = SELECTED_IPS.size;
+            document.getElementById('select-count').innerText = n + ' selected';
+            document.getElementById('select-bar').classList.toggle('hidden', !(SELECT_MODE && n>0));
+        }
+        async function scanSelected(mode){
+            const hosts = [...SELECTED_IPS]; if(!hosts.length) return;
+            await fetch('/api/trigger',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,hosts})});
+            const label = mode==='deep' ? 'Deep' : 'Quick';
+            document.getElementById('system-status').innerText = label+' scanning '+hosts.length+' selected device(s)…';
+            toggleSelectMode(); setTimeout(refresh, 2500);
+        }
+        function deepScanSelected(){ scanSelected('deep'); }
+        function quickScanSelected(){ scanSelected('quick'); }
+
+        // ---- per-device diagnostics ----
+        async function runCommand(action){
+            const dev = CURRENT_KEY ? DEV_BY_KEY[CURRENT_KEY] : null;
+            const ip = dev ? dev.ip : MODAL_IP;
+            if(!ip) return;
+            const body = { action, ip };
+            if(action==='port'){ const p = prompt('Check which TCP port on '+ip+'?','80'); if(!p) return; body.port = p; }
+            const res = document.getElementById('cmd-result');
+            res.classList.remove('hidden'); res.innerText = 'Running '+action+' on '+ip+' …';
+            try {
+                const r = await (await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+                res.innerText = r.result || r.error || '(no output)';
+            } catch(e){ res.innerText = 'Error: '+e; }
+        }
+        async function deepScanDevice(){
+            const dev = CURRENT_KEY ? DEV_BY_KEY[CURRENT_KEY] : null;
+            const ip = dev ? dev.ip : MODAL_IP;
+            if(!ip) return;
+            const res = document.getElementById('cmd-result');
+            res.classList.remove('hidden');
+            res.innerText = 'Deep scan started on '+ip+' (all 65535 ports + service/version + OS). This can take a few minutes; the panel updates when done.';
+            await fetch('/api/trigger',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'deep',hosts:[ip]})});
+            setTimeout(refresh, 3000);
+        }
+        async function fetchHik(){
+            if(!CURRENT_KEY) return;
+            const res = document.getElementById('cmd-result');
+            res.classList.remove('hidden'); res.innerText = 'Querying camera (ISAPI)…';
+            try {
+                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/hikvision', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+                if(r.ok){
+                    const i = r.info;
+                    if(i.serialNumber) document.getElementById('edit-serial').value = i.serialNumber;
+                    if(i.model) document.getElementById('edit-model').value = i.model;
+                    res.innerText = `Model:    ${i.model||'—'}\nSerial:   ${i.serialNumber||'—'}\nFirmware: ${i.firmwareVersion||'—'} ${i.firmwareReleasedDate||''}\nType:     ${i.deviceType||'—'}\nName:     ${i.deviceName||'—'}\nMAC:      ${i.macAddress||'—'}`;
+                    loadDevices();
+                } else res.innerText = 'Camera info failed: ' + (r.error||'unknown');
+            } catch(e){ res.innerText = 'Error: ' + e; }
+        }
+        async function connTest(){
+            const dev = CURRENT_KEY ? DEV_BY_KEY[CURRENT_KEY] : null;
+            const ip = dev ? dev.ip : MODAL_IP;
+            if(!ip) return;
+            const panel = document.getElementById('quality-panel');
+            panel.classList.remove('hidden');
+            panel.innerHTML = '<p class="text-xs text-slate-500">Testing connection to '+ip+' (20 pings)…</p>';
+            try {
+                const r = await (await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'quality',ip})})).json();
+                renderQuality(panel, r.quality);
+            } catch(e){ panel.innerHTML = '<p class="text-xs text-red-600">Error: '+e+'</p>'; }
+        }
+        function renderQuality(panel, q){
+            if(!q || !q.ok){ panel.innerHTML = '<p class="text-xs text-red-600">'+((q&&q.error)||'Test failed')+'</p>'; return; }
+            const styles = { excellent:'bg-green-100 text-green-800', good:'bg-emerald-100 text-emerald-800', fair:'bg-amber-100 text-amber-800', poor:'bg-red-100 text-red-800', down:'bg-slate-200 text-slate-700' };
+            const label = { excellent:'Excellent', good:'Good', fair:'Fair', poor:'Poor', down:'No response' };
+            const cls = styles[q.rating] || styles.down;
+            const metric = (lbl,val,unit)=>`<div class="bg-slate-50 rounded-lg p-2 border text-center"><div class="text-[10px] text-slate-400 uppercase font-bold">${lbl}</div><div class="text-sm font-bold">${val==null?'--':val}${val==null?'':unit}</div></div>`;
+            panel.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-slate-500 uppercase">Connection quality</span>
+                    <span class="px-3 py-1 rounded-full text-xs font-bold ${cls}">${label[q.rating]||q.rating}</span>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                    ${metric('Loss', q.loss, '%')}${metric('Avg', q.avg, 'ms')}${metric('Jitter', q.jitter, 'ms')}${metric('Max', q.max, 'ms')}
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">${q.recv}/${q.sent} replies${q.note ? ' · '+q.note : ''}</p>`;
+        }
+
+        // ---- modal ----
+        async function openModal(key, ip){
+            CURRENT_KEY = key;
+            MODAL_IP = (key && DEV_BY_KEY[key]) ? DEV_BY_KEY[key].ip : ip;
+            document.getElementById('cmd-result').classList.add('hidden');
+            document.getElementById('quality-panel').classList.add('hidden');
+            const dev = key ? DEV_BY_KEY[key] : null;
+            document.getElementById('modal').classList.remove('hidden');
+            document.getElementById('modal-ip').innerText = dev ? dev.ip : ip;
+            document.getElementById('modal-ip-link').href = `http://${dev?dev.ip:ip}`;
+            const hdr = document.getElementById('modal-header');
+            if(dev && !dev.online) hdr.className = "p-6 text-white bg-red-700";
+            else if(dev && isIdentified(dev)) hdr.className = "p-6 text-white bg-slate-800";
+            else hdr.className = "p-6 text-white bg-amber-600";
+
+            document.getElementById('modal-type-header').innerText = dev ? (dev.type||dev.category||'DEVICE') : 'UNUSED ADDRESS';
+            document.getElementById('modal-desc').innerText = dev ? (dev.vendor || dev.type || 'Unknown device') : 'No device responding at this address.';
+            document.getElementById('modal-friendly-name').innerText = dev && dev.name ? '★ '+dev.name : '';
+            document.getElementById('modal-features-list').innerHTML = dev ? (dev.features||[]).map(f=>`<span class="px-2 py-1 bg-slate-100 rounded text-[10px] font-bold text-slate-600">${featureNames[f]||f}</span>`).join('') : '';
+
+            const web = document.getElementById('modal-web-action');
+            if(dev && (dev.features||[]).includes('W')){ web.classList.remove('hidden'); document.getElementById('web-action-button').href = (dev.banner&&dev.banner.url)||`http://${dev.ip}`; }
+            else web.classList.add('hidden');
+
+            const extra = document.getElementById('modal-extra-info');
+            if(dev){
+                extra.classList.remove('hidden');
+                let txt = `MAC:      ${dev.mac||'n/a (routed host)'}\nHostname: ${dev.hostname||'—'}\nVendor:   ${dev.vendor||'—'}\nModel:    ${dev.model||'—'}\nSerial:   ${dev.serial||'—'}\nPorts:    ${(dev.ports||[]).join(', ')||'none'}\nOS guess: ${dev.os||'—'}\nNetwork:  ${dev.target}${dev.local===false?' (remote)':''}`;
+                if(dev.banner&&dev.banner.title) txt += `\nWeb title: ${dev.banner.title}`;
+                const linked = DATA.devices.filter(o => o.key!==dev.key && (o.link===dev.key || (dev.link && (o.link===dev.link || o.key===dev.link))));
+                if(dev.link || linked.length) txt += `\nLinked:   ` + ([dev.link, ...linked.map(o=>o.ip)].filter(Boolean).join(', '));
+                if(dev.services && Object.keys(dev.services).length) txt += `\n\nServices:\n`+Object.entries(dev.services).map(([p,s])=>`  ${p}: ${s}`).join('\n');
+                document.getElementById('modal-extended').innerText = txt;
+                document.getElementById('edit-name').value = dev.name||'';
+                document.getElementById('edit-category').value = dev.category||'unknown';
+                document.getElementById('edit-watch').checked = !!dev.watch;
+                document.getElementById('edit-serial').value = dev.serial||'';
+                document.getElementById('edit-model').value = dev.model||'';
+                populateLinkOptions(dev);
+            } else extra.classList.add('hidden');
+            loadPhoto(key, dev);
+            loadKuma(key, dev);
+            const hikBtn = document.getElementById('hik-btn');
+            const isHik = dev && (['camera','nvr'].includes(dev.category) || /hikvision|hangzhou/i.test(dev.vendor||''));
+            hikBtn.classList.toggle('hidden', !isHik);
+
+            drawSpark([]); document.getElementById('up-24h').innerText='--'; document.getElementById('up-7d').innerText='--'; document.getElementById('up-30d').innerText='--';
+            loadCreds(key);
+            if(key){
+                try {
+                    const h = await (await fetch('/api/history/'+encodeURIComponent(key))).json();
+                    document.getElementById('up-24h').innerText = fmtUptime(h.summary.uptime_24h);
+                    document.getElementById('up-7d').innerText = fmtUptime(h.summary.uptime_7d);
+                    document.getElementById('up-30d').innerText = fmtUptime(h.summary.uptime_30d);
+                    drawSpark(h.series);
+                } catch(e){}
+            }
+        }
+        function closeModal(){ document.getElementById('modal').classList.add('hidden'); }
+
+        function drawSpark(series){
+            const svg = document.getElementById('spark');
+            const W=240,H=40; const n=series.length||1;
+            let path=''; let pts=[];
+            series.forEach((v,i)=>{ if(v===null) return; const x=(i/(n-1))*W; const y=H-2-(v*(H-6)); pts.push(`${x.toFixed(1)},${y.toFixed(1)}`); });
+            const line = pts.length? `<polyline points="${pts.join(' ')}" fill="none" stroke="#3b82f6" stroke-width="2"/>` : `<text x="120" y="24" text-anchor="middle" fill="#94a3b8" font-size="10">no history yet</text>`;
+            svg.innerHTML = line;
+        }
+
+        async function saveDevice(){
+            if(!CURRENT_KEY) return;
+            const body = {
+                name: document.getElementById('edit-name').value,
+                category: document.getElementById('edit-category').value,
+                serial: document.getElementById('edit-serial').value,
+                model: document.getElementById('edit-model').value,
+                link: document.getElementById('edit-link').value
+            };
+            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            closeModal(); await loadDevices();
+        }
+        function populateLinkOptions(dev){
+            const sel = document.getElementById('edit-link');
+            const others = DATA.devices.filter(d => d.key !== dev.key)
+                .sort((a,b)=>[...a.ip.split('.').map(Number)] > [...b.ip.split('.').map(Number)] ? 1 : -1);
+            sel.innerHTML = '<option value="">🔗 Not linked to another device</option>' +
+                others.map(d => `<option value="${d.key}">${(d.name||d.type||'device')} — ${d.ip}${d.mac?(' ('+d.mac+')'):''}</option>`).join('');
+            sel.value = dev.link || '';
+        }
+
+        // ---- photo ----
+        function loadPhoto(key, dev){
+            const img = document.getElementById('device-photo');
+            const ph = document.getElementById('photo-placeholder');
+            const rm = document.getElementById('photo-remove');
+            document.getElementById('photo-status').innerText = '';
+            if(key && dev && dev.has_photo){
+                img.src = '/api/devices/'+encodeURIComponent(key)+'/photo?t='+Date.now();
+                img.classList.remove('hidden'); ph.classList.add('hidden'); rm.classList.remove('hidden');
+            } else {
+                img.classList.add('hidden'); ph.classList.remove('hidden'); rm.classList.add('hidden');
+            }
+        }
+        async function uploadPhoto(){
+            if(!CURRENT_KEY) { document.getElementById('photo-status').innerText='Name/identify the device first'; return; }
+            const inp = document.getElementById('photo-input');
+            if(!inp.files || !inp.files[0]) return;
+            const fd = new FormData(); fd.append('photo', inp.files[0]);
+            document.getElementById('photo-status').innerText = 'Uploading…';
+            try {
+                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/photo', { method:'POST', body: fd })).json();
+                if(r.ok){
+                    const img=document.getElementById('device-photo');
+                    img.src='/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/photo?t='+Date.now();
+                    img.classList.remove('hidden'); document.getElementById('photo-placeholder').classList.add('hidden'); document.getElementById('photo-remove').classList.remove('hidden');
+                    document.getElementById('photo-status').innerText='Saved'; loadDevices();
+                } else document.getElementById('photo-status').innerText = r.error||'Failed';
+            } catch(e){ document.getElementById('photo-status').innerText='Failed'; }
+            inp.value='';
+        }
+        async function removePhoto(){
+            if(!CURRENT_KEY) return;
+            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/photo', { method:'DELETE' });
+            loadPhoto(CURRENT_KEY, null); loadDevices();
+        }
+
+        // ---- Uptime Kuma ----
+        async function loadKuma(key, dev){
+            const sec = document.getElementById('kuma-section');
+            // available for any real device; auto-create (in Settings) stays scoped to watched/named
+            if(!key || !dev){ sec.style.display = 'none'; return; }
+            sec.style.display = '';
+            document.getElementById('kuma-token').value = '';
+            document.getElementById('kuma-pushurl').innerText = '';
+            try {
+                const k = await (await fetch('/api/devices/'+encodeURIComponent(key)+'/kuma')).json();
+                document.getElementById('kuma-health').value = k.health_url || '';
+                document.getElementById('kuma-token').value = k.token || '';
+                document.getElementById('kuma-pushurl').innerText = k.push_url ? ('Push URL: ' + k.push_url) : '';
+                document.getElementById('kuma-monitor').checked = (k.monitor_id || 0) > 0;
+                const st = document.getElementById('kuma-status');
+                st.className = 'text-xs mt-1 text-slate-500';
+                st.innerText = (k.monitor_id || 0) > 0 ? ('Auto-managed · Kuma monitor #' + k.monitor_id) : '';
+            } catch(e){}
+        }
+        async function toggleKumaMonitor(){
+            if(!CURRENT_KEY) return;
+            const cb = document.getElementById('kuma-monitor');
+            const st = document.getElementById('kuma-status');
+            const action = cb.checked ? 'create' : 'remove';
+            st.className = 'text-xs mt-1 text-slate-500';
+            st.innerText = cb.checked ? 'Creating monitor in Kuma…' : 'Removing monitor…';
+            try {
+                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/kuma', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action }) })).json();
+                if(r.ok){ st.className='text-xs mt-1 text-emerald-600'; st.innerText = action==='create' ? ('✓ Monitor #'+r.monitor_id+' created — Kuma is now tracking it') : '✓ Monitor removed'; }
+                else { st.className='text-xs mt-1 text-red-600'; st.innerText = '⚠ '+(r.error||'failed'); cb.checked = !cb.checked; }
+                loadKuma(CURRENT_KEY, DEV_BY_KEY[CURRENT_KEY]); loadDevices();
+            } catch(e){ st.className='text-xs mt-1 text-red-600'; st.innerText='Error: '+e; cb.checked = !cb.checked; }
+        }
+        async function saveKuma(){
+            if(!CURRENT_KEY) return;
+            const token = document.getElementById('kuma-token').value;
+            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/kuma', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token }) });
+            loadKuma(CURRENT_KEY, DEV_BY_KEY[CURRENT_KEY]); loadDevices();
+        }
+        async function toggleWatch(){
+            if(!CURRENT_KEY) return;
+            const watch = document.getElementById('edit-watch').checked;
+            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ watch }) });
+            loadDevices();   // refresh the 🔔 indicator
+        }
+
+        // ---- credentials ----
+        function setCredFields(u, p, n){
+            document.getElementById('cred-user').value = u || '';
+            document.getElementById('cred-pass').value = p || '';
+            document.getElementById('cred-pass').type = 'password';
+            document.getElementById('cred-notes').value = n || '';
+            document.getElementById('cred-status').innerText = '';
+        }
+        async function loadCreds(key){
+            const sec = document.getElementById('cred-section');
+            setCredFields('', '', '');
+            if(!key){ sec.style.display = 'none'; return; }   // no device at an empty address
+            sec.style.display = '';
+            try {
+                const c = await (await fetch('/api/devices/'+encodeURIComponent(key)+'/credentials')).json();
+                setCredFields(c.username, c.password, c.notes);
+            } catch(e){}
+        }
+        function toggleCredPass(){
+            const f = document.getElementById('cred-pass');
+            f.type = f.type === 'password' ? 'text' : 'password';
+            document.getElementById('cred-eye').innerText = f.type === 'password' ? '👁' : '🙈';
+        }
+        async function copyCred(id){
+            const v = document.getElementById(id).value;
+            try { await navigator.clipboard.writeText(v); flashCred('Copied'); } catch(e){ flashCred('Copy failed'); }
+        }
+        function flashCred(msg, ok=true){
+            const s = document.getElementById('cred-status');
+            s.className = 'text-xs ' + (ok ? 'text-emerald-600' : 'text-red-600');
+            s.innerText = msg;
+            setTimeout(() => { s.innerText = ''; }, 2500);
+        }
+        async function saveCreds(){
+            if(!CURRENT_KEY) return;
+            const body = {
+                username: document.getElementById('cred-user').value,
+                password: document.getElementById('cred-pass').value,
+                notes: document.getElementById('cred-notes').value
+            };
+            try {
+                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/credentials', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })).json();
+                flashCred(r.has_credentials ? 'Saved ✓' : 'Cleared');
+                loadDevices();   // refresh the 🔑 indicator on the grid
+            } catch(e){ flashCred('Save failed', false); }
+        }
+        async function clearCreds(){
+            setCredFields('', '', '');
+            if(!CURRENT_KEY) return;
+            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/credentials', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({}) });
+            flashCred('Cleared'); loadDevices();
+        }
+
+        // ---- settings / scan ----
+        async function openSetup(){
+            document.getElementById('setup-modal').classList.remove('hidden');
+            try {
+                const c = await (await fetch('/api/config')).json();
+                if(c.alerts){
+                    document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic || '';
+                    document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands !== false;
+                    document.getElementById('setup-notify-online').checked = !!c.alerts.notify_online;
+                    renderCatAlerts(c.alerts.categories);
+                }
+                if(c.scan){ document.getElementById('setup-deep-on-new').checked = !!c.scan.deep_on_new; document.getElementById('setup-discovery').checked = c.scan.discovery !== false; }
+                if(c.integrations && c.integrations.kuma){
+                    const k = c.integrations.kuma;
+                    document.getElementById('setup-kuma-url').value = k.base_url || '';
+                    document.getElementById('kuma-open').href = k.base_url || '#';
+                    document.getElementById('setup-kuma-user').value = k.username || '';
+                    document.getElementById('setup-kuma-pass').placeholder = k.username ? 'password saved — leave blank to keep' : 'Kuma admin password';
+                }
+            } catch(e){}
+        }
+        function closeSetup(){ document.getElementById('setup-modal').classList.add('hidden'); }
+
+        const CAT_ALERT_ORDER = ['camera','nvr','network','internet-ap','router','printer','nas','voip','solar','media','iot','pc','server','unknown'];
+        function catRuleToVal(rule){
+            if(!rule) return 'default';
+            const off=!!rule.offline, on=!!rule.online;
+            if(!off && !on) return 'off';
+            if(off && !on) return 'offline';
+            return 'both';
+        }
+        function renderCatAlerts(cats){
+            cats = cats || {};
+            const opt=(v,sel,label)=>`<option value="${v}" ${sel===v?'selected':''}>${label}</option>`;
+            document.getElementById('cat-alerts').innerHTML = CAT_ALERT_ORDER.map(c=>{
+                const sel = catRuleToVal(cats[c]);
+                return `<div class="flex items-center justify-between gap-2">
+                    <span class="text-sm">${catIcon[c]||'•'} ${catLabel[c]||c}</span>
+                    <select data-cat="${c}" class="cat-sel p-1.5 bg-slate-50 border rounded-lg text-xs">
+                        ${opt('default',sel,'Default')}${opt('off',sel,'Off')}${opt('offline',sel,'Offline')}${opt('both',sel,'Offline + Online')}
+                    </select></div>`;
+            }).join('');
+        }
+        function collectCatAlerts(){
+            const map={};
+            document.querySelectorAll('#cat-alerts .cat-sel').forEach(s=>{
+                const c=s.dataset.cat, v=s.value;
+                if(v==='off') map[c]={offline:false,online:false};
+                else if(v==='offline') map[c]={offline:true,online:false};
+                else if(v==='both') map[c]={offline:true,online:true};
+            });
+            return map;
+        }
+
+        async function syncKumaTags(){
+            const res = document.getElementById('kuma-tag-result');
+            res.className = 'text-xs ml-2 text-slate-500'; res.innerText = 'Tagging monitors…';
+            try {
+                const r = await (await fetch('/api/kuma/sync-tags',{method:'POST'})).json();
+                res.className = 'text-xs ml-2 ' + (r.ok ? 'text-emerald-600' : 'text-red-600');
+                res.innerText = r.ok ? ('✓ tagged ' + r.tagged + ' monitor(s)') : ('⚠ ' + (r.error||'failed'));
+            } catch(e){ res.className='text-xs ml-2 text-red-600'; res.innerText='Error: '+e; }
+        }
+        async function testKuma(){
+            const res = document.getElementById('kuma-test-result');
+            const body = { username: document.getElementById('setup-kuma-user').value, password: document.getElementById('setup-kuma-pass').value };
+            res.className = 'text-xs mt-1 text-slate-500'; res.innerText = 'Testing Kuma login…';
+            // persist URL/user first so the server uses the right base
+            await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kuma_base_url:document.getElementById('setup-kuma-url').value, kuma_username:body.username})});
+            try {
+                const r = await (await fetch('/api/kuma/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+                res.className = 'text-xs mt-1 ' + (r.ok ? 'text-emerald-600' : 'text-red-600');
+                res.innerText = r.ok ? ('✅ Connected to Kuma ' + (r.version||'')) : ('⚠ ' + (r.error||'failed'));
+            } catch(e){ res.className='text-xs mt-1 text-red-600'; res.innerText='Error: '+e; }
+        }
+        async function testNtfy(){
+            const topic = document.getElementById('setup-ntfy').value.trim();
+            const res = document.getElementById('ntfy-test-result');
+            if(!topic){ res.className='text-xs mt-2 text-amber-600'; res.innerText='Enter a topic name first.'; return; }
+            res.className='text-xs mt-2 text-slate-500'; res.innerText='Sending test to “'+topic+'” …';
+            try {
+                const r = await (await fetch('/api/test-ntfy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic})})).json();
+                res.className='text-xs mt-2 '+(r.ok?'text-emerald-600':'text-red-600');
+                res.innerText=(r.ok?'✅ ':'⚠ ')+(r.detail||r.error||'');
+            } catch(e){ res.className='text-xs mt-2 text-red-600'; res.innerText='Error: '+e; }
+        }
+
+        let LAST_SCAN_TS = null;
+        let WAS_SCANNING = false;
+
+        function agoText(ts){
+            const s = Math.max(0, Math.floor(Date.now()/1000 - ts));
+            if(s < 10) return 'just now';
+            if(s < 60) return s + 's ago';
+            if(s < 3600) return Math.floor(s/60) + 'm ago';
+            if(s < 86400) return Math.floor(s/3600) + 'h ago';
+            return Math.floor(s/86400) + 'd ago';
+        }
+        function applyStatus(data){
+            // Format in the BROWSER's timezone (the server runs in UTC) and show a
+            // relative "x ago" so it's clear the page is live.
+            const el = document.getElementById('stat-last-scan');
+            if(data.last_scan_ts){
+                const t = new Date(data.last_scan_ts*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+                el.innerHTML = t + ' <span class="text-blue-200 text-xs font-normal">(' + agoText(data.last_scan_ts) + ')</span>';
+            } else {
+                el.innerText = data.last_scan || '--:--:--';
+            }
+            document.getElementById('setup-interval').value = data.scan_interval_min;
+            document.getElementById('setup-network').value = data.target_network;
+            const ss = document.getElementById('system-status');
+            if(data.is_scanning){
+                ss.innerHTML = '<span class="scanning">⟳ '+(data.progress||"Scanning network…")+'</span>';
+                ss.className = "text-xs mt-1 italic";
+            } else {
+                const site = (data.site && data.site.name) ? data.site.name+' · ' : '';
+                ss.innerHTML = '<span class="inline-block w-2 h-2 rounded-full bg-green-400 mr-1 align-middle animate-pulse"></span>'
+                    + site + 'Live · auto-updates every scan';
+                ss.className = "text-slate-400 text-xs mt-1 italic";
+            }
+        }
+
+        // Single poller: refreshes the device grid the moment a scan completes,
+        // and polls faster while a scan is running.
+        async function pollStatus(){
+            let data = null;
+            try { data = await (await fetch('/api/status')).json(); } catch(e){}
+            if(data){
+                applyStatus(data);
+                if(data.last_scan_ts && data.last_scan_ts !== LAST_SCAN_TS){
+                    LAST_SCAN_TS = data.last_scan_ts;
+                    loadDevices();               // new scan finished → repaint live
+                }
+                WAS_SCANNING = data.is_scanning;
+            }
+            return data;
+        }
+        let TICKS = 0;
+        async function tick(){
+            const data = await pollStatus();
+            if(++TICKS % 15 === 0) loadDevices();   // ~60s safety-net resync
+            setTimeout(tick, (data && data.is_scanning) ? 1500 : 4000);
+        }
+
+        async function quickScan(){ await fetch('/api/trigger',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'quick',target:SELECTED})}); setTimeout(refresh, 1500); }
+        async function deepScan(){ if(!confirm('Deep scan all ports + service/version on '+SELECTED+'? This can take several minutes.')) return; await fetch('/api/trigger',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'deep',target:SELECTED})}); setTimeout(refresh, 2000); }
+
+        async function saveSetup(){
+            await fetch('/api/setup',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+                interval: document.getElementById('setup-interval').value,
+                network: document.getElementById('setup-network').value,
+                ntfy_topic: document.getElementById('setup-ntfy').value,
+                allow_commands: document.getElementById('setup-allow-commands').checked,
+                notify_online: document.getElementById('setup-notify-online').checked,
+                categories: collectCatAlerts(),
+                deep_on_new: document.getElementById('setup-deep-on-new').checked,
+                discovery: document.getElementById('setup-discovery').checked,
+                kuma_base_url: document.getElementById('setup-kuma-url').value,
+                kuma_username: document.getElementById('setup-kuma-user').value,
+                kuma_password: document.getElementById('setup-kuma-pass').value
+            })});
+            closeSetup(); refresh();
+        }
+
+        // Esc closes whichever modal is open
+        document.addEventListener('keydown', (e) => {
+            if(e.key !== 'Escape') return;
+            if(!document.getElementById('modal').classList.contains('hidden')) closeModal();
+            else if(!document.getElementById('setup-modal').classList.contains('hidden')) closeSetup();
+        });
+
+        function refresh(){ pollStatus(); loadDevices(); }
+        // preload ntfy settings
+        fetch('/api/config').then(r=>r.json()).then(c=>{ if(c.alerts){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands!==false; document.getElementById('setup-notify-online').checked = !!c.alerts.notify_online; } }).catch(()=>{});
+        loadDevices();
+        tick();
+    </script>
+</body>
+</html>

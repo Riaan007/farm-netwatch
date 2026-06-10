@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farm Netwatch · Deployment Wizard</title>
+    <link rel="stylesheet" href="/app.css">
+    <style>.step{display:none}.step.active{display:block}</style>
+</head>
+<body class="bg-slate-100 min-h-screen font-sans text-slate-900 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden">
+        <div class="p-6 bg-slate-900 text-white">
+            <h1 class="text-2xl font-bold tracking-tight">Farm Netwatch Setup</h1>
+            <p class="text-slate-400 text-xs mt-1">Configure this site &mdash; takes about a minute.</p>
+            <div id="dots" class="flex gap-2 mt-4"></div>
+        </div>
+
+        <div class="p-6">
+            <!-- Step 1: Site -->
+            <div class="step active" data-step="0">
+                <h2 class="text-lg font-bold mb-4">1 · Site details</h2>
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Site name</label>
+                <input id="site-name" class="w-full p-3 bg-slate-50 border rounded-lg mb-4" placeholder="e.g. Main Farm">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Location / note</label>
+                <input id="site-loc" class="w-full p-3 bg-slate-50 border rounded-lg" placeholder="Main farm office">
+            </div>
+
+            <!-- Step 2: Targets -->
+            <div class="step" data-step="1">
+                <h2 class="text-lg font-bold mb-1">2 · What to scan</h2>
+                <p class="text-xs text-slate-500 mb-4">Local subnets are detected automatically and give the richest data (MAC + vendor). You can add remote subnets reachable through your router (no MAC there, but ports + names still work).</p>
+                <div id="targets" class="space-y-2 mb-3"></div>
+                <button onclick="addTarget('','Net')" class="text-blue-600 text-sm font-bold">+ Add another subnet</button>
+            </div>
+
+            <!-- Step 3: Scan settings -->
+            <div class="step" data-step="2">
+                <h2 class="text-lg font-bold mb-4">3 · Scan schedule</h2>
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Scan frequency</label>
+                <select id="interval" class="w-full p-3 bg-slate-50 border rounded-lg mb-4">
+                    <option value="5">Every 5 minutes</option>
+                    <option value="10">Every 10 minutes</option>
+                    <option value="15" selected>Every 15 minutes</option>
+                    <option value="30">Every 30 minutes</option>
+                    <option value="60">Every 60 minutes</option>
+                </select>
+                <label class="flex items-center gap-3 mb-3"><input id="online" type="checkbox" checked class="w-5 h-5"> <span class="text-sm">Allow internet lookups (vendor names + web banners). Turn off for air-gapped sites.</span></label>
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Keep uptime history for</label>
+                <select id="history-days" class="w-full p-3 bg-slate-50 border rounded-lg">
+                    <option value="30">30 days</option>
+                    <option value="90" selected>90 days</option>
+                    <option value="365">1 year</option>
+                </select>
+            </div>
+
+            <!-- Step 4: Alerts -->
+            <div class="step" data-step="3">
+                <h2 class="text-lg font-bold mb-1">4 · Push alerts (optional)</h2>
+                <p class="text-xs text-slate-500 mb-4">Get a phone notification when a new device joins or a known device goes offline. Install the free <b>ntfy</b> app, pick any unique topic name, and subscribe to it.</p>
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">ntfy server</label>
+                <input id="ntfy-server" class="w-full p-3 bg-slate-50 border rounded-lg mb-3 font-mono text-sm" value="https://ntfy.sh">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-1">Topic (blank = alerts off)</label>
+                <input id="ntfy-topic" class="w-full p-3 bg-slate-50 border rounded-lg mb-3 font-mono text-sm" placeholder="farm-netwatch-3f9a2">
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-2 text-sm"><input id="notify-new" type="checkbox" checked class="w-4 h-4"> New devices</label>
+                    <label class="flex items-center gap-2 text-sm"><input id="notify-offline" type="checkbox" checked class="w-4 h-4"> Offline devices</label>
+                </div>
+            </div>
+
+            <!-- Step 5: VPN -->
+            <div class="step" data-step="4">
+                <h2 class="text-lg font-bold mb-1">5 · Remote access VPN</h2>
+                <p class="text-xs text-slate-500 mb-4">Optional &mdash; lets you reach the cameras &amp; gear from anywhere to test or set them up.</p>
+                <div class="space-y-2">
+                    <label class="flex items-start gap-3 p-3 border rounded-lg cursor-pointer"><input type="radio" name="vpn" value="none" checked class="mt-1"> <span><b>None</b><br><span class="text-xs text-slate-500">LAN access only.</span></span></label>
+                    <label class="flex items-start gap-3 p-3 border rounded-lg cursor-pointer"><input type="radio" name="vpn" value="tailscale" class="mt-1"> <span><b>Tailscale</b> <span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded">easiest</span><br><span class="text-xs text-slate-500">Zero config, works behind the router with no port forwarding. You'll run one login command after setup.</span></span></label>
+                    <label class="flex items-start gap-3 p-3 border rounded-lg cursor-pointer"><input type="radio" name="vpn" value="wireguard" class="mt-1"> <span><b>WireGuard</b> (wg-easy)<br><span class="text-xs text-slate-500">Self-hosted with its own admin page on port 51821. Needs one UDP port forwarded on your internet router.</span></span></label>
+                </div>
+                <div id="vpn-note" class="mt-4 text-xs bg-slate-50 border rounded-lg p-3 hidden"></div>
+            </div>
+
+            <!-- Done -->
+            <div class="step" data-step="5">
+                <h2 class="text-lg font-bold mb-2">Ready to go 🚀</h2>
+                <p id="summary" class="text-sm text-slate-600"></p>
+                <div id="finish-msg" class="mt-4 text-sm"></div>
+            </div>
+        </div>
+
+        <div class="p-4 bg-slate-50 flex justify-between">
+            <button id="back" onclick="prev()" class="px-4 py-2 text-slate-500 font-bold text-sm invisible">Back</button>
+            <button id="next" onclick="next()" class="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm">Next</button>
+        </div>
+    </div>
+
+    <script>
+        const STEPS = 6;
+        let step = 0;
+
+        function addTarget(cidr, label){
+            const wrap = document.getElementById('targets');
+            const row = document.createElement('div');
+            row.className = 'flex gap-2 target-row';
+            row.innerHTML = `<input class="t-cidr flex-grow p-2 bg-slate-50 border rounded-lg font-mono text-sm" placeholder="192.168.88.0/24" value="${cidr||''}">
+                <input class="t-label w-28 p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Label" value="${label||''}">
+                <button onclick="this.parentNode.remove()" class="px-3 text-red-500 font-bold">&times;</button>`;
+            wrap.appendChild(row);
+        }
+
+        function renderDots(){
+            document.getElementById('dots').innerHTML = Array.from({length:STEPS},(_,i)=>`<div class="h-1.5 flex-grow rounded-full ${i<=step?'bg-blue-500':'bg-slate-700'}"></div>`).join('');
+        }
+        function show(){
+            document.querySelectorAll('.step').forEach(s=>s.classList.toggle('active', +s.dataset.step===step));
+            document.getElementById('back').style.visibility = step===0 ? 'hidden' : 'visible';
+            document.getElementById('next').innerText = step===STEPS-1 ? 'Finish & Start' : (step===STEPS-2 ? 'Review' : 'Next');
+            if(step===STEPS-1) buildSummary();
+            renderDots();
+        }
+        function prev(){ if(step>0){ step--; show(); } }
+        function next(){ if(step<STEPS-1){ step++; show(); } else { finish(); } }
+
+        function collect(){
+            const targets = [...document.querySelectorAll('.target-row')].map(r=>({
+                cidr: r.querySelector('.t-cidr').value.trim(),
+                label: r.querySelector('.t-label').value.trim()||'Net',
+                local: 'auto'
+            })).filter(t=>t.cidr);
+            return {
+                site: { name: document.getElementById('site-name').value, location: document.getElementById('site-loc').value },
+                targets,
+                scan: { interval_min: +document.getElementById('interval').value, online_lookup: document.getElementById('online').checked, history_days: +document.getElementById('history-days').value },
+                alerts: { ntfy_server: document.getElementById('ntfy-server').value, ntfy_topic: document.getElementById('ntfy-topic').value.trim(), notify_new: document.getElementById('notify-new').checked, notify_offline: document.getElementById('notify-offline').checked },
+                vpn: { mode: document.querySelector('input[name=vpn]:checked').value }
+            };
+        }
+
+        function buildSummary(){
+            const c = collect();
+            document.getElementById('summary').innerHTML =
+                `<b>${c.site.name||'(unnamed site)'}</b><br>`+
+                `Scanning: ${c.targets.map(t=>t.cidr).join(', ')||'(none!)'}<br>`+
+                `Every ${c.scan.interval_min} min · alerts: ${c.alerts.ntfy_topic||'off'} · VPN: ${c.vpn.mode}`;
+        }
+
+        async function finish(){
+            const c = collect();
+            if(!c.targets.length){ document.getElementById('finish-msg').innerHTML='<span class="text-red-600">Add at least one subnet to scan (go back to step 2).</span>'; return; }
+            document.getElementById('finish-msg').innerText = 'Saving & starting first scan...';
+            const r = await fetch('/api/wizard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});
+            const j = await r.json();
+            if(j.ok){
+                let extra='';
+                if(c.vpn.mode==='tailscale') extra = '<div class="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">Tailscale: run <code class="bg-white px-1">docker exec netwatch-tailscale tailscale up --advertise-routes='+c.targets.map(t=>t.cidr).join(',')+'</code> then open the login URL it prints.</div>';
+                if(c.vpn.mode==='wireguard') extra = '<div class="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">WireGuard admin UI: <a class="underline text-blue-600" href="http://'+location.hostname+':51821">http://'+location.hostname+':51821</a> &mdash; forward UDP 51820 on your router.</div>';
+                document.getElementById('finish-msg').innerHTML = '<span class="text-green-700 font-bold">Done! Opening dashboard…</span>'+extra;
+                setTimeout(()=>{ location.href='/'; }, c.vpn.mode==='none'?1500:6000);
+            } else {
+                document.getElementById('finish-msg').innerHTML = '<span class="text-red-600">'+(j.error||'Error saving')+'</span>';
+            }
+        }
+
+        document.querySelectorAll('input[name=vpn]').forEach(r=>r.addEventListener('change',()=>{
+            const v = document.querySelector('input[name=vpn]:checked').value;
+            const note = document.getElementById('vpn-note');
+            if(v==='none'){ note.classList.add('hidden'); return; }
+            note.classList.remove('hidden');
+            note.innerHTML = v==='tailscale'
+                ? 'After finishing, run the printed <code>tailscale up</code> command once and approve the device in your Tailscale admin. Then your phone/laptop on Tailscale can reach every farm device by its LAN IP.'
+                : 'After finishing, open the wg-easy admin page (port 51821), add a client, scan the QR code in the WireGuard app, and forward UDP 51820 on your internet router to this Pi.';
+        }));
+
+        // init
+        fetch('/api/suggest-network').then(r=>r.json()).then(j=>{
+            if(j.networks && j.networks.length) j.networks.forEach((n,i)=>addTarget(n, i===0?'Main':'Net'+i));
+            else addTarget('192.168.88.0/24','Main');
+        }).catch(()=>addTarget('192.168.88.0/24','Main'));
+        // prefill from existing config if re-running
+        fetch('/api/config').then(r=>r.json()).then(c=>{
+            if(c.site){ document.getElementById('site-name').value=c.site.name||''; document.getElementById('site-loc').value=c.site.location||''; }
+        }).catch(()=>{});
+        show();
+    </script>
+</body>
+</html>

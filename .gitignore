@@ -1,0 +1,6 @@
+data/
+*.pyc
+__pycache__/
+.env
+app/static/app.css
+app/data/oui.tsv
