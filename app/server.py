@@ -205,7 +205,8 @@ def api_devices():
     for d in devices:                      # flag only; never expose the secret here
         d["has_credentials"] = d.get("key") in have
         d["has_photo"] = os.path.exists(_photo_path(d.get("key", "")))
-        d["has_kuma"] = bool(scanner.registry.get(d.get("key", ""), {}).get("kuma_token"))
+        _kreg = scanner.registry.get(d.get("key", ""), {})
+        d["has_kuma"] = bool(_kreg.get("kuma_monitor_id") or _kreg.get("kuma_token"))
     return jsonify({
         "targets": cfg["targets"],
         "devices": devices,
@@ -307,12 +308,11 @@ def api_kuma(key):
                 if not dev:
                     return jsonify({"ok": False, "error": "device not currently visible"}), 404
                 name = scanner._kuma_name(dev)
-                interval = max(60, int(cfg["scan"]["interval_min"]) * 60)
-                res = kuma.provision(base, user, pw, name, interval, dev.get("category"))
+                # Kuma pings the device directly every 60s -> smooth graph + true uptime
+                res = kuma.provision(base, user, pw, name, dev["ip"], 60, dev.get("category"))
                 if res.get("ok"):
-                    scanner.set_device_meta(key, kuma_token=res["token"],
-                                            kuma_monitor_id=res["monitor_id"])
-                    kuma.push(base, res["token"], dev.get("online", True), name, dev.get("rtt"))
+                    scanner.set_device_meta(key, kuma_monitor_id=res["monitor_id"],
+                                            kuma_ip=dev["ip"])
                     return jsonify({"ok": True, "monitor_id": res["monitor_id"]})
                 return jsonify({"ok": False, "error": res.get("error", "create failed")})
             # remove
@@ -352,6 +352,32 @@ def api_kuma_sync_tags():
         cat = (devs.get(key) or {}).get("category") or reg.get("category") or "unknown"
         items.append((mid, cat))
     return jsonify(kuma.tag_monitors(ki["base_url"], user, pw, items))
+
+
+@app.route("/api/kuma/repair", methods=["POST"])
+def api_kuma_repair():
+    """Convert every existing monitor to a 60s PING monitor pointed at the device's
+    current IP (fixes the choppy 30-min push graphs)."""
+    cfg = config.load()
+    ki = cfg["integrations"]["kuma"]
+    user = ki.get("username", "")
+    pw = creds.get("@kuma").get("password", "")
+    if not (ki.get("base_url") and user and pw):
+        return jsonify({"ok": False, "error": "Set the Kuma URL, username and password first"})
+    devs = {d["key"]: d for d in scanner.get_devices()}
+    items = []
+    for key, reg in scanner.registry.items():
+        mid = reg.get("kuma_monitor_id")
+        ip = (devs.get(key) or {}).get("ip")
+        if mid and ip:
+            items.append((mid, ip))
+    res = kuma.ensure_ping(ki["base_url"], user, pw, items)
+    if res.get("ok"):
+        for key, reg in scanner.registry.items():
+            if reg.get("kuma_monitor_id"):
+                reg["kuma_ip"] = (devs.get(key) or {}).get("ip", reg.get("kuma_ip"))
+        scanner.save_registry()
+    return jsonify(res)
 
 
 @app.route("/api/kuma/test", methods=["POST"])

@@ -62,8 +62,9 @@ device drops offline.
   marked offline and re-added as a new device. An occasional ARP miss won't fork a
   device either, and an IP-only host that later reveals a MAC is merged in place.
 - **Uptime Kuma integration** — optionally run [Uptime Kuma](https://github.com/louislam/uptime-kuma)
-  in the same stack and feed it Netwatch's per-device status (push) or let it poll
-  Netwatch health endpoints (pull) for polished history graphs & status pages.
+  in the same stack; tick "Monitor in Uptime Kuma" on a device and Netwatch
+  auto-creates a 60s **ping** monitor (tagged by category) for polished uptime
+  graphs & status pages.
 - **Multi-subnet** — scan several networks from one Pi; switch between them in
   the header.
 - **Remote access VPN** (optional) — bring up **Tailscale** (zero-config) or
@@ -173,13 +174,16 @@ Kuma**, set the base URL (`http://localhost:3001`), enter the Kuma admin
 **username + password**, and hit **Test**. Then open a device and tick
 **"Monitor in Uptime Kuma"**.
 
-Netwatch then **creates the Kuma Push monitor for you** (via Kuma's Socket.IO API),
-stores the monitor ID + token, and pushes up/down + latency every scan. Kuma does
-the rest — uptime graphs, status pages, and its own notifications. Untick to delete
-the monitor. (Monitor heartbeat interval is set to your scan interval automatically.)
+Netwatch then **creates a Kuma ping monitor for you** (via Kuma's Socket.IO API)
+pointed at the device's IP, and stores the monitor ID. **Kuma pings the device
+directly every 60 s**, so you get a smooth graph and accurate uptime — Netwatch
+just keeps the monitor's IP in sync if the device's address changes, and deletes
+the monitor when you untick. (A *ping* monitor is used rather than a 30-min push,
+which would otherwise flap between scans.)
 
 Monitors are created **only for devices you tick** — never automatically during a
-scan. Netwatch pushes status each scan for the devices that have a monitor.
+scan. If you have monitors left over from an older version, **Settings → "Fix
+monitors → ping (60s)"** converts them in place.
 
 Each monitor is **tagged with its device category** (Camera, Network, Printer,
 Server, …) so you can filter/group on a Kuma status page. New monitors are tagged

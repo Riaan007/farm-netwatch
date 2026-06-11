@@ -533,7 +533,7 @@ class Scanner:
             self.status["last_scan"] = _now_str()
             self.status["last_scan_ts"] = int(time.time())
         self._save_state()
-        self._kuma_push(cfg, result)   # only push devices you've selected (have a monitor)
+        self._kuma_sync(cfg, result)   # keep Kuma monitors pointed at the right IP / push manual ones
         try:
             history.prune(cfg["scan"]["history_days"])
         except Exception:
@@ -544,21 +544,38 @@ class Scanner:
         label = dev.get("name") or dev.get("type") or "device"
         return f"{label} ({dev.get('ip', '')})"[:150]
 
-    def _kuma_push(self, cfg, devices):
-        """Push each tokened device's status to its Uptime Kuma push monitor.
-        A device having a token IS the opt-in, so no global enable gate here."""
+    def _kuma_sync(self, cfg, devices):
+        """Auto (ping) monitors: Kuma pings the device itself, so we only repoint
+        the monitor when the device's IP changes. Manual push-token monitors (no
+        monitor_id): push status each scan as before."""
         ki = cfg.get("integrations", {}).get("kuma", {})
-        if not ki.get("base_url"):
+        base = ki.get("base_url")
+        if not base:
             return
+        host_changes = []   # (monitor_id, new_ip, key) for ping monitors that moved
         for key, dev in devices.items():
-            token = self.registry.get(key, {}).get("kuma_token")
-            if not token:
-                continue
-            up = dev.get("online", False)
-            label = dev.get("name") or dev.get("type") or dev.get("ip", "")
-            kuma.push(ki["base_url"], token, up,
-                      msg=f"{label} {dev.get('ip', '')}".strip(),
-                      ping_ms=dev.get("rtt") if up else None)
+            reg = self.registry.get(key, {})
+            mid, token = reg.get("kuma_monitor_id"), reg.get("kuma_token")
+            if mid:
+                ip = dev.get("ip")
+                if ip and ip != reg.get("kuma_ip"):
+                    host_changes.append((mid, ip, key))
+            elif token:   # manual push monitor
+                up = dev.get("online", False)
+                label = dev.get("name") or dev.get("type") or dev.get("ip", "")
+                kuma.push(base, token, up, msg=f"{label} {dev.get('ip', '')}".strip(),
+                          ping_ms=dev.get("rtt") if up else None)
+        if host_changes:
+            user = ki.get("username", "")
+            pw = creds.get("@kuma").get("password", "")
+            if user and pw:
+                try:
+                    kuma.ensure_ping(base, user, pw, [(m, ip) for m, ip, _ in host_changes])
+                    for m, ip, key in host_changes:
+                        self.registry.setdefault(key, {})["kuma_ip"] = ip
+                    self.save_registry()
+                except Exception as e:
+                    print("kuma host-sync error:", e, flush=True)
 
     # ---- public api ----------------------------------------------------
     def trigger(self, mode="quick", target=None, hosts=None):
@@ -578,7 +595,7 @@ class Scanner:
 
     def set_device_meta(self, key, name=None, category=None, type_label=None,
                         watch=None, serial=None, model=None, link=None, kuma_token=None,
-                        kuma_monitor_id=None):
+                        kuma_monitor_id=None, kuma_ip=None):
         reg = self.registry.get(key, {})
         for field, val in (("name", name), ("category", category), ("type", type_label),
                            ("serial", serial), ("model", model)):
@@ -592,6 +609,8 @@ class Scanner:
             reg["kuma_token"] = kuma_token.strip()
         if kuma_monitor_id is not None:
             reg["kuma_monitor_id"] = kuma_monitor_id or 0
+        if kuma_ip is not None:
+            reg["kuma_ip"] = kuma_ip
         self.registry[key] = reg
         self.save_registry()
         with self.lock:

@@ -100,9 +100,10 @@ def _ensure_tag(sio, cache, label, color):
 
 
 def provision_many(base_url, user, pw, items, interval=60):
-    """items: [(key, monitor_name, category)]. category may be None.
-    Returns {key: {ok, monitor_id, token, error}}."""
-    items = [(it + (None,))[:3] if len(it) < 3 else it for it in items]
+    """Create a Kuma PING monitor per item (Kuma pings the device directly, which
+    gives a smooth graph + accurate uptime). items: [(key, name, ip, category)].
+    Returns {key: {ok, monitor_id, error}}."""
+    items = [tuple(it) + (None,) * (4 - len(it)) for it in items]
     try:
         sio, _ = _connect(base_url)
     except Exception as e:
@@ -113,12 +114,12 @@ def provision_many(base_url, user, pw, items, interval=60):
         ok, msg = _login(sio, user, pw)
         if not ok:
             return {k: {"ok": False, "error": msg} for k, *_ in items}
-        for key, name, category in items:
-            token = secrets.token_hex(16)
-            monitor = {"type": "push", "name": name, "interval": int(interval),
-                       "maxretries": 1, "retryInterval": int(interval), "resendInterval": 0,
+        for key, name, ip, category in items:
+            monitor = {"type": "ping", "name": name, "hostname": ip or "",
+                       "interval": int(interval), "maxretries": 1,
+                       "retryInterval": int(interval), "resendInterval": 0,
                        "upsideDown": False, "notificationIDList": {},
-                       "accepted_statuscodes": ["200-299"], "pushToken": token}
+                       "accepted_statuscodes": ["200-299"], "packetSize": 56}
             try:
                 add = sio.call("add", monitor, timeout=15)
             except Exception as e:
@@ -136,7 +137,7 @@ def provision_many(base_url, user, pw, items, interval=60):
                         sio.call("addMonitorTag", (tid, mid, ""), timeout=15)
                 except Exception:
                     pass        # tagging is best-effort; the monitor still works
-            out[key] = {"ok": True, "monitor_id": mid, "token": token}
+            out[key] = {"ok": True, "monitor_id": mid}
     finally:
         try:
             sio.disconnect()
@@ -145,9 +146,45 @@ def provision_many(base_url, user, pw, items, interval=60):
     return out
 
 
-def provision(base_url, user, pw, name, interval=60, category=None):
-    return provision_many(base_url, user, pw, [("_", name, category)], interval).get(
+def provision(base_url, user, pw, name, ip, interval=60, category=None):
+    return provision_many(base_url, user, pw, [("_", name, ip, category)], interval).get(
         "_", {"ok": False, "error": "unknown"})
+
+
+def ensure_ping(base_url, user, pw, items, interval=60):
+    """Make each monitor a PING monitor pointing at `ip`. Used to follow a device
+    that changed IP and to repair old push monitors. items: [(monitor_id, ip)]."""
+    try:
+        sio, _ = _connect(base_url)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    try:
+        ok, msg = _login(sio, user, pw)
+        if not ok:
+            return {"ok": False, "error": msg}
+        n = 0
+        for mid, ip in items:
+            if not (mid and ip):
+                continue
+            try:
+                mon = (sio.call("getMonitor", mid, timeout=15) or {}).get("monitor")
+                if not mon:
+                    continue
+                mon["type"] = "ping"
+                mon["hostname"] = ip
+                mon["interval"] = int(interval)
+                mon["retryInterval"] = int(interval)
+                r = sio.call("editMonitor", mon, timeout=15)
+                if r and r.get("ok"):
+                    n += 1
+            except Exception:
+                pass
+        return {"ok": True, "updated": n}
+    finally:
+        try:
+            sio.disconnect()
+        except Exception:
+            pass
 
 
 def tag_monitors(base_url, user, pw, items):

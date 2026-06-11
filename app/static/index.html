@@ -138,7 +138,11 @@
                     </div>
                     <p id="kuma-test-result" class="text-xs mt-1"></p>
                     <p class="text-[10px] text-slate-400 mt-1">Run it with <code>docker compose --profile kuma up -d</code>, create the Kuma admin account, and enter it above. Then open a device and tick <b>"Monitor in Uptime Kuma"</b> — Netwatch builds that monitor (tagged with its category) and pushes its status each scan. Only devices you tick are added.</p>
-                    <button onclick="syncKumaTags()" class="mt-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">🏷️ Tag existing monitors by category</button>
+                    <div class="mt-2 flex flex-wrap gap-2 items-center">
+                        <button onclick="repairKuma()" class="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-xs font-bold">🛠️ Fix monitors → ping (60s)</button>
+                        <button onclick="syncKumaTags()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">🏷️ Tag by category</button>
+                    </div>
+                    <span id="kuma-repair-result" class="text-xs"></span>
                     <span id="kuma-tag-result" class="text-xs ml-2"></span>
                 </div>
                 <div class="pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
@@ -275,7 +279,7 @@
                         <label class="text-xs font-bold text-slate-400 uppercase block mb-2">📈 Uptime Kuma</label>
                         <label class="flex items-center gap-2 text-sm bg-blue-50 border border-blue-200 rounded-lg p-2 cursor-pointer">
                             <input id="kuma-monitor" type="checkbox" class="w-4 h-4" onchange="toggleKumaMonitor()">
-                            <span><b>Monitor in Uptime Kuma</b> — auto-create the monitor &amp; push status each scan</span>
+                            <span><b>Monitor in Uptime Kuma</b> — Kuma pings this device every 60s (smooth uptime graph)</span>
                         </label>
                         <p id="kuma-status" class="text-xs mt-1"></p>
                         <details class="mt-2">
@@ -865,6 +869,15 @@
             return map;
         }
 
+        async function repairKuma(){
+            const res = document.getElementById('kuma-repair-result');
+            res.className = 'text-xs text-slate-500'; res.innerText = 'Converting monitors to 60s ping…';
+            try {
+                const r = await (await fetch('/api/kuma/repair',{method:'POST'})).json();
+                res.className = 'text-xs ' + (r.ok ? 'text-emerald-600' : 'text-red-600');
+                res.innerText = r.ok ? ('✓ ' + r.updated + ' monitor(s) now ping every 60s') : ('⚠ ' + (r.error||'failed'));
+            } catch(e){ res.className='text-xs text-red-600'; res.innerText='Error: '+e; }
+        }
         async function syncKumaTags(){
             const res = document.getElementById('kuma-tag-result');
             res.className = 'text-xs ml-2 text-slate-500'; res.innerText = 'Tagging monitors…';
