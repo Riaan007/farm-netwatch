@@ -78,19 +78,30 @@
         </div>
 
         <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div class="p-5 flex justify-between items-center border-b border-slate-100">
+            <div class="p-5 flex flex-wrap gap-3 justify-between items-center border-b border-slate-100">
                 <h2 class="text-sm font-bold text-slate-700 uppercase tracking-tight">Devices</h2>
-                <span id="device-count" class="text-xs text-slate-400"></span>
+                <div class="flex flex-wrap gap-2 items-center">
+                    <input id="dev-search" type="search" placeholder="Search name / IP / vendor…"
+                           oninput="devState.q=this.value;renderDevices()"
+                           class="p-2 bg-slate-50 border rounded-lg text-sm w-52">
+                    <select onchange="devState.group=this.value;renderDevices()"
+                            class="p-2 bg-slate-50 border rounded-lg text-sm">
+                        <option value="category" selected>Group: Category</option>
+                        <option value="status">Group: Status</option>
+                        <option value="none">Group: None</option>
+                    </select>
+                    <span id="device-count" class="text-xs text-slate-400"></span>
+                </div>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead>
-                        <tr class="text-left text-[10px] text-slate-400 uppercase border-b border-slate-100">
-                            <th class="px-5 py-2.5">Device</th>
-                            <th class="px-3 py-2.5">Category</th>
-                            <th class="px-3 py-2.5">IP</th>
-                            <th class="px-3 py-2.5">RTT</th>
-                            <th class="px-3 py-2.5">Last seen</th>
+                        <tr class="text-left text-[10px] text-slate-400 uppercase border-b border-slate-100 select-none">
+                            <th class="px-5 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('name')">Device <span id="s-name"></span></th>
+                            <th class="px-3 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('category')">Category <span id="s-category"></span></th>
+                            <th class="px-3 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('ip')">IP <span id="s-ip"></span></th>
+                            <th class="px-3 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('rtt')">RTT <span id="s-rtt"></span></th>
+                            <th class="px-3 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('last_seen')">Last seen <span id="s-last_seen"></span></th>
                             <th class="px-3 py-2.5"></th>
                         </tr>
                     </thead>
@@ -149,12 +160,90 @@
             }).join('') + '</div>';
         }
 
+        // ---- device table: search / sort / group --------------------------
+        const CAT_ORDER = ['camera','nvr','network','internet-ap','router','printer',
+                           'nas','voip','solar','media','iot','pc','server','unknown'];
+        const devState = { q: '', group: 'category', sort: 'status', dir: 1 };
+        let lastDevices = [], lastFetched = null;
+
+        function devName(d){ return d.name || d.hostname || d.vendor || 'Unknown device'; }
+
+        function ipNum(ip){
+            const p = (ip || '').split('.').map(Number);
+            return p.length === 4 && !p.some(isNaN) ? ((p[0]*256+p[1])*256+p[2])*256+p[3] : Infinity;
+        }
+
+        function setSort(k){
+            if (devState.sort === k) devState.dir = -devState.dir;
+            else { devState.sort = k; devState.dir = 1; }
+            renderDevices();
+        }
+
+        function devCmp(a, b){
+            const dir = devState.dir;
+            let va, vb;
+            switch (devState.sort) {
+                case 'name':      va = devName(a).toLowerCase(); vb = devName(b).toLowerCase(); break;
+                case 'category':  va = a.category || 'zzz'; vb = b.category || 'zzz'; break;
+                case 'ip':        va = ipNum(a.ip); vb = ipNum(b.ip); break;
+                case 'rtt':       va = a.rtt == null ? Infinity : a.rtt; vb = b.rtt == null ? Infinity : b.rtt; break;
+                case 'last_seen': va = a.online ? Infinity : (a.last_seen || 0); vb = b.online ? Infinity : (b.last_seen || 0); break;
+                default:          // initial view: offline first, then by name
+                    if ((a.online?1:0) !== (b.online?1:0)) return (a.online?1:0) - (b.online?1:0);
+                    return devName(a).localeCompare(devName(b));
+            }
+            return va < vb ? -dir : va > vb ? dir : 0;
+        }
+
+        function renderDevices(){
+            const q = devState.q.trim().toLowerCase();
+            const devs = lastDevices.filter(d => !q ||
+                [devName(d), d.ip, d.mac, d.vendor, d.category, d.type, d.hostname]
+                    .join(' ').toLowerCase().includes(q));
+            devs.sort(devCmp);
+
+            let html;
+            if (devState.group === 'none') {
+                html = devs.map(deviceRow).join('');
+            } else {
+                const keyFn = devState.group === 'status'
+                    ? d => (d.online ? 'online' : 'offline')
+                    : d => (d.category || 'unknown');
+                const groups = {};
+                devs.forEach(d => { const k = keyFn(d); (groups[k] = groups[k] || []).push(d); });
+                const order = devState.group === 'status'
+                    ? ['offline', 'online'].filter(k => groups[k])
+                    : [...CAT_ORDER.filter(c => groups[c]),
+                       ...Object.keys(groups).filter(c => !CAT_ORDER.includes(c)).sort()];
+                html = order.map(k => {
+                    const list = groups[k];
+                    const on = list.filter(d => d.online).length;
+                    const label = devState.group === 'status'
+                        ? (k === 'online' ? '🟢 Online' : '🔴 Offline')
+                        : `${catIcon[k] || '•'} ${k}`;
+                    return `<tr class="bg-slate-50 border-y border-slate-100">
+                        <td colspan="6" class="px-5 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                            ${label} <span class="font-normal normal-case text-slate-400">· ${on}/${list.length} online</span>
+                        </td></tr>` + list.map(deviceRow).join('');
+                }).join('');
+            }
+            document.getElementById('device-rows').innerHTML =
+                html || '<tr><td colspan="6" class="px-5 py-6 text-center text-sm text-slate-300">No devices match.</td></tr>';
+            document.getElementById('device-count').textContent =
+                (q ? `${devs.length} of ${lastDevices.length}` : `${lastDevices.length} devices`)
+                + (lastFetched ? ' · updated ' + fmtAgo(lastFetched) : '');
+            ['name','category','ip','rtt','last_seen'].forEach(k => {
+                document.getElementById('s-' + k).textContent =
+                    devState.sort === k ? (devState.dir === 1 ? '▲' : '▼') : '';
+            });
+        }
+
         function deviceRow(d){
             const dot = d.online
                 ? '<span class="status-dot bg-emerald-500"></span>'
                 : '<span class="status-dot bg-red-500 offline-blink"></span>';
             const cat = d.category || 'unknown';
-            const name = d.name || d.hostname || d.vendor || 'Unknown device';
+            const name = devName(d);
             const watch = d.watch ? ' 🔔' : '';
             return `
             <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="toggleHistory(this, '${encodeURIComponent(d.key)}')">
@@ -214,11 +303,9 @@
             document.getElementById('stat-watched').textContent = card.watched_down || 0;
             document.getElementById('stat-scan').textContent = fmtAgo(card.last_scan_ts) + (card.is_scanning ? ' · scanning…' : '');
 
-            const devs = (data.devices || []).slice().sort((a, b) =>
-                (a.online === b.online) ? (a.name || a.ip || '').localeCompare(b.name || b.ip || '') : (a.online ? 1 : -1));
-            document.getElementById('device-rows').innerHTML = devs.map(deviceRow).join('');
-            document.getElementById('device-count').textContent =
-                devs.length + ' devices' + (data.fetched_at ? ' · updated ' + fmtAgo(data.fetched_at) : '');
+            lastDevices = data.devices || [];
+            lastFetched = data.fetched_at;
+            renderDevices();
 
             loadReachability();
             loadKuma();
