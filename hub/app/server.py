@@ -16,6 +16,7 @@ from flask import (Flask, jsonify, redirect, request, send_from_directory,
 import auth
 import hubconfig
 import sitehistory
+import wgeasy
 from poller import poller
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -202,17 +203,114 @@ def api_site(site_id):
     if idx is None:
         return jsonify({"ok": False, "error": "unknown site"}), 404
     if request.method == "DELETE":
-        cfg["sites"].pop(idx)
+        gone = cfg["sites"].pop(idx)
         hubconfig.save(cfg)
-        return jsonify({"ok": True})
+        # Best-effort: a wizard-created site also owns a wg-easy client.
+        removed_vpn = False
+        if gone.get("wg_client_id"):
+            try:
+                wgeasy.delete_client(gone["wg_client_id"])
+                removed_vpn = True
+            except wgeasy.WgEasyError:
+                pass
+        return jsonify({"ok": True, "removed_vpn_client": removed_vpn})
     body = request.get_json(force=True)
     site, err = _validate_site(body, {s["id"] for s in cfg["sites"]}, keep_id=site_id)
     if err:
         return jsonify({"ok": False, "error": err}), 400
-    cfg["sites"][idx] = site
+    # merge over the old entry so extra keys (wg_client_id) survive an edit
+    cfg["sites"][idx] = {**cfg["sites"][idx], **site}
     hubconfig.save(cfg)
     poller.poll_now(site_id)
-    return jsonify({"ok": True, "site": site})
+    return jsonify({"ok": True, "site": cfg["sites"][idx]})
+
+
+# ---- add-site wizard --------------------------------------------------------
+_ENROLL_TEMPLATE = """# Run this ON THE FARM SITE's Pi (the one running Netwatch).
+# If Netwatch is installed somewhere other than /opt/netwatch, set NETWATCH_DIR first.
+NETWATCH_DIR="${{NETWATCH_DIR:-/opt/netwatch}}"
+set -e
+cd "$NETWATCH_DIR"
+mkdir -p data/wg-client/wg_confs
+cat > data/wg-client/wg_confs/wg0.conf <<'WG0EOF'
+{conf}
+WG0EOF
+chmod 600 data/wg-client/wg_confs/wg0.conf
+# keep the wg-client profile active on every future `docker compose up -d`
+if grep -q '^COMPOSE_PROFILES=' .env 2>/dev/null; then
+  grep -q 'wg-client' .env || sed -i 's/^COMPOSE_PROFILES=/COMPOSE_PROFILES=wg-client,/' .env
+else
+  echo 'COMPOSE_PROFILES=wg-client' >> .env
+fi
+docker compose --profile wg-client up -d
+echo "Connected — this site should turn green on the hub within a minute."
+"""
+
+
+def _enroll_payload(site):
+    """conf + paste-ready script for a wizard-created site."""
+    conf = wgeasy.get_configuration(site["wg_client_id"]).strip()
+    return {
+        "vpn_ip": site["vpn_ip"],
+        "conf": conf,
+        "script": _ENROLL_TEMPLATE.format(conf=conf),
+    }
+
+
+@app.route("/api/hub/wizard", methods=["POST"])
+def api_hub_wizard():
+    """One-shot site onboarding: create the wg-easy client, register the site,
+    and return the enrollment script to paste on the farm Pi."""
+    cfg = hubconfig.load()
+    body = request.get_json(force=True)
+    sid = (body.get("id") or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", sid):
+        return jsonify({"ok": False,
+                        "error": "Site id: lowercase letters, digits and dashes only"}), 400
+    if sid in {s["id"] for s in cfg["sites"]}:
+        return jsonify({"ok": False, "error": f"Site id '{sid}' already exists"}), 400
+
+    try:
+        client = wgeasy.create_client(sid)
+        vpn_ip = client["address"]
+    except wgeasy.WgEasyError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
+
+    with_kuma = bool(body.get("kuma", False))
+    site = {
+        "id": sid,
+        "name": (body.get("name") or "").strip(),
+        "vpn_ip": vpn_ip,
+        "netwatch_port": 8090,
+        "kuma_url": f"http://{vpn_ip}:3001" if with_kuma else "",
+        "kuma_status_slug": "farm" if with_kuma else "",
+        "enabled": True,
+        "wg_client_id": client["id"],
+    }
+    cfg["sites"].append(site)
+    hubconfig.save(cfg)
+    poller.poll_now(sid)
+
+    try:
+        payload = _enroll_payload(site)
+    except wgeasy.WgEasyError as e:
+        return jsonify({"ok": False, "error": f"site created, but: {e}"}), 502
+    return jsonify({"ok": True, "site": site, **payload})
+
+
+@app.route("/api/hub/sites/<site_id>/enroll")
+def api_site_enroll(site_id):
+    """Re-issue the enrollment script (e.g. the copy was lost, or re-flashing a Pi)."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    if not site.get("wg_client_id"):
+        return jsonify({"ok": False,
+                        "error": "this site was added manually — no wizard VPN client"}), 400
+    try:
+        return jsonify({"ok": True, **_enroll_payload(site)})
+    except wgeasy.WgEasyError as e:
+        return jsonify({"ok": False, "error": str(e)}), 502
 
 
 # ---- per-site data ----------------------------------------------------------

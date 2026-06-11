@@ -68,8 +68,48 @@
             </div>
             <div class="p-6 space-y-4 overflow-y-auto grow">
                 <div id="site-list" class="space-y-3"></div>
-                <div class="pt-4 border-t border-slate-100">
-                    <h3 class="text-xs font-bold text-slate-400 uppercase mb-3" id="form-title">Add a site</h3>
+
+                <!-- New-site wizard -->
+                <div id="wizard" class="pt-4 border-t border-slate-100">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase mb-3">✨ New site wizard</h3>
+                    <div id="wizard-form">
+                        <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site id (slug)</label>
+                                <input id="w-id" type="text" placeholder="plaas-noord" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Label</label>
+                                <input id="w-name" type="text" placeholder="North Farm" class="w-full p-2 bg-slate-50 border rounded-lg text-sm">
+                            </div>
+                        </div>
+                        <label class="flex items-center gap-2 mt-3 text-xs text-slate-600">
+                            <input id="w-kuma" type="checkbox" checked class="w-4 h-4"> Site runs Uptime Kuma (port 3001, status page <code>farm</code>)
+                        </label>
+                        <p id="wizard-error" class="text-xs text-red-600 font-bold mt-2 hidden"></p>
+                        <button onclick="runWizard()" id="wizard-btn" class="w-full mt-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">Create site + VPN client</button>
+                        <p class="text-[10px] text-slate-400 mt-2">Creates the WireGuard client on the hub, registers the site, and gives you
+                            one command to paste on the farm Pi — no other steps.</p>
+                    </div>
+                    <div id="wizard-result" class="hidden">
+                        <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-900 font-medium mb-3">
+                            ✅ Site <b id="r-id"></b> created — VPN IP <b id="r-ip" class="font-mono"></b>
+                        </div>
+                        <p class="text-xs text-slate-600 mb-2">Paste this <b>once on the farm site's Pi</b> (SSH or console). That's the last step:</p>
+                        <textarea id="r-script" readonly rows="8" class="w-full p-2 bg-slate-900 text-emerald-300 rounded-lg text-[11px] font-mono leading-snug" spellcheck="false"></textarea>
+                        <div class="flex gap-2 mt-2">
+                            <button onclick="copyScript()" id="copy-btn" class="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">📋 Copy command</button>
+                            <button onclick="wizardReset()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm">Done</button>
+                        </div>
+                        <p class="text-[10px] text-slate-400 mt-2">The card stays red until the Pi runs it. You can re-open this command
+                            any time with the site's <b>Setup cmd</b> button above.</p>
+                    </div>
+                </div>
+
+                <details class="pt-4 border-t border-slate-100">
+                    <summary class="text-xs font-bold text-slate-400 uppercase cursor-pointer select-none">Manual add / edit (existing VPN IP)</summary>
+                    <div class="mt-3">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase mb-3 hidden" id="form-title">Add a site</h3>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
                             <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site id (slug)</label>
@@ -106,7 +146,8 @@
                     </div>
                     <p class="text-[10px] text-slate-400 mt-2">The VPN IP is the site's WireGuard address from the hub's wg-easy
                         (the home site uses the Pi's LAN IP). Kuma needs a <b>published status page</b> at the slug for monitors to appear here.</p>
-                </div>
+                    </div>
+                </details>
             </div>
         </div>
     </div>
@@ -215,14 +256,18 @@
                         <p class="text-[10px] text-slate-400 font-mono truncate">${s.id}${s.kuma_url ? ' · kuma: ' + s.kuma_url + ' /' + s.kuma_status_slug : ''}${s.enabled ? '' : ' · paused'}</p>
                     </div>
                     <div class="flex gap-1 shrink-0">
+                        ${s.wg_client_id ? `<button onclick="enrollCmd('${s.id}')" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold" title="Show the command to run on the farm Pi">Setup cmd</button>` : ''}
                         <button onclick='editSite(${JSON.stringify(s)})' class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Edit</button>
-                        <button onclick="deleteSite('${s.id}')" class="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold">Delete</button>
+                        <button onclick="deleteSite('${s.id}', ${s.wg_client_id ? 'true' : 'false'})" class="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold">Delete</button>
                     </div>
                 </div>`).join('');
         }
 
         function editSite(s){
             editing = s.id;
+            const det = document.querySelector('#sites-modal details');
+            det.open = true;
+            document.getElementById('form-title').classList.remove('hidden');
             document.getElementById('form-title').textContent = 'Edit site: ' + s.id;
             document.getElementById('f-id').value = s.id;
             document.getElementById('f-id').disabled = true;
@@ -237,6 +282,7 @@
 
         function resetForm(){
             editing = null;
+            document.getElementById('form-title').classList.add('hidden');
             document.getElementById('form-title').textContent = 'Add a site';
             ['f-id','f-name','f-ip','f-kuma','f-slug'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('f-port').value = 8090;
@@ -267,10 +313,66 @@
             resetForm(); loadSites(); refresh();
         }
 
-        async function deleteSite(id){
-            if (!confirm(`Remove site "${id}" from the hub? (The site itself keeps running.)`)) return;
+        async function deleteSite(id, hasVpn){
+            const extra = hasVpn ? ' Its VPN client on the hub is removed too — the farm Pi loses its tunnel.' : '';
+            if (!confirm(`Remove site "${id}" from the hub? (The site itself keeps running.)${extra}`)) return;
             await fetch(`/api/hub/sites/${id}`, {method:'DELETE'});
             loadSites(); refresh();
+        }
+
+        // ---- new-site wizard ----------------------------------------------
+        async function runWizard(){
+            const btn = document.getElementById('wizard-btn');
+            const err = document.getElementById('wizard-error');
+            err.classList.add('hidden');
+            btn.disabled = true; btn.textContent = 'Creating…';
+            const res = await fetch('/api/hub/wizard', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    id: document.getElementById('w-id').value,
+                    name: document.getElementById('w-name').value,
+                    kuma: document.getElementById('w-kuma').checked,
+                }),
+            }).then(r => r.json()).catch(() => ({ok: false, error: 'request failed'}));
+            btn.disabled = false; btn.textContent = 'Create site + VPN client';
+            if (!res.ok) {
+                err.textContent = res.error || 'Wizard failed';
+                err.classList.remove('hidden');
+                return;
+            }
+            showEnroll(res.site.id, res.vpn_ip, res.script);
+            loadSites(); refresh();
+        }
+
+        function showEnroll(id, ip, script){
+            document.getElementById('wizard-form').classList.add('hidden');
+            document.getElementById('wizard-result').classList.remove('hidden');
+            document.getElementById('r-id').textContent = id;
+            document.getElementById('r-ip').textContent = ip;
+            document.getElementById('r-script').value = script;
+        }
+
+        function wizardReset(){
+            document.getElementById('wizard-result').classList.add('hidden');
+            document.getElementById('wizard-form').classList.remove('hidden');
+            document.getElementById('w-id').value = '';
+            document.getElementById('w-name').value = '';
+            document.getElementById('w-kuma').checked = true;
+        }
+
+        async function copyScript(){
+            const ta = document.getElementById('r-script');
+            try { await navigator.clipboard.writeText(ta.value); }
+            catch (e) { ta.select(); document.execCommand('copy'); }
+            const b = document.getElementById('copy-btn');
+            b.textContent = '✅ Copied';
+            setTimeout(() => b.textContent = '📋 Copy command', 1500);
+        }
+
+        async function enrollCmd(id){
+            const res = await fetch(`/api/hub/sites/${id}/enroll`).then(r => r.json());
+            if (!res.ok) { alert(res.error || 'No enrollment script for this site'); return; }
+            showEnroll(id, res.vpn_ip, res.script);
         }
 
         refresh();

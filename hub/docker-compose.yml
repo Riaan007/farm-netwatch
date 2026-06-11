@@ -51,6 +51,7 @@ services:
     environment:
       - HUB_PORT=8091
       - HUB_PASSWORD=${HUB_PASSWORD:-}   # seeds the login on first boot only
+      - WG_PASSWORD=${WG_PASSWORD:-}     # lets the add-site wizard drive wg-easy's API
       - TZ=${TZ:-UTC}
     volumes:
       - ./data/hub:/data

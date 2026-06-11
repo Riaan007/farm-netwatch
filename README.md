@@ -233,7 +233,18 @@ docker compose up -d --build
 > reaches `10.8.0.x`). Always restart the stack with `docker compose up -d`
 > from `hub/` — recreating `wg-easy` alone strands the hub container.
 
-### Per site
+### Per site — the wizard way (recommended)
+
+Hub gear icon → **✨ New site wizard**: enter a slug + label, tick whether the
+site runs Kuma, and the hub does everything on its side — it creates the
+WireGuard client through wg-easy's API, registers the site, and shows **one
+command to paste on the farm Pi** (it embeds the wg0.conf, pins the
+`wg-client` compose profile, and starts the tunnel). The site card turns green
+within a minute. The command can be re-issued any time from the site's
+**Setup cmd** button; deleting a wizard site also removes its VPN client.
+Requires `WG_PASSWORD` (plain text of the hash) in `hub/.env`.
+
+### Per site — manual
 
 ```bash
 # on the farm Pi, after downloading the site's conf from the hub's wg-easy UI:
@@ -242,8 +253,9 @@ cp site.conf /opt/netwatch/data/wg-client/wg_confs/wg0.conf
 cd /opt/netwatch && docker compose --profile wg-client up -d
 ```
 
-Then register the site in the hub (gear icon): VPN IP `10.8.0.x`, port 8090,
-and — if the site runs Kuma — Kuma URL `http://10.8.0.x:3001`.
+Then register the site in the hub (gear icon → "Manual add"): VPN IP
+`10.8.0.x`, port 8090, and — if the site runs Kuma — Kuma URL
+`http://10.8.0.x:3001`.
 
 *Alternative without Docker:* `apt install wireguard`, drop the conf at
 `/etc/wireguard/wg0.conf`, `systemctl enable --now wg-quick@wg0`. Fewer moving
