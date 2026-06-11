@@ -1,0 +1,57 @@
+# Farm Netwatch HUB — central multi-site dashboard + WireGuard server (wg-easy).
+#
+#   cp .env.example .env     # set WG_HOST, WG_PASSWORD_HASH, HUB_PASSWORD
+#   docker compose up -d --build
+#
+# The hub app runs INSIDE wg-easy's network namespace (network_mode: service:)
+# because that is where the wg0 interface (10.8.0.1) lives — it is the only way
+# the hub can reach the sites' 10.8.0.x addresses. Two consequences:
+#   * the hub's UI port is published on the wg-easy service, not on `hub`;
+#   * NEVER recreate wg-easy alone — always `docker compose up -d` from this
+#     directory so compose recreates both and the shared netns stays valid.
+services:
+  wg-easy:
+    image: ghcr.io/wg-easy/wg-easy:14
+    container_name: hub-wg-easy
+    environment:
+      - WG_HOST=${WG_HOST:-your-hub.example.com}
+      - PASSWORD_HASH=${WG_PASSWORD_HASH:?see .env.example — generate with wgpw}
+      - PORT=51821
+      - WG_PORT=51820
+      - WG_DEFAULT_ADDRESS=10.8.0.x
+      # SPLIT TUNNEL — clients route only the VPN subnet through the tunnel.
+      # Must be set BEFORE creating clients (wg-easy stamps it into each conf).
+      # Full tunnel would route the farms' internet through this Pi AND break
+      # the site-side wg-client container (host netns, no sysctls allowed).
+      - WG_ALLOWED_IPS=10.8.0.0/24
+      - WG_PERSISTENT_KEEPALIVE=25
+    volumes:
+      - ./data/wg-easy:/etc/wireguard
+    ports:
+      - "51820:51820/udp"          # WireGuard — forward this on the router
+      - "51821:51821/tcp"          # wg-easy admin UI (LAN/VPN only, do NOT forward)
+      - "${HUB_PORT:-8091}:8091"   # hub dashboard (published here: shared netns)
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1                  # hub<->site and site<->site routing
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
+  hub:
+    image: ${HUB_IMAGE:-ghcr.io/riaan007/farm-netwatch-hub:latest}
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+    container_name: netwatch-hub
+    network_mode: service:wg-easy
+    depends_on:
+      - wg-easy
+    environment:
+      - HUB_PORT=8091
+      - HUB_PASSWORD=${HUB_PASSWORD:-}   # seeds the login on first boot only
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./data/hub:/data
+    restart: unless-stopped

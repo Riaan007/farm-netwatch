@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Site · Farm Network Asset Identifier Hub</title>
+    <link rel="stylesheet" href="/app.css">
+    <style>
+        .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; }
+        @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .offline-blink { animation: pulse-soft 1.6s infinite; }
+        .beat { width: 6px; border-radius: 2px; height: 20px; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans text-slate-900 flex flex-col">
+
+    <header class="bg-slate-900 text-white p-6 shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-4 min-w-0">
+                <a href="/" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-full shrink-0" title="Back to overview">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                </a>
+                <div class="min-w-0">
+                    <h1 class="text-2xl font-bold tracking-tight flex items-center gap-2">
+                        <span id="reach-dot" class="status-dot bg-slate-500"></span>
+                        <span id="site-name" class="truncate">…</span>
+                    </h1>
+                    <p id="site-sub" class="text-slate-400 text-xs mt-1 italic">&nbsp;</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="pollNow()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold uppercase">Refresh</button>
+                <a id="link-netwatch" href="#" target="_blank" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">Netwatch ↗</a>
+                <a id="link-kuma" href="#" target="_blank" class="hidden px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-bold uppercase">Kuma ↗</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6 flex-grow w-full">
+        <div id="stale-banner" class="hidden mb-6 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm font-medium">
+            ⚠️ Showing the last data received from this site — it is currently unreachable over the VPN.
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Devices online</p>
+                <p id="stat-devices" class="text-3xl font-bold">--</p>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Watched down</p>
+                <p id="stat-watched" class="text-3xl font-bold text-amber-600">0</p>
+            </div>
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Site reachability 24h</p>
+                <p id="stat-reach" class="text-3xl font-bold">--</p>
+            </div>
+            <div class="bg-blue-600 p-4 rounded-xl shadow-md text-white">
+                <p class="text-blue-100 text-xs font-semibold uppercase">Last scan</p>
+                <p id="stat-scan" class="text-lg font-bold mt-1 tracking-tighter truncate">--</p>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-8">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-tight">VPN reachability · last 24h</h2>
+                <span id="reach-summary" class="text-xs text-slate-400 font-mono"></span>
+            </div>
+            <div id="reach-spark"></div>
+        </div>
+
+        <div id="kuma-panel" class="hidden bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-tight">Uptime Kuma monitoring</h2>
+                <span id="kuma-summary" class="text-xs font-bold"></span>
+            </div>
+            <div id="kuma-monitors" class="space-y-2"></div>
+            <p id="kuma-hint" class="hidden text-xs text-slate-400 mt-2"></p>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="p-5 flex justify-between items-center border-b border-slate-100">
+                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-tight">Devices</h2>
+                <span id="device-count" class="text-xs text-slate-400"></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-[10px] text-slate-400 uppercase border-b border-slate-100">
+                            <th class="px-5 py-2.5">Device</th>
+                            <th class="px-3 py-2.5">Category</th>
+                            <th class="px-3 py-2.5">IP</th>
+                            <th class="px-3 py-2.5">RTT</th>
+                            <th class="px-3 py-2.5">Last seen</th>
+                            <th class="px-3 py-2.5"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="device-rows"></tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const siteId = location.pathname.split('/').pop();
+        let card = null;
+
+        const catIcon = { camera:"📷", nvr:"🎥", network:"📶", "internet-ap":"🌎", router:"🧭",
+            printer:"🖨️", nas:"💾", voip:"☎️", solar:"☀️", media:"📺", iot:"💡", pc:"💻",
+            server:"🖥️", unknown:"❓" };
+        const catChip = {
+            camera: "bg-rose-50 text-rose-900", nvr: "bg-rose-100 text-rose-900",
+            network: "bg-indigo-50 text-indigo-900", "internet-ap": "bg-purple-50 text-purple-900",
+            router: "bg-indigo-100 text-indigo-900", printer: "bg-amber-50 text-amber-900",
+            nas: "bg-cyan-50 text-cyan-900", voip: "bg-teal-50 text-teal-900",
+            solar: "bg-yellow-50 text-yellow-900", media: "bg-blue-50 text-blue-900",
+            iot: "bg-emerald-50 text-emerald-900", pc: "bg-slate-100 text-slate-700",
+            server: "bg-slate-200 text-slate-800", unknown: "bg-slate-50 text-slate-500",
+        };
+
+        function fmtAgo(ts){
+            if (!ts) return '—';
+            const s = Math.max(0, Math.floor(Date.now()/1000 - ts));
+            if (s < 90) return s + 's ago';
+            if (s < 5400) return Math.round(s/60) + 'm ago';
+            if (s < 129600) return Math.round(s/3600) + 'h ago';
+            return Math.round(s/86400) + 'd ago';
+        }
+
+        function sparkBars(series, tall){
+            if (!series || !series.some(v => v !== null)) return '<p class="text-xs text-slate-300">no samples yet</p>';
+            return `<div class="flex items-end gap-px ${tall ? 'h-10' : 'h-6'}">` + series.map(v => {
+                let c = 'bg-slate-200', h = 30;
+                if (v !== null) {
+                    h = 100;
+                    c = v >= 0.99 ? 'bg-emerald-400' : (v > 0 ? 'bg-amber-400' : 'bg-red-400');
+                }
+                return `<div class="flex-1 rounded-sm ${c}" style="height:${h}%"></div>`;
+            }).join('') + '</div>';
+        }
+
+        // Kuma beat codes: 0 down, 1 up, 2 pending, 3 maintenance
+        function beatStrip(beats){
+            const pad = Math.max(0, 50 - beats.length);
+            const cells = Array(pad).fill(null).concat(beats.slice(-50));
+            return '<div class="flex items-center gap-px">' + cells.map(b => {
+                const c = b === 1 ? 'bg-emerald-400' : b === 0 ? 'bg-red-500'
+                        : b === 2 ? 'bg-amber-400' : b === 3 ? 'bg-blue-400' : 'bg-slate-100';
+                return `<div class="beat ${c}"></div>`;
+            }).join('') + '</div>';
+        }
+
+        function deviceRow(d){
+            const dot = d.online
+                ? '<span class="status-dot bg-emerald-500"></span>'
+                : '<span class="status-dot bg-red-500 offline-blink"></span>';
+            const cat = d.category || 'unknown';
+            const name = d.name || d.hostname || d.vendor || 'Unknown device';
+            const watch = d.watch ? ' 🔔' : '';
+            return `
+            <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="toggleHistory(this, '${encodeURIComponent(d.key)}')">
+                <td class="px-5 py-2.5"><div class="flex items-center gap-2">${dot}<span class="font-medium">${name}${watch}</span></div></td>
+                <td class="px-3 py-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${catChip[cat] || catChip.unknown}">${catIcon[cat] || '•'} ${cat}</span></td>
+                <td class="px-3 py-2.5 font-mono text-xs">${d.ip || '—'}</td>
+                <td class="px-3 py-2.5 font-mono text-xs">${d.rtt != null ? d.rtt + ' ms' : '—'}</td>
+                <td class="px-3 py-2.5 text-xs text-slate-500">${d.online ? 'now' : fmtAgo(d.last_seen)}</td>
+                <td class="px-3 py-2.5 text-slate-300 text-xs">▾</td>
+            </tr>`;
+        }
+
+        async function toggleHistory(row, key){
+            const next = row.nextElementSibling;
+            if (next && next.dataset.history) { next.remove(); return; }
+            const tr = document.createElement('tr');
+            tr.dataset.history = '1';
+            tr.innerHTML = `<td colspan="6" class="px-5 py-3 bg-slate-50 text-xs text-slate-400">Loading uptime…</td>`;
+            row.after(tr);
+            const r = await fetch(`/api/hub/sites/${siteId}/history/${key}`);
+            if (!r.ok) { tr.firstElementChild.textContent = 'Site unreachable — uptime unavailable.'; return; }
+            const h = await r.json();
+            const s = h.summary || {};
+            const pct = v => v == null ? '--' : v + '%';
+            tr.innerHTML = `<td colspan="6" class="px-5 py-3 bg-slate-50">
+                <div class="flex items-center gap-6 flex-wrap">
+                    <div class="grow min-w-[200px]">${sparkBars(h.series)}<p class="text-[10px] text-slate-400 mt-1">Device uptime · last 24h</p></div>
+                    <div class="flex gap-4 text-center text-xs">
+                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">24h</div><div class="font-bold">${pct(s.uptime_24h)}</div></div>
+                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">7d</div><div class="font-bold">${pct(s.uptime_7d)}</div></div>
+                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">30d</div><div class="font-bold">${pct(s.uptime_30d)}</div></div>
+                    </div>
+                </div></td>`;
+        }
+
+        async function refresh(){
+            const r = await fetch(`/api/hub/sites/${siteId}/devices`);
+            if (r.status === 401) { location.href = '/login'; return; }
+            if (r.status === 404) { document.getElementById('site-name').textContent = 'Unknown site'; return; }
+            const data = await r.json();
+            card = data.card;
+
+            document.title = card.name + ' · Farm Hub';
+            document.getElementById('site-name').textContent = card.name;
+            document.getElementById('site-sub').textContent =
+                (card.location ? card.location + ' · ' : '') + card.links.netwatch.replace('http://','')
+                + (card.latency_ms != null ? ` · ${card.latency_ms} ms` : '');
+            const dot = document.getElementById('reach-dot');
+            dot.className = 'status-dot ' + (card.reachable ? 'bg-emerald-500' : 'bg-red-500 offline-blink');
+            document.getElementById('link-netwatch').href = card.links.netwatch;
+            const lk = document.getElementById('link-kuma');
+            if (card.links.kuma) { lk.href = card.links.kuma; lk.classList.remove('hidden'); }
+
+            document.getElementById('stale-banner').classList.toggle('hidden', !data.stale || !data.devices.length);
+            document.getElementById('stat-devices').textContent =
+                card.devices_total === null ? '--' : `${card.devices_online}/${card.devices_total}`;
+            document.getElementById('stat-watched').textContent = card.watched_down || 0;
+            document.getElementById('stat-scan').textContent = fmtAgo(card.last_scan_ts) + (card.is_scanning ? ' · scanning…' : '');
+
+            const devs = (data.devices || []).slice().sort((a, b) =>
+                (a.online === b.online) ? (a.name || a.ip || '').localeCompare(b.name || b.ip || '') : (a.online ? 1 : -1));
+            document.getElementById('device-rows').innerHTML = devs.map(deviceRow).join('');
+            document.getElementById('device-count').textContent =
+                devs.length + ' devices' + (data.fetched_at ? ' · updated ' + fmtAgo(data.fetched_at) : '');
+
+            loadReachability();
+            loadKuma();
+        }
+
+        async function loadReachability(){
+            const h = await fetch(`/api/hub/sites/${siteId}/reachability`).then(r=>r.json());
+            document.getElementById('reach-spark').innerHTML = sparkBars(h.series, true);
+            const s = h.summary || {};
+            document.getElementById('stat-reach').textContent = s.reach_24h != null ? s.reach_24h + '%' : '--';
+            document.getElementById('reach-summary').textContent =
+                `7d ${s.reach_7d != null ? s.reach_7d + '%' : '--'} · 30d ${s.reach_30d != null ? s.reach_30d + '%' : '--'}`;
+        }
+
+        async function loadKuma(){
+            const panel = document.getElementById('kuma-panel');
+            const k = await fetch(`/api/hub/sites/${siteId}/kuma`).then(r=>r.json());
+            const hint = document.getElementById('kuma-hint');
+            if (!k.ok && k.reason === 'not-configured') { panel.classList.add('hidden'); return; }
+            panel.classList.remove('hidden');
+            if (!k.ok) {
+                document.getElementById('kuma-monitors').innerHTML = '';
+                document.getElementById('kuma-summary').textContent = '';
+                hint.classList.remove('hidden');
+                hint.textContent = k.reason === 'no-status-page'
+                    ? 'No published status page found at this slug. In the site\'s Kuma: Status Pages → create the page, add monitors to a group, publish.'
+                    : 'Uptime Kuma is unreachable over the VPN.';
+                return;
+            }
+            hint.classList.add('hidden');
+            document.getElementById('kuma-summary').innerHTML =
+                `<span class="text-emerald-600">↑${k.up} up</span>${k.down ? ` · <span class="text-red-600">↓${k.down} down</span>` : ''}`;
+            document.getElementById('kuma-monitors').innerHTML = (k.monitors || []).map(m => `
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="status-dot ${m.last_status === 1 ? 'bg-emerald-500' : m.last_status === 0 ? 'bg-red-500 offline-blink' : 'bg-slate-300'} shrink-0"></span>
+                    <span class="text-sm font-medium w-48 truncate" title="${m.group}">${m.name}</span>
+                    ${beatStrip(m.beats || [])}
+                    <span class="text-xs text-slate-400 font-mono ml-auto">${m.uptime_24h != null ? m.uptime_24h + '%' : ''}${m.ping != null ? ' · ' + m.ping + ' ms' : ''}</span>
+                </div>`).join('');
+        }
+
+        async function pollNow(){
+            await fetch(`/api/hub/sites/${siteId}/poll`, {method:'POST'});
+            setTimeout(refresh, 2500);
+        }
+
+        refresh();
+        setInterval(refresh, 30000);
+    </script>
+</body>
+</html>

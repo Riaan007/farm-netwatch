@@ -119,9 +119,13 @@ lives in the `./data` volume and survives image updates.
 - **Tailscale**: `docker compose --profile tailscale up -d`, then
   `docker exec netwatch-tailscale tailscale up --advertise-routes=192.168.88.0/24`
   and approve the route in the Tailscale admin. No router changes needed.
-- **WireGuard** (`wg-easy`): set `WG_HOST` (public IP / DDNS) in
-  `/opt/netwatch/.env`, `docker compose --profile wireguard up -d`, open the
-  admin UI on **:51821**, add a client, and forward **UDP 51820** on your router.
+- **WireGuard server** (`wg-easy`): for a standalone site. Set `WG_HOST`
+  (public IP / DDNS) in `/opt/netwatch/.env`,
+  `docker compose --profile wireguard up -d`, open the admin UI on **:51821**,
+  add a client, and forward **UDP 51820** on your router.
+- **WireGuard client** (`wg-client`): for sites reporting to a central
+  [hub](#central-hub-all-sites-on-one-dashboard). The site dials out to the hub
+  — no router changes at the farm. Don't combine with the `wireguard` profile.
 
 ## Remote control via ntfy
 
@@ -193,6 +197,74 @@ onto monitors you made earlier (idempotent — safe to run again).
 **Manual / pull (no admin creds).** Under a device's "Manual / pull setup" you can
 instead paste a token from a Kuma *Push* monitor you made yourself, or copy the
 device's **health URL** into a Kuma *HTTP* monitor (200 = up, 503 = down).
+
+## Central hub: all sites on one dashboard
+
+The `hub/` stack turns one machine (e.g. the Pi behind your DDNS name) into a
+**WireGuard hub + multi-site dashboard**: every farm site dials in over the VPN,
+and `http://<hub>:8091` shows one card per site — reachability, device counts,
+watched-device alarms, last scan, and that site's **Uptime Kuma** monitors —
+with deep links into each site's own Netwatch and Kuma UIs.
+
+```
+farm sites (wg-client, dial out) ──UDP 51820──> hub (wg-easy 10.8.0.1)
+        Netwatch :8090 / Kuma :3001  <──polled── hub dashboard :8091
+```
+
+No site-side app changes: the hub *pulls* each site's existing JSON API over
+the tunnel. Because all farms reuse the same LAN range (192.168.88.0/24), sites
+are addressed **only by their unique VPN IP** — LAN routes are never advertised.
+
+### Hub setup (once)
+
+```bash
+cd hub && cp .env.example .env      # set WG_HOST, WG_PASSWORD_HASH, HUB_PASSWORD
+docker compose up -d --build
+```
+
+1. Forward **UDP 51820** on your router to the hub machine. Do **not** forward
+   8091/51821 — reach them over the VPN (or LAN); the login is defense in depth.
+2. Open the hub at `http://<hub-lan-ip>:8091`, sign in, and check the
+   pre-seeded **home** site goes green.
+3. Open wg-easy at `http://<hub-lan-ip>:51821` and create one client per farm
+   site (note each one's `10.8.0.x`), plus clients for your phone/laptop.
+
+> **Heads-up:** the hub app shares wg-easy's network namespace (that's how it
+> reaches `10.8.0.x`). Always restart the stack with `docker compose up -d`
+> from `hub/` — recreating `wg-easy` alone strands the hub container.
+
+### Per site
+
+```bash
+# on the farm Pi, after downloading the site's conf from the hub's wg-easy UI:
+mkdir -p /opt/netwatch/data/wg-client/wg_confs
+cp site.conf /opt/netwatch/data/wg-client/wg_confs/wg0.conf
+cd /opt/netwatch && docker compose --profile wg-client up -d
+```
+
+Then register the site in the hub (gear icon): VPN IP `10.8.0.x`, port 8090,
+and — if the site runs Kuma — Kuma URL `http://10.8.0.x:3001`.
+
+*Alternative without Docker:* `apt install wireguard`, drop the conf at
+`/etc/wireguard/wg0.conf`, `systemctl enable --now wg-quick@wg0`. Fewer moving
+parts; recommended for sites with flaky power/connectivity.
+
+### Kuma on the hub dashboard
+
+The hub reads each site's Kuma through its **published status page** (no Kuma
+login needed). Once per site, in that site's Kuma UI: **Status Pages → New**,
+slug **`farm`**, add your monitors to a group, **publish**. Enter the slug in
+the hub's site settings and the monitors' heartbeat bars appear on the site
+detail page.
+
+### Hub troubleshooting
+
+| Symptom | Check |
+|---|---|
+| site card stays red | `docker exec hub-wg-easy wg show` — recent handshake? site's wg-client logs? |
+| handshake ok, card red | from hub: `docker exec netwatch-hub python -c "import requests;print(requests.get('http://10.8.0.X:8090/api/status',timeout=5).json())"` |
+| Kuma panel: "no status page" | the slug isn't published, or has no monitors in a *public* group |
+| sites can't reach hub | router forward UDP 51820 → hub; `WG_HOST` resolves to your WAN IP |
 
 ## How it works
 

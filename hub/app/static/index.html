@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farm Network Asset Identifier · Hub</title>
+    <link rel="stylesheet" href="/app.css">
+    <style>
+        .stat-card { transition: all 0.2s ease; }
+        .stat-card:hover { transform: scale(1.02); border-color: #3b82f6; }
+        .site-card { transition: all 0.2s ease; }
+        .site-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; }
+        @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .offline-blink { animation: pulse-soft 1.6s infinite; }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen font-sans text-slate-900 flex flex-col">
+
+    <header class="bg-slate-900 text-white p-6 shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold tracking-tight">Farm Network Asset Identifier</h1>
+                <p class="text-slate-400 text-xs mt-1 italic">Central Hub · <span id="site-count">0</span> sites over VPN</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="pollNow()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold uppercase">Refresh all</button>
+                <button onclick="openSites()" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-full transition-colors" title="Manage sites">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </button>
+                <button onclick="logout()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6 flex-grow w-full">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Sites reachable</p>
+                <p id="stat-sites" class="text-3xl font-bold">--</p>
+            </div>
+            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Devices online</p>
+                <p id="stat-devices" class="text-3xl font-bold text-emerald-600">--</p>
+            </div>
+            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Watched down</p>
+                <p id="stat-watched" class="text-3xl font-bold text-amber-600">0</p>
+            </div>
+            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <p class="text-slate-500 text-xs font-semibold uppercase">Kuma monitors down</p>
+                <p id="stat-kuma" class="text-3xl font-bold text-red-600">0</p>
+            </div>
+        </div>
+
+        <div id="site-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+        <p id="empty-hint" class="hidden text-center text-slate-400 text-sm mt-12">
+            No sites yet — use the gear icon to register your first Netwatch site.
+        </p>
+    </main>
+
+    <!-- Manage sites modal -->
+    <div id="sites-modal" onclick="if(event.target===this) closeSites()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-6 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                <h2 class="text-xl font-bold">Sites</h2>
+                <button onclick="closeSites()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+            </div>
+            <div class="p-6 space-y-4 overflow-y-auto grow">
+                <div id="site-list" class="space-y-3"></div>
+                <div class="pt-4 border-t border-slate-100">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase mb-3" id="form-title">Add a site</h3>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site id (slug)</label>
+                            <input id="f-id" type="text" placeholder="plaas-noord" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Label</label>
+                            <input id="f-name" type="text" placeholder="North Farm" class="w-full p-2 bg-slate-50 border rounded-lg text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">VPN IP</label>
+                            <input id="f-ip" type="text" placeholder="10.8.0.2" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Netwatch port</label>
+                            <input id="f-port" type="number" value="8090" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Kuma URL <span class="normal-case text-slate-300">(blank = off)</span></label>
+                            <input id="f-kuma" type="text" placeholder="http://10.8.0.2:3001" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Kuma status-page slug</label>
+                            <input id="f-slug" type="text" placeholder="farm" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                        </div>
+                    </div>
+                    <label class="flex items-center gap-2 mt-3 text-xs text-slate-600">
+                        <input id="f-enabled" type="checkbox" checked class="w-4 h-4"> Poll this site
+                    </label>
+                    <p id="form-error" class="text-xs text-red-600 font-bold mt-2 hidden"></p>
+                    <div class="flex gap-2 mt-3">
+                        <button onclick="saveSite()" class="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">Save site</button>
+                        <button id="cancel-edit" onclick="resetForm()" class="hidden px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm">Cancel</button>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-2">The VPN IP is the site's WireGuard address from the hub's wg-easy
+                        (the home site uses the Pi's LAN IP). Kuma needs a <b>published status page</b> at the slug for monitors to appear here.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let editing = null;     // site id while editing, else null
+
+        function fmtAgo(ts){
+            if (!ts) return '—';
+            const s = Math.max(0, Math.floor(Date.now()/1000 - ts));
+            if (s < 90) return s + 's ago';
+            if (s < 5400) return Math.round(s/60) + 'm ago';
+            if (s < 129600) return Math.round(s/3600) + 'h ago';
+            return Math.round(s/86400) + 'd ago';
+        }
+
+        function sparkBars(series){
+            if (!series || !series.some(v => v !== null)) return '';
+            return '<div class="flex items-end gap-px h-6">' + series.map(v => {
+                let c = 'bg-slate-200', h = 30;
+                if (v !== null) {
+                    h = 100;
+                    c = v >= 0.99 ? 'bg-emerald-400' : (v > 0 ? 'bg-amber-400' : 'bg-red-400');
+                }
+                return `<div class="flex-1 rounded-sm ${c}" style="height:${h}%"></div>`;
+            }).join('') + '</div>';
+        }
+
+        function siteCard(s){
+            const dot = s.reachable
+                ? '<span class="status-dot bg-emerald-500"></span>'
+                : '<span class="status-dot bg-red-500 offline-blink"></span>';
+            const counts = s.devices_total === null ? '<span class="text-slate-300">no data yet</span>'
+                : `<span class="text-2xl font-bold ${s.devices_online === s.devices_total ? 'text-emerald-600' : ''}">${s.devices_online}</span><span class="text-slate-400 text-sm">/${s.devices_total} online</span>`;
+            const watched = s.watched_down ? `<span class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold">🔔 ${s.watched_down} watched down</span>` : '';
+            const stale = s.stale ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold">stale data</span>' : '';
+            let kuma = '';
+            if (s.kuma) {
+                const down = s.kuma.down ? `<span class="text-red-600 font-bold">↓${s.kuma.down}</span>` : '';
+                kuma = `<span class="text-[11px] text-slate-500">Kuma <span class="text-emerald-600 font-bold">↑${s.kuma.up}</span> ${down}</span>`;
+            } else if (s.kuma_state === 'no-status-page') {
+                kuma = '<span class="text-[11px] text-slate-400">Kuma: no status page</span>';
+            } else if (s.kuma_state === 'unreachable') {
+                kuma = '<span class="text-[11px] text-red-400">Kuma unreachable</span>';
+            }
+            const latency = s.latency_ms !== null && s.latency_ms !== undefined ? `<span class="text-[11px] text-slate-400 font-mono">${s.latency_ms} ms</span>` : '';
+            return `
+            <div class="site-card bg-white rounded-xl border ${s.reachable ? 'border-slate-200' : 'border-red-300'} shadow-sm p-5 flex flex-col gap-3">
+                <div class="flex justify-between items-start gap-2">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">${dot}<h3 class="font-bold text-lg truncate">${s.name}</h3></div>
+                        <p class="text-xs text-slate-400 truncate">${s.location || '&nbsp;'}</p>
+                    </div>
+                    <div class="text-right shrink-0">${latency}<p class="text-[11px] text-slate-400">scan ${fmtAgo(s.last_scan_ts)}</p></div>
+                </div>
+                <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${stale}</div>
+                <div>${sparkBars(s.spark)}<p class="text-[10px] text-slate-400 mt-1">Site reachability · last 24h ${s.reach_24h !== null ? '· ' + s.reach_24h + '%' : ''}</p></div>
+                <div class="flex justify-between items-center pt-2 border-t border-slate-100">
+                    ${kuma || '<span></span>'}
+                    <div class="flex gap-2">
+                        <a href="/site/${s.id}" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold">Details</a>
+                        <a href="${s.links.netwatch}" target="_blank" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">Netwatch ↗</a>
+                        ${s.links.kuma ? `<a href="${s.links.kuma}" target="_blank" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Kuma ↗</a>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }
+
+        async function refresh(){
+            const r = await fetch('/api/hub/overview');
+            if (r.status === 401) { location.href = '/login'; return; }
+            const data = await r.json();
+            const sites = data.sites;
+            document.getElementById('site-count').textContent = sites.length;
+            document.getElementById('site-grid').innerHTML = sites.map(siteCard).join('');
+            document.getElementById('empty-hint').classList.toggle('hidden', sites.length > 0);
+
+            const reach = sites.filter(s => s.reachable).length;
+            document.getElementById('stat-sites').textContent = `${reach}/${sites.length}`;
+            const withData = sites.filter(s => s.devices_total !== null);
+            document.getElementById('stat-devices').textContent = withData.length
+                ? `${withData.reduce((a,s)=>a+s.devices_online,0)}/${withData.reduce((a,s)=>a+s.devices_total,0)}` : '--';
+            document.getElementById('stat-watched').textContent = sites.reduce((a,s)=>a+(s.watched_down||0),0);
+            document.getElementById('stat-kuma').textContent = sites.reduce((a,s)=>a+((s.kuma&&s.kuma.down)||0),0);
+        }
+
+        async function pollNow(){
+            const data = await fetch('/api/hub/sites').then(r=>r.json());
+            await Promise.all(data.sites.map(s =>
+                fetch(`/api/hub/sites/${s.id}/poll`, {method:'POST'})));
+            setTimeout(refresh, 2500);
+        }
+
+        async function logout(){ await fetch('/api/logout', {method:'POST'}); location.href='/login'; }
+
+        // ---- sites modal -------------------------------------------------
+        function openSites(){ document.getElementById('sites-modal').classList.remove('hidden'); loadSites(); }
+        function closeSites(){ document.getElementById('sites-modal').classList.add('hidden'); resetForm(); }
+
+        async function loadSites(){
+            const data = await fetch('/api/hub/sites').then(r=>r.json());
+            document.getElementById('site-list').innerHTML = data.sites.map(s => `
+                <div class="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <div class="min-w-0">
+                        <p class="font-bold text-sm truncate">${s.name || s.id} <span class="font-mono font-normal text-xs text-slate-400">${s.vpn_ip}:${s.netwatch_port}</span></p>
+                        <p class="text-[10px] text-slate-400 font-mono truncate">${s.id}${s.kuma_url ? ' · kuma: ' + s.kuma_url + ' /' + s.kuma_status_slug : ''}${s.enabled ? '' : ' · paused'}</p>
+                    </div>
+                    <div class="flex gap-1 shrink-0">
+                        <button onclick='editSite(${JSON.stringify(s)})' class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Edit</button>
+                        <button onclick="deleteSite('${s.id}')" class="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold">Delete</button>
+                    </div>
+                </div>`).join('');
+        }
+
+        function editSite(s){
+            editing = s.id;
+            document.getElementById('form-title').textContent = 'Edit site: ' + s.id;
+            document.getElementById('f-id').value = s.id;
+            document.getElementById('f-id').disabled = true;
+            document.getElementById('f-name').value = s.name || '';
+            document.getElementById('f-ip').value = s.vpn_ip;
+            document.getElementById('f-port').value = s.netwatch_port;
+            document.getElementById('f-kuma').value = s.kuma_url || '';
+            document.getElementById('f-slug').value = s.kuma_status_slug || '';
+            document.getElementById('f-enabled').checked = s.enabled !== false;
+            document.getElementById('cancel-edit').classList.remove('hidden');
+        }
+
+        function resetForm(){
+            editing = null;
+            document.getElementById('form-title').textContent = 'Add a site';
+            ['f-id','f-name','f-ip','f-kuma','f-slug'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('f-port').value = 8090;
+            document.getElementById('f-id').disabled = false;
+            document.getElementById('f-enabled').checked = true;
+            document.getElementById('cancel-edit').classList.add('hidden');
+            document.getElementById('form-error').classList.add('hidden');
+        }
+
+        async function saveSite(){
+            const body = {
+                id: document.getElementById('f-id').value,
+                name: document.getElementById('f-name').value,
+                vpn_ip: document.getElementById('f-ip').value,
+                netwatch_port: document.getElementById('f-port').value,
+                kuma_url: document.getElementById('f-kuma').value,
+                kuma_status_slug: document.getElementById('f-slug').value,
+                enabled: document.getElementById('f-enabled').checked,
+            };
+            const url = editing ? `/api/hub/sites/${editing}` : '/api/hub/sites';
+            const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json());
+            if (!res.ok) {
+                const err = document.getElementById('form-error');
+                err.textContent = res.error || 'Save failed';
+                err.classList.remove('hidden');
+                return;
+            }
+            resetForm(); loadSites(); refresh();
+        }
+
+        async function deleteSite(id){
+            if (!confirm(`Remove site "${id}" from the hub? (The site itself keeps running.)`)) return;
+            await fetch(`/api/hub/sites/${id}`, {method:'DELETE'});
+            loadSites(); refresh();
+        }
+
+        refresh();
+        setInterval(refresh, 15000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farm Network Asset Identifier · Hub</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body class="bg-slate-900 min-h-screen font-sans text-slate-900 flex items-center justify-center p-4">
+
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
+        <div class="p-6 bg-slate-800 text-white">
+            <h1 class="text-xl font-bold tracking-tight">Farm Network Asset Identifier</h1>
+            <p class="text-slate-400 text-xs mt-1 italic">Central Hub</p>
+        </div>
+        <form id="login-form" class="p-6 space-y-4" onsubmit="return doLogin(event)">
+            <p id="mode-hint" class="text-sm text-slate-500">Enter the hub password.</p>
+            <div>
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Password</label>
+                <input id="password" type="password" autocomplete="current-password" autofocus
+                       class="w-full p-3 bg-slate-50 border rounded-lg font-mono text-sm">
+            </div>
+            <div id="confirm-wrap" class="hidden">
+                <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Confirm password</label>
+                <input id="confirm" type="password" autocomplete="new-password"
+                       class="w-full p-3 bg-slate-50 border rounded-lg font-mono text-sm">
+            </div>
+            <p id="login-error" class="text-xs text-red-600 font-bold hidden"></p>
+            <button id="login-btn" type="submit"
+                    class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow uppercase text-sm">
+                Sign in
+            </button>
+        </form>
+    </div>
+
+    <script>
+        let createMode = false;
+
+        async function init(){
+            const st = await fetch('/api/auth-state').then(r => r.json());
+            if (st.logged_in) { location.href = '/'; return; }
+            createMode = !st.password_set;
+            if (createMode) {
+                document.getElementById('mode-hint').textContent =
+                    'First run — choose a hub password (minimum 8 characters).';
+                document.getElementById('confirm-wrap').classList.remove('hidden');
+                document.getElementById('login-btn').textContent = 'Set password & sign in';
+            }
+        }
+
+        async function doLogin(e){
+            e.preventDefault();
+            const body = { password: document.getElementById('password').value };
+            if (createMode) body.confirm = document.getElementById('confirm').value;
+            const r = await fetch('/api/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            const res = await r.json();
+            if (res.ok) { location.href = '/'; return false; }
+            const err = document.getElementById('login-error');
+            err.textContent = res.error || 'Login failed';
+            err.classList.remove('hidden');
+            return false;
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -3,4 +3,5 @@ data/
 __pycache__/
 .env
 app/static/app.css
+hub/app/static/app.css
 app/data/oui.tsv

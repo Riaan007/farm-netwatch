@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 grep -rl --exclude-dir=.git 'Riaan007/farm-netwatch' . | while read -r f; do
   sed -i "s#Riaan007/farm-netwatch#${OWNER}/${REPO_NAME}#g" "$f"
 done
-sed -i "s#ghcr.io/riaan007#ghcr.io/${OWNER}#g" docker-compose.yml install.sh 2>/dev/null || true
+sed -i "s#ghcr.io/riaan007#ghcr.io/${OWNER}#g" docker-compose.yml install.sh hub/docker-compose.yml 2>/dev/null || true
 
 git add -A
 git commit -q -m "Set GHCR/repo owner to ${OWNER}" || echo "(nothing to commit)"

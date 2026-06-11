@@ -2,7 +2,8 @@
 #
 #   docker compose up -d                 # dashboard only (default)
 #   docker compose --profile tailscale up -d
-#   docker compose --profile wireguard up -d
+#   docker compose --profile wireguard up -d   # inbound VPN *server* (standalone sites)
+#   docker compose --profile wg-client up -d   # dial out to the central hub (see hub/)
 #   docker compose --profile kuma up -d  # + Uptime Kuma (history/status pages)
 #
 # The image is pulled from GHCR by default; `build: .` lets any Pi build locally.
@@ -60,6 +61,31 @@ services:
       - /dev/net/tun:/dev/net/tun
     restart: unless-stopped
     # After up: docker exec netwatch-tailscale tailscale up --advertise-routes=<your-cidr>
+
+  # --- Optional: WireGuard CLIENT — dials out to the central hub ---------------
+  # For sites reporting to a Farm Netwatch HUB (see hub/). No port forwarding is
+  # needed at the farm: the client dials the hub and keeps the tunnel open.
+  # 1. On the hub's wg-easy UI, create a client for this site and download the conf.
+  # 2. Save it as ./data/wg-client/wg_confs/wg0.conf
+  #    (it must contain AllowedIPs = 10.8.0.0/24 and PersistentKeepalive = 25).
+  # 3. docker compose --profile wg-client up -d
+  # Host networking puts the tunnel in the host netns, so Netwatch (8090) and
+  # Kuma (3001) become reachable at this site's 10.8.0.x VPN address.
+  # NOTE: no `sysctls:` here on purpose — compose rejects it with host
+  # networking, and split-tunnel AllowedIPs avoids needing src_valid_mark.
+  wg-client:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: netwatch-wg-client
+    profiles: ["wg-client"]
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - TZ=${TZ:-UTC}
+    volumes:
+      - ./data/wg-client:/config
+      - /lib/modules:/lib/modules:ro
+    restart: unless-stopped
 
   # --- Optional: WireGuard via wg-easy (self-hosted, own admin UI :51821) ------
   wireguard:
