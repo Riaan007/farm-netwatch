@@ -82,12 +82,23 @@ Then open **`http://<pi-ip>:8090/setup`** and walk through the wizard
 (site name → subnets → scan interval → alerts → VPN). First scan starts
 automatically.
 
-With a VPN at install time:
+### Linking a new site to the central hub (default)
+
+The installer sets up the **WireGuard client to the central hub by default**.
+Grab the per-site config from the hub's wg-easy UI (Clients → create → download),
+then run the installer with it so the tunnel comes up immediately:
 
 ```bash
-COMPOSE_PROFILES=tailscale  sudo -E bash -c \
+WG_CONF_B64="$(base64 -w0 site.conf)" sudo -E bash -c \
   'curl -fsSL https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh | bash'
 ```
+
+Alternatives: `WG_CONF_URL=<url>` or `WG_CONF=/path/to/site.conf`. If you install
+without a config, it prints the 3-step finish (drop the conf at
+`/opt/netwatch/data/wg-client/wg_confs/wg0.conf`, then
+`docker compose --profile wg-client up -d`). The installer shows the site's
+`10.8.0.x` address — **register that on the hub** (port 8090). Opt out with
+`HUB_VPN=0`; add Kuma at install with `COMPOSE_PROFILES=kuma`.
 
 ## Manual / from source
 
@@ -124,8 +135,10 @@ lives in the `./data` volume and survives image updates.
   `docker compose --profile wireguard up -d`, open the admin UI on **:51821**,
   add a client, and forward **UDP 51820** on your router.
 - **WireGuard client** (`wg-client`): for sites reporting to a central
-  [hub](#central-hub-all-sites-on-one-dashboard). The site dials out to the hub
-  — no router changes at the farm. Don't combine with the `wireguard` profile.
+  [hub](#central-hub-all-sites-on-one-dashboard). **The installer enables this by
+  default** (supply the per-site config — see "Linking a new site to the central
+  hub" above). The site dials out to the hub — no router changes at the farm.
+  Don't combine with the `wireguard` profile.
 
 ## Remote control via ntfy
 
