@@ -89,13 +89,13 @@
                         <p id="wizard-error" class="text-xs text-red-600 font-bold mt-2 hidden"></p>
                         <button onclick="runWizard()" id="wizard-btn" class="w-full mt-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">Create site + VPN client</button>
                         <p class="text-[10px] text-slate-400 mt-2">Creates the WireGuard client on the hub, registers the site, and gives you
-                            one command to paste on the farm Pi — no other steps.</p>
+                            one command to paste on the farm Pi (fresh or existing) — it preflights, installs Docker / Kuma / Netwatch if missing, and links the VPN.</p>
                     </div>
                     <div id="wizard-result" class="hidden">
                         <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-900 font-medium mb-3">
                             ✅ Site <b id="r-id"></b> created — VPN IP <b id="r-ip" class="font-mono"></b>
                         </div>
-                        <p class="text-xs text-slate-600 mb-2">Paste this <b>once on the farm site's Pi</b> (SSH or console). That's the last step:</p>
+                        <p class="text-xs text-slate-600 mb-2">Paste this <b>once on the farm site's Pi</b> (SSH or console) — a bare Pi works. It installs everything and links the VPN; this is the last step:</p>
                         <textarea id="r-script" readonly rows="8" class="w-full p-2 bg-slate-900 text-emerald-300 rounded-lg text-[11px] font-mono leading-snug" spellcheck="false"></textarea>
                         <div class="flex gap-2 mt-2">
                             <button onclick="copyScript()" id="copy-btn" class="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">📋 Copy command</button>

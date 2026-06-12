@@ -14,7 +14,7 @@ services:
     image: ghcr.io/wg-easy/wg-easy:14
     container_name: hub-wg-easy
     environment:
-      - WG_HOST=${WG_HOST:-your-hub.example.com}
+      - WG_HOST=${WG_HOST:?set WG_HOST in hub/.env — your public IP or DDNS name}
       - PASSWORD_HASH=${WG_PASSWORD_HASH:?see .env.example — generate with wgpw}
       - PORT=51821
       - WG_PORT=51820
@@ -52,6 +52,8 @@ services:
       - HUB_PORT=8091
       - HUB_PASSWORD=${HUB_PASSWORD:-}   # seeds the login on first boot only
       - WG_PASSWORD=${WG_PASSWORD:-}     # lets the add-site wizard drive wg-easy's API
+      # The bare-Pi installer the add-site wizard points new sites at (override for a fork).
+      - NETWATCH_INSTALL_URL=${NETWATCH_INSTALL_URL:-https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh}
       - TZ=${TZ:-UTC}
     volumes:
       - ./data/hub:/data

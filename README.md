@@ -74,31 +74,39 @@ device drops offline.
 
 ## Quick install (any Raspberry Pi)
 
+The installer is a **guided wizard**: it preflights the Pi (arch, kernel
+WireGuard, RAM, disk, internet, free ports), **installs anything missing**
+(Docker, Compose, the WireGuard module), pulls Netwatch + Uptime Kuma, links the
+central-hub VPN, and hands off to the dashboard setup wizard.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh | sudo bash
 ```
 
-Then open **`http://<pi-ip>:8090/setup`** and walk through the wizard
-(site name → subnets → scan interval → alerts → VPN). First scan starts
-automatically.
-
-### Linking a new site to the central hub (default)
-
-The installer sets up the **WireGuard client to the central hub by default**.
-Grab the per-site config from the hub's wg-easy UI (Clients → create → download),
-then run the installer with it so the tunnel comes up immediately:
+Check compatibility without changing anything:
 
 ```bash
-WG_CONF_B64="$(base64 -w0 site.conf)" sudo -E bash -c \
-  'curl -fsSL https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh | bash'
+curl -fsSL https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh | sudo bash -s -- --check
 ```
 
-Alternatives: `WG_CONF_URL=<url>` or `WG_CONF=/path/to/site.conf`. If you install
-without a config, it prints the 3-step finish (drop the conf at
-`/opt/netwatch/data/wg-client/wg_confs/wg0.conf`, then
-`docker compose --profile wg-client up -d`). The installer shows the site's
-`10.8.0.x` address — **register that on the hub** (port 8090). Opt out with
-`HUB_VPN=0`; add Kuma at install with `COMPOSE_PROFILES=kuma`.
+When done, open **`http://<pi-ip>:8090/setup`** for the site wizard (name →
+subnets → interval → alerts → VPN). Flags/env: `--check`, `--no-kuma`/`NO_KUMA=1`,
+`--no-vpn`/`HUB_VPN=0`, `NETWATCH_PORT`, `KUMA_PORT`.
+
+### Joining the central hub — one paste (recommended)
+
+Easiest: on the **hub** open *Add site*, fill in the name, and copy the single
+command it gives you. Paste it on the new Pi (**fresh or existing**) — it runs the
+wizard above with this site's VPN config baked in, then the site turns green on the
+hub within a minute. (Backed by the hub's wg-easy API + `_ENROLL_TEMPLATE`.)
+
+Doing it by hand instead: the installer enables the **WireGuard client to the hub
+by default** — supply the per-site config from wg-easy with `WG_CONF_B64="$(base64
+-w0 site.conf)"`, `WG_CONF_URL=<url>`, or `WG_CONF=/path/to/site.conf`. Without one
+it prints the finish step (drop the conf at
+`/opt/netwatch/data/wg-client/wg_confs/wg0.conf`, then `docker compose up -d`) and
+shows the site's `10.8.0.x` address to **register on the hub**. Opt out with
+`HUB_VPN=0`.
 
 ## Manual / from source
 

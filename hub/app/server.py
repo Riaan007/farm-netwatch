@@ -4,6 +4,7 @@ Aggregates every farm site's Netwatch (and its Uptime Kuma) over the WireGuard
 VPN. All data endpoints sit behind a session login; /api/health stays open as
 a liveness probe.
 """
+import base64
 import ipaddress
 import os
 import re
@@ -226,34 +227,32 @@ def api_site(site_id):
 
 
 # ---- add-site wizard --------------------------------------------------------
-_ENROLL_TEMPLATE = """# Run this ON THE FARM SITE's Pi (the one running Netwatch).
-# If Netwatch is installed somewhere other than /opt/netwatch, set NETWATCH_DIR first.
-NETWATCH_DIR="${{NETWATCH_DIR:-/opt/netwatch}}"
-set -e
-cd "$NETWATCH_DIR"
-mkdir -p data/wg-client/wg_confs
-cat > data/wg-client/wg_confs/wg0.conf <<'WG0EOF'
-{conf}
-WG0EOF
-chmod 600 data/wg-client/wg_confs/wg0.conf
-# keep the wg-client profile active on every future `docker compose up -d`
-if grep -q '^COMPOSE_PROFILES=' .env 2>/dev/null; then
-  grep -q 'wg-client' .env || sed -i 's/^COMPOSE_PROFILES=/COMPOSE_PROFILES=wg-client,/' .env
-else
-  echo 'COMPOSE_PROFILES=wg-client' >> .env
-fi
-docker compose --profile wg-client up -d
-echo "Connected — this site should turn green on the hub within a minute."
-"""
+# Where the bare-Pi installer lives (override per deployment / fork).
+NETWATCH_INSTALL_URL = os.environ.get(
+    "NETWATCH_INSTALL_URL",
+    "https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh")
+
+# One paste on the site's Pi (FRESH or already running Netwatch): the installer
+# preflights, installs Docker/Compose/WireGuard + Netwatch + Kuma if missing,
+# drops this site's VPN config in, and links it to the hub. Running everything
+# inside `sudo bash -c` lets us set the env for the piped installer directly,
+# avoiding sudo's env-var stripping.
+_ENROLL_TEMPLATE = (
+    "# Paste on the farm site's Pi (a fresh Pi or one already running Netwatch).\n"
+    "# Installs everything needed and links this site to the hub in one command.\n"
+    "sudo bash -c 'curl -fsSL \"{install_url}\" | "
+    "WG_CONF_B64=\"{conf_b64}\" ASSUME_YES=1 bash'\n")
 
 
 def _enroll_payload(site):
-    """conf + paste-ready script for a wizard-created site."""
+    """conf + paste-ready one-command bootstrap for a wizard-created site."""
     conf = wgeasy.get_configuration(site["wg_client_id"]).strip()
+    conf_b64 = base64.b64encode(conf.encode()).decode()
     return {
         "vpn_ip": site["vpn_ip"],
         "conf": conf,
-        "script": _ENROLL_TEMPLATE.format(conf=conf),
+        "script": _ENROLL_TEMPLATE.format(conf_b64=conf_b64,
+                                          install_url=NETWATCH_INSTALL_URL),
     }
 
 
