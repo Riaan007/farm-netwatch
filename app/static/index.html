@@ -1151,8 +1151,13 @@
             } else {
                 el.innerText = data.last_scan || '--:--:--';
             }
-            document.getElementById('setup-interval').value = data.scan_interval_min;
-            document.getElementById('setup-network').value = data.target_network;
+            // Don't overwrite these form fields while the user has Settings open
+            // and may be editing them — the live poll would otherwise reset their
+            // selection every few seconds (e.g. the scan interval reverting).
+            if(document.getElementById('setup-modal').classList.contains('hidden')){
+                document.getElementById('setup-interval').value = data.scan_interval_min;
+                document.getElementById('setup-network').value = data.target_network;
+            }
             const ss = document.getElementById('system-status');
             if(data.is_scanning){
                 ss.innerHTML = '<span class="scanning">⟳ '+(data.progress||"Scanning network…")+'</span>';
