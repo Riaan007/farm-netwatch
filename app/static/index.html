@@ -145,6 +145,20 @@
                     <span id="kuma-repair-result" class="text-xs"></span>
                     <span id="kuma-tag-result" class="text-xs ml-2"></span>
                 </div>
+                <div class="pt-3 border-t border-slate-100">
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🔗 Central Hub VPN</label>
+                    <div id="hub-status" class="text-sm mb-2 flex items-center gap-2 flex-wrap">
+                        <span class="text-slate-400">Checking…</span>
+                    </div>
+                    <textarea id="hub-conf" rows="7" class="w-full p-2 bg-slate-50 border rounded-lg text-xs font-mono" placeholder="Paste the WireGuard config from the hub (Add Site → copy config) here, then Connect.&#10;[Interface]&#10;PrivateKey = …&#10;Address = 10.8.0.x/24&#10;[Peer] …"></textarea>
+                    <div class="mt-2 flex flex-wrap gap-2 items-center">
+                        <button onclick="hubConnect()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Connect</button>
+                        <button onclick="hubDisconnect(false)" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Disconnect</button>
+                        <button onclick="hubDisconnect(true)" class="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold">Forget link</button>
+                        <span id="hub-result" class="text-xs"></span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Joins this site to the central hub over WireGuard — Netwatch brings the tunnel up itself. The site dials <b>out</b>, so <b>no ports are opened here</b>. On the hub: <b>Add Site</b> → copy this site's config → paste above. Don't also run the <code>wg-client</code> compose profile (one owner of <code>wg0</code> only).</p>
+                </div>
                 <div class="pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
                     <button onclick="quickScan(); closeSetup();" class="py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🚀</span> Quick Scan</button>
                     <button onclick="deepScan(); closeSetup();" class="py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🔬</span> Deep Scan</button>
@@ -835,8 +849,55 @@
                     document.getElementById('setup-kuma-pass').placeholder = k.username ? 'password saved — leave blank to keep' : 'Kuma admin password';
                 }
             } catch(e){}
+            refreshHubStatus();
         }
         function closeSetup(){ document.getElementById('setup-modal').classList.add('hidden'); }
+
+        // ---- Central Hub VPN ----
+        function fmtAge(s){ if(s==null) return '—'; if(s<60) return s+'s ago'; if(s<3600) return Math.floor(s/60)+'m ago'; return Math.floor(s/3600)+'h ago'; }
+        async function refreshHubStatus(){
+            const el = document.getElementById('hub-status');
+            try {
+                const s = await (await fetch('/api/hub/status')).json();
+                if(!s.tools_available){ el.innerHTML = '<span class="text-amber-600">⚠️ WireGuard tools not in this image — rebuild/pull the latest Netwatch.</span>'; return; }
+                if(s.connected){
+                    el.innerHTML = '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">🟢 Connected</span>'
+                        + '<span class="text-xs text-slate-500">' + (s.address||'') + '</span>'
+                        + '<span class="text-xs text-slate-400">handshake ' + fmtAge(s.last_handshake_s) + '</span>'
+                        + (s.hub_reachable ? '<span class="text-xs text-emerald-600">hub reachable ✓</span>' : '<span class="text-xs text-amber-600">hub not pinging</span>');
+                } else if(s.configured){
+                    el.innerHTML = '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">🟡 Config saved, no handshake</span>'
+                        + '<span class="text-xs text-slate-500">' + (s.address||'') + '</span>';
+                } else {
+                    el.innerHTML = '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-xs font-bold">⚪ Not linked</span>';
+                }
+            } catch(e){ el.innerHTML = '<span class="text-slate-400">status unavailable</span>'; }
+        }
+        async function hubConnect(){
+            const conf = document.getElementById('hub-conf').value.trim();
+            const r = document.getElementById('hub-result');
+            if(!conf){ r.textContent='Paste a config first.'; r.className='text-xs text-amber-600'; return; }
+            r.textContent='Connecting…'; r.className='text-xs text-slate-500';
+            try {
+                const res = await fetch('/api/hub/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config:conf})});
+                const j = await res.json();
+                if(j.ok){ r.textContent='Connected — should turn green on the hub within a minute.'; r.className='text-xs text-emerald-600'; document.getElementById('hub-conf').value=''; }
+                else { r.textContent = j.error || 'Failed.'; r.className='text-xs text-red-600'; }
+            } catch(e){ r.textContent='Request failed.'; r.className='text-xs text-red-600'; }
+            refreshHubStatus();
+        }
+        async function hubDisconnect(forget){
+            const r = document.getElementById('hub-result');
+            if(forget && !confirm('Remove the hub link and delete the stored config + keys from this site?')) return;
+            r.textContent = forget ? 'Removing…' : 'Disconnecting…'; r.className='text-xs text-slate-500';
+            try {
+                const res = await fetch('/api/hub/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({forget:!!forget})});
+                const j = await res.json();
+                r.textContent = j.ok ? (forget?'Link removed.':'Disconnected.') : (j.error||'Failed.');
+                r.className = j.ok ? 'text-xs text-slate-600' : 'text-xs text-red-600';
+            } catch(e){ r.textContent='Request failed.'; r.className='text-xs text-red-600'; }
+            refreshHubStatus();
+        }
 
         const CAT_ALERT_ORDER = ['camera','nvr','network','internet-ap','router','printer','nas','voip','solar','media','iot','pc','server','unknown'];
         function catRuleToVal(rule){

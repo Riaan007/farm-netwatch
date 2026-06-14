@@ -63,6 +63,12 @@ services:
     # After up: docker exec netwatch-tailscale tailscale up --advertise-routes=<your-cidr>
 
   # --- Optional: WireGuard CLIENT — dials out to the central hub ---------------
+  # NOTE: you usually DON'T need this profile anymore. Netwatch can own the hub
+  # tunnel itself from the dashboard: Settings → "Central Hub VPN" → paste the
+  # config from the hub's Add-Site → Connect (no SSH, no open ports). Use this
+  # sidecar only for headless/terminal joins, and NEVER run both at once (only
+  # one owner of wg0).
+  #
   # For sites reporting to a Farm Netwatch HUB (see hub/). No port forwarding is
   # needed at the farm: the client dials the hub and keeps the tunnel open.
   # 1. On the hub's wg-easy UI, create a client for this site and download the conf.

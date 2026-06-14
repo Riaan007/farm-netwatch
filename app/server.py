@@ -15,6 +15,7 @@ import config
 import creds
 import hikvision
 import history
+import hubvpn
 import kuma
 import notify
 from listener import listener
@@ -463,6 +464,41 @@ def api_wizard():
     return jsonify({"ok": True})
 
 
+@app.route("/api/hub/status")
+def api_hub_status():
+    """Central-hub VPN link state for the dashboard card."""
+    return jsonify(hubvpn.status())
+
+
+@app.route("/api/hub/connect", methods=["POST"])
+def api_hub_connect():
+    """Save a pasted wg config and bring the tunnel up — no SSH, no open ports."""
+    body = request.get_json(force=True, silent=True) or {}
+    conf = (body.get("config") or "").strip()
+    if not conf:
+        return jsonify({"ok": False, "error": "No config provided."}), 400
+    ok, msg = hubvpn.save_config(conf)
+    if not ok:
+        return jsonify({"ok": False, "error": msg}), 400
+    ok, msg = hubvpn.up()
+    code = 200 if ok else 500
+    return jsonify({"ok": ok, "error": None if ok else msg,
+                    "status": hubvpn.status()}), code
+
+
+@app.route("/api/hub/disconnect", methods=["POST"])
+def api_hub_disconnect():
+    """Bring the tunnel down. Pass {"forget": true} to also delete the config."""
+    body = request.get_json(force=True, silent=True) or {}
+    if body.get("forget"):
+        ok, msg = hubvpn.forget()
+    else:
+        ok, msg = hubvpn.down()
+    code = 200 if ok else 500
+    return jsonify({"ok": ok, "error": None if ok else msg,
+                    "status": hubvpn.status()}), code
+
+
 @app.route("/api/suggest-network")
 def api_suggest():
     """Best-guess local /24(s) for the wizard's target step."""
@@ -474,6 +510,7 @@ def api_suggest():
 
 
 def main():
+    hubvpn.boot()        # re-assert the hub tunnel if this site was joined
     scanner.start()
     listener.start()
     port = int(os.environ.get("NETWATCH_PORT", "8090"))

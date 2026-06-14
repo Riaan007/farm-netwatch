@@ -28,8 +28,11 @@ ENV PYTHONUNBUFFERED=1 \
     NETWATCH_PORT=8090
 # nmap = scanner; iproute2 = `ip` for local-subnet detection;
 # iputils-ping = connectivity-quality test (loss / latency / jitter)
+# nmap = scanner; iproute2 = `ip`; iputils-ping = connectivity test;
+# wireguard-tools = browser-driven "Connect to Central Hub" (wg-quick/wg in the
+# host netns — the site dials out to the hub, opening NO inbound ports).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      nmap iproute2 iputils-ping ca-certificates tzdata \
+      nmap iproute2 iputils-ping wireguard-tools ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt .

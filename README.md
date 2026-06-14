@@ -100,6 +100,18 @@ command it gives you. Paste it on the new Pi (**fresh or existing**) — it runs
 wizard above with this site's VPN config baked in, then the site turns green on the
 hub within a minute. (Backed by the hub's wg-easy API + `_ENROLL_TEMPLATE`.)
 
+### Joining from the browser — no SSH, no open ports
+
+If Netwatch is already running on the site, you don't need the terminal at all.
+On the hub open *Add site* and **copy the site's WireGuard config**, then on the
+site's dashboard go to **Settings → 🔗 Central Hub VPN**, paste it, and click
+**Connect**. Netwatch writes the config and brings the tunnel up itself
+(`wg-quick`, in the host netns) — the site dials **out**, so **no inbound ports
+are opened**. The card shows live status (🟢 connected / handshake age / your
+`10.8.0.x` / hub reachable) and survives restarts. *Disconnect* drops the tunnel;
+*Forget link* also deletes the stored config + keys. Don't also enable the
+`wg-client` compose profile — only one process may own `wg0`.
+
 Doing it by hand instead: the installer enables the **WireGuard client to the hub
 by default** — supply the per-site config from wg-easy with `WG_CONF_B64="$(base64
 -w0 site.conf)"`, `WG_CONF_URL=<url>`, or `WG_CONF=/path/to/site.conf`. Without one
