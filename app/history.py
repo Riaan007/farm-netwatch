@@ -107,3 +107,10 @@ def prune(retention_days):
     cutoff = int(time.time()) - retention_days * 86400
     c.execute("DELETE FROM samples WHERE ts < ?", (cutoff,))
     c.commit()
+
+
+def delete_key(key):
+    """Drop all uptime samples for a device that's being forgotten."""
+    c = _conn()
+    c.execute("DELETE FROM samples WHERE key = ?", (key,))
+    c.commit()

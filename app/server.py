@@ -226,8 +226,25 @@ def api_credentials(key):
     return jsonify(creds.get(key))
 
 
-@app.route("/api/devices/<path:key>", methods=["POST"])
+@app.route("/api/devices/prune", methods=["POST"])
+def api_devices_prune():
+    """Forget stale devices. Body: {"days": N} removes offline devices not seen
+    in N days; {"days": null} (or omitted) removes ALL currently-offline ones."""
+    body = request.get_json(force=True, silent=True) or {}
+    days = body.get("days")
+    try:
+        days = int(days) if days not in (None, "") else None
+    except (TypeError, ValueError):
+        days = None
+    removed = scanner.prune_devices(days=days, only_offline=True)
+    return jsonify({"ok": True, "removed": len(removed), "keys": removed})
+
+
+@app.route("/api/devices/<path:key>", methods=["POST", "DELETE"])
 def api_device_meta(key):
+    if request.method == "DELETE":
+        removed = scanner.delete_device(key)
+        return jsonify({"ok": removed}), (200 if removed else 404)
     body = request.get_json(force=True)
     reg = scanner.set_device_meta(
         key,

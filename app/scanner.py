@@ -622,6 +622,46 @@ class Scanner:
                                           if v is not None})
         return reg
 
+    def delete_device(self, key):
+        """Forget a device entirely: registry, live state, miss counter,
+        seen-set and its uptime history. Returns True if anything was removed."""
+        removed = False
+        if key in self.registry:
+            del self.registry[key]
+            self.save_registry()
+            removed = True
+        with self.lock:
+            if key in self.devices:
+                del self.devices[key]
+                removed = True
+            self.miss.pop(key, None)
+            self.seen_keys.discard(key)
+        self._save_state()
+        try:
+            history.delete_key(key)
+        except Exception:  # noqa: BLE001 - history cleanup is best-effort
+            pass
+        return removed
+
+    def prune_devices(self, days=None, only_offline=True):
+        """Forget devices not seen recently. With days=None, removes every
+        currently-offline device; otherwise those whose last_seen is older than
+        `days`. Returns the list of removed keys."""
+        cutoff = (time.time() - days * 86400) if days else None
+        victims = []
+        with self.lock:
+            for key, d in list(self.devices.items()):
+                if only_offline and d.get("online"):
+                    continue
+                if cutoff is not None:
+                    ls = d.get("last_seen")
+                    if ls and ls > cutoff:
+                        continue
+                victims.append(key)
+        for key in victims:
+            self.delete_device(key)
+        return victims
+
     # ---- background loop ----------------------------------------------
     def loop(self):
         while not self._stop:

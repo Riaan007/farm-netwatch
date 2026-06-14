@@ -159,6 +159,17 @@
                     </div>
                     <p class="text-[10px] text-slate-400 mt-1">Joins this site to the central hub over WireGuard — Netwatch brings the tunnel up itself. The site dials <b>out</b>, so <b>no ports are opened here</b>. On the hub: <b>Add Site</b> → copy this site's config → paste above. Don't also run the <code>wg-client</code> compose profile (one owner of <code>wg0</code> only).</p>
                 </div>
+                <div class="pt-3 border-t border-slate-100">
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🧹 Maintenance · prune devices</label>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <span class="text-xs text-slate-600">Remove offline devices not seen in</span>
+                        <input id="prune-days" type="number" min="0" value="7" class="w-16 p-1.5 bg-slate-50 border rounded-lg text-sm text-center">
+                        <span class="text-xs text-slate-600">days</span>
+                        <button onclick="pruneDevices()" class="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-xs font-bold">Prune now</button>
+                        <span id="prune-result" class="text-xs"></span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Forgets stale/offline devices (gear from another network, or kit you've retired) from the list, registry and uptime history. Use <b>0 days</b> to remove <b>all</b> currently-offline devices. Anything still live reappears on the next scan.</p>
+                </div>
                 <div class="pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
                     <button onclick="quickScan(); closeSetup();" class="py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🚀</span> Quick Scan</button>
                     <button onclick="deepScan(); closeSetup();" class="py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🔬</span> Deep Scan</button>
@@ -268,6 +279,7 @@
                             <input id="edit-watch" type="checkbox" class="w-4 h-4" onchange="toggleWatch()">
                             <span>🔔 <b>Watch this device</b> — alert me when it goes offline <i>and</i> when it comes back online</span>
                         </label>
+                        <button onclick="forgetDevice()" class="mt-3 text-xs text-red-600 hover:text-red-700 font-bold underline">🗑️ Forget this device (remove from list, registry &amp; history)</button>
                     </div>
 
                     <div id="cred-section" class="pt-3 border-t border-slate-100">
@@ -684,6 +696,26 @@
             };
             await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
             closeModal(); await loadDevices();
+        }
+        async function forgetDevice(){
+            if(!CURRENT_KEY) return;
+            if(!confirm('Forget this device? It is removed from the list, registry and uptime history. If it is still on the network it will reappear on the next scan.')) return;
+            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY), { method:'DELETE' });
+            closeModal(); await loadDevices();
+        }
+        async function pruneDevices(){
+            const v = document.getElementById('prune-days').value;
+            const days = (v===''||v===null) ? null : parseInt(v,10);
+            const label = (!days) ? 'ALL currently-offline devices' : ('offline devices not seen in '+days+' day(s)');
+            if(!confirm('Remove '+label+'? They drop from the registry and uptime history. Live devices reappear on the next scan.')) return;
+            const r = document.getElementById('prune-result');
+            r.textContent='Pruning…'; r.className='text-xs text-slate-500';
+            try {
+                const res = await fetch('/api/devices/prune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:days})});
+                const j = await res.json();
+                r.textContent = 'Removed '+j.removed+' device(s).'; r.className='text-xs text-emerald-600';
+                await loadDevices();
+            } catch(e){ r.textContent='Failed.'; r.className='text-xs text-red-600'; }
         }
         function populateLinkOptions(dev){
             const sel = document.getElementById('edit-link');
