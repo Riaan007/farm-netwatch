@@ -521,6 +521,26 @@ class Scanner:
         self.miss = {k: v for k, v in self.miss.items() if k in result}
 
         history.record(samples)
+
+        # ---- append to the IP/device event log (survives prune) -----------
+        ev_rows = [history.build_event("new", d) for d in new_devices]
+        ev_rows += [history.build_event("offline", d) for d in offline_now]
+        ev_rows += [history.build_event("online", d) for d in online_now]
+        for old_key in superseded:
+            old = self.devices.get(old_key)
+            if not old:
+                continue
+            ip = old.get("ip")
+            new = next((r for r in found.values()
+                        if r.get("ip") == ip and r.get("key") != old_key), None)
+            extra = {"prev_key": old_key, "prev_name": old.get("name"),
+                     "prev_vendor": old.get("vendor"), "prev_mac": old.get("mac")}
+            ev_rows.append(history.build_event("ip_change", new or old, extra))
+        try:
+            history.log_events(ev_rows)
+        except Exception:  # noqa: BLE001 - logging must never break a scan
+            pass
+
         for dev in new_devices:
             notify.notify_new_device(alerts, dev)
         for dev in offline_now:
@@ -536,6 +556,9 @@ class Scanner:
         self._kuma_sync(cfg, result)   # keep Kuma monitors pointed at the right IP / push manual ones
         try:
             history.prune(cfg["scan"]["history_days"])
+            # Event log keeps a long, independent retention (default ~1 year) so a
+            # device's history outlives both the sample retention and a prune.
+            history.prune_events(cfg["scan"].get("event_log_days", 365))
         except Exception:
             pass
 

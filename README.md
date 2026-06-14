@@ -20,6 +20,14 @@ device drops offline.
 - **Uptime history** — every scan is recorded in SQLite; the device panel shows
   24h / 7d / 30d uptime and a sparkline. Great for spotting a camera that keeps
   dropping.
+- **Device & IP event history** — an append-only log of every device that joins,
+  goes offline, comes back, or **takes over an IP** another device used to hold,
+  each with a full snapshot of the device's details (MAC, vendor, hostname, type,
+  ports, model, serial). Open it from the **History** button: a **Timeline** view
+  and a **By IP** view (click an IP to see every device that's ever lived there).
+  The log is independent of the live device list, so it **survives even after you
+  forget/prune a device** (retained ~1 year). APIs: `GET /api/events`
+  (`?ip=`/`?key=`/`?type=` filters) and `GET /api/ip-history`.
 - **Connection-quality test** — a per-device ping burst reporting packet loss,
   average latency, and jitter, graded excellent / good / fair / poor — so you can
   tell *how good* a link is, not just whether it's up.

@@ -37,6 +37,25 @@ def _init(c):
             rtt   REAL
         );
         CREATE INDEX IF NOT EXISTS idx_samples_key_ts ON samples(key, ts);
+
+        -- Append-only audit log of device events per IP. Independent of the live
+        -- device list, so a device's history survives even after it's forgotten.
+        CREATE TABLE IF NOT EXISTS events (
+            id    INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts    INTEGER NOT NULL,
+            type  TEXT NOT NULL,          -- new | offline | online | ip_change
+            key   TEXT,                   -- device key (MAC, else IP)
+            ip    TEXT,
+            mac   TEXT,
+            name  TEXT,
+            category TEXT,
+            vendor TEXT,
+            hostname TEXT,
+            detail TEXT                   -- JSON snapshot (ports, model, serial, prev device, …)
+        );
+        CREATE INDEX IF NOT EXISTS idx_events_ip_ts  ON events(ip, ts);
+        CREATE INDEX IF NOT EXISTS idx_events_key_ts ON events(key, ts);
+        CREATE INDEX IF NOT EXISTS idx_events_ts     ON events(ts);
         """
     )
     c.commit()
@@ -117,10 +136,117 @@ def delete_key(key):
 
 
 def delete_keys(keys):
-    """Drop samples for many devices in a single commit (used by prune)."""
+    """Drop samples for many devices in a single commit (used by prune).
+
+    Deliberately leaves the `events` audit log intact so a forgotten device's
+    history is preserved.
+    """
     keys = list(keys)
     if not keys:
         return
     c = _conn()
     c.executemany("DELETE FROM samples WHERE key = ?", [(k,) for k in keys])
+    c.commit()
+
+
+# ---- event log -----------------------------------------------------------
+
+import json as _json  # noqa: E402 - local to the event helpers
+
+
+def build_event(etype, dev, detail_extra=None):
+    """Build an events-table row tuple from a device record + event type."""
+    detail = {
+        "ports": dev.get("ports"),
+        "model": dev.get("model"),
+        "serial": dev.get("serial"),
+        "type_label": dev.get("type"),
+        "os": dev.get("os"),
+        "rtt": dev.get("rtt"),
+        "confidence": dev.get("confidence"),
+    }
+    if detail_extra:
+        detail.update(detail_extra)
+    return (
+        int(time.time()), etype, dev.get("key"), dev.get("ip"), dev.get("mac"),
+        dev.get("name"), dev.get("category"), dev.get("vendor"), dev.get("hostname"),
+        _json.dumps({k: v for k, v in detail.items() if v not in (None, "", [])}),
+    )
+
+
+def log_events(rows):
+    """Insert pre-built event rows (from _event_row) in one commit."""
+    rows = list(rows)
+    if not rows:
+        return
+    c = _conn()
+    c.executemany(
+        "INSERT INTO events (ts,type,key,ip,mac,name,category,vendor,hostname,detail) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+    c.commit()
+
+
+def events(ip=None, key=None, etype=None, since=None, limit=300):
+    """Query the event log, newest first. Filter by ip / key / type / since-ts."""
+    where, args = [], []
+    if ip:
+        where.append("ip = ?"); args.append(ip)
+    if key:
+        where.append("key = ?"); args.append(key)
+    if etype:
+        where.append("type = ?"); args.append(etype)
+    if since:
+        where.append("ts >= ?"); args.append(int(since))
+    sql = "SELECT ts,type,key,ip,mac,name,category,vendor,hostname,detail FROM events"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY ts DESC, id DESC LIMIT ?"
+    args.append(int(limit))
+    c = _conn()
+    out = []
+    for r in c.execute(sql, args):
+        d = dict(r)
+        try:
+            d["detail"] = _json.loads(d["detail"]) if d["detail"] else {}
+        except (ValueError, TypeError):
+            d["detail"] = {}
+        out.append(d)
+    return out
+
+
+def ip_history():
+    """One row per IP ever seen: the most-recent device there, how many distinct
+    devices have used it, the last event type/time, and current online guess."""
+    c = _conn()
+    rows = c.execute(
+        """
+        SELECT e.ip AS ip,
+               COUNT(DISTINCT e.key) AS device_count,
+               COUNT(*) AS event_count,
+               MAX(e.ts) AS last_ts
+        FROM events e
+        WHERE e.ip IS NOT NULL AND e.ip <> ''
+        GROUP BY e.ip
+        ORDER BY last_ts DESC
+        """).fetchall()
+    out = []
+    for r in rows:
+        ip = r["ip"]
+        last = c.execute(
+            "SELECT type,key,mac,name,category,vendor,hostname FROM events "
+            "WHERE ip = ? ORDER BY ts DESC, id DESC LIMIT 1", (ip,)).fetchone()
+        d = {"ip": ip, "device_count": r["device_count"],
+             "event_count": r["event_count"], "last_ts": r["last_ts"]}
+        if last:
+            d.update({"last_type": last["type"], "key": last["key"], "mac": last["mac"],
+                      "name": last["name"], "category": last["category"],
+                      "vendor": last["vendor"], "hostname": last["hostname"]})
+        out.append(d)
+    return out
+
+
+def prune_events(retention_days):
+    c = _conn()
+    cutoff = int(time.time()) - retention_days * 86400
+    c.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
     c.commit()

@@ -447,6 +447,27 @@ def api_history(key):
     })
 
 
+@app.route("/api/events")
+def api_events():
+    """Device/IP event log (newest first). Filter with ?ip= / ?key= / ?type=."""
+    try:
+        limit = min(int(request.args.get("limit", 300)), 2000)
+    except (TypeError, ValueError):
+        limit = 300
+    return jsonify({"events": history.events(
+        ip=request.args.get("ip") or None,
+        key=request.args.get("key") or None,
+        etype=request.args.get("type") or None,
+        limit=limit,
+    )})
+
+
+@app.route("/api/ip-history")
+def api_ip_history():
+    """One summary row per IP ever seen: device count, last device, last change."""
+    return jsonify({"ips": history.ip_history()})
+
+
 # ---- first-run wizard --------------------------------------------------
 @app.route("/api/wizard", methods=["POST"])
 def api_wizard():

@@ -31,6 +31,7 @@
                 <select id="target-select" onchange="onTargetChange()" class="hidden md:block bg-slate-800 text-white text-xs rounded-lg px-3 py-2 border border-slate-700"></select>
                 <button id="select-btn" onclick="toggleSelectMode()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">Select</button>
                 <button onclick="quickScan()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold uppercase">Scan</button>
+                <button onclick="openHistory()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase" title="Device & IP event history">History</button>
                 <button onclick="openSetup()" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-full transition-colors" title="Settings">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                 </button>
@@ -75,6 +76,34 @@
         <button onclick="deepScanSelected()" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-full text-xs font-bold uppercase">🔬 Deep scan</button>
         <button onclick="quickScanSelected()" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-full text-xs font-bold uppercase">⚡ Quick</button>
         <button onclick="clearSelection()" class="text-slate-400 hover:text-white text-xs">Clear</button>
+    </div>
+
+    <!-- History / Event Log Modal -->
+    <div id="history-modal" onclick="if(event.target===this) closeHistory()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-6 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                <div>
+                    <h2 class="text-xl font-bold">Device &amp; IP History</h2>
+                    <p class="text-xs text-slate-300">Every device that's joined, gone offline, returned, or taken over an IP — kept even after a device is forgotten.</p>
+                </div>
+                <button onclick="closeHistory()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+            </div>
+            <div class="px-5 pt-3 shrink-0 flex flex-wrap gap-2 items-center border-b border-slate-100 pb-3">
+                <div class="flex bg-slate-100 rounded-lg p-0.5 text-xs font-bold">
+                    <button id="hist-tab-timeline" onclick="histTab('timeline')" class="px-3 py-1.5 rounded-md bg-white shadow">Timeline</button>
+                    <button id="hist-tab-byip" onclick="histTab('byip')" class="px-3 py-1.5 rounded-md text-slate-500">By IP</button>
+                </div>
+                <input id="hist-filter" oninput="renderHistory()" type="text" placeholder="Filter by IP, name or vendor…" class="flex-grow min-w-[160px] p-2 bg-slate-50 border rounded-lg text-sm">
+                <select id="hist-type" onchange="loadEvents()" class="p-2 bg-slate-50 border rounded-lg text-sm">
+                    <option value="">All events</option>
+                    <option value="new">New device</option>
+                    <option value="offline">Went offline</option>
+                    <option value="online">Came back online</option>
+                    <option value="ip_change">IP reassigned</option>
+                </select>
+            </div>
+            <div id="hist-body" class="p-5 overflow-y-auto text-sm">Loading…</div>
+        </div>
     </div>
 
     <!-- Setup / Settings Modal -->
@@ -279,7 +308,10 @@
                             <input id="edit-watch" type="checkbox" class="w-4 h-4" onchange="toggleWatch()">
                             <span>🔔 <b>Watch this device</b> — alert me when it goes offline <i>and</i> when it comes back online</span>
                         </label>
-                        <button onclick="forgetDevice()" class="mt-3 text-xs text-red-600 hover:text-red-700 font-bold underline">🗑️ Forget this device (remove from list, registry &amp; history)</button>
+                        <div class="mt-3 flex items-center justify-between gap-2">
+                            <button onclick="openDeviceHistory()" class="text-xs text-blue-600 hover:text-blue-700 font-bold underline">🕓 View this IP's history</button>
+                            <button onclick="forgetDevice()" class="text-xs text-red-600 hover:text-red-700 font-bold underline">🗑️ Forget this device</button>
+                        </div>
                     </div>
 
                     <div id="cred-section" class="pt-3 border-t border-slate-100">
@@ -884,6 +916,100 @@
             refreshHubStatus();
         }
         function closeSetup(){ document.getElementById('setup-modal').classList.add('hidden'); }
+
+        // ---- Device & IP history ----
+        let HIST_TAB='timeline', HIST_EVENTS=[], HIST_IPS=[];
+        const EV_META={
+            'new':      {icon:'🟦', label:'New device',   cls:'text-blue-700 bg-blue-50'},
+            'offline':  {icon:'🔴', label:'Went offline',  cls:'text-red-700 bg-red-50'},
+            'online':   {icon:'🟢', label:'Back online',   cls:'text-emerald-700 bg-emerald-50'},
+            'ip_change':{icon:'🔄', label:'IP reassigned', cls:'text-amber-700 bg-amber-50'},
+        };
+        function tsFull(ts){ return ts ? new Date(ts*1000).toLocaleString() : '—'; }
+        function tsAgo(ts){ if(!ts) return ''; const s=Math.floor(Date.now()/1000-ts); if(s<60) return s+'s ago'; if(s<3600) return Math.floor(s/60)+'m ago'; if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
+        function openHistory(){ document.getElementById('history-modal').classList.remove('hidden'); histTab(HIST_TAB); }
+        function closeHistory(){ document.getElementById('history-modal').classList.add('hidden'); }
+        function histTab(t){
+            HIST_TAB=t;
+            document.getElementById('hist-tab-timeline').className = 'px-3 py-1.5 rounded-md '+(t==='timeline'?'bg-white shadow':'text-slate-500');
+            document.getElementById('hist-tab-byip').className = 'px-3 py-1.5 rounded-md '+(t==='byip'?'bg-white shadow':'text-slate-500');
+            document.getElementById('hist-type').style.display = (t==='timeline')?'':'none';
+            if(t==='timeline') loadEvents(); else loadIpHistory();
+        }
+        async function loadEvents(ip){
+            const type=document.getElementById('hist-type').value;
+            let url='/api/events?limit=500'; if(type) url+='&type='+type; if(ip) url+='&ip='+encodeURIComponent(ip);
+            document.getElementById('hist-body').innerHTML='Loading…';
+            try { HIST_EVENTS=(await (await fetch(url)).json()).events||[]; } catch(e){ HIST_EVENTS=[]; }
+            HIST_TAB='timeline';
+            document.getElementById('hist-tab-timeline').className='px-3 py-1.5 rounded-md bg-white shadow';
+            document.getElementById('hist-tab-byip').className='px-3 py-1.5 rounded-md text-slate-500';
+            document.getElementById('hist-type').style.display='';
+            renderHistory();
+        }
+        async function loadIpHistory(){
+            document.getElementById('hist-body').innerHTML='Loading…';
+            try { HIST_IPS=(await (await fetch('/api/ip-history')).json()).ips||[]; } catch(e){ HIST_IPS=[]; }
+            renderHistory();
+        }
+        function evDetail(e){
+            const d=e.detail||{}; const bits=[];
+            if(e.mac) bits.push(e.mac);
+            if(e.hostname) bits.push(e.hostname);
+            if(d.type_label) bits.push(d.type_label);
+            if(d.model) bits.push('model '+d.model);
+            if(d.serial) bits.push('s/n '+d.serial);
+            if(d.ports && d.ports.length) bits.push('ports '+d.ports.join(','));
+            if(e.type==='ip_change' && d.prev_name!==undefined) bits.push('replaced: '+((d.prev_name||d.prev_vendor||d.prev_mac||'unknown')));
+            return bits.join(' · ');
+        }
+        function renderHistory(){
+            const body=document.getElementById('hist-body');
+            const q=(document.getElementById('hist-filter').value||'').toLowerCase();
+            if(HIST_TAB==='byip'){
+                let ips=HIST_IPS.filter(r=>!q || (r.ip||'').toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q) || (r.vendor||'').toLowerCase().includes(q));
+                if(!ips.length){ body.innerHTML='<p class="text-slate-400">No history yet.</p>'; return; }
+                body.innerHTML = ips.map(r=>{
+                    const m=EV_META[r.last_type]||{icon:'•',label:r.last_type||''};
+                    const who=r.name||r.vendor||r.hostname||r.mac||'unknown';
+                    return `<button onclick="histShowIp('${r.ip}')" class="w-full text-left p-3 mb-2 border rounded-lg hover:bg-slate-50 flex items-center justify-between gap-3">
+                        <div><span class="font-mono font-bold">${r.ip}</span> <span class="text-slate-500">— ${who}</span>
+                        <div class="text-[11px] text-slate-400">${r.device_count} device(s) · ${r.event_count} event(s) seen here</div></div>
+                        <div class="text-right shrink-0"><div class="text-xs">${m.icon} ${m.label}</div><div class="text-[11px] text-slate-400">${tsAgo(r.last_ts)}</div></div>
+                    </button>`;
+                }).join('');
+                return;
+            }
+            let evs=HIST_EVENTS.filter(e=>{
+                if(!q) return true;
+                return [e.ip,e.name,e.vendor,e.hostname,e.mac].some(x=>(x||'').toLowerCase().includes(q));
+            });
+            if(!evs.length){ body.innerHTML='<p class="text-slate-400">No matching events yet. They appear as devices join, go offline, return, or change IP.</p>'; return; }
+            body.innerHTML = evs.map(e=>{
+                const m=EV_META[e.type]||{icon:'•',label:e.type,cls:''};
+                const who=e.name||e.vendor||e.hostname||e.mac||'Unknown device';
+                const det=evDetail(e);
+                return `<div class="p-3 mb-2 border rounded-lg">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="text-xs font-bold px-2 py-0.5 rounded-full ${m.cls}">${m.icon} ${m.label}</span>
+                            <span class="font-semibold truncate">${who}</span>
+                            <button onclick="loadEvents('${e.ip}')" class="font-mono text-xs text-blue-600 hover:underline shrink-0">${e.ip||''}</button>
+                        </div>
+                        <span class="text-[11px] text-slate-400 shrink-0" title="${tsFull(e.ts)}">${tsAgo(e.ts)}</span>
+                    </div>
+                    ${det?`<div class="text-[11px] text-slate-500 mt-1">${det}</div>`:''}
+                </div>`;
+            }).join('');
+        }
+        function histShowIp(ip){ document.getElementById('hist-filter').value=ip; loadEvents(ip); }
+        function openDeviceHistory(){
+            if(!MODAL_IP) return;
+            closeModal();
+            document.getElementById('history-modal').classList.remove('hidden');
+            document.getElementById('hist-filter').value = MODAL_IP;
+            loadEvents(MODAL_IP);
+        }
 
         // ---- Central Hub VPN ----
         function fmtAge(s){ if(s==null) return '—'; if(s<60) return s+'s ago'; if(s<3600) return Math.floor(s/60)+'m ago'; return Math.floor(s/3600)+'h ago'; }
