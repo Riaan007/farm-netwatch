@@ -9,6 +9,7 @@ path the wg-client sidecar used (data/wg-client/wg_confs/wg0.conf) so the two ar
 interchangeable, but only ONE may own wg0 at a time — a browser-joined site should
 NOT also enable the `wg-client` compose profile.
 """
+import base64
 import os
 import re
 import subprocess
@@ -48,6 +49,40 @@ def _sanitize(conf_text):
     return text
 
 
+def _b64_to_conf(b64):
+    """Decode a base64 blob to a wg config, or '' if it isn't one."""
+    try:
+        dec = base64.b64decode(b64).decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        return ""
+    return dec if "[Interface]" in dec else ""
+
+
+def _extract_config(raw):
+    """Accept whatever the hub gives the user and return a raw wg config.
+
+    The hub's Add-Site wizard emits a one-paste BOOTSTRAP command, not a raw
+    config — so users naturally paste that here. Pull the real config out of it:
+      * already a raw config  -> use as-is
+      * a bootstrap command with WG_CONF_B64="..."  -> decode that
+      * a bare base64 blob of a config             -> decode it
+    """
+    raw = (raw or "").strip()
+    if "[Interface]" in raw and "[Peer]" in raw:
+        return raw
+    m = re.search(r"WG_CONF_B64\s*=\s*[\"']?([A-Za-z0-9+/=]+)", raw)
+    if m:
+        dec = _b64_to_conf(m.group(1))
+        if dec:
+            return dec
+    compact = re.sub(r"\s+", "", raw)
+    if compact and re.fullmatch(r"[A-Za-z0-9+/=]+", compact):
+        dec = _b64_to_conf(compact)
+        if dec:
+            return dec
+    return raw
+
+
 def _valid(conf_text):
     return "[Interface]" in conf_text and "[Peer]" in conf_text \
         and "PrivateKey" in conf_text and "Endpoint" in conf_text
@@ -63,9 +98,15 @@ def is_up():
 
 
 def save_config(conf_text):
-    """Validate + sanitise + persist the wg config. Returns (ok, message)."""
+    """Validate + sanitise + persist the wg config. Returns (ok, message).
+
+    Accepts a raw config, the hub's one-paste bootstrap command, or a base64
+    blob — whatever the user copied from the hub.
+    """
+    conf_text = _extract_config(conf_text)
     if not _valid(conf_text):
-        return False, "That doesn't look like a WireGuard config (need [Interface]/[Peer])."
+        return False, ("That doesn't look like a WireGuard config. Paste the config "
+                       "from the hub's Add Site (or its install command — either works).")
     text = _sanitize(conf_text)
     os.makedirs(WG_DIR, exist_ok=True)
     # Write 0600 — the file holds the private key.

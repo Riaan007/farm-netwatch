@@ -150,7 +150,7 @@
                     <div id="hub-status" class="text-sm mb-2 flex items-center gap-2 flex-wrap">
                         <span class="text-slate-400">Checking…</span>
                     </div>
-                    <textarea id="hub-conf" rows="7" class="w-full p-2 bg-slate-50 border rounded-lg text-xs font-mono" placeholder="Paste the WireGuard config from the hub (Add Site → copy config) here, then Connect.&#10;[Interface]&#10;PrivateKey = …&#10;Address = 10.8.0.x/24&#10;[Peer] …"></textarea>
+                    <textarea id="hub-conf" rows="7" class="w-full p-2 bg-slate-50 border rounded-lg text-xs font-mono" placeholder="From the hub's Add Site, paste EITHER the WireGuard config OR the install command — both work. Then Connect.&#10;[Interface]&#10;PrivateKey = …&#10;Address = 10.8.0.x/24&#10;[Peer] …"></textarea>
                     <div class="mt-2 flex flex-wrap gap-2 items-center">
                         <button onclick="hubConnect()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Connect</button>
                         <button onclick="hubDisconnect(false)" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Disconnect</button>

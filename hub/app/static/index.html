@@ -95,13 +95,20 @@
                         <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-900 font-medium mb-3">
                             ✅ Site <b id="r-id"></b> created — VPN IP <b id="r-ip" class="font-mono"></b>
                         </div>
-                        <p class="text-xs text-slate-600 mb-2">Paste this <b>once on the farm site's Pi</b> (SSH or console) — a bare Pi works. It installs everything and links the VPN; this is the last step:</p>
+                        <p class="text-xs text-slate-700 font-bold mb-1">Option A — bare Pi / SSH (installs everything):</p>
+                        <p class="text-[11px] text-slate-500 mb-2">Paste this <b>once on the farm Pi's terminal</b>. It preflights, installs Docker / Kuma / Netwatch if missing, and links the VPN.</p>
                         <textarea id="r-script" readonly rows="8" class="w-full p-2 bg-slate-900 text-emerald-300 rounded-lg text-[11px] font-mono leading-snug" spellcheck="false"></textarea>
                         <div class="flex gap-2 mt-2">
                             <button onclick="copyScript()" id="copy-btn" class="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">📋 Copy command</button>
+                        </div>
+                        <p class="text-xs text-slate-700 font-bold mt-4 mb-1">Option B — Netwatch already running (no SSH):</p>
+                        <p class="text-[11px] text-slate-500 mb-2">On the site's dashboard go to <b>⚙ Settings → 🔗 Central Hub VPN</b>, paste this config (or the command above — either works), and click <b>Connect</b>. No ports opened on the site.</p>
+                        <textarea id="r-conf" readonly rows="7" class="w-full p-2 bg-slate-50 border rounded-lg text-[11px] font-mono leading-snug" spellcheck="false"></textarea>
+                        <div class="flex gap-2 mt-2">
+                            <button onclick="copyConf()" id="copy-conf-btn" class="flex-grow py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm">📋 Copy WireGuard config</button>
                             <button onclick="wizardReset()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm">Done</button>
                         </div>
-                        <p class="text-[10px] text-slate-400 mt-2">The card stays red until the Pi runs it. You can re-open this command
+                        <p class="text-[10px] text-slate-400 mt-2">The card stays red until the site links. You can re-open this
                             any time with the site's <b>Setup cmd</b> button above.</p>
                     </div>
                 </div>
@@ -340,16 +347,17 @@
                 err.classList.remove('hidden');
                 return;
             }
-            showEnroll(res.site.id, res.vpn_ip, res.script);
+            showEnroll(res.site.id, res.vpn_ip, res.script, res.conf);
             loadSites(); refresh();
         }
 
-        function showEnroll(id, ip, script){
+        function showEnroll(id, ip, script, conf){
             document.getElementById('wizard-form').classList.add('hidden');
             document.getElementById('wizard-result').classList.remove('hidden');
             document.getElementById('r-id').textContent = id;
             document.getElementById('r-ip').textContent = ip;
             document.getElementById('r-script').value = script;
+            document.getElementById('r-conf').value = conf || '';
         }
 
         function wizardReset(){
@@ -369,10 +377,19 @@
             setTimeout(() => b.textContent = '📋 Copy command', 1500);
         }
 
+        async function copyConf(){
+            const ta = document.getElementById('r-conf');
+            try { await navigator.clipboard.writeText(ta.value); }
+            catch (e) { ta.select(); document.execCommand('copy'); }
+            const b = document.getElementById('copy-conf-btn');
+            b.textContent = '✅ Copied';
+            setTimeout(() => b.textContent = '📋 Copy WireGuard config', 1500);
+        }
+
         async function enrollCmd(id){
             const res = await fetch(`/api/hub/sites/${id}/enroll`).then(r => r.json());
             if (!res.ok) { alert(res.error || 'No enrollment script for this site'); return; }
-            showEnroll(id, res.vpn_ip, res.script);
+            showEnroll(id, res.vpn_ip, res.script, res.conf);
         }
 
         refresh();
