@@ -120,15 +120,22 @@ def up():
     """(Re)bring the tunnel up from the stored config. Returns (ok, message)."""
     if not has_config():
         return False, "No hub config saved yet."
-    _run(["wg-quick", "down", WG_CONF])  # ignore errors (may not be up)
-    rc, out = _run(["wg-quick", "up", WG_CONF])
+    # Generous timeouts: wg-quick resolves the hub's (DDNS) endpoint and waits on
+    # the first handshake — on a slow Pi/link this can take well over 20s. Killing
+    # it early leaves a half-configured wg0 ("config saved, no handshake").
+    _run(["wg-quick", "down", WG_CONF], timeout=30)  # ignore errors (may not be up)
+    rc, out = _run(["wg-quick", "up", WG_CONF], timeout=60)
+    if rc == 124:
+        return False, ("wg-quick timed out bringing the tunnel up — usually a DNS "
+                       "or routing issue resolving the hub endpoint. Check the site "
+                       "can reach the hub's WireGuard port (UDP 51820).")
     if rc != 0:
         return False, out or "wg-quick up failed."
     return True, "Tunnel up."
 
 
 def down():
-    rc, out = _run(["wg-quick", "down", WG_CONF])
+    rc, out = _run(["wg-quick", "down", WG_CONF], timeout=30)
     if rc != 0 and "is not a" not in out.lower():
         return False, out or "wg-quick down failed."
     return True, "Tunnel down."
