@@ -646,20 +646,33 @@ class Scanner:
     def prune_devices(self, days=None, only_offline=True):
         """Forget devices not seen recently. With days=None, removes every
         currently-offline device; otherwise those whose last_seen is older than
-        `days`. Returns the list of removed keys."""
+        `days`. Returns the list of removed keys.
+
+        Done as ONE atomic batch (single registry/state save + a single history
+        delete) — a per-device loop rewrote devices.json/state.json and committed
+        SQLite once per victim, which on a busy Pi could take minutes and make the
+        UI button look hung."""
         cutoff = (time.time() - days * 86400) if days else None
-        victims = []
         with self.lock:
+            victims = []
             for key, d in list(self.devices.items()):
                 if only_offline and d.get("online"):
                     continue
-                if cutoff is not None:
-                    ls = d.get("last_seen")
-                    if ls and ls > cutoff:
-                        continue
+                if cutoff is not None and (d.get("last_seen") or 0) > cutoff:
+                    continue
                 victims.append(key)
-        for key in victims:
-            self.delete_device(key)
+            for key in victims:
+                self.devices.pop(key, None)
+                self.miss.pop(key, None)
+                self.seen_keys.discard(key)
+                self.registry.pop(key, None)
+        if victims:
+            self.save_registry()
+            self._save_state()
+            try:
+                history.delete_keys(victims)
+            except Exception:  # noqa: BLE001 - history cleanup is best-effort
+                pass
         return victims
 
     # ---- background loop ----------------------------------------------

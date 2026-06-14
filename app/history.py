@@ -114,3 +114,13 @@ def delete_key(key):
     c = _conn()
     c.execute("DELETE FROM samples WHERE key = ?", (key,))
     c.commit()
+
+
+def delete_keys(keys):
+    """Drop samples for many devices in a single commit (used by prune)."""
+    keys = list(keys)
+    if not keys:
+        return
+    c = _conn()
+    c.executemany("DELETE FROM samples WHERE key = ?", [(k,) for k in keys])
+    c.commit()
