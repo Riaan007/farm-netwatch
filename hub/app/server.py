@@ -16,9 +16,20 @@ from flask import (Flask, jsonify, redirect, request, send_from_directory,
 
 import auth
 import hubconfig
+import proxycfg
 import sitehistory
 import wgeasy
 from poller import poller
+
+
+def _lan_host():
+    """The host the browser used to reach the hub — for building site-dashboard
+    links that point back through the hub's reverse proxy. Honour X-Forwarded-Host
+    (future front proxy), else request.host; strip the port (the proxy port differs
+    from the hub's 8091)."""
+    h = (request.headers.get("X-Forwarded-Host", "").split(",")[0].strip()
+         or request.host or "")
+    return h.rsplit(":", 1)[0] if ":" in h else h
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
@@ -82,6 +93,10 @@ def api_login():
     elif not auth.check(pw):
         time.sleep(1)                      # blunt brute-force throttle
         return jsonify({"ok": False, "error": "Wrong password"}), 401
+    else:
+        # Backfill the Caddy basic-auth hash for installs predating the proxy.
+        auth.ensure_proxy_hash(pw)
+    proxycfg.sync()                        # (re)enable the site proxy now we have a hash
     session.permanent = True
     session["auth"] = True
     return jsonify({"ok": True})
@@ -111,7 +126,6 @@ def _site_card(site):
         or not fetched
         or time.time() - fetched > 2 * poll_cfg["devices_interval_s"]
     )
-    port = site.get("netwatch_port", 8090)
     return {
         "id": site["id"],
         "name": (status.get("site") or {}).get("name") or site.get("name") or site["id"],
@@ -132,10 +146,8 @@ def _site_card(site):
                  "url": kuma.get("url")} if kuma.get("ok") else None,
         "kuma_state": (kuma.get("reason") if kuma and not kuma.get("ok") else
                        ("ok" if kuma.get("ok") else "off")),
-        "links": {
-            "netwatch": f"http://{site['vpn_ip']}:{port}",
-            "kuma": site.get("kuma_url") or "",
-        },
+        "links": dict(zip(("netwatch", "kuma"), proxycfg.links(site, _lan_host()))),
+        "vpn_ip": site["vpn_ip"],
         "spark": sitehistory.series(site["id"], 86400, 48),
         "reach_24h": sitehistory.reachability_pct(site["id"], 86400),
     }
@@ -192,6 +204,7 @@ def api_sites():
             return jsonify({"ok": False, "error": err}), 400
         cfg["sites"].append(site)
         hubconfig.save(cfg)
+        proxycfg.sync()
         poller.poll_now(site["id"])
         return jsonify({"ok": True, "site": site})
     return jsonify({"sites": cfg["sites"]})
@@ -206,6 +219,7 @@ def api_site(site_id):
     if request.method == "DELETE":
         gone = cfg["sites"].pop(idx)
         hubconfig.save(cfg)
+        proxycfg.sync()                     # free its proxy ports + drop its Caddy block
         # Best-effort: a wizard-created site also owns a wg-easy client.
         removed_vpn = False
         if gone.get("wg_client_id"):
@@ -219,9 +233,10 @@ def api_site(site_id):
     site, err = _validate_site(body, {s["id"] for s in cfg["sites"]}, keep_id=site_id)
     if err:
         return jsonify({"ok": False, "error": err}), 400
-    # merge over the old entry so extra keys (wg_client_id) survive an edit
+    # merge over the old entry so extra keys (wg_client_id, proxy_*) survive an edit
     cfg["sites"][idx] = {**cfg["sites"][idx], **site}
     hubconfig.save(cfg)
+    proxycfg.sync()                         # vpn_ip/kuma_url change may re-target the proxy
     poller.poll_now(site_id)
     return jsonify({"ok": True, "site": cfg["sites"][idx]})
 
@@ -288,6 +303,7 @@ def api_hub_wizard():
     }
     cfg["sites"].append(site)
     hubconfig.save(cfg)
+    proxycfg.sync()
     poller.poll_now(sid)
 
     try:
@@ -387,6 +403,10 @@ def api_site_poll(site_id):
 
 def main():
     auth.seed_from_env()
+    lo, hi = proxycfg.port_range()
+    print(f"[hub] site reverse-proxy port range {lo}-{hi} "
+          "(must match the published range in docker-compose.yml)", flush=True)
+    proxycfg.sync()                        # assign ports + write/reload the Caddyfile
     poller.start()
     port = int(os.environ.get("HUB_PORT", "8091"))
     app.run(host="0.0.0.0", port=port, threaded=True)

@@ -21,6 +21,9 @@ DEFAULTS = {
         # werkzeug password hash; empty -> login page runs first-time setup
         # (or it is seeded from the HUB_PASSWORD env var at startup).
         "password_hash": "",
+        # bcrypt hash of the SAME password, for the Caddy reverse-proxy's basic_auth
+        # (Caddy only accepts bcrypt). Written by auth.set_password/ensure_proxy_hash.
+        "proxy_basic_hash": "",
     },
     "poll": {
         "status_interval_s": 60,    # site reachability heartbeat
@@ -34,6 +37,10 @@ DEFAULTS = {
     # the site's own /api/status), vpn_ip (WireGuard IP; the home site uses the
     # host LAN IP because the hub shares wg-easy's netns where localhost != host),
     # netwatch_port, kuma_url + kuma_status_slug ("" disables the Kuma panel).
+    # Hub-managed extras (not user-editable): wg_client_id (wizard-created VPN
+    # client) and proxy_netwatch_port / proxy_kuma_port (LAN ports the Caddy
+    # reverse proxy assigns to VPN sites — see proxycfg.py). The deep-merge in
+    # save()/update() preserves these keys across edits.
     "sites": [
         {
             "id": "home",

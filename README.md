@@ -310,6 +310,25 @@ slug **`farm`**, add your monitors to a group, **publish**. Enter the slug in
 the hub's site settings and the monitors' heartbeat bars appear on the site
 detail page.
 
+### Opening a site's Netwatch / Kuma from a LAN browser
+
+A site's dashboards live on its WireGuard IP (`10.8.0.x`), which a normal LAN
+computer can't route — so the hub **reverse-proxies** them. A Caddy sidecar
+(`hub-proxy`, sharing wg-easy's netns) serves each VPN site's Netwatch and Kuma
+on a LAN port of the hub, so the **Netwatch ↗ / Kuma ↗** buttons just open in any
+LAN browser — **no VPN client needed** on your computer.
+
+- Ports are auto-assigned from the **`8200-8231`** range (published on wg-easy;
+  set `HUB_PROXY_RANGE` to change it — it must match the compose `ports:` entry).
+  The hub generates `data/hub/caddy/Caddyfile` and hot-reloads Caddy on changes.
+- Each proxied port is gated by **Basic Auth** — log in as **`admin`** with your
+  **hub password**. (If the buttons 401 with no prompt or the proxy seems off after
+  upgrading, log into the hub once — that backfills the auth hash.)
+- The **home** site uses a LAN IP, so it's linked directly (not proxied).
+- **Security:** these ports expose the (login-less) site dashboards on your LAN
+  behind the hub password. Keep them LAN-only — **do not forward `8200-8231`** to
+  the internet.
+
 ### Hub troubleshooting
 
 | Symptom | Check |
@@ -318,6 +337,8 @@ detail page.
 | handshake ok, card red | from hub: `docker exec netwatch-hub python -c "import requests;print(requests.get('http://10.8.0.X:8090/api/status',timeout=5).json())"` |
 | Kuma panel: "no status page" | the slug isn't published, or has no monitors in a *public* group |
 | sites can't reach hub | router forward UDP 51820 → hub; `WG_HOST` resolves to your WAN IP |
+| site button 401 / proxy off | log into the hub once (backfills the proxy auth hash); `cat data/hub/caddy/Caddyfile`; `docker logs hub-proxy` |
+| site button times out | `docker exec hub-proxy ip addr show wg0` (should show 10.8.0.1); confirm the site card is otherwise green |
 
 ## How it works
 

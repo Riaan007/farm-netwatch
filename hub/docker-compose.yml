@@ -8,7 +8,13 @@
 # the hub can reach the sites' 10.8.0.x addresses. Two consequences:
 #   * the hub's UI port is published on the wg-easy service, not on `hub`;
 #   * NEVER recreate wg-easy alone — always `docker compose up -d` from this
-#     directory so compose recreates both and the shared netns stays valid.
+#     directory so compose recreates ALL THREE (wg-easy, hub, hub-proxy) and the
+#     shared netns stays valid.
+#
+# hub-proxy (Caddy) ALSO shares wg-easy's netns: it reverse-proxies each VPN
+# site's Netwatch/Kuma to LAN ports so a browser can reach them without being a
+# VPN client. Its listen ports are published on wg-easy (the netns owner) as the
+# 8200-8231 range; the hub assigns ports within it and generates Caddy's config.
 services:
   wg-easy:
     image: ghcr.io/wg-easy/wg-easy:14
@@ -31,6 +37,10 @@ services:
       - "51820:51820/udp"          # WireGuard — forward this on the router
       - "51821:51821/tcp"          # wg-easy admin UI (LAN/VPN only, do NOT forward)
       - "${HUB_PORT:-8091}:8091"   # hub dashboard (published here: shared netns)
+      # Reverse-proxy ports for site dashboards (hub-proxy/Caddy binds within this
+      # range; the hub assigns per-site). MUST match HUB_PROXY_RANGE on `hub`.
+      # LAN-only — do NOT forward these on the router.
+      - "8200-8231:8200-8231"
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
@@ -54,7 +64,30 @@ services:
       - WG_PASSWORD=${WG_PASSWORD:-}     # lets the add-site wizard drive wg-easy's API
       # The bare-Pi installer the add-site wizard points new sites at (override for a fork).
       - NETWATCH_INSTALL_URL=${NETWATCH_INSTALL_URL:-https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh}
+      # Reverse-proxy port range — MUST match the published range on wg-easy above.
+      - HUB_PROXY_RANGE=${HUB_PROXY_RANGE:-8200-8231}
       - TZ=${TZ:-UTC}
     volumes:
       - ./data/hub:/data
+    restart: unless-stopped
+
+  # Caddy reverse proxy: serves each VPN site's Netwatch/Kuma on a LAN port so a
+  # browser reaches them without a VPN client. Shares wg-easy's netns to reach
+  # 10.8.0.x over wg0 and to expose the 8200-8231 ports published on wg-easy. The
+  # hub writes ./data/hub/caddy/Caddyfile and hot-reloads via Caddy's admin API
+  # (localhost:2019, same netns). Each proxied port is gated by Basic Auth with the
+  # hub password (admin / <hub password>).
+  hub-proxy:
+    image: caddy:2-alpine
+    container_name: hub-proxy
+    network_mode: service:wg-easy
+    depends_on:
+      - wg-easy
+      - hub
+    # Wait for the hub to generate the Caddyfile on first boot (it's persisted in
+    # the volume thereafter), then run. Live updates come via the admin API.
+    command: ["sh", "-c", "while [ ! -f /etc/caddy/Caddyfile ]; do sleep 1; done; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"]
+    volumes:
+      - ./data/hub/caddy:/etc/caddy      # hub writes Caddyfile here
+      - ./data/hub/caddy/data:/data      # Caddy's own data dir
     restart: unless-stopped
