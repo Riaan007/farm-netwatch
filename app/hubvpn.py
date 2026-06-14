@@ -123,7 +123,12 @@ def up():
     # Generous timeouts: wg-quick resolves the hub's (DDNS) endpoint and waits on
     # the first handshake — on a slow Pi/link this can take well over 20s. Killing
     # it early leaves a half-configured wg0 ("config saved, no handshake").
-    _run(["wg-quick", "down", WG_CONF], timeout=30)  # ignore errors (may not be up)
+    _run(["wg-quick", "down", WG_CONF], timeout=30)  # graceful: restores routes/dns
+    # Force-remove any stale/half-up interface a previous attempt may have left.
+    # `wg-quick down` can't clean those up (given a bare name it looks for
+    # /etc/wireguard/wg0.conf, which we don't use), so wg-quick up would fail
+    # with "'wg0' already exists" forever. `ip link delete` always clears it.
+    _run(["ip", "link", "delete", IFACE], timeout=10)
     rc, out = _run(["wg-quick", "up", WG_CONF], timeout=60)
     if rc == 124:
         return False, ("wg-quick timed out bringing the tunnel up — usually a DNS "
