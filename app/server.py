@@ -16,6 +16,7 @@ import creds
 import hikvision
 import history
 import hubvpn
+import tunnels
 import kuma
 import notify
 from listener import listener
@@ -537,6 +538,27 @@ def api_hub_disconnect():
                     "status": hubvpn.status()}), code
 
 
+@app.route("/api/tunnel", methods=["GET", "POST"])
+def api_tunnel():
+    """On-demand TCP relay to a device on this site's LAN. POST {ip, port} opens a
+    relay bound to wg0 (VPN-only) and returns {listen_port}; the hub re-exposes it.
+    Only the hub (over the VPN) should reach this — the site has no auth of its own,
+    so relays bind to the wg0 address, not 0.0.0.0."""
+    if request.method == "POST":
+        body = request.get_json(force=True, silent=True) or {}
+        try:
+            res = tunnels.manager.open(body.get("ip", ""), body.get("port"))
+        except tunnels.TunnelError as e:
+            return jsonify({"ok": False, "error": str(e)}), e.status
+        return jsonify({"ok": True, **res})
+    return jsonify({"tunnels": tunnels.manager.list()})
+
+
+@app.route("/api/tunnel/<tid>", methods=["DELETE"])
+def api_tunnel_close(tid):
+    return jsonify({"ok": tunnels.manager.close(tid)})
+
+
 @app.route("/api/suggest-network")
 def api_suggest():
     """Best-guess local /24(s) for the wizard's target step."""
@@ -549,6 +571,7 @@ def api_suggest():
 
 def main():
     hubvpn.boot()        # re-assert the hub tunnel if this site was joined
+    tunnels.manager.start()
     scanner.start()
     listener.start()
     port = int(os.environ.get("NETWATCH_PORT", "8090"))

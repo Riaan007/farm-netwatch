@@ -111,6 +111,33 @@
         </div>
     </main>
 
+    <!-- Connect-to-device modal -->
+    <div id="connect-modal" onclick="if(event.target===this) closeConnect()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-5 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                <div><h2 class="text-lg font-bold">Connect to device</h2><p id="cn-sub" class="text-xs text-slate-300"></p></div>
+                <button onclick="closeConnect()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+            </div>
+            <div class="p-5 overflow-y-auto text-sm space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Pick a port</label>
+                    <div id="cn-ports" class="flex flex-wrap gap-2 mb-2"></div>
+                    <div class="flex gap-2 items-center">
+                        <input id="cn-custom" type="number" min="1" max="65535" placeholder="custom port" class="w-32 p-2 bg-slate-50 border rounded-lg text-sm">
+                        <button onclick="openTunnel()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Open tunnel</button>
+                        <span id="cn-msg" class="text-xs"></span>
+                    </div>
+                </div>
+                <div id="cn-result" class="hidden p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm"></div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Active tunnels</label>
+                    <div id="cn-active" class="space-y-1 text-xs text-slate-500">none</div>
+                </div>
+                <p class="text-[10px] text-slate-400">Tunnels open on demand and auto-close when idle. For SSH/PuTTY use the <b>host:port</b>; for a web UI use the link. The device's own login still applies. These ports are on your LAN only — don't forward them to the internet.</p>
+            </div>
+        </div>
+    </div>
+
     <script>
         const siteId = location.pathname.split('/').pop();
         let card = null;
@@ -252,7 +279,10 @@
                 <td class="px-3 py-2.5 font-mono text-xs">${d.ip || '—'}</td>
                 <td class="px-3 py-2.5 font-mono text-xs">${d.rtt != null ? d.rtt + ' ms' : '—'}</td>
                 <td class="px-3 py-2.5 text-xs text-slate-500">${d.online ? 'now' : fmtAgo(d.last_seen)}</td>
-                <td class="px-3 py-2.5 text-slate-300 text-xs">▾</td>
+                <td class="px-3 py-2.5 text-right whitespace-nowrap">
+                    ${d.ip ? `<button onclick="event.stopPropagation(); openConnect('${d.ip}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold">Connect</button>` : ''}
+                    <span class="text-slate-300 text-xs ml-1">▾</span>
+                </td>
             </tr>`;
         }
 
@@ -350,6 +380,73 @@
         async function pollNow(){
             await fetch(`/api/hub/sites/${siteId}/poll`, {method:'POST'});
             setTimeout(refresh, 2500);
+        }
+
+        // ---- connect to a device on the site's LAN (TCP tunnels) ----
+        let cnIp = null;
+        const COMMON = [{p:22,l:'SSH'},{p:80,l:'HTTP'},{p:443,l:'HTTPS'},{p:8080,l:'HTTP-alt'},{p:3389,l:'RDP'},{p:554,l:'RTSP'}];
+        function portChip(p, label){
+            return `<button onclick="openTunnel(${p})" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-100 rounded-lg text-xs font-mono">${p}${label?` <span class="text-slate-400">${label}</span>`:''}</button>`;
+        }
+        function openConnect(ip){
+            cnIp = ip;
+            const d = lastDevices.find(x => x.ip === ip) || {};
+            document.getElementById('cn-sub').textContent = devName(d) + ' · ' + ip;
+            const services = d.services || {};
+            const seen = new Set(); let chips = '';
+            (d.ports || []).forEach(p => { seen.add(p); const s = services[String(p)]; chips += portChip(p, s ? String(s).split(' ')[0] : ''); });
+            COMMON.forEach(c => { if(!seen.has(c.p)){ seen.add(c.p); chips += portChip(c.p, c.l); } });
+            document.getElementById('cn-ports').innerHTML = chips || '<span class="text-xs text-slate-400">No scanned ports — enter a custom port</span>';
+            document.getElementById('cn-result').classList.add('hidden');
+            document.getElementById('cn-msg').textContent = '';
+            document.getElementById('cn-custom').value = '';
+            document.getElementById('connect-modal').classList.remove('hidden');
+            loadActive();
+        }
+        function closeConnect(){ document.getElementById('connect-modal').classList.add('hidden'); }
+        async function openTunnel(port){
+            port = port || parseInt(document.getElementById('cn-custom').value, 10);
+            const msg = document.getElementById('cn-msg');
+            if(!port){ msg.textContent = 'Pick or enter a port.'; msg.className = 'text-xs text-amber-600'; return; }
+            msg.textContent = 'Opening…'; msg.className = 'text-xs text-slate-500';
+            try{
+                const r = await fetch(`/api/hub/sites/${siteId}/tunnel`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ip: cnIp, port})});
+                const j = await r.json();
+                if(!j.ok){ msg.textContent = j.error || 'Failed'; msg.className = 'text-xs text-red-600'; return; }
+                msg.textContent = ''; showResult(j); loadActive();
+            }catch(e){ msg.textContent = 'Request failed'; msg.className = 'text-xs text-red-600'; }
+        }
+        function showResult(j){
+            const box = document.getElementById('cn-result');
+            const hp = `${j.host}:${j.port}`;
+            let body = `<div class="font-bold mb-1">Tunnel open → ${j.ip}:${j.device_port}</div>`;
+            if(j.scheme){
+                body += `<a href="${j.scheme}://${hp}" target="_blank" class="text-blue-600 underline font-mono">${j.scheme}://${hp}</a><div class="text-[11px] text-slate-500 mt-1">Opens the device's web page.</div>`;
+            } else {
+                body += `<div class="font-mono">${hp}</div><div class="text-[11px] text-slate-500 mt-1">Use this in PuTTY/SSH — e.g. <span class="font-mono">ssh -p ${j.port} user@${j.host}</span></div>`;
+            }
+            body += `<button onclick="navigator.clipboard.writeText('${hp}')" class="mt-2 px-2 py-1 bg-white border rounded text-[11px]">Copy host:port</button>`;
+            box.innerHTML = body; box.classList.remove('hidden');
+        }
+        async function loadActive(){
+            const el = document.getElementById('cn-active');
+            try{
+                const j = await (await fetch(`/api/hub/sites/${siteId}/tunnels`)).json();
+                const ts = j.tunnels || [];
+                if(!ts.length){ el.innerHTML = 'none'; return; }
+                el.innerHTML = ts.map(t => {
+                    const hp = `${location.hostname}:${t.hub_port}`;
+                    const tgt = t.scheme ? `<a href="${t.scheme}://${hp}" target="_blank" class="text-blue-600 underline">${hp}</a>` : `<span class="font-mono">${hp}</span>`;
+                    return `<div class="flex items-center justify-between gap-2 p-1.5 border rounded">
+                        <span>${t.ip}:${t.port} → ${tgt} <span class="text-slate-400">(${t.conns} conn)</span></span>
+                        <button onclick="closeTunnel('${t.id}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[11px]">Close</button>
+                    </div>`;
+                }).join('');
+            }catch(e){ el.innerHTML = '<span class="text-red-600">failed to load</span>'; }
+        }
+        async function closeTunnel(tid){
+            await fetch(`/api/hub/sites/${siteId}/tunnel/${tid}`, {method:'DELETE'});
+            loadActive();
         }
 
         refresh();

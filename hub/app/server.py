@@ -18,6 +18,7 @@ import auth
 import hubconfig
 import proxycfg
 import sitehistory
+import tunnels
 import wgeasy
 from poller import poller
 
@@ -401,12 +402,42 @@ def api_site_poll(site_id):
     return jsonify({"ok": True})
 
 
+# ---- device tunnels (reach a device on the site's LAN via the hub) ----------
+@app.route("/api/hub/sites/<site_id>/tunnel", methods=["POST"])
+def api_site_tunnel(site_id):
+    """Open an on-demand TCP tunnel to <ip>:<port> on the site's LAN and return
+    {host, port} to connect to (PuTTY/SSH or browser). Behind the hub login."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        res = tunnels.manager.open(site, body.get("ip", ""), body.get("port"), _lan_host())
+    except tunnels.TunnelError as e:
+        return jsonify({"ok": False, "error": str(e)}), e.status
+    return jsonify({"ok": True, **res})
+
+
+@app.route("/api/hub/sites/<site_id>/tunnels")
+def api_site_tunnels(site_id):
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    return jsonify({"tunnels": tunnels.manager.list(site_id)})
+
+
+@app.route("/api/hub/sites/<site_id>/tunnel/<tid>", methods=["DELETE"])
+def api_site_tunnel_close(site_id, tid):
+    return jsonify({"ok": tunnels.manager.close(tid)})
+
+
 def main():
     auth.seed_from_env()
     lo, hi = proxycfg.port_range()
     print(f"[hub] site reverse-proxy port range {lo}-{hi} "
           "(must match the published range in docker-compose.yml)", flush=True)
     proxycfg.sync()                        # assign ports + write/reload the Caddyfile
+    tunnels.manager.start()                # device-tunnel relay manager
     poller.start()
     port = int(os.environ.get("HUB_PORT", "8091"))
     app.run(host="0.0.0.0", port=port, threaded=True)

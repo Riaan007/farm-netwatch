@@ -41,6 +41,10 @@ services:
       # range; the hub assigns per-site). MUST match HUB_PROXY_RANGE on `hub`.
       # LAN-only — do NOT forward these on the router.
       - "8200-8231:8200-8231"
+      # On-demand device tunnels (raw TCP: SSH/web/RDP/… to devices on a site's
+      # LAN). The hub binds within this range. MUST match HUB_TCP_RANGE on `hub`.
+      # LAN-only — do NOT forward these on the router.
+      - "8300-8331:8300-8331"
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
@@ -66,6 +70,8 @@ services:
       - NETWATCH_INSTALL_URL=${NETWATCH_INSTALL_URL:-https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install.sh}
       # Reverse-proxy port range — MUST match the published range on wg-easy above.
       - HUB_PROXY_RANGE=${HUB_PROXY_RANGE:-8200-8231}
+      # Device-tunnel port range — MUST match the published range on wg-easy above.
+      - HUB_TCP_RANGE=${HUB_TCP_RANGE:-8300-8331}
       - TZ=${TZ:-UTC}
     volumes:
       - ./data/hub:/data

@@ -92,6 +92,19 @@ def has_config():
     return os.path.isfile(WG_CONF)
 
 
+def wg_address():
+    """This site's own wg0 IPv4 (bare, no /mask), parsed from wg0.conf — or None.
+    Used to bind relay listeners to the VPN address (see tunnels.py)."""
+    if not has_config():
+        return None
+    try:
+        with open(WG_CONF) as f:
+            m = re.search(r"Address\s*=\s*([0-9.]+)", f.read())
+            return m.group(1).strip() if m else None
+    except OSError:
+        return None
+
+
 def is_up():
     rc, out = _run(["wg", "show", IFACE])
     return rc == 0 and out.strip() != ""

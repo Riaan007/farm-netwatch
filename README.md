@@ -329,6 +329,28 @@ LAN browser — **no VPN client needed** on your computer.
   behind the hub password. Keep them LAN-only — **do not forward `8200-8231`** to
   the internet.
 
+### Connect to a device on a site's LAN (SSH / web / any port)
+
+Beyond a site's own dashboards, you can reach the **devices behind it** — a
+camera's web page, SSH/PuTTY, RDP, RTSP, any port — from a home-LAN computer that
+is **not** a VPN client. On the hub's site page, each device row has a **Connect**
+button: pick a port (or type a custom one) and the hub gives you a `host:port` to
+paste into PuTTY/SSH, or a clickable link for web ports.
+
+How it works (on-demand two-hop TCP relay): the tunnel is split (`10.8.0.0/24`
+only) so the hub can't reach devices behind a site directly, and farm LANs overlap
+across sites — so the **site Pi** (the only node that reaches its LAN) opens a relay
+to the device, bound to its VPN address; the **hub** re-exposes it on a LAN port
+(`8300-8331`, set `HUB_TCP_RANGE`). Tunnels are **on-demand and auto-close** when
+idle; an *Active tunnels* panel lets you close them manually.
+
+- **Security:** creating a tunnel requires the hub login; the site only relays to
+  IPs it has actually scanned (no open relay to arbitrary hosts) and binds the relay
+  to its VPN address (only the hub reaches it); the device's own login still applies.
+  The `8300-8331` ports are **LAN-only — never forward them to the internet**.
+- Example: SSH → `ssh -p <hubport> user@<hub-ip>` (or PuTTY `<hub-ip>:<hubport>`);
+  web UI → click the `http(s)://<hub-ip>:<hubport>` link.
+
 ### Hub troubleshooting
 
 | Symptom | Check |
