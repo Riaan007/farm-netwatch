@@ -425,8 +425,25 @@
             } else {
                 body += `<div class="font-mono">${hp}</div><div class="text-[11px] text-slate-500 mt-1">Use this in PuTTY/SSH — e.g. <span class="font-mono">ssh -p ${j.port} user@${j.host}</span></div>`;
             }
-            body += `<button onclick="navigator.clipboard.writeText('${hp}')" class="mt-2 px-2 py-1 bg-white border rounded text-[11px]">Copy host:port</button>`;
+            body += `<button onclick="copyText('${hp}', this)" class="mt-2 px-2 py-1 bg-white border rounded text-[11px]">Copy host:port</button>`;
             box.innerHTML = body; box.classList.remove('hidden');
+        }
+        // The hub is served over plain HTTP on the LAN, so navigator.clipboard
+        // (secure-context only) is usually unavailable — fall back to execCommand.
+        function copyText(text, btn){
+            const ok = () => { if(btn){ const o = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => btn.textContent = o, 1500); } };
+            if(navigator.clipboard && window.isSecureContext){
+                navigator.clipboard.writeText(text).then(ok).catch(() => legacyCopy(text, ok));
+            } else {
+                legacyCopy(text, ok);
+            }
+        }
+        function legacyCopy(text, ok){
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.focus(); ta.select();
+            try { document.execCommand('copy'); ok && ok(); } catch(e) {}
+            document.body.removeChild(ta);
         }
         async function loadActive(){
             const el = document.getElementById('cn-active');
