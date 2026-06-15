@@ -372,6 +372,41 @@ def api_site_history(site_id, key):
         return jsonify({"ok": False, "error": "site unreachable"}), 502
 
 
+@app.route("/api/hub/sites/<site_id>/command", methods=["POST"])
+def api_site_command(site_id):
+    """Run a diagnostic on the site (ping / port / connection-quality test) for a
+    device and return its result. Generous read timeout — the quality test fires
+    ~20 pings (~20s)."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    try:
+        r = requests.post(f"{base}/api/command",
+                          json=request.get_json(force=True, silent=True) or {},
+                          timeout=(5, 60))
+        return jsonify(r.json()), r.status_code
+    except (requests.exceptions.RequestException, ValueError):
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+
+
+@app.route("/api/hub/sites/<site_id>/trigger", methods=["POST"])
+def api_site_trigger(site_id):
+    """Trigger a scan on the site (e.g. a deep scan of one device). Returns
+    immediately; results land in the device list on the next poll."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    try:
+        r = requests.post(f"{base}/api/trigger",
+                          json=request.get_json(force=True, silent=True) or {},
+                          timeout=(5, 10))
+        return jsonify(r.json()), r.status_code
+    except (requests.exceptions.RequestException, ValueError):
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+
+
 @app.route("/api/hub/sites/<site_id>/kuma")
 def api_site_kuma(site_id):
     site, err = _site_or_404(site_id)

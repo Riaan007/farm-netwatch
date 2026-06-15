@@ -273,7 +273,7 @@
             const name = devName(d);
             const watch = d.watch ? ' 🔔' : '';
             return `
-            <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="toggleHistory(this, '${encodeURIComponent(d.key)}')">
+            <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="toggleHistory(this, '${encodeURIComponent(d.key)}', '${d.ip || ''}')">
                 <td class="px-5 py-2.5"><div class="flex items-center gap-2">${dot}<span class="font-medium">${name}${watch}</span></div></td>
                 <td class="px-3 py-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${catChip[cat] || catChip.unknown}">${catIcon[cat] || '•'} ${cat}</span></td>
                 <td class="px-3 py-2.5 font-mono text-xs">${d.ip || '—'}</td>
@@ -286,27 +286,80 @@
             </tr>`;
         }
 
-        async function toggleHistory(row, key){
+        async function toggleHistory(row, key, ip){
             const next = row.nextElementSibling;
             if (next && next.dataset.history) { next.remove(); return; }
             const tr = document.createElement('tr');
             tr.dataset.history = '1';
             tr.innerHTML = `<td colspan="6" class="px-5 py-3 bg-slate-50 text-xs text-slate-400">Loading uptime…</td>`;
             row.after(tr);
+            const rid = 'diag-' + Math.random().toString(36).slice(2, 8);
+            const diagBlock = ip ? `
+                <div class="mt-3 pt-3 border-t border-slate-200 flex flex-wrap gap-2 items-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 mr-1">Diagnostics</span>
+                    <button onclick="diag('ping','${ip}','${rid}',this)" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">📡 Ping</button>
+                    <button onclick="diag('quality','${ip}','${rid}',this)" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">📶 Connection test</button>
+                    <button onclick="diag('deep','${ip}','${rid}',this)" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold">🔬 Deep scan</button>
+                </div>
+                <div id="${rid}" class="mt-2"></div>` : '';
             const r = await fetch(`/api/hub/sites/${siteId}/history/${key}`);
-            if (!r.ok) { tr.firstElementChild.textContent = 'Site unreachable — uptime unavailable.'; return; }
-            const h = await r.json();
-            const s = h.summary || {};
+            const h = r.ok ? await r.json() : {};
+            const sum = h.summary || {};
             const pct = v => v == null ? '--' : v + '%';
+            const upBlock = r.ok
+                ? `${sparkBars(h.series)}<p class="text-[10px] text-slate-400 mt-1">Device uptime · last 24h</p>`
+                : '<span class="text-xs text-slate-400">Site unreachable — uptime unavailable.</span>';
             tr.innerHTML = `<td colspan="6" class="px-5 py-3 bg-slate-50">
                 <div class="flex items-center gap-6 flex-wrap">
-                    <div class="grow min-w-[200px]">${sparkBars(h.series)}<p class="text-[10px] text-slate-400 mt-1">Device uptime · last 24h</p></div>
+                    <div class="grow min-w-[200px]">${upBlock}</div>
                     <div class="flex gap-4 text-center text-xs">
-                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">24h</div><div class="font-bold">${pct(s.uptime_24h)}</div></div>
-                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">7d</div><div class="font-bold">${pct(s.uptime_7d)}</div></div>
-                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">30d</div><div class="font-bold">${pct(s.uptime_30d)}</div></div>
+                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">24h</div><div class="font-bold">${pct(sum.uptime_24h)}</div></div>
+                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">7d</div><div class="font-bold">${pct(sum.uptime_7d)}</div></div>
+                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">30d</div><div class="font-bold">${pct(sum.uptime_30d)}</div></div>
                     </div>
-                </div></td>`;
+                </div>${diagBlock}</td>`;
+        }
+
+        // ---- per-device diagnostics, run on the site from the hub ----
+        async function diag(kind, ip, rid, btn){
+            const out = document.getElementById(rid);
+            if (!out) return;
+            const orig = btn.textContent; btn.disabled = true;
+            if (kind === 'deep'){
+                btn.textContent = 'Starting…';
+                try {
+                    await fetch(`/api/hub/sites/${siteId}/trigger`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'deep', hosts:[ip]})});
+                    out.innerHTML = `<p class="text-xs text-slate-500">🔬 Deep scan started on ${ip} (all 65535 ports + service/version + OS). Takes a few minutes; the device list updates after the next refresh.</p>`;
+                    setTimeout(refresh, 4000);
+                } catch(e){ out.innerHTML = '<p class="text-xs text-red-600">Failed to start deep scan.</p>'; }
+                btn.textContent = orig; btn.disabled = false;
+                return;
+            }
+            const action = kind === 'quality' ? 'quality' : 'ping';
+            btn.textContent = (kind === 'quality' ? 'Testing…' : 'Pinging…');
+            out.innerHTML = `<p class="text-xs text-slate-500">Running ${kind} on ${ip} via the site…</p>`;
+            try {
+                const r = await (await fetch(`/api/hub/sites/${siteId}/command`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action, ip})})).json();
+                if (kind === 'quality') renderQuality(out, r.quality);
+                else out.innerHTML = `<pre class="text-[11px] bg-white border rounded-lg p-2 overflow-x-auto whitespace-pre-wrap">${(r.result || r.error || '(no output)').replace(/</g,'&lt;')}</pre>`;
+            } catch(e){ out.innerHTML = '<p class="text-xs text-red-600">Site unreachable.</p>'; }
+            btn.textContent = orig; btn.disabled = false;
+        }
+        function renderQuality(panel, q){
+            if(!q || !q.ok){ panel.innerHTML = '<p class="text-xs text-red-600">'+((q&&q.error)||'Test failed')+'</p>'; return; }
+            const styles = { excellent:'bg-green-100 text-green-800', good:'bg-emerald-100 text-emerald-800', fair:'bg-amber-100 text-amber-800', poor:'bg-red-100 text-red-800', down:'bg-slate-200 text-slate-700' };
+            const label = { excellent:'Excellent', good:'Good', fair:'Fair', poor:'Poor', down:'No response' };
+            const cls = styles[q.rating] || styles.down;
+            const metric = (lbl,val,unit)=>`<div class="bg-white rounded-lg p-2 border text-center"><div class="text-[10px] text-slate-400 uppercase font-bold">${lbl}</div><div class="text-sm font-bold">${val==null?'--':val}${val==null?'':unit}</div></div>`;
+            panel.innerHTML = `
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs font-bold text-slate-500 uppercase">Connection quality</span>
+                    <span class="px-3 py-1 rounded-full text-xs font-bold ${cls}">${label[q.rating]||q.rating}</span>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                    ${metric('Loss', q.loss, '%')}${metric('Avg', q.avg, 'ms')}${metric('Jitter', q.jitter, 'ms')}${metric('Max', q.max, 'ms')}
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">${q.recv}/${q.sent} replies${q.note ? ' · '+q.note : ''}</p>`;
         }
 
         async function refresh(){

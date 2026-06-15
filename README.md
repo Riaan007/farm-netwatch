@@ -351,6 +351,14 @@ idle; an *Active tunnels* panel lets you close them manually.
 - Example: SSH → `ssh -p <hubport> user@<hub-ip>` (or PuTTY `<hub-ip>:<hubport>`);
   web UI → click the `http(s)://<hub-ip>:<hubport>` link.
 
+### Per-device diagnostics from the hub
+
+On a site page, click a device row to expand it — alongside its uptime you get
+**Diagnostics**: **📡 Ping**, **📶 Connection test** (packet loss / latency / jitter
+rating), and **🔬 Deep scan** (all ports + service/version + OS). These run **on the
+site** (proxied over the VPN) and show their results inline; a deep scan's findings
+appear in the device list after the next refresh.
+
 ### Hub troubleshooting
 
 | Symptom | Check |
