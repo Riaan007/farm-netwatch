@@ -20,6 +20,11 @@ device drops offline.
 - **Uptime history** — every scan is recorded in SQLite; the device panel shows
   24h / 7d / 30d uptime and a sparkline. Great for spotting a camera that keeps
   dropping.
+- **Reachability-based presence** — a device is "online" only if it actually
+  responds (an open port **or** an ICMP ping), not merely an ARP reply. This stops
+  a sleeping/half-disconnected Wi-Fi device (whose NIC still answers ARP) from
+  showing online. Toggle with `scan.require_reachable` (default on). The hub's
+  per-site **History** button shows the resulting offline/online events per IP.
 - **Device & IP event history** — an append-only log of every device that joins,
   goes offline, comes back, or **takes over an IP** another device used to hold,
   each with a full snapshot of the device's details (MAC, vendor, hostname, type,

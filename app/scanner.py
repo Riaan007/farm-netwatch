@@ -5,6 +5,7 @@ Local segments are discovered via ARP (nmap reports MACs); remote/routed subnets
 are discovered via ICMP/TCP probes (no MAC available at L3 — identification then
 falls back to hostname + open ports + HTTP banner).
 """
+import concurrent.futures
 import ipaddress
 import json
 import os
@@ -32,6 +33,16 @@ QUICK_PORTS = "22,53,80,443,515,554,631,1883,2000,5000,5060,8000,8080,8291,8443,
 
 def _now_str():
     return time.strftime("%H:%M:%S")
+
+
+def _icmp_up(ip):
+    """True if the host answers a single ICMP echo. Real reachability — unlike an
+    ARP reply, which a sleeping/offloaded Wi-Fi NIC still sends."""
+    try:
+        return subprocess.run(["ping", "-c", "1", "-W", "1", ip],
+                              capture_output=True, timeout=4).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def _read_json(path, default):
@@ -306,6 +317,23 @@ class Scanner:
 
             if reg_changed:
                 self.save_registry()
+
+            # Reachability gate: a host that only answered ARP — no open scanned
+            # port AND no ICMP reply — isn't really reachable (e.g. a Wi-Fi NIC
+            # answering ARP while the host sleeps). Drop it from `found` so the
+            # offline state machine treats it as down. (cfg scan.require_reachable)
+            if cfg["scan"].get("require_reachable", True):
+                portless = [k for k, r in found.items() if not r.get("ports")]
+                if portless:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as ex:
+                        up = dict(zip(portless,
+                                      ex.map(lambda k: _icmp_up(found[k]["ip"]), portless)))
+                    dropped = {k for k in portless if not up.get(k)}
+                    for k in dropped:
+                        found.pop(k, None)
+                    if dropped:
+                        new_devices[:] = [d for d in new_devices
+                                          if d.get("key") not in dropped]
 
             # Devices that were *expected* in this scan's scope (for offline detection).
             if only_hosts:

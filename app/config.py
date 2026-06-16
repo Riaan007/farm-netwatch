@@ -31,6 +31,10 @@ DEFAULTS = {
         "deep_on_new": False,      # auto deep-scan a host the first time it is seen
         "discovery": True,         # mDNS / SSDP / NetBIOS / ARP local enrichment
         "history_days": 90,        # uptime retention before pruning
+        # "Online" requires real reachability — an open port OR an ICMP reply.
+        # A host that only answers ARP (e.g. a Wi-Fi NIC answering while the host
+        # sleeps) is treated as OFFLINE. Turn off to count ARP presence as online.
+        "require_reachable": True,
     },
     "alerts": {
         "ntfy_server": "https://ntfy.sh",
