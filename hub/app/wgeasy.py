@@ -8,6 +8,7 @@ Used by the add-site wizard: create a client, read its assigned 10.8.0.x
 address, download its wg0.conf, and delete the client when a site is removed.
 """
 import os
+import re
 
 import requests
 
@@ -73,6 +74,29 @@ def get_configuration(client_id):
 
 def get_client(client_id):
     return next((c for c in list_clients() if c.get("id") == client_id), None)
+
+
+def remote_config(client_id, allowed_ips):
+    """A client .conf rewritten for a road-warrior laptop/phone: replace the (global,
+    split) AllowedIPs with `allowed_ips` so the device routes the office LAN + VPN
+    subnet (or 0.0.0.0/0 for full tunnel). Endpoint/keys are untouched. The change is
+    client-side only — the wg-easy server doesn't care what a client routes."""
+    conf = get_configuration(client_id)
+    out, replaced = [], False
+    for line in conf.splitlines():
+        if re.match(r"\s*AllowedIPs\s*=", line, re.IGNORECASE):
+            out.append(f"AllowedIPs = {allowed_ips}")
+            replaced = True
+        else:
+            out.append(line)
+    if not replaced:                       # no AllowedIPs line — add one under [Peer]
+        out2 = []
+        for line in out:
+            out2.append(line)
+            if line.strip() == "[Peer]":
+                out2.append(f"AllowedIPs = {allowed_ips}")
+        out = out2
+    return "\n".join(out).strip() + "\n"
 
 
 def delete_client(client_id):

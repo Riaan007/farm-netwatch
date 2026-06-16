@@ -224,6 +224,79 @@ def _validate_site(body, existing_ids, keep_id=None):
     }, None
 
 
+_VPN_NET = ipaddress.ip_network("10.8.0.0/24")
+
+
+def _office_lan():
+    """The office subnet to route to remote-access clients: the configured value, or
+    auto-derived from the home site's LAN IP (the non-10.8.0.x private site)."""
+    cfg = hubconfig.load()
+    ol = (cfg.get("vpn") or {}).get("office_lan") or ""
+    if ol:
+        return ol
+    for s in cfg["sites"]:
+        try:
+            ip = ipaddress.ip_address(s.get("vpn_ip", ""))
+        except ValueError:
+            continue
+        if ip not in _VPN_NET and ip.is_private:
+            return str(ipaddress.ip_network(f"{ip}/24", strict=False))
+    return ""
+
+
+def _qr_svg(text):
+    import io
+    import segno
+    qr = segno.make(text, error="m")
+    try:
+        return qr.svg_inline(scale=4, border=2)
+    except AttributeError:
+        b = io.BytesIO()
+        qr.save(b, kind="svg", scale=4, border=2)
+        return re.sub(r"<\?xml.*?\?>", "", b.getvalue().decode(), flags=re.S).strip()
+
+
+@app.route("/api/hub/remote", methods=["GET", "POST"])
+def api_remote():
+    """Road-warrior VPN clients: a laptop/phone that connects to the office wg-easy
+    and routes the office LAN + VPN subnet (split tunnel) — 'as if at the office'."""
+    cfg = hubconfig.load()
+    if request.method == "POST":
+        body = request.get_json(force=True, silent=True) or {}
+        name = (body.get("name") or "").strip()[:48] or "device"
+        try:
+            client = wgeasy.create_client(f"remote-{name}")
+        except wgeasy.WgEasyError as e:
+            return jsonify({"ok": False, "error": str(e)}), 502
+        office = _office_lan()
+        allowed = "10.8.0.0/24" + (f", {office}" if office else "")
+        try:
+            conf = wgeasy.remote_config(client["id"], allowed)
+        except wgeasy.WgEasyError as e:
+            return jsonify({"ok": False, "error": str(e)}), 502
+        rec = {"id": client["id"], "name": name,
+               "address": client.get("address", ""), "created": int(time.time())}
+        cfg.setdefault("remote_clients", []).append(rec)
+        hubconfig.save(cfg)
+        return jsonify({"ok": True, **rec, "allowed_ips": allowed,
+                        "config": conf, "qr_svg": _qr_svg(conf)})
+    return jsonify({"clients": cfg.get("remote_clients", []), "office_lan": _office_lan()})
+
+
+@app.route("/api/hub/remote/<cid>", methods=["DELETE"])
+def api_remote_delete(cid):
+    cfg = hubconfig.load()
+    cfg["remote_clients"] = [c for c in cfg.get("remote_clients", []) if c.get("id") != cid]
+    hubconfig.save(cfg)
+    removed = False
+    try:
+        wgeasy.delete_client(cid)
+        removed = True
+    except wgeasy.WgEasyError:
+        pass
+    return jsonify({"ok": True, "removed_vpn_client": removed})
+
+
 @app.route("/api/hub/sites", methods=["GET", "POST"])
 def api_sites():
     cfg = hubconfig.load()

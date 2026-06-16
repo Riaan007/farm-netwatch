@@ -25,6 +25,14 @@ DEFAULTS = {
         # (Caddy only accepts bcrypt). Written by auth.set_password/ensure_proxy_hash.
         "proxy_basic_hash": "",
     },
+    # Remote-access (road-warrior) VPN: laptop/phone clients of the office wg-easy.
+    # office_lan is the office subnet routed to remote clients (blank = auto-derive
+    # from the home site's vpn_ip). remote_clients is the registry of these devices
+    # (kept separate from `sites` so the poller never polls them).
+    "vpn": {
+        "office_lan": "",
+    },
+    "remote_clients": [],
     "alerts": {
         # ntfy push alerts when a site drops off the hub. Blank topic = disabled.
         "ntfy_server": "https://ntfy.sh",

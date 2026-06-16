@@ -390,6 +390,22 @@ rating), and **🔬 Deep scan** (all ports + service/version + OS). These run **
 site** (proxied over the VPN) and show their results inline; a deep scan's findings
 appear in the device list after the next refresh.
 
+### Remote access (laptop / phone) — use the hub from anywhere
+
+The hub's **📱 Remote** button creates a WireGuard client for a laptop or phone so you
+can use everything **as if you were at the office**. Click *Add device*, then scan the
+**QR** in the WireGuard phone app or **download the `.conf`** for the desktop app.
+
+The config is **split tunnel** routing the office LAN + the VPN subnet
+(`AllowedIPs = 10.8.0.0/24, <office_lan>`, auto-derived from the home site) via the
+hub's wg-easy — so once connected you reach the hub at its **office address**
+(`http://<hub-lan-ip>:8091`), every site's dashboards + device tunnels, and office-LAN
+devices (RDP/SSH/printers), while your normal internet stays direct. No server-side
+routing change is needed (wg-easy already NATs onto the office LAN).
+
+**One-time router step:** forward **UDP 51820** to the hub. The DDNS (`WG_HOST`) is
+already used as the `Endpoint`. Remove a device any time from the same panel.
+
 ### Hub troubleshooting
 
 | Symptom | Check |

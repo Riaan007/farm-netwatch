@@ -28,6 +28,7 @@
                 <button onclick="openSites()" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-full transition-colors" title="Manage sites">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                 </button>
+                <button onclick="openRemote()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase" title="Remote-access VPN for laptops/phones">📱 Remote</button>
                 <button onclick="openAlerts()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase" title="ntfy alert settings">🔔 Alerts</button>
                 <button onclick="logout()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">Logout</button>
             </div>
@@ -160,6 +161,38 @@
         </div>
     </div>
 
+    <!-- Remote-access modal -->
+    <div id="remote-modal" onclick="if(event.target===this) closeRemote()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-6 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                <div><h2 class="text-xl font-bold">📱 Remote access</h2><p class="text-xs text-slate-300">Connect a laptop/phone to the office over WireGuard — use the hub as if you were here.</p></div>
+                <button onclick="closeRemote()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto text-sm space-y-3">
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[11px] text-amber-900">
+                    <b>One-time router step:</b> forward <b>UDP 51820</b> to the hub (<span id="rm-hub-ip" class="font-mono"></span>). DDNS is already set, so devices connect to <span class="font-mono">farmcamsa.ddns.net</span>.
+                </div>
+                <div class="flex gap-2 items-center">
+                    <input id="rm-name" type="text" placeholder="device name (e.g. my-laptop)" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm">
+                    <button onclick="rmAdd()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold whitespace-nowrap">Add device</button>
+                </div>
+                <div id="rm-new" class="hidden border rounded-lg p-3 bg-slate-50">
+                    <p class="text-xs font-bold mb-2">Scan in the <b>WireGuard</b> phone app, or download &amp; import on a laptop:</p>
+                    <div id="rm-qr" class="bg-white p-2 rounded-lg inline-block"></div>
+                    <div class="mt-2 flex gap-2">
+                        <button id="rm-dl" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">⬇ Download .conf</button>
+                        <span id="rm-routes" class="text-[11px] text-slate-500 self-center"></span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-2">Then connect, and open the hub at <span class="font-mono" id="rm-office-url"></span>. Split tunnel — your normal internet stays direct.</p>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-1">Devices</label>
+                    <div id="rm-list" class="space-y-1 text-xs text-slate-500">none yet</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Alerts modal -->
     <div id="alerts-modal" onclick="if(event.target===this) closeAlerts()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
         <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden">
@@ -282,6 +315,52 @@
 
         // ---- sites modal -------------------------------------------------
         function openSites(){ document.getElementById('sites-modal').classList.remove('hidden'); loadSites(); }
+
+        // ---- remote access ----
+        async function openRemote(){
+            document.getElementById('remote-modal').classList.remove('hidden');
+            document.getElementById('rm-new').classList.add('hidden');
+            document.getElementById('rm-hub-ip').textContent = location.hostname;
+            document.getElementById('rm-office-url').textContent = 'http://' + location.hostname + ':' + (location.port||'8091');
+            rmLoad();
+        }
+        function closeRemote(){ document.getElementById('remote-modal').classList.add('hidden'); }
+        async function rmLoad(){
+            const el = document.getElementById('rm-list');
+            try {
+                const j = await (await fetch('/api/hub/remote')).json();
+                const cs = j.clients || [];
+                el.innerHTML = cs.length ? cs.map(c => `<div class="flex items-center justify-between gap-2 p-1.5 border rounded">
+                    <span><b>${c.name}</b> <span class="font-mono text-slate-400">${c.address||''}</span></span>
+                    <button onclick="rmDel('${c.id}','${c.name}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[11px]">Remove</button>
+                </div>`).join('') : 'none yet';
+            } catch(e){ el.textContent = 'failed to load'; }
+        }
+        async function rmAdd(){
+            const name = document.getElementById('rm-name').value.trim();
+            if(!name){ return; }
+            const box = document.getElementById('rm-new');
+            try {
+                const j = await (await fetch('/api/hub/remote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})})).json();
+                if(!j.ok){ alert(j.error||'Failed'); return; }
+                document.getElementById('rm-qr').innerHTML = j.qr_svg;
+                document.getElementById('rm-routes').textContent = 'routes: ' + j.allowed_ips;
+                const dl = document.getElementById('rm-dl');
+                dl.onclick = () => {
+                    const blob = new Blob([j.config], {type:'text/plain'});
+                    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                    a.download = name.replace(/[^A-Za-z0-9_-]/g,'_') + '.conf'; a.click();
+                };
+                box.classList.remove('hidden');
+                document.getElementById('rm-name').value = '';
+                rmLoad();
+            } catch(e){ alert('Request failed'); }
+        }
+        async function rmDel(id, name){
+            if(!confirm('Remove remote device "'+name+'"? Its VPN access stops working.')) return;
+            await fetch('/api/hub/remote/'+id, {method:'DELETE'});
+            rmLoad();
+        }
 
         // ---- hub alerts ----
         async function openAlerts(){
