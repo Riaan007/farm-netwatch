@@ -59,6 +59,13 @@ DEFAULTS = {
     "vpn": {
         "mode": "none",            # none | tailscale | wireguard
     },
+    # Extra IP addresses Netwatch puts on the Pi at boot so it can sit on several
+    # subnets at once (each {iface, cidr, target, label, managed}). cidr is the Pi's
+    # host address+prefix on that LAN, e.g. "10.5.2.50/24". Additive only — never
+    # touches the primary/DHCP link. See netcfg.py.
+    "network": {
+        "addresses": [],
+    },
     "integrations": {
         # Uptime Kuma: Netwatch pushes per-device status to Kuma "Push" monitors.
         "kuma": {

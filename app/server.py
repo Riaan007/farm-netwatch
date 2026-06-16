@@ -16,11 +16,12 @@ import creds
 import hikvision
 import history
 import hubvpn
+import netcfg
 import tunnels
 import kuma
 import notify
 from listener import listener
-from scanner import scanner
+from scanner import scanner, default_gateway
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -594,6 +595,100 @@ def api_tunnel_close(tid):
     return jsonify({"ok": tunnels.manager.close(tid)})
 
 
+@app.route("/api/network")
+def api_network():
+    """Interfaces, managed secondary IPs, NM connections + DHCP/static state."""
+    cfg = config.load()
+    avail = netcfg.nm_available()
+    return jsonify({
+        "available": avail,                       # nmcli/NM reachable (opt-in image)
+        "interfaces": netcfg.list_interfaces(),
+        "addresses": cfg.get("network", {}).get("addresses", []),
+        "connections": netcfg.list_connections() if avail else [],
+        "pending": netcfg.pending_state(),
+        "gateway": default_gateway(),
+    })
+
+
+@app.route("/api/network/address", methods=["POST"])
+def api_network_address():
+    """Add/remove a managed secondary IP (and an auto scan target if requested)."""
+    body = request.get_json(force=True, silent=True) or {}
+    action = body.get("action")
+    iface = (body.get("iface") or "").strip()
+    cidr = (body.get("cidr") or "").strip()
+    try:
+        ipaddress.ip_interface(cidr)        # host address + prefix, e.g. 10.5.2.50/24
+    except ValueError:
+        return jsonify({"ok": False, "error": "Enter an IP with prefix, e.g. 10.5.2.50/24"}), 400
+    if not iface:
+        return jsonify({"ok": False, "error": "Pick an interface"}), 400
+    cfg = config.load()
+    addrs = cfg.setdefault("network", {}).setdefault("addresses", [])
+    addrs = [a for a in addrs if not (a.get("iface") == iface and a.get("cidr") == cidr)]
+    if action == "add":
+        addrs.append({"iface": iface, "cidr": cidr, "target": bool(body.get("target")),
+                      "label": (body.get("label") or "").strip() or "Extra LAN",
+                      "managed": True})
+    cfg["network"]["addresses"] = addrs
+    netcfg.sync_targets(cfg)
+    config.save(cfg)
+    if action == "add":
+        netcfg.apply_addresses(cfg)
+    else:
+        netcfg.remove_address(iface, cidr)
+    scanner.wake()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/network/static", methods=["POST"])
+def api_network_static():
+    """Apply DHCP->static on a connection, armed with the auto-revert watchdog."""
+    if not netcfg.nm_available():
+        return jsonify({"ok": False, "error": "NetworkManager not available on this image/host"}), 400
+    body = request.get_json(force=True, silent=True) or {}
+    con = (body.get("connection") or "").strip()
+    ip_prefix = (body.get("ip_prefix") or "").strip()
+    gateway = (body.get("gateway") or "").strip()
+    dns = (body.get("dns") or "").strip()
+    try:
+        net = ipaddress.ip_interface(ip_prefix)
+        if gateway:
+            if ipaddress.ip_address(gateway) not in net.network:
+                return jsonify({"ok": False, "error": "Gateway is not inside the IP's subnet"}), 400
+        for d in dns.split(","):
+            if d.strip():
+                ipaddress.ip_address(d.strip())
+    except ValueError:
+        return jsonify({"ok": False, "error": "Bad IP/prefix, gateway or DNS"}), 400
+    if not con:
+        return jsonify({"ok": False, "error": "No connection"}), 400
+    try:
+        revert_s = max(30, min(600, int(body.get("revert_s") or netcfg.DEFAULT_REVERT_S)))
+    except (TypeError, ValueError):
+        revert_s = netcfg.DEFAULT_REVERT_S
+    ok, msg, deadline = netcfg.apply_static_with_revert(con, ip_prefix, gateway, dns, revert_s)
+    return (jsonify({"ok": True, "revert_deadline_ts": deadline})
+            if ok else (jsonify({"ok": False, "error": msg}), 500))
+
+
+@app.route("/api/network/static/confirm", methods=["POST"])
+def api_network_confirm():
+    netcfg.confirm_static()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/network/dhcp", methods=["POST"])
+def api_network_dhcp():
+    if not netcfg.nm_available():
+        return jsonify({"ok": False, "error": "NetworkManager not available"}), 400
+    con = ((request.get_json(force=True, silent=True) or {}).get("connection") or "").strip()
+    if not con:
+        return jsonify({"ok": False, "error": "No connection"}), 400
+    ok, msg = netcfg.switch_to_dhcp(con)
+    return jsonify({"ok": ok, "error": None if ok else msg})
+
+
 @app.route("/api/suggest-network")
 def api_suggest():
     """Best-guess local /24(s) for the wizard's target step."""
@@ -606,6 +701,8 @@ def api_suggest():
 
 def main():
     hubvpn.boot()        # re-assert the hub tunnel if this site was joined
+    netcfg.recover_pending()       # revert any unconfirmed static change from before a restart
+    netcfg.apply_addresses()       # (re)add managed secondary IPs
     tunnels.manager.start()
     scanner.start()
     listener.start()

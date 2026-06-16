@@ -1,0 +1,20 @@
+# OPT-IN override — enables DHCP <-> static IP control (Phase 3 / "Network" settings).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.netcfg.yml up -d --build
+#
+# This (a) builds the netwatch image WITH nmcli (network-manager) and tags it
+# farm-netwatch:netcfg, and (b) mounts the host D-Bus socket so nmcli can reach
+# NetworkManager. The plain `docker compose up -d` stays lean (no nmcli, no D-Bus) and
+# the static-IP control simply hides (managed secondary IPs + routed targets still work).
+#
+# Requirements: the host must run NetworkManager and expose /run/dbus/system_bus_socket
+# (true on Debian/Raspberry Pi OS Bookworm+). On a dhcpcd host, don't use this override.
+services:
+  netwatch:
+    image: farm-netwatch:netcfg
+    build:
+      context: .
+      args:
+        INSTALL_NM: "1"
+    volumes:
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket

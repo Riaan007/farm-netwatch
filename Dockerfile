@@ -34,6 +34,16 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       nmap iproute2 iputils-ping wireguard-tools ca-certificates tzdata \
     && rm -rf /var/lib/apt/lists/*
+
+# OPT-IN: DHCP<->static IP control via NetworkManager. The lean :latest image leaves
+# this OFF (INSTALL_NM=0) to stay small. Build with --build-arg INSTALL_NM=1 (see
+# docker-compose.netcfg.yml) to add `nmcli`; you must ALSO mount the host D-Bus socket
+# for it to reach NetworkManager. Without it, netcfg feature-detects and hides static.
+ARG INSTALL_NM=0
+RUN if [ "$INSTALL_NM" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends network-manager \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

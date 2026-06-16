@@ -25,6 +25,15 @@ device drops offline.
   hub's device row shows a smooth latency line + up/down bars with **30m / 1h / 12h /
   24h** ranges (replaces the old coarse uptime line and the standalone Kuma panel).
   Config: `scan.heartbeat_*`.
+- **Multi-subnet + fixed IP (Network settings)** — give the Pi **extra IP addresses**
+  so it sits on several LANs at once and ARP-scans each (additive — never touches the
+  main link; re-applied on reboot; can auto-add a scan target). Add **routed** ranges
+  for networks reachable via the gateway. And switch a connection **DHCP→fixed IP** with
+  an **auto-revert safety**: a bad change auto-reverts to DHCP after ~2 min (and on the
+  next boot) unless you confirm — so a remote Pi can't lock itself out. The fixed-IP
+  control needs the **opt-in NetworkManager image** (keeps `:latest` lean):
+  `docker compose -f docker-compose.yml -f docker-compose.netcfg.yml up -d --build`.
+  Extra IPs + routed ranges work on the default image.
 - **Site internet badge + Kuma link** — the site dashboard header shows a live
   **Internet** badge (gateway / upstream / DNS) and a **Kuma ↗** link to the site's
   own Uptime Kuma.

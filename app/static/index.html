@@ -195,6 +195,27 @@
                     <p class="text-[10px] text-slate-400 mt-1">Joins this site to the central hub over WireGuard — Netwatch brings the tunnel up itself. The site dials <b>out</b>, so <b>no ports are opened here</b>. On the hub: <b>Add Site</b> → copy this site's config → paste above. Don't also run the <code>wg-client</code> compose profile (one owner of <code>wg0</code> only).</p>
                 </div>
                 <div class="pt-3 border-t border-slate-100">
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🌐 Network · extra IPs &amp; fixed IP</label>
+                    <div id="net-ifaces" class="text-[11px] text-slate-500 mb-2"></div>
+                    <p class="text-[10px] font-bold text-slate-500 uppercase mb-1">Managed extra IPs (multi-subnet)</p>
+                    <div id="net-addrs" class="space-y-1 mb-2"></div>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <select id="net-iface" class="p-1.5 bg-slate-50 border rounded-lg text-xs"></select>
+                        <input id="net-cidr" type="text" placeholder="10.5.2.50/24" class="w-32 p-1.5 bg-slate-50 border rounded-lg text-sm font-mono">
+                        <label class="text-[11px] text-slate-600 flex items-center gap-1"><input id="net-target" type="checkbox" class="w-3.5 h-3.5" checked> also scan</label>
+                        <button onclick="netAddAddress()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Add IP</button>
+                        <span id="net-result" class="text-xs"></span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Adds a second IP so the Pi sits on another LAN and ARP-scans it. <b>Additive</b> — never touches your main connection. Re-applied on reboot.</p>
+
+                    <div id="net-static-wrap" class="hidden mt-3 pt-3 border-t border-slate-100">
+                        <p class="text-[10px] font-bold text-slate-500 uppercase mb-1">DHCP ↔ Fixed IP</p>
+                        <div id="net-cons" class="space-y-2"></div>
+                        <p class="text-[10px] text-red-500 mt-1">⚠️ A wrong fixed IP/gateway can cut this Pi off. Changes auto-revert to DHCP unless you confirm — on a remote site, confirm only after you've checked the dashboard still loads.</p>
+                    </div>
+                    <p id="net-static-na" class="hidden text-[10px] text-slate-400 mt-2">Fixed-IP control needs the NetworkManager image (<code>docker-compose.netcfg.yml</code>) — not enabled on this host.</p>
+                </div>
+                <div class="pt-3 border-t border-slate-100">
                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🧹 Maintenance · prune devices</label>
                     <div class="flex flex-wrap gap-2 items-center">
                         <span class="text-xs text-slate-600">Remove offline devices not seen in</span>
@@ -921,8 +942,83 @@
                 }
             } catch(e){}
             refreshHubStatus();
+            loadNetwork();
         }
         function closeSetup(){ document.getElementById('setup-modal').classList.add('hidden'); }
+
+        // ---- Network: extra IPs + DHCP/static ----
+        let NET_CONNS = [];
+        async function loadNetwork(){
+            let n; try { n = await (await fetch('/api/network')).json(); } catch(e){ return; }
+            // interfaces summary + iface dropdown
+            document.getElementById('net-ifaces').innerHTML = (n.interfaces||[]).map(i => `<span class="font-mono">${i.iface}</span> ${i.addrs.join(', ')}`).join(' · ') || 'no interfaces';
+            const sel = document.getElementById('net-iface');
+            sel.innerHTML = (n.interfaces||[]).map(i => `<option value="${i.iface}">${i.iface}</option>`).join('');
+            // managed addresses
+            const al = document.getElementById('net-addrs');
+            al.innerHTML = (n.addresses||[]).length ? (n.addresses||[]).map(a => `
+                <div class="flex items-center justify-between gap-2 text-xs p-1.5 border rounded-lg">
+                    <span><span class="font-mono">${a.cidr}</span> on <span class="font-mono">${a.iface}</span>${a.target?' · <span class="text-emerald-600">scanned</span>':''}</span>
+                    <button onclick="netRemoveAddress('${a.iface}','${a.cidr}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[11px]">Remove</button>
+                </div>`).join('') : '<span class="text-[11px] text-slate-400">none</span>';
+            // static control (only when NM available)
+            NET_CONNS = n.connections || [];
+            const wrap = document.getElementById('net-static-wrap'), na = document.getElementById('net-static-na');
+            if (n.available) { wrap.classList.remove('hidden'); na.classList.add('hidden'); renderConns(n.pending); }
+            else { wrap.classList.add('hidden'); na.classList.remove('hidden'); }
+        }
+        function renderConns(pending){
+            document.getElementById('net-cons').innerHTML = NET_CONNS.map(c => {
+                const isStatic = c.method === 'manual';
+                const pend = pending && pending.connection === c.name;
+                return `<div class="p-2 border rounded-lg text-xs">
+                    <div class="flex items-center justify-between gap-2">
+                        <span><b>${c.name}</b> <span class="font-mono text-slate-400">${c.device}</span>${c.primary?' <span class="text-[10px] bg-blue-100 text-blue-700 px-1 rounded">primary</span>':''}</span>
+                        <span class="px-2 py-0.5 rounded-full ${isStatic?'bg-amber-100 text-amber-700':'bg-emerald-100 text-emerald-700'}">${isStatic?'Static':'DHCP'}</span>
+                    </div>
+                    <div class="mt-1 text-[11px] text-slate-500 font-mono">${c.addresses||'(dhcp)'}${c.gateway?(' gw '+c.gateway):''}</div>
+                    ${pend ? `<div class="mt-1 flex items-center gap-2"><button onclick="netConfirm('${c.name}')" class="px-2 py-1 bg-emerald-600 text-white rounded text-[11px] font-bold">✅ Keep changes (<span class="cn-count" data-deadline="${pending.revert_deadline_ts}">…</span>s)</button><button onclick="netDhcp('${c.name}')" class="px-2 py-1 bg-slate-100 rounded text-[11px]">Revert to DHCP</button></div>`
+                    : `<div class="mt-1 flex flex-wrap gap-1 items-center">
+                        <input class="cn-ip w-28 p-1 bg-slate-50 border rounded text-[11px] font-mono" placeholder="ip/prefix" value="${isStatic?(c.addresses||'').split(',')[0]:''}">
+                        <input class="cn-gw w-24 p-1 bg-slate-50 border rounded text-[11px] font-mono" placeholder="gateway" value="${c.gateway||''}">
+                        <input class="cn-dns w-24 p-1 bg-slate-50 border rounded text-[11px] font-mono" placeholder="dns" value="${c.dns||''}">
+                        <button onclick="netStatic('${c.name}',this)" class="px-2 py-1 bg-slate-800 text-white rounded text-[11px] font-bold">Set fixed IP</button>
+                        ${isStatic?`<button onclick="netDhcp('${c.name}')" class="px-2 py-1 bg-slate-100 rounded text-[11px]">Back to DHCP</button>`:''}
+                      </div>`}
+                </div>`;
+            }).join('');
+            tickCountdowns();
+        }
+        function tickCountdowns(){
+            document.querySelectorAll('.cn-count').forEach(el => {
+                const left = Math.max(0, (+el.dataset.deadline) - Math.floor(Date.now()/1000));
+                el.textContent = left;
+                if (left === 0) setTimeout(loadNetwork, 1500);
+            });
+            setTimeout(() => { if(document.querySelector('.cn-count')) tickCountdowns(); }, 1000);
+        }
+        async function netAddAddress(){
+            const r = document.getElementById('net-result'); r.textContent='Adding…'; r.className='text-xs text-slate-500';
+            const body = { action:'add', iface:document.getElementById('net-iface').value, cidr:document.getElementById('net-cidr').value, target:document.getElementById('net-target').checked };
+            const j = await (await fetch('/api/network/address',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+            r.textContent = j.ok ? 'Added.' : (j.error||'Failed'); r.className='text-xs '+(j.ok?'text-emerald-600':'text-red-600');
+            if(j.ok){ document.getElementById('net-cidr').value=''; loadNetwork(); }
+        }
+        async function netRemoveAddress(iface,cidr){
+            await fetch('/api/network/address',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'remove',iface,cidr})});
+            loadNetwork();
+        }
+        async function netStatic(con,btn){
+            const row=btn.closest('div');
+            if(!confirm('Set a FIXED IP on '+con+'? It auto-reverts to DHCP in 2 minutes unless you confirm — so verify the dashboard still loads, then click "Keep changes".')) return;
+            const j = await (await fetch('/api/network/static',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+                connection:con, ip_prefix:row.querySelector('.cn-ip').value, gateway:row.querySelector('.cn-gw').value, dns:row.querySelector('.cn-dns').value, revert_s:120
+            })})).json();
+            if(!j.ok) alert(j.error||'Failed');
+            loadNetwork();
+        }
+        async function netConfirm(con){ await fetch('/api/network/static/confirm',{method:'POST'}); loadNetwork(); }
+        async function netDhcp(con){ await fetch('/api/network/dhcp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({connection:con})}); loadNetwork(); }
 
         // ---- Device & IP history ----
         let HIST_TAB='timeline', HIST_EVENTS=[], HIST_IPS=[];
