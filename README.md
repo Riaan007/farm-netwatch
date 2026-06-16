@@ -20,6 +20,16 @@ device drops offline.
 - **Uptime history** — every scan is recorded in SQLite; the device panel shows
   24h / 7d / 30d uptime and a sparkline. Great for spotting a camera that keeps
   dropping.
+- **Per-device latency graph (Uptime-Kuma style)** — Netwatch samples each
+  **watched/named** device's latency every ~60s into a short-retention table, so the
+  hub's device row shows a smooth latency line + up/down bars with **30m / 1h / 12h /
+  24h** ranges (replaces the old coarse uptime line and the standalone Kuma panel).
+  Config: `scan.heartbeat_*`.
+- **Internet-uptime monitors (default)** — when Kuma is configured, Netwatch
+  auto-creates **Gateway + 8.8.8.8 + 1.1.1.1** ping monitors and a **google.com DNS**
+  monitor (tagged *Internet*), so you can tell apart "no link", "no upstream", and
+  "DNS broken". The hub site page shows an **Internet** badge from Netwatch's own
+  checks (works even without a published Kuma status page).
 - **Reachability-based presence** — a device is "online" only if it actually
   responds (an open port **or** an ICMP ping), not merely an ARP reply. This stops
   a sleeping/half-disconnected Wi-Fi device (whose NIC still answers ARP) from

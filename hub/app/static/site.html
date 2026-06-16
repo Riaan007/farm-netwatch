@@ -24,6 +24,7 @@
                     <h1 class="text-2xl font-bold tracking-tight flex items-center gap-2">
                         <span id="reach-dot" class="status-dot bg-slate-500"></span>
                         <span id="site-name" class="truncate">…</span>
+                        <span id="internet-badge" class="hidden text-[11px] font-bold px-2 py-0.5 rounded-full"></span>
                     </h1>
                     <p id="site-sub" class="text-slate-400 text-xs mt-1 italic">&nbsp;</p>
                 </div>
@@ -67,15 +68,6 @@
                 <span id="reach-summary" class="text-xs text-slate-400 font-mono"></span>
             </div>
             <div id="reach-spark"></div>
-        </div>
-
-        <div id="kuma-panel" class="hidden bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-8">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-tight">Uptime Kuma monitoring</h2>
-                <span id="kuma-summary" class="text-xs font-bold"></span>
-            </div>
-            <div id="kuma-monitors" class="space-y-2"></div>
-            <p id="kuma-hint" class="hidden text-xs text-slate-400 mt-2"></p>
         </div>
 
         <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -205,17 +197,6 @@
             }).join('') + '</div>';
         }
 
-        // Kuma beat codes: 0 down, 1 up, 2 pending, 3 maintenance
-        function beatStrip(beats){
-            const pad = Math.max(0, 50 - beats.length);
-            const cells = Array(pad).fill(null).concat(beats.slice(-50));
-            return '<div class="flex items-center gap-px">' + cells.map(b => {
-                const c = b === 1 ? 'bg-emerald-400' : b === 0 ? 'bg-red-500'
-                        : b === 2 ? 'bg-amber-400' : b === 3 ? 'bg-blue-400' : 'bg-slate-100';
-                return `<div class="beat ${c}"></div>`;
-            }).join('') + '</div>';
-        }
-
         // ---- device table: search / sort / group --------------------------
         const CAT_ORDER = ['camera','nvr','network','internet-ap','router','printer',
                            'nas','voip','solar','media','iot','pc','server','unknown'];
@@ -331,22 +312,72 @@
                     <button onclick="diag('deep','${ip}','${rid}',this)" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold">🔬 Deep scan</button>
                 </div>
                 <div id="${rid}" class="mt-2"></div>` : '';
+            const cid = 'chart-' + Math.random().toString(36).slice(2, 8);
             const r = await fetch(`/api/hub/sites/${siteId}/history/${key}`);
             const h = r.ok ? await r.json() : {};
             const sum = h.summary || {};
             const pct = v => v == null ? '--' : v + '%';
-            const upBlock = r.ok
-                ? `${sparkBars(h.series)}<p class="text-[10px] text-slate-400 mt-1">Device uptime · last 24h</p>`
-                : '<span class="text-xs text-slate-400">Site unreachable — uptime unavailable.</span>';
+            const chartBlock = `
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-[10px] uppercase font-bold text-slate-400">Latency &amp; uptime</span>
+                    <div id="${cid}-rng" class="flex bg-slate-100 rounded-lg p-0.5 text-[11px] font-bold">
+                        ${['30m','1h','12h','24h'].map(rr => `<button data-r="${rr}" onclick="loadBeats('${key}','${cid}','${rr}')" class="px-2 py-0.5 rounded-md ${rr==='1h'?'bg-white shadow':'text-slate-500'}">${rr}</button>`).join('')}
+                    </div>
+                </div>
+                <div id="${cid}"><p class="text-xs text-slate-300">loading…</p></div>`;
             tr.innerHTML = `<td colspan="6" class="px-5 py-3 bg-slate-50">
-                <div class="flex items-center gap-6 flex-wrap">
-                    <div class="grow min-w-[200px]">${upBlock}</div>
+                <div class="flex items-start gap-6 flex-wrap">
+                    <div class="grow min-w-[220px]">${chartBlock}</div>
                     <div class="flex gap-4 text-center text-xs">
                         <div><div class="text-[10px] text-slate-400 uppercase font-bold">24h</div><div class="font-bold">${pct(sum.uptime_24h)}</div></div>
                         <div><div class="text-[10px] text-slate-400 uppercase font-bold">7d</div><div class="font-bold">${pct(sum.uptime_7d)}</div></div>
                         <div><div class="text-[10px] text-slate-400 uppercase font-bold">30d</div><div class="font-bold">${pct(sum.uptime_30d)}</div></div>
                     </div>
                 </div>${diagBlock}</td>`;
+            loadBeats(key, cid, '1h');
+        }
+
+        // ---- Kuma-style latency chart (inline SVG, no library) ----
+        async function loadBeats(key, cid, range){
+            const el = document.getElementById(cid); if (!el) return;
+            const rng = document.getElementById(cid + '-rng');
+            if (rng) rng.querySelectorAll('button').forEach(b =>
+                b.className = 'px-2 py-0.5 rounded-md ' + (b.dataset.r === range ? 'bg-white shadow' : 'text-slate-500'));
+            el.innerHTML = '<p class="text-xs text-slate-300">loading…</p>';
+            try {
+                const j = await (await fetch(`/api/hub/sites/${siteId}/history/${key}/beats?range=${range}`)).json();
+                el.innerHTML = latencyChart(j.points || []);
+            } catch(e) { el.innerHTML = '<p class="text-xs text-red-600">unavailable</p>'; }
+        }
+        function latencyChart(points){
+            if (!points.length || !points.some(p => p.rtt != null || p.up != null))
+                return '<p class="text-xs text-slate-300">No samples yet — watched/named devices are pinged every 60s.</p>';
+            const W = 320, H = 64, PAD = 4;
+            const rtts = points.filter(p => p.rtt != null).map(p => p.rtt);
+            const maxR = Math.max(10, ...rtts), n = points.length;
+            const x = i => n < 2 ? W / 2 : (i / (n - 1)) * W;
+            const y = v => H - PAD - (v / maxR) * (H - 2 * PAD);
+            const segs = []; let cur = [];
+            points.forEach((p, i) => {
+                if (p.rtt == null) { if (cur.length) { segs.push(cur); cur = []; } }
+                else cur.push(`${x(i).toFixed(1)},${y(p.rtt).toFixed(1)}`);
+            });
+            if (cur.length) segs.push(cur);
+            const lines = segs.map(s => `<polyline fill="none" stroke="#10b981" stroke-width="1.5" points="${s.join(' ')}"/>`).join('');
+            const bars = points.map(p => {
+                const c = p.up == null ? 'bg-slate-200' : p.up >= 0.99 ? 'bg-emerald-400' : p.up > 0 ? 'bg-amber-400' : 'bg-red-400';
+                return `<div class="flex-1 ${c}"></div>`;
+            }).join('');
+            const avgUp = points.reduce((a, p) => a + (p.up || 0), 0) / n;
+            const avgR = rtts.length ? rtts.reduce((a, b) => a + b, 0) / rtts.length : null;
+            const f = v => v == null ? '--' : v.toFixed(1);
+            return `
+                <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="w-full" style="height:48px">${lines}</svg>
+                <div class="flex items-stretch gap-px h-2 mt-0.5">${bars}</div>
+                <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                    <span>min ${f(rtts.length ? Math.min(...rtts) : null)} · avg ${f(avgR)} · max ${f(rtts.length ? maxR : null)} ms</span>
+                    <span>uptime ${(avgUp * 100).toFixed(0)}%</span>
+                </div>`;
         }
 
         // ---- per-device diagnostics, run on the site from the hub ----
@@ -420,7 +451,7 @@
             renderDevices();
 
             loadReachability();
-            loadKuma();
+            loadInternet();
         }
 
         async function loadReachability(){
@@ -432,31 +463,17 @@
                 `7d ${s.reach_7d != null ? s.reach_7d + '%' : '--'} · 30d ${s.reach_30d != null ? s.reach_30d + '%' : '--'}`;
         }
 
-        async function loadKuma(){
-            const panel = document.getElementById('kuma-panel');
-            const k = await fetch(`/api/hub/sites/${siteId}/kuma`).then(r=>r.json());
-            const hint = document.getElementById('kuma-hint');
-            if (!k.ok && k.reason === 'not-configured') { panel.classList.add('hidden'); return; }
-            panel.classList.remove('hidden');
-            if (!k.ok) {
-                document.getElementById('kuma-monitors').innerHTML = '';
-                document.getElementById('kuma-summary').textContent = '';
-                hint.classList.remove('hidden');
-                hint.textContent = k.reason === 'no-status-page'
-                    ? 'No published status page found at this slug. In the site\'s Kuma: Status Pages → create the page, add monitors to a group, publish.'
-                    : 'Uptime Kuma is unreachable over the VPN.';
-                return;
-            }
-            hint.classList.add('hidden');
-            document.getElementById('kuma-summary').innerHTML =
-                `<span class="text-emerald-600">↑${k.up} up</span>${k.down ? ` · <span class="text-red-600">↓${k.down} down</span>` : ''}`;
-            document.getElementById('kuma-monitors').innerHTML = (k.monitors || []).map(m => `
-                <div class="flex items-center gap-3 flex-wrap">
-                    <span class="status-dot ${m.last_status === 1 ? 'bg-emerald-500' : m.last_status === 0 ? 'bg-red-500 offline-blink' : 'bg-slate-300'} shrink-0"></span>
-                    <span class="text-sm font-medium w-48 truncate" title="${m.group}">${m.name}</span>
-                    ${beatStrip(m.beats || [])}
-                    <span class="text-xs text-slate-400 font-mono ml-auto">${m.uptime_24h != null ? m.uptime_24h + '%' : ''}${m.ping != null ? ' · ' + m.ping + ' ms' : ''}</span>
-                </div>`).join('');
+        async function loadInternet(){
+            const b = document.getElementById('internet-badge');
+            let s; try { s = await fetch(`/api/hub/sites/${siteId}/internet`).then(r=>r.json()); } catch(e){ b.classList.add('hidden'); return; }
+            if (!s || s.checked_ts == null) { b.classList.add('hidden'); return; }
+            let txt, cls;
+            if (s.ok)                       { txt = '🌐 Internet OK';   cls = 'bg-emerald-100 text-emerald-700'; }
+            else if (s.has_gateway && !s.gateway) { txt = '🔴 Gateway down'; cls = 'bg-red-100 text-red-700'; }
+            else if (!s.dns && s.external)  { txt = '🟠 DNS broken';    cls = 'bg-amber-100 text-amber-700'; }
+            else                            { txt = '🟠 No upstream';   cls = 'bg-amber-100 text-amber-700'; }
+            b.textContent = txt; b.className = 'text-[11px] font-bold px-2 py-0.5 rounded-full ' + cls;
+            b.classList.remove('hidden');
         }
 
         async function pollNow(){

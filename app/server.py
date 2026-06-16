@@ -448,6 +448,39 @@ def api_history(key):
     })
 
 
+_BEAT_RANGES = {"30m": 1800, "1h": 3600, "12h": 43200, "24h": 86400}
+
+
+@app.route("/api/history/<path:key>/beats")
+def api_history_beats(key):
+    """Fine-grained latency/up series for the Kuma-style chart (30m/1h/12h/24h)."""
+    rng = request.args.get("range", "1h")
+    window = _BEAT_RANGES.get(rng, 3600)
+    return jsonify({"range": rng if rng in _BEAT_RANGES else "1h",
+                    "points": history.beats(key, window)})
+
+
+@app.route("/api/internet")
+def api_internet():
+    """Internet-uptime snapshot from the heartbeat sampler's synthetic probes:
+    gateway reachable? external IPs reachable? DNS resolves?"""
+    gw = history.latest_beat("__inet__gateway")
+    ext = [history.latest_beat("__inet__8.8.8.8"), history.latest_beat("__inet__1.1.1.1")]
+    dns = history.latest_beat("__inet__dns")
+
+    def up(b):
+        return bool(b and b["online"])
+    checked = [b["ts"] for b in [gw, dns, *ext] if b]
+    return jsonify({
+        "has_gateway": gw is not None,
+        "gateway": up(gw),
+        "external": any(up(b) for b in ext),
+        "dns": up(dns),
+        "ok": any(up(b) for b in ext) and up(dns),
+        "checked_ts": max(checked) if checked else None,
+    })
+
+
 @app.route("/api/events")
 def api_events():
     """Device/IP event log (newest first). Filter with ?ip= / ?key= / ?type=."""

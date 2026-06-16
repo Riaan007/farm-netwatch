@@ -35,6 +35,13 @@ DEFAULTS = {
         # A host that only answers ARP (e.g. a Wi-Fi NIC answering while the host
         # sleeps) is treated as OFFLINE. Turn off to count ARP presence as online.
         "require_reachable": True,
+        # Fine-grained latency sampling for the Uptime-Kuma-style per-device chart.
+        # Pings watched/named online devices every interval into a short-retention
+        # table (heartbeats). Scope: "watched_named" (default) or "online" (all).
+        "heartbeat_enabled": True,
+        "heartbeat_interval_s": 60,
+        "heartbeat_retention_days": 3,
+        "heartbeat_scope": "watched_named",
     },
     "alerts": {
         "ntfy_server": "https://ntfy.sh",
@@ -54,6 +61,8 @@ DEFAULTS = {
     "integrations": {
         # Uptime Kuma: Netwatch pushes per-device status to Kuma "Push" monitors.
         "kuma": {
+            "enabled": False,                        # set true once Kuma is wired up
+            "internet_monitors": True,               # auto-create gateway+DNS monitors on enable
             "base_url": "http://localhost:3001",   # where Netwatch reaches Kuma
             "username": "",                          # Kuma admin (for the create-monitor API)
             # admin password is stored obfuscated in the creds store under "@kuma".

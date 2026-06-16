@@ -407,6 +407,39 @@ def api_site_trigger(site_id):
         return jsonify({"ok": False, "error": "site unreachable"}), 502
 
 
+@app.route("/api/hub/sites/<site_id>/history/<path:key>/beats")
+def api_site_beats(site_id, key):
+    """Proxy the site's fine-grained latency series for the device chart."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    try:
+        r = requests.get(f"{base}/api/history/{key}/beats",
+                         params={"range": request.args.get("range", "1h")},
+                         timeout=(poll["timeout_connect_s"], poll["timeout_read_s"]))
+        return jsonify(r.json()), r.status_code
+    except (requests.exceptions.RequestException, ValueError):
+        return jsonify({"ok": False, "error": "site unreachable", "points": []}), 502
+
+
+@app.route("/api/hub/sites/<site_id>/internet")
+def api_site_internet(site_id):
+    """Proxy the site's internet-uptime snapshot (gateway / external / DNS)."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    try:
+        r = requests.get(f"{base}/api/internet",
+                         timeout=(poll["timeout_connect_s"], poll["timeout_read_s"]))
+        return jsonify(r.json()), r.status_code
+    except (requests.exceptions.RequestException, ValueError):
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+
+
 @app.route("/api/hub/sites/<site_id>/events")
 def api_site_events(site_id):
     """Proxy the site's device/IP event log (offline/online/new/ip_change)."""

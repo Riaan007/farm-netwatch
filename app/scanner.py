@@ -9,6 +9,7 @@ import concurrent.futures
 import ipaddress
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -45,6 +46,44 @@ def _icmp_up(ip):
         return False
 
 
+_RTT_RE = re.compile(r"time[=<]([\d.]+)\s*ms")
+
+
+def _icmp_rtt(ip):
+    """(up, rtt_ms) from a single ICMP echo — for the latency heartbeat sampler."""
+    try:
+        r = subprocess.run(["ping", "-c", "1", "-W", "1", ip],
+                           capture_output=True, text=True, timeout=4)
+    except (OSError, subprocess.SubprocessError):
+        return False, None
+    if r.returncode != 0:
+        return False, None
+    m = _RTT_RE.search(r.stdout)
+    return True, (round(float(m.group(1)), 1) if m else None)
+
+
+def _dns_ok(host="google.com"):
+    """True if `host` resolves — confirms DNS works, not just raw IP reachability."""
+    import socket
+    try:
+        socket.setdefaulttimeout(3)
+        socket.getaddrinfo(host, None)
+        return True
+    except OSError:
+        return False
+
+
+def default_gateway():
+    """The site's default-route gateway IP (via `ip route show default`), or None."""
+    try:
+        out = subprocess.run(["ip", "route", "show", "default"],
+                            capture_output=True, text=True, timeout=4).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"via\s+([0-9.]+)", out)
+    return m.group(1) if m else None
+
+
 def _read_json(path, default):
     try:
         with open(path) as f:
@@ -77,6 +116,7 @@ class Scanner:
         self.seen_keys = set()     # every key ever observed (for "new device")
         self.registry = self._load_registry()
         self._wake = threading.Event()
+        self._hb_wake = threading.Event()
         self._stop = False
         self._scan_lock = threading.Lock()   # serialise scans (no concurrent runs)
         self._load_state()
@@ -590,6 +630,33 @@ class Scanner:
         except Exception:
             pass
 
+    def _ensure_internet_monitors(self, cfg, ki, base):
+        """Create the default internet-uptime monitors once, when Kuma is enabled.
+        Idempotent via a registry marker (re-detects the gateway if it changes)."""
+        # "By default" = whenever Kuma is actually configured (admin creds present),
+        # not gated behind a separate toggle.
+        if not ki.get("internet_monitors", True):
+            return
+        user = ki.get("username", "")
+        pw = creds.get("@kuma").get("password", "")
+        if not (user and pw):
+            return
+        marker = self.registry.get("__internet__") or {}
+        gw = default_gateway()
+        if marker and marker.get("gateway_ip") == gw:
+            return   # already provisioned for this gateway
+        try:
+            res = kuma.provision_internet(base, user, pw, gw)
+        except Exception as e:   # noqa: BLE001
+            print("internet-monitor provision error:", e, flush=True)
+            return
+        if res.get("ok"):
+            ids = {n: v.get("monitor_id") for n, v in (res.get("monitors") or {}).items()
+                   if v.get("ok")}
+            self.registry["__internet__"] = {"gateway_ip": gw, "monitors": ids}
+            self.save_registry()
+            print(f"[kuma] internet monitors provisioned (gateway={gw}): {list(ids)}", flush=True)
+
     @staticmethod
     def _kuma_name(dev):
         label = dev.get("name") or dev.get("type") or "device"
@@ -603,6 +670,7 @@ class Scanner:
         base = ki.get("base_url")
         if not base:
             return
+        self._ensure_internet_monitors(cfg, ki, base)
         host_changes = []   # (monitor_id, new_ip, key) for ping monitors that moved
         for key, dev in devices.items():
             reg = self.registry.get(key, {})
@@ -742,8 +810,59 @@ class Scanner:
     def wake(self):
         self._wake.set()
 
+    # ---- latency heartbeat sampler (Kuma-style chart data + internet check) ----
+    def _heartbeat_loop(self):
+        last_prune = 0.0
+        while not self._stop:
+            cfg = config.load()
+            try:
+                self._heartbeat_tick(cfg)
+            except Exception as e:   # noqa: BLE001 - never let a cycle kill the thread
+                print("heartbeat error:", e, flush=True)
+            if time.time() - last_prune > 3600:
+                last_prune = time.time()
+                try:
+                    history.prune_beats(cfg["scan"].get("heartbeat_retention_days", 3))
+                except Exception:    # noqa: BLE001
+                    pass
+            interval = max(15, int(cfg["scan"].get("heartbeat_interval_s", 60)))
+            self._hb_wake.wait(timeout=interval)
+            self._hb_wake.clear()
+
+    def _heartbeat_tick(self, cfg):
+        scope = cfg["scan"].get("heartbeat_scope", "watched_named")
+        with self.lock:
+            online = [(k, d.get("ip")) for k, d in self.devices.items()
+                      if d.get("online") and d.get("ip")]
+        targets = []
+        for k, ip in online:
+            if scope == "online":
+                targets.append((k, ip))
+            else:
+                reg = self.registry.get(k, {})
+                if reg.get("watch") or reg.get("name"):
+                    targets.append((k, ip))
+        # Internet-uptime probes (synthetic keys), always sampled for the badge.
+        gw = default_gateway()
+        if gw:
+            targets.append(("__inet__gateway", gw))
+        targets.append(("__inet__8.8.8.8", "8.8.8.8"))
+        targets.append(("__inet__1.1.1.1", "1.1.1.1"))
+        rows = []
+        if targets:
+            with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=min(32, len(targets))) as ex:
+                for key, (up, rtt) in zip(
+                        [t[0] for t in targets],
+                        ex.map(lambda t: _icmp_rtt(t[1]), targets)):
+                    rows.append((key, up, rtt))
+        rows.append(("__inet__dns", _dns_ok("google.com"), None))
+        history.record_beats(rows)
+
     def start(self):
         threading.Thread(target=self.loop, daemon=True).start()
+        if config.load()["scan"].get("heartbeat_enabled", True):
+            threading.Thread(target=self._heartbeat_loop, daemon=True).start()
 
 
 scanner = Scanner()

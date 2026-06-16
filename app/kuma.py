@@ -151,6 +151,60 @@ def provision(base_url, user, pw, name, ip, interval=60, category=None):
         "_", {"ok": False, "error": "unknown"})
 
 
+def provision_internet(base_url, user, pw, gateway_ip, interval=60):
+    """Create the default internet-uptime monitors, tagged 'Internet': ping the
+    gateway + public DNS (8.8.8.8 / 1.1.1.1) AND a real DNS-resolution check of
+    google.com (so you can tell 'no link' from 'DNS broken'). Idempotency is the
+    caller's job (guard on a registry marker). Returns {ok, monitors:{name:{...}}}."""
+    plan = []
+    if gateway_ip:
+        plan.append(("Gateway", "ping", gateway_ip))
+    plan += [("Internet 8.8.8.8", "ping", "8.8.8.8"),
+             ("Internet 1.1.1.1", "ping", "1.1.1.1"),
+             ("DNS google.com", "dns", "google.com")]
+    try:
+        sio, _ = _connect(base_url)
+    except Exception as e:
+        return {"ok": False, "error": f"cannot reach Kuma: {e}"}
+    out = {}
+    try:
+        ok, msg = _login(sio, user, pw)
+        if not ok:
+            return {"ok": False, "error": msg}
+        tid = _ensure_tag(sio, {}, "Internet", "#0ea5e9")
+        for name, mtype, target in plan:
+            mon = {"name": name, "interval": int(interval), "maxretries": 2,
+                   "retryInterval": int(interval), "resendInterval": 0,
+                   "upsideDown": False, "notificationIDList": {},
+                   "accepted_statuscodes": ["200-299"], "packetSize": 56}
+            if mtype == "dns":
+                mon.update(type="dns", hostname=target, dns_resolve_server="8.8.8.8",
+                           dns_resolve_type="A", port=53)
+            else:
+                mon.update(type="ping", hostname=target)
+            try:
+                add = sio.call("add", mon, timeout=15)
+            except Exception as e:
+                out[name] = {"ok": False, "error": str(e)[:100]}
+                continue
+            if not (add and add.get("ok")):
+                out[name] = {"ok": False, "error": (add or {}).get("msg", "add failed")}
+                continue
+            mid = add.get("monitorID")
+            if tid is not None:
+                try:
+                    sio.call("addMonitorTag", (tid, mid, ""), timeout=15)
+                except Exception:
+                    pass
+            out[name] = {"ok": True, "monitor_id": mid}
+    finally:
+        try:
+            sio.disconnect()
+        except Exception:
+            pass
+    return {"ok": True, "monitors": out}
+
+
 def ensure_ping(base_url, user, pw, items, interval=60):
     """Make each monitor a PING monitor pointing at `ip`. Used to follow a device
     that changed IP and to repair old push monitors. items: [(monitor_id, ip)]."""

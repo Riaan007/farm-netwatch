@@ -56,6 +56,16 @@ def _init(c):
         CREATE INDEX IF NOT EXISTS idx_events_ip_ts  ON events(ip, ts);
         CREATE INDEX IF NOT EXISTS idx_events_key_ts ON events(key, ts);
         CREATE INDEX IF NOT EXISTS idx_events_ts     ON events(ts);
+
+        -- Fine-grained latency heartbeats (~60s) for the Uptime-Kuma-style chart.
+        -- Short retention (a few days); `samples` stays for long-term uptime %.
+        CREATE TABLE IF NOT EXISTS heartbeats (
+            key    TEXT NOT NULL,
+            ts     INTEGER NOT NULL,
+            online INTEGER NOT NULL,
+            rtt    REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_hb_key_ts ON heartbeats(key, ts);
         """
     )
     c.commit()
@@ -128,10 +138,72 @@ def prune(retention_days):
     c.commit()
 
 
+# ---- fine-grained latency heartbeats (for the Kuma-style chart) ----------
+
+def record_beats(rows):
+    """rows: iterable of (key, online_bool, rtt_or_None). One commit, stamped now."""
+    rows = list(rows)
+    if not rows:
+        return
+    ts = int(time.time())
+    c = _conn()
+    c.executemany(
+        "INSERT INTO heartbeats (key, ts, online, rtt) VALUES (?,?,?,?)",
+        [(k, ts, 1 if up else 0, rtt) for (k, up, rtt) in rows],
+    )
+    c.commit()
+
+
+def beats(key, window_s, max_points=120):
+    """Timestamped latency/up series for `key` over the window, bucketed to at most
+    `max_points`: [{ts (bucket center), up (0..1 fraction), rtt (avg of online, else
+    None)}]. Powers the per-device latency chart's 30m/1h/12h/24h ranges."""
+    c = _conn()
+    now = int(time.time())
+    since = now - window_s
+    buckets = max(1, min(max_points, window_s // 60))   # ~1 point per 60s, capped
+    step = max(1, window_s // buckets)
+    rows = c.execute(
+        "SELECT ts, online, rtt FROM heartbeats WHERE key=? AND ts>=? ORDER BY ts",
+        (key, since),
+    ).fetchall()
+    agg = {}
+    for r in rows:
+        b = min(buckets - 1, (r["ts"] - since) // step)
+        on, n, rs, rn = agg.get(b, (0, 0, 0.0, 0))
+        on += r["online"]; n += 1
+        if r["online"] and r["rtt"] is not None:
+            rs += r["rtt"]; rn += 1
+        agg[b] = (on, n, rs, rn)
+    out = []
+    for b in sorted(agg):
+        on, n, rs, rn = agg[b]
+        out.append({"ts": since + b * step + step // 2,
+                    "up": round(on / n, 3) if n else None,
+                    "rtt": round(rs / rn, 1) if rn else None})
+    return out
+
+
+def prune_beats(retention_days):
+    c = _conn()
+    cutoff = int(time.time()) - int(retention_days * 86400)
+    c.execute("DELETE FROM heartbeats WHERE ts < ?", (cutoff,))
+    c.commit()
+
+
+def latest_beat(key):
+    """Most recent heartbeat for a key, or None (used by the internet check)."""
+    c = _conn()
+    r = c.execute("SELECT ts, online, rtt FROM heartbeats WHERE key=? "
+                  "ORDER BY ts DESC LIMIT 1", (key,)).fetchone()
+    return dict(r) if r else None
+
+
 def delete_key(key):
-    """Drop all uptime samples for a device that's being forgotten."""
+    """Drop all uptime samples + heartbeats for a device that's being forgotten."""
     c = _conn()
     c.execute("DELETE FROM samples WHERE key = ?", (key,))
+    c.execute("DELETE FROM heartbeats WHERE key = ?", (key,))
     c.commit()
 
 
@@ -146,6 +218,7 @@ def delete_keys(keys):
         return
     c = _conn()
     c.executemany("DELETE FROM samples WHERE key = ?", [(k,) for k in keys])
+    c.executemany("DELETE FROM heartbeats WHERE key = ?", [(k,) for k in keys])
     c.commit()
 
 
