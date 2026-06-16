@@ -25,6 +25,13 @@ device drops offline.
   hub's device row shows a smooth latency line + up/down bars with **30m / 1h / 12h /
   24h** ranges (replaces the old coarse uptime line and the standalone Kuma panel).
   Config: `scan.heartbeat_*`.
+- **Site internet badge + Kuma link** — the site dashboard header shows a live
+  **Internet** badge (gateway / upstream / DNS) and a **Kuma ↗** link to the site's
+  own Uptime Kuma.
+- **Offline alerts both ways (ntfy)** — the **hub** alerts (🔔 Alerts) when a farm
+  **site drops off** the hub (and recovers); each **site** alerts when its **VPN link
+  to the hub** goes down. Each is independently toggleable (hub: *Notify when a site
+  goes offline*; site Settings: *Alert when the hub link goes offline*).
 - **Internet-uptime monitors (default)** — when Kuma is configured, Netwatch
   auto-creates **Gateway + 8.8.8.8 + 1.1.1.1** ping monitors and a **google.com DNS**
   monitor (tagged *Internet*), so you can tell apart "no link", "no upstream", and

@@ -20,6 +20,7 @@ import creds
 import discovery
 import hikvision
 import history
+import hubvpn
 import identify
 import kuma
 import notify
@@ -117,6 +118,7 @@ class Scanner:
         self.registry = self._load_registry()
         self._wake = threading.Event()
         self._hb_wake = threading.Event()
+        self._hub_up = None        # last-known hub VPN link state (for alerts)
         self._stop = False
         self._scan_lock = threading.Lock()   # serialise scans (no concurrent runs)
         self._load_state()
@@ -857,7 +859,31 @@ class Scanner:
                         ex.map(lambda t: _icmp_rtt(t[1]), targets)):
                     rows.append((key, up, rtt))
         rows.append(("__inet__dns", _dns_ok("google.com"), None))
+        # Hub VPN link health — only when this site is joined to a hub.
+        if hubvpn.has_config():
+            hub_up, hub_rtt = _icmp_rtt("10.8.0.1")
+            rows.append(("__hub__", hub_up, hub_rtt))
+            self._check_hub_link(cfg, hub_up)
         history.record_beats(rows)
+
+    def _check_hub_link(self, cfg, up):
+        """Notify (once) when the VPN link to the Central Hub drops or recovers."""
+        prev = self._hub_up
+        self._hub_up = up
+        if prev is None or prev == up:
+            return
+        alerts = cfg.get("alerts", {})
+        if not alerts.get("notify_hub_offline", True):
+            return
+        site = cfg.get("site", {}).get("name") or "This site"
+        if not up:
+            notify.push(alerts, "🔌 Hub link DOWN",
+                        f"{site} lost its VPN link to the Central Hub.",
+                        priority="high", tags=["warning"])
+        else:
+            notify.push(alerts, "✅ Hub link restored",
+                        f"{site} is reconnected to the Central Hub.",
+                        tags=["white_check_mark"])
 
     def start(self):
         threading.Thread(target=self.loop, daemon=True).start()

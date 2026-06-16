@@ -16,6 +16,7 @@ from flask import (Flask, jsonify, redirect, request, send_from_directory,
 
 import auth
 import hubconfig
+import notify
 import proxycfg
 import sitehistory
 import tunnels
@@ -152,6 +153,34 @@ def _site_card(site):
         "spark": sitehistory.series(site["id"], 86400, 48),
         "reach_24h": sitehistory.reachability_pct(site["id"], 86400),
     }
+
+
+@app.route("/api/hub/alerts", methods=["GET", "POST"])
+def api_alerts():
+    """Hub ntfy alert settings (topic/server + site-offline toggle)."""
+    if request.method == "POST":
+        body = request.get_json(force=True, silent=True) or {}
+        patch = {}
+        for k in ("ntfy_server", "ntfy_topic"):
+            if k in body:
+                patch[k] = (body[k] or "").strip()
+        if "notify_site_offline" in body:
+            patch["notify_site_offline"] = bool(body["notify_site_offline"])
+        hubconfig.update({"alerts": patch})
+        return jsonify({"ok": True})
+    a = hubconfig.load()["alerts"]
+    return jsonify({"ntfy_server": a.get("ntfy_server", "https://ntfy.sh"),
+                    "ntfy_topic": a.get("ntfy_topic", ""),
+                    "notify_site_offline": a.get("notify_site_offline", True)})
+
+
+@app.route("/api/hub/alerts/test", methods=["POST"])
+def api_alerts_test():
+    ok = notify.push(hubconfig.load()["alerts"], "Hub test alert",
+                     "ntfy is wired up — you'll get site-offline alerts here.",
+                     tags=["bell"])
+    return jsonify({"ok": bool(ok),
+                    "error": None if ok else "No topic set, or ntfy unreachable."})
 
 
 @app.route("/api/hub/overview")

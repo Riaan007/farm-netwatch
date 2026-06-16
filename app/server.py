@@ -171,6 +171,8 @@ def api_setup():
         alerts["allow_commands"] = bool(body["allow_commands"])
     if "notify_online" in body:
         alerts["notify_online"] = bool(body["notify_online"])
+    if "notify_hub_offline" in body:
+        alerts["notify_hub_offline"] = bool(body["notify_hub_offline"])
     if alerts:
         patch["alerts"] = alerts
     kuma_patch = {}

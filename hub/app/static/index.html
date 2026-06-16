@@ -28,6 +28,7 @@
                 <button onclick="openSites()" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-full transition-colors" title="Manage sites">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                 </button>
+                <button onclick="openAlerts()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase" title="ntfy alert settings">🔔 Alerts</button>
                 <button onclick="logout()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">Logout</button>
             </div>
         </div>
@@ -159,6 +160,35 @@
         </div>
     </div>
 
+    <!-- Alerts modal -->
+    <div id="alerts-modal" onclick="if(event.target===this) closeAlerts()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-6 bg-slate-800 text-white flex justify-between items-center shrink-0">
+                <h2 class="text-xl font-bold">🔔 Hub alerts</h2>
+                <button onclick="closeAlerts()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+            </div>
+            <div class="p-6 space-y-3 overflow-y-auto text-sm">
+                <p class="text-xs text-slate-500">Push notifications via <a href="https://ntfy.sh" target="_blank" class="underline">ntfy</a> when a farm site drops off the hub. Subscribe to the topic in the ntfy app on your phone.</p>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-1">ntfy topic</label>
+                    <input id="al-topic" type="text" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono" placeholder="e.g. farm-hub-7f3a9 (keep it unguessable)">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-1">ntfy server</label>
+                    <input id="al-server" type="text" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono" placeholder="https://ntfy.sh">
+                </div>
+                <label class="flex items-center gap-2 text-xs text-slate-600">
+                    <input id="al-site-offline" type="checkbox" class="w-4 h-4"> Notify when a <b>site goes offline</b> (and when it recovers)
+                </label>
+                <div class="flex items-center gap-2 pt-2">
+                    <button onclick="saveAlerts()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">Save</button>
+                    <button onclick="testAlerts()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Send test</button>
+                    <span id="al-result" class="text-xs"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let editing = null;     // site id while editing, else null
 
@@ -252,6 +282,41 @@
 
         // ---- sites modal -------------------------------------------------
         function openSites(){ document.getElementById('sites-modal').classList.remove('hidden'); loadSites(); }
+
+        // ---- hub alerts ----
+        async function openAlerts(){
+            document.getElementById('alerts-modal').classList.remove('hidden');
+            document.getElementById('al-result').textContent = '';
+            try {
+                const a = await (await fetch('/api/hub/alerts')).json();
+                document.getElementById('al-topic').value = a.ntfy_topic || '';
+                document.getElementById('al-server').value = a.ntfy_server || 'https://ntfy.sh';
+                document.getElementById('al-site-offline').checked = a.notify_site_offline !== false;
+            } catch(e){}
+        }
+        function closeAlerts(){ document.getElementById('alerts-modal').classList.add('hidden'); }
+        async function saveAlerts(){
+            const r = document.getElementById('al-result');
+            r.textContent = 'Saving…'; r.className = 'text-xs text-slate-500';
+            try {
+                await fetch('/api/hub/alerts', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+                    ntfy_topic: document.getElementById('al-topic').value,
+                    ntfy_server: document.getElementById('al-server').value,
+                    notify_site_offline: document.getElementById('al-site-offline').checked
+                })});
+                r.textContent = 'Saved.'; r.className = 'text-xs text-emerald-600';
+            } catch(e){ r.textContent = 'Failed.'; r.className = 'text-xs text-red-600'; }
+        }
+        async function testAlerts(){
+            const r = document.getElementById('al-result');
+            r.textContent = 'Sending…'; r.className = 'text-xs text-slate-500';
+            await saveAlerts();
+            try {
+                const j = await (await fetch('/api/hub/alerts/test', {method:'POST'})).json();
+                r.textContent = j.ok ? 'Test sent — check your phone.' : (j.error || 'Failed');
+                r.className = 'text-xs ' + (j.ok ? 'text-emerald-600' : 'text-red-600');
+            } catch(e){ r.textContent = 'Failed.'; r.className = 'text-xs text-red-600'; }
+        }
         function closeSites(){ document.getElementById('sites-modal').classList.add('hidden'); resetForm(); }
 
         async function loadSites(){

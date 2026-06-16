@@ -25,6 +25,13 @@ DEFAULTS = {
         # (Caddy only accepts bcrypt). Written by auth.set_password/ensure_proxy_hash.
         "proxy_basic_hash": "",
     },
+    "alerts": {
+        # ntfy push alerts when a site drops off the hub. Blank topic = disabled.
+        "ntfy_server": "https://ntfy.sh",
+        "ntfy_topic": "",
+        "notify_site_offline": True,
+        "offline_after_polls": 2,   # consecutive failed status polls before alerting
+    },
     "poll": {
         "status_interval_s": 60,    # site reachability heartbeat
         "devices_interval_s": 300,  # full device-list refresh

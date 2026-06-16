@@ -49,6 +49,7 @@ DEFAULTS = {
         "notify_new": True,
         "notify_offline": True,
         "notify_online": False,    # alert when ANY device returns (watched devices always do)
+        "notify_hub_offline": True,  # alert when the VPN link to the Central Hub drops
         # Per-category overrides: {"camera": {"offline": true, "online": true}, ...}
         # A category present here overrides the globals above for that category.
         "categories": {},

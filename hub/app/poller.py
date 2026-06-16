@@ -24,6 +24,7 @@ import requests
 
 import hubconfig
 import kuma_status
+import notify
 import sitehistory
 
 SNAP_DIR = os.path.join(os.environ.get("HUB_DATA", "/data"), "snapshots")
@@ -183,6 +184,18 @@ class Poller:
             if status is not None and not was_reachable:
                 self._due.setdefault(sid, {c: 0 for c in _CLASSES})["devices"] = 0
                 self._wake.set()
+            # Debounced offline tracking for ntfy alerts.
+            miss = 0 if status is not None else snap.get("offline_miss", 0) + 1
+            snap["offline_miss"] = miss
+            alerted = snap.get("offline_alerted", False)
+            fire = None
+            if status is None and not alerted:
+                fire = "offline"
+            elif status is not None and alerted:
+                snap["offline_alerted"] = False
+                fire = "online"
+
+        self._maybe_alert_offline(sid, site, fire, miss)
 
         total = len(devices) if devices else None
         online = sum(1 for d in devices if d.get("online")) if devices else None
@@ -194,6 +207,27 @@ class Poller:
             kuma_up=kuma.get("up") if kuma.get("ok") else None,
             kuma_down=kuma.get("down") if kuma.get("ok") else None,
         )
+
+    def _maybe_alert_offline(self, sid, site, fire, miss):
+        """ntfy when a site crosses the offline threshold, or recovers."""
+        if not fire:
+            return
+        alerts = hubconfig.load().get("alerts", {})
+        if not alerts.get("notify_site_offline", True) or not site.get("alerts_enabled", True):
+            return
+        name = site.get("name") or sid
+        if fire == "offline":
+            if miss < max(1, int(alerts.get("offline_after_polls", 2))):
+                return
+            with self._lock:
+                self._snap.setdefault(sid, {})["offline_alerted"] = True
+            notify.push(alerts, f"Site offline: {name}",
+                        f"The Central Hub can't reach '{name}' over the VPN.",
+                        priority="high", tags=["red_circle"])
+        else:
+            notify.push(alerts, f"Site back online: {name}",
+                        f"'{name}' is reachable from the hub again.",
+                        tags=["white_check_mark"])
 
     def _fetch_devices(self, sid, site, timeout):
         try:

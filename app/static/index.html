@@ -23,12 +23,15 @@
         <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
             <div class="flex items-center gap-4">
                 <div>
-                    <h1 class="text-2xl font-bold tracking-tight">Farm Network Asset Identifier</h1>
+                    <h1 class="text-2xl font-bold tracking-tight flex items-center gap-2">Farm Network Asset Identifier
+                        <span id="internet-badge" class="hidden text-[11px] font-bold px-2 py-0.5 rounded-full"></span>
+                    </h1>
                     <p id="system-status" class="text-slate-400 text-xs mt-1 italic">Service Active</p>
                 </div>
             </div>
             <div class="flex items-center gap-3">
                 <select id="target-select" onchange="onTargetChange()" class="hidden md:block bg-slate-800 text-white text-xs rounded-lg px-3 py-2 border border-slate-700"></select>
+                <a id="kuma-link" href="#" target="_blank" class="hidden px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-bold uppercase">Kuma ↗</a>
                 <button id="select-btn" onclick="toggleSelectMode()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">Select</button>
                 <button onclick="quickScan()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold uppercase">Scan</button>
                 <button onclick="openHistory()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase" title="Device & IP event history">History</button>
@@ -143,6 +146,9 @@
                     <p id="ntfy-test-result" class="text-xs mt-2"></p>
                     <label class="flex items-center gap-2 mt-3 text-xs text-slate-600">
                         <input id="setup-notify-online" type="checkbox" class="w-4 h-4"> Alert when <b>any</b> device comes back online (watched devices always do)
+                    </label>
+                    <label class="flex items-center gap-2 mt-2 text-xs text-slate-600">
+                        <input id="setup-notify-hub" type="checkbox" class="w-4 h-4"> Alert when the <b>VPN link to the Central Hub</b> goes offline
                     </label>
                     <label class="flex items-center gap-2 mt-2 text-xs text-slate-600">
                         <input id="setup-allow-commands" type="checkbox" class="w-4 h-4"> Allow remote commands from this topic (ping / scan / tracert)
@@ -902,6 +908,7 @@
                     document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic || '';
                     document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands !== false;
                     document.getElementById('setup-notify-online').checked = !!c.alerts.notify_online;
+                    document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline !== false;
                     renderCatAlerts(c.alerts.categories);
                 }
                 if(c.scan){ document.getElementById('setup-deep-on-new').checked = !!c.scan.deep_on_new; document.getElementById('setup-discovery').checked = c.scan.discovery !== false; }
@@ -1202,6 +1209,7 @@
                 ntfy_topic: document.getElementById('setup-ntfy').value,
                 allow_commands: document.getElementById('setup-allow-commands').checked,
                 notify_online: document.getElementById('setup-notify-online').checked,
+                notify_hub_offline: document.getElementById('setup-notify-hub').checked,
                 categories: collectCatAlerts(),
                 deep_on_new: document.getElementById('setup-deep-on-new').checked,
                 discovery: document.getElementById('setup-discovery').checked,
@@ -1219,10 +1227,29 @@
             else if(!document.getElementById('setup-modal').classList.contains('hidden')) closeSetup();
         });
 
-        function refresh(){ pollStatus(); loadDevices(); }
-        // preload ntfy settings
-        fetch('/api/config').then(r=>r.json()).then(c=>{ if(c.alerts){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands!==false; document.getElementById('setup-notify-online').checked = !!c.alerts.notify_online; } }).catch(()=>{});
-        loadDevices();
+        function refresh(){ pollStatus(); loadDevices(); loadInternet(); }
+        // ---- local internet monitor badge ----
+        async function loadInternet(){
+            const b = document.getElementById('internet-badge');
+            let s; try { s = await (await fetch('/api/internet')).json(); } catch(e){ b.classList.add('hidden'); return; }
+            if (!s || s.checked_ts == null) { b.classList.add('hidden'); return; }
+            let txt, cls;
+            if (s.ok)                              { txt='🌐 Internet OK';  cls='bg-emerald-500/20 text-emerald-300'; }
+            else if (s.has_gateway && !s.gateway)  { txt='🔴 Gateway down'; cls='bg-red-500/20 text-red-300'; }
+            else if (!s.dns && s.external)         { txt='🟠 DNS broken';   cls='bg-amber-500/20 text-amber-300'; }
+            else                                   { txt='🟠 No upstream';  cls='bg-amber-500/20 text-amber-300'; }
+            b.textContent = txt; b.className = 'text-[11px] font-bold px-2 py-0.5 rounded-full ' + cls;
+            b.classList.remove('hidden');
+        }
+        // preload ntfy settings + Kuma link (host the browser used, port from base_url)
+        fetch('/api/config').then(r=>r.json()).then(c=>{
+            if(c.alerts){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands!==false; document.getElementById('setup-notify-online').checked = !!c.alerts.notify_online; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }
+            const ku = (c.integrations&&c.integrations.kuma&&c.integrations.kuma.base_url)||'';
+            const port = (ku.split(':')[2]||'3001').replace(/\D/g,'')||'3001';
+            const link = document.getElementById('kuma-link');
+            if(ku){ link.href = location.protocol+'//'+location.hostname+':'+port; link.classList.remove('hidden'); }
+        }).catch(()=>{});
+        loadDevices(); loadInternet();
         tick();
     </script>
 </body>
