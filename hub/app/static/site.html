@@ -521,6 +521,9 @@
             let body = `<div class="font-bold mb-1">Tunnel open → ${j.ip}:${j.device_port}</div>`;
             if(j.scheme){
                 body += `<a href="${j.scheme}://${hp}" target="_blank" class="text-blue-600 underline font-mono">${j.scheme}://${hp}</a><div class="text-[11px] text-slate-500 mt-1">Opens the device's web page.</div>`;
+            } else if(j.device_port == 22){
+                body += `<a href="ssh://${j.host}:${j.port}" class="text-blue-600 underline font-mono">ssh://${j.host}:${j.port}</a> <span class="font-mono text-slate-500">(${hp})</span>
+                    <div class="text-[11px] text-slate-500 mt-1">Click opens PuTTY if it's set as the <code>ssh://</code> handler, or use the host:port manually (Host <span class="font-mono">${j.host}</span>, Port <span class="font-mono">${j.port}</span>).</div>`;
             } else {
                 body += `<div class="font-mono">${hp}</div><div class="text-[11px] text-slate-500 mt-1">Use this in PuTTY/SSH — e.g. <span class="font-mono">ssh -p ${j.port} user@${j.host}</span></div>`;
             }
@@ -552,7 +555,9 @@
                 if(!ts.length){ el.innerHTML = 'none'; return; }
                 el.innerHTML = ts.map(t => {
                     const hp = `${location.hostname}:${t.hub_port}`;
-                    const tgt = t.scheme ? `<a href="${t.scheme}://${hp}" target="_blank" class="text-blue-600 underline">${hp}</a>` : `<span class="font-mono">${hp}</span>`;
+                    const tgt = t.scheme ? `<a href="${t.scheme}://${hp}" target="_blank" class="text-blue-600 underline">${hp}</a>`
+                              : t.port == 22 ? `<a href="ssh://${hp}" class="text-blue-600 underline" title="opens PuTTY if registered as the ssh:// handler">${hp}</a>`
+                              : `<span class="font-mono">${hp}</span>`;
                     return `<div class="flex items-center justify-between gap-2 p-1.5 border rounded">
                         <span>${t.ip}:${t.port} → ${tgt} <span class="text-slate-400">(${t.conns} conn)</span></span>
                         <button onclick="closeTunnel('${t.id}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[11px]">Close</button>
