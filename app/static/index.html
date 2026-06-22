@@ -145,9 +145,7 @@
                         <button onclick="testNtfy()" class="px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs uppercase whitespace-nowrap">Test</button>
                     </div>
                     <p id="ntfy-test-result" class="text-xs mt-2"></p>
-                    <label class="flex items-center gap-2 mt-3 text-xs text-slate-600">
-                        <input id="setup-notify-online" type="checkbox" class="w-4 h-4"> Alert when <b>any</b> device comes back online (watched devices always do)
-                    </label>
+                    <p class="text-[10px] text-slate-400 mt-3">Device <b>up/down</b> alerts are handled by <b>Uptime Kuma</b> now. This topic is for new-device discovery, IP-problem and hub-link alerts.</p>
                     <label class="flex items-center gap-2 mt-2 text-xs text-slate-600">
                         <input id="setup-notify-hub" type="checkbox" class="w-4 h-4"> Alert when the <b>VPN link to the Central Hub</b> goes offline
                     </label>
@@ -175,9 +173,15 @@
                     <p id="kuma-test-result" class="text-xs mt-1"></p>
                     <p class="text-[10px] text-slate-400 mt-1">Run it with <code>docker compose --profile kuma up -d</code>, create the Kuma admin account, and enter it above. Then open a device and tick <b>"Monitor in Uptime Kuma"</b> — Netwatch builds that monitor (tagged with its category) and pushes its status each scan. Only devices you tick are added.</p>
                     <div class="mt-2 flex flex-wrap gap-2 items-center">
+                        <button onclick="monitorBulk('category','camera')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg text-xs font-bold">📈 Monitor all cameras</button>
+                        <button onclick="monitorBulk('identified')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg text-xs font-bold">📈 Monitor all identified</button>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Bulk-create Kuma ping monitors (tagged by category). Each monitor auto-follows its device's IP, so it keeps working when DHCP moves the device. Already-monitored devices are skipped.</p>
+                    <div class="mt-2 flex flex-wrap gap-2 items-center">
                         <button onclick="repairKuma()" class="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-xs font-bold">🛠️ Fix monitors → ping (60s)</button>
                         <button onclick="syncKumaTags()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">🏷️ Tag by category</button>
                     </div>
+                    <span id="kuma-bulk-result" class="text-xs"></span>
                     <span id="kuma-repair-result" class="text-xs"></span>
                     <span id="kuma-tag-result" class="text-xs ml-2"></span>
                 </div>
@@ -405,6 +409,19 @@
         let MODAL_IP = null;
         let SELECT_MODE = false;
         let SELECTED_IPS = new Set();
+        let PROBLEMS = [];                 // latest /api/problems result
+        let PROBLEM_KEYS = new Set();      // device keys involved in any problem (grid filter)
+        const RISKY_PORTS = {21:'FTP', 23:'Telnet', 2323:'Telnet', 512:'rexec', 513:'rlogin', 514:'rsh'};
+        const PROBLEM_META = {
+            ip_conflict:       {label:'IP conflict',        sev:'high'},
+            risky_ports:       {label:'Risky exposed ports',sev:'medium'},
+            same_mac_multi_ip: {label:'Same MAC, multiple IPs', sev:'medium'},
+            ip_change:         {label:'IP changed (DHCP drift)', sev:'low'},
+            replaced:          {label:'Device replaced at IP', sev:'low'},
+        };
+        const SEV_STYLE = {high:'border-red-300 bg-red-50 text-red-900',
+            medium:'border-amber-300 bg-amber-50 text-amber-900',
+            low:'border-slate-300 bg-slate-50 text-slate-700'};
 
         const featureColors = { "G":"bg-orange-500","W":"bg-cyan-500","U":"bg-blue-600","P":"bg-green-500","S":"bg-yellow-500","R":"bg-rose-600","H":"bg-amber-800","M":"bg-indigo-700","Q":"bg-teal-600","6":"bg-purple-600","+":"bg-slate-900" };
         const featureNames = { "W":"Web UI","S":"SSH","R":"RTSP video","H":"Hik API","M":"MikroTik","Q":"MQTT","+":"Deep scanned" };
@@ -457,7 +474,7 @@
             buildTargetSelect();
             if(!SELECTED && DATA.targets.length) SELECTED = DATA.targets[0].cidr;
             renderGrid();
-            renderConflicts();
+            renderProblems();
         }
 
         const ipSort = (a,b) => {
@@ -475,38 +492,60 @@
         // IP-conflict monitor: lists every address answered by more than one device
         // (distinct MACs), so you can renumber the offending one. Site-wide,
         // independent of the selected subnet.
-        function renderConflicts(){
+        // Problems monitor: Netwatch's job is to find devices AND flag problems.
+        // Up/down monitoring lives in Uptime Kuma; this panel is the "what's wrong".
+        async function renderProblems(){
             const box = document.getElementById('conflict-monitor');
-            const byIp = {};
-            DATA.devices.forEach(d => { if(d.ip_conflict){ (byIp[d.ip] = byIp[d.ip]||[]).push(d); } });
-            const ips = Object.keys(byIp).sort(ipSort);
-            if(!ips.length){ box.classList.add('hidden'); box.innerHTML=''; return; }
+            try { PROBLEMS = (await (await fetch('/api/problems')).json()).problems || []; }
+            catch(e){ PROBLEMS = []; }
+            PROBLEM_KEYS = new Set();
+            PROBLEMS.forEach(p => (p.devices||[]).forEach(d => d.key && PROBLEM_KEYS.add(d.key)));
+            tagProblemCards();
+            buildFilterChips(devicesInView());     // refresh the Problems chip count
+
+            if(!PROBLEMS.length){ box.classList.add('hidden'); box.innerHTML=''; return; }
             box.classList.remove('hidden');
+            const order = {high:0, medium:1, low:2};
+            const rows = PROBLEMS.slice().sort((a,b)=>(order[a.severity]??3)-(order[b.severity]??3));
             const chipFor = d => {
                 const dot = d.online ? 'bg-emerald-500' : 'bg-red-500';
                 const title = d.name || d.vendor || 'device';
-                return `<button onclick="openModal('${(d.key||'').replace(/'/g,"\\'")}','${d.ip}')"
-                    class="flex items-center gap-2 px-3 py-1.5 bg-white border border-amber-200 rounded-lg text-xs hover:bg-amber-100 text-left">
+                return `<button onclick="openModal('${(d.key||'').replace(/'/g,"\\'")}','${d.ip||''}')"
+                    class="flex items-center gap-2 px-2.5 py-1 bg-white/70 border border-current/20 rounded-lg text-xs hover:bg-white text-left">
                     <span class="status-dot ${dot}"></span>
-                    <span><b>${title}</b> <span class="text-slate-400">${(d.category||'')}</span><br>
-                    <span class="font-mono text-[10px] text-slate-400">${d.mac||'no-mac'} · ${d.online?'online':'offline '+devAge(d.last_seen)}</span></span>
+                    <span><b>${title}</b> <span class="opacity-60">${d.category||''}</span>
+                    <span class="font-mono text-[10px] opacity-60">${d.mac||''}</span></span>
                 </button>`;
             };
+            const rowHtml = p => {
+                const meta = PROBLEM_META[p.type] || {label:p.type};
+                const sev = SEV_STYLE[p.severity] || SEV_STYLE.low;
+                return `<div class="rounded-lg border ${sev} p-3">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-white/60">${meta.label}</span>
+                        <span class="font-mono font-bold text-sm">${p.ip||''}</span>
+                        <span class="text-xs opacity-80">${p.detail||''}</span>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mt-2">${(p.devices||[]).map(chipFor).join('')}</div>
+                    ${p.fix ? `<p class="text-[11px] mt-2 opacity-70">→ ${p.fix}</p>` : ''}
+                </div>`;
+            };
             box.innerHTML = `
-                <div class="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                <div class="bg-white border-2 border-amber-300 rounded-xl p-4">
                     <div class="flex items-center gap-2 mb-3">
                         <span class="text-lg">⚠️</span>
-                        <h3 class="font-bold text-amber-900 uppercase text-sm tracking-tight">IP conflicts (${ips.length})</h3>
-                        <span class="text-xs text-amber-700">more than one device is answering the same address — give one a unique IP</span>
+                        <h3 class="font-bold text-amber-900 uppercase text-sm tracking-tight">Problems (${PROBLEMS.length})</h3>
+                        <span class="text-xs text-amber-700">Netwatch found these — fix on the network; Uptime Kuma handles up/down.</span>
                     </div>
-                    <div class="space-y-3">` +
-                ips.map(ip => `
-                        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-                            <span class="font-mono font-bold text-amber-900 w-36 shrink-0">${ip}</span>
-                            <div class="flex flex-wrap gap-2">${byIp[ip].slice().sort((a,b)=>(b.last_seen||0)-(a.last_seen||0)).map(chipFor).join('')}</div>
-                        </div>`).join('') +
-                    `</div>
+                    <div class="space-y-2">${rows.map(rowHtml).join('')}</div>
                 </div>`;
+        }
+
+        function tagProblemCards(){
+            document.querySelectorAll('#network-grid .ip-card').forEach(c => {
+                c.dataset.problem = PROBLEM_KEYS.has(c.dataset.key) ? '1' : '0';
+                if(FILTER==='problem') applyFilter(c);
+            });
         }
 
         function buildTargetSelect(){
@@ -554,14 +593,18 @@
                 card.className = `ip-card p-2 rounded-xl border cursor-pointer flex flex-col items-center justify-between text-center h-28 ${statusClass}${ring}`;
                 card.dataset.type = type; card.dataset.category = category;
                 card.dataset.conflict = conflict ? '1' : '0';
+                card.dataset.key = dev ? dev.key : '';
+                card.dataset.problem = (dev && PROBLEM_KEYS.has(dev.key)) ? '1' : '0';
                 card.onclick = () => onCardClick(dev, ip, card);
+                const risky = !!(dev && (dev.ports||[]).some(p => RISKY_PORTS[p]));
                 const credKey = (dev && dev.has_credentials) ? '<span class="text-[10px]" title="Login saved">🔑</span>' : '';
                 const watchKey = (dev && dev.watch) ? '<span class="text-[10px]" title="Watched for offline/online">🔔</span>' : '';
                 const linkKey = (dev && dev.link) ? '<span class="text-[10px]" title="Linked to another device">🔗</span>' : '';
-                const kumaKey = (dev && dev.has_kuma) ? '<span class="text-[10px]" title="Synced to Uptime Kuma">📈</span>' : '';
+                const kumaKey = (dev && dev.has_kuma) ? '<span class="text-[10px]" title="Monitored in Uptime Kuma">📈</span>' : '';
                 const conflictKey = conflict ? `<span class="text-[10px]" title="IP conflict — another device also answers ${ip}">⚠️</span>` : '';
+                const riskyKey = risky ? '<span class="text-[10px]" title="Risky exposed port (Telnet/FTP/…)">🔓</span>' : '';
                 const photoThumb = (dev && dev.has_photo) ? `<img src="/api/devices/${encodeURIComponent(dev.key)}/photo" class="w-7 h-7 rounded object-cover" loading="lazy" alt="">` : '';
-                card.innerHTML = `<div class="flex flex-wrap gap-1 w-full justify-center items-center">${photoThumb}${dev?getFeatureBadges(dev.features):''}${credKey}${watchKey}${linkKey}${kumaKey}${conflictKey}</div>
+                card.innerHTML = `<div class="flex flex-wrap gap-1 w-full justify-center items-center">${photoThumb}${dev?getFeatureBadges(dev.features):''}${credKey}${watchKey}${linkKey}${kumaKey}${conflictKey}${riskyKey}</div>
                     <span class="text-base font-mono font-bold leading-none">${ipDisplay}</span>${badge}`;
                 applyFilter(card);
                 grid.appendChild(card);
@@ -618,16 +661,18 @@
                 .sort((a,b) => catCount[b]-catCount[a])
                 .forEach(c => { html += chip(c, `${catIcon[c]||'•'} ${catLabel[c]||c} <span class="opacity-50">${catCount[c]}</span>`); });
             const mysteryN = devs.filter(d => !isIdentified(d)).length;
-            const conflictN = devs.filter(d => d.ip_conflict).length;
+            // problem count = devices in view that appear in any detected problem
+            const inView = new Set(devs.map(d => d.key));
+            const problemN = [...PROBLEM_KEYS].filter(k => inView.has(k)).length;
             if(mysteryN) html += chip('unidentified', `❓ Mystery <span class="opacity-50">${mysteryN}</span>`);
             if(offlineN) html += chip('offline', `🔴 Offline <span class="opacity-50">${offlineN}</span>`);
-            if(conflictN) html += chip('conflict', `⚠️ Conflicts <span class="opacity-50">${conflictN}</span>`);
+            if(problemN) html += chip('problem', `⚠️ Problems <span class="opacity-50">${problemN}</span>`);
             bar.innerHTML = html;
         }
 
         function applyFilter(card){
             if(FILTER==='all'){ card.style.display=''; return; }
-            if(FILTER==='conflict'){ card.style.display = card.dataset.conflict==='1' ? '' : 'none'; return; }
+            if(FILTER==='problem'){ card.style.display = card.dataset.problem==='1' ? '' : 'none'; return; }
             const t = card.dataset.type, c = card.dataset.category;
             let show = (t===FILTER) || (c===FILTER) || (FILTER==='camera' && (c==='camera'||c==='nvr')) || (FILTER==='network' && (c==='network'||c==='internet-ap'||c==='router'));
             card.style.display = show ? '' : 'none';
@@ -995,7 +1040,6 @@
                 if(c.alerts){
                     document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic || '';
                     document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands !== false;
-                    document.getElementById('setup-notify-online').checked = !!c.alerts.notify_online;
                     document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline !== false;
                     renderCatAlerts(c.alerts.categories);
                 }
@@ -1258,6 +1302,21 @@
             return map;
         }
 
+        async function monitorBulk(scope, value){
+            const res = document.getElementById('kuma-bulk-result');
+            res.className = 'text-xs text-slate-500';
+            res.innerText = 'Creating Kuma monitors…';
+            try {
+                const r = await (await fetch('/api/kuma/monitor-bulk',{method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({scope, value})})).json();
+                res.className = 'text-xs ' + (r.ok ? 'text-emerald-600' : 'text-red-600');
+                res.innerText = r.ok
+                    ? (r.created ? `✓ added ${r.created} monitor(s)` : (r.message || '✓ nothing to add'))
+                    : ('⚠ ' + (r.error || 'failed'));
+                if(r.ok && r.created) loadDevices();
+            } catch(e){ res.className='text-xs text-red-600'; res.innerText='Error: '+e; }
+        }
         async function repairKuma(){
             const res = document.getElementById('kuma-repair-result');
             res.className = 'text-xs text-slate-500'; res.innerText = 'Converting monitors to 60s ping…';
@@ -1371,7 +1430,6 @@
                 network: document.getElementById('setup-network').value,
                 ntfy_topic: document.getElementById('setup-ntfy').value,
                 allow_commands: document.getElementById('setup-allow-commands').checked,
-                notify_online: document.getElementById('setup-notify-online').checked,
                 notify_hub_offline: document.getElementById('setup-notify-hub').checked,
                 categories: collectCatAlerts(),
                 deep_on_new: document.getElementById('setup-deep-on-new').checked,
@@ -1406,7 +1464,7 @@
         }
         // preload ntfy settings + Kuma link (host the browser used, port from base_url)
         fetch('/api/config').then(r=>r.json()).then(c=>{
-            if(c.alerts){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands!==false; document.getElementById('setup-notify-online').checked = !!c.alerts.notify_online; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }
+            if(c.alerts){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands!==false; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }
             const ku = (c.integrations&&c.integrations.kuma&&c.integrations.kuma.base_url)||'';
             const port = (ku.split(':')[2]||'3001').replace(/\D/g,'')||'3001';
             const link = document.getElementById('kuma-link');

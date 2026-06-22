@@ -223,6 +223,22 @@ New-device and offline alerts also carry tap-to-run action buttons (Deep scan, P
 > topic name, or a self-hosted ntfy server with auth, and turn off "Allow remote
 > commands" if you only want alerts.
 
+## Who does what (KISS)
+
+- **Uptime Kuma = monitoring.** It pings the IPs, shows what's up/down, keeps the
+  history graphs and sends up/down alerts. Flag a device and its monitor
+  **auto-follows the device's IP** (tracked by MAC) — so it keeps working when DHCP
+  moves the device. Netwatch no longer sends its own offline/online ntfy (no double
+  alerts); up/down is Kuma's job.
+- **Netwatch = inventory + problems.** Find devices, scan, identify, and **flag
+  problems** in the dashboard's **Problems** panel (and `GET /api/problems`):
+  IP conflict · IP changed (DHCP drift) · device replaced at an IP · same MAC on
+  multiple IPs · risky exposed ports (Telnet/FTP/…) · plus the existing new-device
+  and "mystery" discovery flags. Fix problems on the network; Kuma handles uptime.
+
+Flag devices for Kuma one at a time (a device's **Monitor in Uptime Kuma** tick) or
+in bulk from **Settings → Integrations**: **Monitor all cameras / all identified**.
+
 ## Uptime Kuma integration
 
 [Uptime Kuma](https://github.com/louislam/uptime-kuma) adds long-term uptime

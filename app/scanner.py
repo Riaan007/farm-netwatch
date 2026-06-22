@@ -38,6 +38,10 @@ QUICK_PORTS = "22,53,80,443,515,554,631,1883,2000,5000,5060,8000,8080,8291,8443,
 # are not flagged.
 CONFLICT_WINDOW_S = 24 * 3600
 
+# Plaintext / remote-admin ports worth flagging as a security problem.
+RISKY_PORTS = {21: "FTP", 23: "Telnet", 2323: "Telnet (alt)",
+               512: "rexec", 513: "rlogin", 514: "rsh"}
+
 
 def _now_str():
     return time.strftime("%H:%M:%S")
@@ -121,6 +125,7 @@ class Scanner:
         self.devices = {}          # key -> live device record
         self.miss = {}             # key -> consecutive missed scans
         self.seen_keys = set()     # every key ever observed (for "new device")
+        self.mac_multi_ip = {}     # mac -> [ips] when one MAC answers on 2+ IPs (last scan)
         self.registry = self._load_registry()
         self._wake = threading.Event()
         self._hb_wake = threading.Event()
@@ -311,6 +316,9 @@ class Scanner:
         new_devices = []
         superseded = set()
         reg_changed = False
+        extra_events = []          # ip_change / replaced rows for the audit log
+        replaced_cands = []        # (rec, prev_mac_key) — confirmed after the scan
+        mac_ips = {}               # normalised MAC -> {ips} this scan (dup-MAC detector)
         # Snapshot of which device currently sits at each IP, to reconcile a
         # device that moved IP or whose MAC wasn't resolved this round.
         ip_index = {d["ip"]: k for k, d in self.devices.items() if d.get("ip")}
@@ -323,6 +331,18 @@ class Scanner:
                     key, old_key = self._resolve_key(h, ip_index)
                     rec = self._build_record(h, tgt, is_local, online_ok, (mode == "deep"), key)
                     prev = self.devices.get(key, {})
+                    nmac = identify.normalize_mac(h.get("mac", ""))
+                    if nmac and h.get("ip"):
+                        mac_ips.setdefault(nmac, set()).add(h["ip"])
+                    # DHCP drift: same device (MAC key), new IP since last seen.
+                    if prev.get("ip") and prev["ip"] != rec["ip"]:
+                        extra_events.append(history.build_event(
+                            "ip_change", rec, {"prev_ip": prev["ip"]}))
+                    # Possible takeover: a different MAC now holds this IP (confirm
+                    # after the scan that the old occupant is gone, not a live conflict).
+                    pk = ip_index.get(rec["ip"])
+                    if pk and pk != key and ":" in pk and ":" in key and not old_key:
+                        replaced_cands.append((rec, pk))
                     # keep deep-scan detail across quick scans
                     if not rec.get("deep") and prev.get("deep"):
                         for f in ("services", "os", "deep"):
@@ -391,8 +411,20 @@ class Scanner:
                 expected = {k for k, v in self.devices.items() if v.get("target") == only_target}
             else:
                 expected = set(self.devices)
+            # One MAC answering on 2+ IPs = duplicate / spoof / bridge.
+            self.mac_multi_ip = {m: sorted(ips) for m, ips in mac_ips.items()
+                                 if len(ips) > 1}
+            # A "replaced" event only when the old occupant didn't show this scan
+            # (otherwise it's a live IP conflict, surfaced separately).
+            for rec, pk in replaced_cands:
+                if pk not in found:
+                    old = self.devices.get(pk, {})
+                    extra_events.append(history.build_event("replaced", rec, {
+                        "prev_key": pk, "prev_name": old.get("name"),
+                        "prev_vendor": old.get("vendor"), "prev_mac": old.get("mac")}))
+
             scanned_keys = (expected | set(found)) - superseded
-            self._finalize(found, new_devices, scanned_keys, superseded, cfg)
+            self._finalize(found, new_devices, scanned_keys, superseded, cfg, extra_events)
             # Adaptive identification: a regular scan that turns up a *new* device
             # queues a deep scan of just that host to identify it accurately.
             if mode == "quick" and cfg["scan"].get("deep_on_new"):
@@ -551,33 +583,24 @@ class Scanner:
             self.seen_keys.add(key)
         return reg_changed
 
-    def _finalize(self, found, new_devices, scanned_keys, superseded, cfg):
+    def _finalize(self, found, new_devices, scanned_keys, superseded, cfg, extra_events=None):
         """Update state for the scanned scope only; carry untouched devices over.
         `superseded` keys (a device re-identified under a new key) are dropped so
         they are neither marked offline nor counted as a separate device."""
         offline_after = cfg["alerts"]["offline_after"]
         alerts = cfg["alerts"]
-        g_offline = alerts.get("notify_offline", True)
-        g_online = alerts.get("notify_online", False)
-        cats = alerts.get("categories") or {}
-
-        def gate(category, kind):
-            """Per-category override ('offline'/'online'); else the global default."""
-            rule = cats.get(category)
-            if rule is not None:
-                return bool(rule.get(kind, False))
-            return g_offline if kind == "offline" else g_online
 
         for k in superseded:
             self.miss.pop(k, None)
             self.seen_keys.discard(k)
+        # offline_now / online_now feed the audit log only (up/down alerting is
+        # Uptime Kuma's job now), so they record every transition, not just the
+        # ones an alert toggle was set for.
         samples, offline_now, online_now = [], [], []
         for key in scanned_keys:
-            watched = self.registry.get(key, {}).get("watch", False)
             prev_miss = self.miss.get(key, 0)
             if key in found:
-                # A device that had been counted offline is now back.
-                if prev_miss >= offline_after and (watched or gate(found[key].get("category", "unknown"), "online")):
+                if prev_miss >= offline_after:        # was counted offline, now back
                     online_now.append(found[key])
                 self.miss[key] = 0
                 samples.append((key, True, found[key]["ip"], found[key].get("rtt")))
@@ -590,7 +613,7 @@ class Scanner:
                     old = dict(old)
                     old.update(online=False, status="offline")
                     found[key] = old
-                if self.miss[key] == offline_after and old and (watched or gate(old.get("category", "unknown"), "offline")):
+                if self.miss[key] == offline_after and old:
                     offline_now.append(found[key])
 
         # Carry over devices that were out of this scan's scope, unchanged;
@@ -617,25 +640,17 @@ class Scanner:
             extra = {"prev_key": old_key, "prev_name": old.get("name"),
                      "prev_vendor": old.get("vendor"), "prev_mac": old.get("mac")}
             ev_rows.append(history.build_event("ip_change", new or old, extra))
+        if extra_events:
+            ev_rows += list(extra_events)            # ip_change / replaced from this scan
         try:
             history.log_events(ev_rows)
         except Exception:  # noqa: BLE001 - logging must never break a scan
             pass
 
+        # Discovery is Netwatch's to announce; up/down alerts are Uptime Kuma's
+        # job now, so Netwatch no longer sends its own offline/online ntfy.
         for dev in new_devices:
             notify.notify_new_device(alerts, dev)
-        # Don't cry wolf: skip an "offline" alert when another device is still
-        # answering that same IP this scan (an address conflict — see
-        # ip_conflicts()). The device still reads offline in the UI; we just
-        # avoid a false alarm for a MAC that merely lost an ARP race.
-        online_ips = {d.get("ip") for d in result.values()
-                      if d.get("online") and d.get("ip")}
-        for dev in offline_now:
-            if dev.get("ip") in online_ips:
-                continue
-            notify.notify_offline(alerts, dev)
-        for dev in online_now:
-            notify.notify_online(alerts, dev)
 
         with self.lock:
             self.devices = result
@@ -680,8 +695,11 @@ class Scanner:
 
     @staticmethod
     def _kuma_name(dev):
-        label = dev.get("name") or dev.get("type") or "device"
-        return f"{label} ({dev.get('ip', '')})"[:150]
+        # Name by device identity, NOT the IP — the monitor's hostname carries the
+        # IP and ensure_ping keeps it current, so the name never goes stale when
+        # the device moves address.
+        label = dev.get("name") or dev.get("type") or dev.get("vendor") or "device"
+        return label[:150]
 
     def _kuma_sync(self, cfg, devices):
         """Auto (ping) monitors: Kuma pings the device itself, so we only repoint
@@ -765,6 +783,87 @@ class Scanner:
                     "ports": d.get("ports", []),
                 } for d in ds],
             })
+        return out
+
+    def problems(self, window_s=None):
+        """All detected problems as one typed list for the dashboard's Problems
+        panel and /api/problems. Live problems (conflict / risky ports / dup MAC)
+        are derived from the current device list; change problems (IP drift /
+        replaced) come from the recent event log."""
+        window = window_s or CONFLICT_WINDOW_S
+        with self.lock:
+            devs = list(self.devices.values())
+            mac_multi = dict(self.mac_multi_ip)
+        by_key = {d.get("key"): d for d in devs}
+
+        def _ipkey(ip):
+            try:
+                return tuple(int(o) for o in (ip or "").split("."))
+            except ValueError:
+                return (9999,)
+
+        def _brief(d):
+            return {"key": d.get("key"), "mac": d.get("mac"), "vendor": d.get("vendor"),
+                    "name": d.get("name"), "category": d.get("category"),
+                    "online": d.get("online"), "last_seen": d.get("last_seen")}
+
+        out = []
+        # 1. IP conflicts (two live MACs on one address)
+        cmap = self._conflict_map(devs, window)
+        for ip in sorted(cmap, key=_ipkey):
+            ds = sorted(cmap[ip], key=lambda d: d.get("last_seen", 0), reverse=True)
+            out.append({
+                "type": "ip_conflict", "severity": "high", "ip": ip,
+                "devices": [_brief(d) for d in ds],
+                "detail": f"{len(ds)} devices answer {ip}",
+                "fix": "Give one device a unique IP, then add a DHCP reservation.",
+            })
+        # 2. Risky exposed ports
+        for d in devs:
+            if not d.get("online"):
+                continue
+            risky = [RISKY_PORTS[p] for p in (d.get("ports") or []) if p in RISKY_PORTS]
+            if risky:
+                out.append({
+                    "type": "risky_ports", "severity": "medium", "ip": d.get("ip"),
+                    "devices": [_brief(d)],
+                    "detail": "Exposes " + ", ".join(risky),
+                    "fix": "Disable the plaintext/admin service or restrict access.",
+                })
+        # 3. One MAC on multiple IPs
+        for mac, ips in sorted(mac_multi.items()):
+            dev = next((d for d in devs if (d.get("mac") or "").lower() == mac.lower()), None)
+            out.append({
+                "type": "same_mac_multi_ip", "severity": "medium",
+                "ip": ", ".join(ips), "devices": [_brief(dev)] if dev else [],
+                "detail": f"MAC {mac} answers on {len(ips)} IPs: {', '.join(ips)}",
+                "fix": "Check for a bridge, or a duplicate / spoofed MAC.",
+            })
+        # 4. Recent change events (newest kept per device)
+        since = int(time.time()) - window
+        seen = set()
+        for etype, detail, fix in (
+            ("ip_change", "moved to a new IP (DHCP drift)",
+             "Reserve this device's IP in your DHCP server."),
+            ("replaced", "a different device now holds this IP",
+             "Confirm the swap is intended; the old device may have moved or gone."),
+        ):
+            for ev in history.events(etype=etype, since=since, limit=100):
+                sig = (etype, ev.get("key"), ev.get("ip"))
+                if sig in seen:
+                    continue
+                seen.add(sig)
+                d = by_key.get(ev.get("key"))
+                prev_ip = (ev.get("detail") or {}).get("prev_ip")
+                out.append({
+                    "type": etype, "severity": "low", "ip": ev.get("ip"),
+                    "devices": [_brief(d)] if d else [{
+                        "key": ev.get("key"), "mac": ev.get("mac"),
+                        "vendor": ev.get("vendor"), "name": ev.get("name")}],
+                    "detail": (ev.get("name") or ev.get("vendor") or ev.get("ip") or "device")
+                              + " " + detail + (f" (was {prev_ip})" if prev_ip else ""),
+                    "fix": fix, "ts": ev.get("ts"),
+                })
         return out
 
     def get_devices(self):

@@ -288,11 +288,16 @@ def api_hikvision(key):
     return jsonify({"ok": False, "error": res.get("error", "failed")})
 
 
+@app.route("/api/problems")
+def api_problems():
+    """All detected problems (IP conflict, risky ports, duplicate MAC, IP drift,
+    device replaced) for the dashboard's Problems panel."""
+    return jsonify({"problems": scanner.problems()})
+
+
 @app.route("/api/conflicts")
 def api_conflicts():
-    """IP address conflicts: IPs where 2+ devices (distinct MACs) are both live.
-    Powers the dashboard's conflict monitor so the operator can renumber the
-    offending Wi-Fi bridge / device."""
+    """IP address conflicts only — thin alias kept for the hub/back-compat."""
     return jsonify({"conflicts": scanner.ip_conflicts()})
 
 
@@ -408,6 +413,52 @@ def api_kuma_repair():
                 reg["kuma_ip"] = (devs.get(key) or {}).get("ip", reg.get("kuma_ip"))
         scanner.save_registry()
     return jsonify(res)
+
+
+@app.route("/api/kuma/monitor-bulk", methods=["POST"])
+def api_kuma_monitor_bulk():
+    """Flag many devices for Kuma monitoring in one shot. body:
+    {scope:"category", value:"camera"} or {scope:"identified"}. Creates a 60s
+    ping monitor (tagged by category) for each matching device that isn't already
+    monitored; the monitor then follows the device's IP via _kuma_sync."""
+    cfg = config.load()
+    ki = cfg["integrations"]["kuma"]
+    base = (ki.get("base_url") or "").rstrip("/")
+    user = ki.get("username", "")
+    pw = creds.get("@kuma").get("password", "")
+    if not (base and user and pw):
+        return jsonify({"ok": False, "error": "Set the Kuma URL, username and password first"})
+    body = request.get_json(force=True)
+    scope = body.get("scope", "category")
+    value = body.get("value")
+
+    def wanted(d):
+        if scope == "category":
+            return d.get("category") == value
+        if scope == "identified":
+            return bool(d.get("name") or (d.get("category") and d.get("category") != "unknown"))
+        return False
+
+    devs = scanner.get_devices()
+    items, ip_by_key = [], {}
+    for d in devs:
+        if not (wanted(d) and d.get("ip")):
+            continue
+        if scanner.registry.get(d["key"], {}).get("kuma_monitor_id"):
+            continue                       # already monitored — skip
+        items.append((d["key"], scanner._kuma_name(d), d["ip"], d.get("category")))
+        ip_by_key[d["key"]] = d["ip"]
+    if not items:
+        return jsonify({"ok": True, "created": 0, "total": 0,
+                        "message": "Nothing to add — matching devices are already monitored."})
+    res = kuma.provision_many(base, user, pw, items, 60)
+    created = 0
+    for key, r in res.items():
+        if r.get("ok"):
+            scanner.set_device_meta(key, kuma_monitor_id=r["monitor_id"],
+                                    kuma_ip=ip_by_key.get(key))
+            created += 1
+    return jsonify({"ok": True, "created": created, "total": len(items)})
 
 
 @app.route("/api/kuma/test", methods=["POST"])

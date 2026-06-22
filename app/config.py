@@ -47,8 +47,11 @@ DEFAULTS = {
         "ntfy_server": "https://ntfy.sh",
         "ntfy_topic": "",          # blank disables push alerts
         "notify_new": True,
-        "notify_offline": True,
-        "notify_online": False,    # alert when ANY device returns (watched devices always do)
+        # Up/down alerts are Uptime Kuma's job now (KISS split), so Netwatch's own
+        # offline/online ntfy default OFF. The online/offline state is still tracked
+        # for the dashboard and problem detection.
+        "notify_offline": False,
+        "notify_online": False,
         "notify_hub_offline": True,  # alert when the VPN link to the Central Hub drops
         # Per-category overrides: {"camera": {"offline": true, "online": true}, ...}
         # A category present here overrides the globals above for that category.
