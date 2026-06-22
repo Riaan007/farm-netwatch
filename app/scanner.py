@@ -430,9 +430,14 @@ class Scanner:
         banner = identify.http_banner(h["ip"], h["ports"], online_ok)
         category, type_label, conf = identify.classify(vendor, h["ports"], banner, hostname)
         features = identify.features_for_ports(h["ports"], deep)
-        # Prefer a MAC-keyed registry entry; fall back to an IP-keyed one so the
-        # seeded names (gateway/NVR identified only by IP) still attach.
-        reg = self.registry.get(key) or self.registry.get(h["ip"], {})
+        # Prefer a MAC-keyed registry entry. Only fall back to an IP-keyed entry
+        # for IP-only devices (no MAC) — a NEW device that has its own MAC must
+        # never inherit the saved name/category of whatever used to hold this IP
+        # (e.g. a router replacing a camera that kept the address).
+        reg = self.registry.get(key)
+        if reg is None and key == h["ip"]:
+            reg = self.registry.get(h["ip"])
+        reg = reg or {}
         ts = int(time.time())
         rec = {
             "key": key, "ip": h["ip"], "mac": mac_disp,
