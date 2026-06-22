@@ -205,7 +205,7 @@
                 <button onclick="closeAlerts()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
             </div>
             <div class="p-6 space-y-3 overflow-y-auto text-sm">
-                <p class="text-xs text-slate-500">Push notifications via <a href="https://ntfy.sh" target="_blank" class="underline">ntfy</a> when a farm site drops off the hub. Subscribe to the topic in the ntfy app on your phone.</p>
+                <p class="text-xs text-slate-500">Push notifications via <a href="https://ntfy.sh" target="_blank" class="underline">ntfy</a> when a farm site drops off the hub or an <b>IP conflict</b> appears. Subscribe to the topic in the ntfy app on your phone.</p>
                 <div>
                     <label class="text-xs font-bold text-slate-400 uppercase block mb-1">ntfy topic</label>
                     <input id="al-topic" type="text" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono" placeholder="e.g. farm-hub-7f3a9 (keep it unguessable)">
@@ -216,6 +216,9 @@
                 </div>
                 <label class="flex items-center gap-2 text-xs text-slate-600">
                     <input id="al-site-offline" type="checkbox" class="w-4 h-4"> Notify when a <b>site goes offline</b> (and when it recovers)
+                </label>
+                <label class="flex items-center gap-2 text-xs text-slate-600">
+                    <input id="al-ip-conflict" type="checkbox" class="w-4 h-4"> Notify on a new <b>IP conflict</b> (two devices sharing one address)
                 </label>
                 <div class="flex items-center gap-2 pt-2">
                     <button onclick="saveAlerts()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">Save</button>
@@ -377,6 +380,7 @@
                 document.getElementById('al-topic').value = a.ntfy_topic || '';
                 document.getElementById('al-server').value = a.ntfy_server || 'https://ntfy.sh';
                 document.getElementById('al-site-offline').checked = a.notify_site_offline !== false;
+                document.getElementById('al-ip-conflict').checked = a.notify_ip_conflict !== false;
             } catch(e){}
         }
         function closeAlerts(){ document.getElementById('alerts-modal').classList.add('hidden'); }
@@ -387,7 +391,8 @@
                 await fetch('/api/hub/alerts', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
                     ntfy_topic: document.getElementById('al-topic').value,
                     ntfy_server: document.getElementById('al-server').value,
-                    notify_site_offline: document.getElementById('al-site-offline').checked
+                    notify_site_offline: document.getElementById('al-site-offline').checked,
+                    notify_ip_conflict: document.getElementById('al-ip-conflict').checked
                 })});
                 r.textContent = 'Saved.'; r.className = 'text-xs text-emerald-600';
             } catch(e){ r.textContent = 'Failed.'; r.className = 'text-xs text-red-600'; }
