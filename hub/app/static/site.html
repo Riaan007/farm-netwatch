@@ -282,9 +282,11 @@
             const cat = d.category || 'unknown';
             const name = devName(d);
             const watch = d.watch ? ' 🔔' : '';
+            const conflict = d.ip_conflict
+                ? ' <span title="IP conflict — another device also answers this address">⚠️</span>' : '';
             return `
             <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="toggleHistory(this, '${encodeURIComponent(d.key)}', '${d.ip || ''}')">
-                <td class="px-5 py-2.5"><div class="flex items-center gap-2">${dot}<span class="font-medium">${name}${watch}</span></div></td>
+                <td class="px-5 py-2.5"><div class="flex items-center gap-2">${dot}<span class="font-medium">${name}${watch}${conflict}</span></div></td>
                 <td class="px-3 py-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${catChip[cat] || catChip.unknown}">${catIcon[cat] || '•'} ${cat}</span></td>
                 <td class="px-3 py-2.5 font-mono text-xs">${d.ip || '—'}</td>
                 <td class="px-3 py-2.5 font-mono text-xs">${d.rtt != null ? d.rtt + ' ms' : '—'}</td>

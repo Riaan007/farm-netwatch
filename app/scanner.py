@@ -32,6 +32,12 @@ SEED_PATH = os.path.join(os.path.dirname(__file__), "defaults", "devices.json")
 
 QUICK_PORTS = "22,53,80,443,515,554,631,1883,2000,5000,5060,8000,8080,8291,8443,9000,9100"
 
+# Two distinct MACs both seen at one IP within this window = a live address
+# conflict (e.g. a Wi-Fi bridge and a camera sharing an IP). Old stale records
+# whose IP was later reused by a different device fall outside the window and
+# are not flagged.
+CONFLICT_WINDOW_S = 24 * 3600
+
 
 def _now_str():
     return time.strftime("%H:%M:%S")
@@ -613,7 +619,15 @@ class Scanner:
 
         for dev in new_devices:
             notify.notify_new_device(alerts, dev)
+        # Don't cry wolf: skip an "offline" alert when another device is still
+        # answering that same IP this scan (an address conflict — see
+        # ip_conflicts()). The device still reads offline in the UI; we just
+        # avoid a false alarm for a MAC that merely lost an ARP race.
+        online_ips = {d.get("ip") for d in result.values()
+                      if d.get("online") and d.get("ip")}
         for dev in offline_now:
+            if dev.get("ip") in online_ips:
+                continue
             notify.notify_offline(alerts, dev)
         for dev in online_now:
             notify.notify_online(alerts, dev)
@@ -706,9 +720,61 @@ class Scanner:
             daemon=True,
         ).start()
 
+    def _conflict_map(self, devs, window_s=None):
+        """{ip: [device, ...]} for IPs claimed by 2+ distinct devices (MAC keys)
+        both seen within `window_s` — a live address conflict."""
+        cutoff = int(time.time()) - (window_s or CONFLICT_WINDOW_S)
+        by_ip = {}
+        for d in devs:
+            ip = d.get("ip")
+            if ip and d.get("last_seen", 0) >= cutoff:
+                by_ip.setdefault(ip, []).append(d)
+        return {ip: ds for ip, ds in by_ip.items()
+                if len({d.get("key") for d in ds}) > 1}
+
+    def ip_conflicts(self, window_s=None):
+        """Current IP address conflicts, for the dashboard's conflict monitor and
+        the /api/conflicts endpoint. One entry per conflicted IP, newest sighting
+        first, so the operator can renumber the offending device."""
+        with self.lock:
+            devs = list(self.devices.values())
+        cmap = self._conflict_map(devs, window_s)
+
+        def _ipkey(ip):
+            try:
+                return tuple(int(o) for o in ip.split("."))
+            except ValueError:
+                return (9999,)
+
+        out = []
+        for ip in sorted(cmap, key=_ipkey):
+            ds = sorted(cmap[ip], key=lambda d: d.get("last_seen", 0), reverse=True)
+            out.append({
+                "ip": ip,
+                "count": len(ds),
+                "any_online": any(d.get("online") for d in ds),
+                "devices": [{
+                    "key": d.get("key"), "mac": d.get("mac"), "vendor": d.get("vendor"),
+                    "name": d.get("name"), "category": d.get("category"),
+                    "online": d.get("online"), "last_seen": d.get("last_seen"),
+                    "ports": d.get("ports", []),
+                } for d in ds],
+            })
+        return out
+
     def get_devices(self):
         with self.lock:
-            return list(self.devices.values())
+            devs = list(self.devices.values())
+        cmap = self._conflict_map(devs)
+        for d in devs:
+            others = [p for p in cmap.get(d.get("ip"), []) if p.get("key") != d.get("key")]
+            d["ip_conflict"] = bool(others)
+            d["ip_conflict_with"] = [{
+                "key": p.get("key"), "mac": p.get("mac"), "vendor": p.get("vendor"),
+                "name": p.get("name"), "category": p.get("category"),
+                "online": p.get("online"), "last_seen": p.get("last_seen"),
+            } for p in others]
+        return devs
 
     def get_status(self):
         with self.lock:

@@ -43,6 +43,7 @@
     </header>
 
     <main class="max-w-7xl mx-auto p-6 flex-grow w-full">
+        <div id="conflict-monitor" class="hidden mb-6"></div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <div onclick="filterGrid('identified')" class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm cursor-pointer">
                 <p class="text-slate-500 text-xs font-semibold uppercase">Identified</p>
@@ -269,6 +270,7 @@
                         <label class="text-xs font-bold text-slate-400 uppercase">Identity</label>
                         <p id="modal-desc" class="text-lg font-medium text-slate-800 leading-tight">Loading...</p>
                         <p id="modal-friendly-name" class="text-xs text-blue-600 font-bold mt-1 italic"></p>
+                        <div id="modal-conflict" class="hidden mt-2 p-2 bg-amber-50 border border-amber-300 rounded-lg text-[11px] text-amber-800 leading-snug"></div>
                     </div>
                     <div id="modal-features-list" class="flex flex-wrap gap-2"></div>
 
@@ -455,6 +457,56 @@
             buildTargetSelect();
             if(!SELECTED && DATA.targets.length) SELECTED = DATA.targets[0].cidr;
             renderGrid();
+            renderConflicts();
+        }
+
+        const ipSort = (a,b) => {
+            const pa=a.split('.').map(Number), pb=b.split('.').map(Number);
+            for(let i=0;i<4;i++){ if((pa[i]||0)!==(pb[i]||0)) return (pa[i]||0)-(pb[i]||0); }
+            return 0;
+        };
+        function devAge(ts){
+            if(!ts) return '—';
+            const s = Math.max(0, Math.floor(Date.now()/1000 - ts));
+            if(s<90) return 'now'; if(s<5400) return Math.round(s/60)+'m ago';
+            if(s<129600) return Math.round(s/3600)+'h ago'; return Math.round(s/86400)+'d ago';
+        }
+
+        // IP-conflict monitor: lists every address answered by more than one device
+        // (distinct MACs), so you can renumber the offending one. Site-wide,
+        // independent of the selected subnet.
+        function renderConflicts(){
+            const box = document.getElementById('conflict-monitor');
+            const byIp = {};
+            DATA.devices.forEach(d => { if(d.ip_conflict){ (byIp[d.ip] = byIp[d.ip]||[]).push(d); } });
+            const ips = Object.keys(byIp).sort(ipSort);
+            if(!ips.length){ box.classList.add('hidden'); box.innerHTML=''; return; }
+            box.classList.remove('hidden');
+            const chipFor = d => {
+                const dot = d.online ? 'bg-emerald-500' : 'bg-red-500';
+                const title = d.name || d.vendor || 'device';
+                return `<button onclick="openModal('${(d.key||'').replace(/'/g,"\\'")}','${d.ip}')"
+                    class="flex items-center gap-2 px-3 py-1.5 bg-white border border-amber-200 rounded-lg text-xs hover:bg-amber-100 text-left">
+                    <span class="status-dot ${dot}"></span>
+                    <span><b>${title}</b> <span class="text-slate-400">${(d.category||'')}</span><br>
+                    <span class="font-mono text-[10px] text-slate-400">${d.mac||'no-mac'} · ${d.online?'online':'offline '+devAge(d.last_seen)}</span></span>
+                </button>`;
+            };
+            box.innerHTML = `
+                <div class="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="text-lg">⚠️</span>
+                        <h3 class="font-bold text-amber-900 uppercase text-sm tracking-tight">IP conflicts (${ips.length})</h3>
+                        <span class="text-xs text-amber-700">more than one device is answering the same address — give one a unique IP</span>
+                    </div>
+                    <div class="space-y-3">` +
+                ips.map(ip => `
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <span class="font-mono font-bold text-amber-900 w-36 shrink-0">${ip}</span>
+                            <div class="flex flex-wrap gap-2">${byIp[ip].slice().sort((a,b)=>(b.last_seen||0)-(a.last_seen||0)).map(chipFor).join('')}</div>
+                        </div>`).join('') +
+                    `</div>
+                </div>`;
         }
 
         function buildTargetSelect(){
@@ -497,15 +549,19 @@
                     : `<span>${label}</span>`;
                 const card = document.createElement('div');
                 const ring = SELECTED_IPS.has(ip) ? ' ring-4 ring-blue-500' : '';
+                const conflict = !!(dev && dev.ip_conflict);
+                if(conflict) statusClass += " ring-2 ring-amber-400";
                 card.className = `ip-card p-2 rounded-xl border cursor-pointer flex flex-col items-center justify-between text-center h-28 ${statusClass}${ring}`;
                 card.dataset.type = type; card.dataset.category = category;
+                card.dataset.conflict = conflict ? '1' : '0';
                 card.onclick = () => onCardClick(dev, ip, card);
                 const credKey = (dev && dev.has_credentials) ? '<span class="text-[10px]" title="Login saved">🔑</span>' : '';
                 const watchKey = (dev && dev.watch) ? '<span class="text-[10px]" title="Watched for offline/online">🔔</span>' : '';
                 const linkKey = (dev && dev.link) ? '<span class="text-[10px]" title="Linked to another device">🔗</span>' : '';
                 const kumaKey = (dev && dev.has_kuma) ? '<span class="text-[10px]" title="Synced to Uptime Kuma">📈</span>' : '';
+                const conflictKey = conflict ? `<span class="text-[10px]" title="IP conflict — another device also answers ${ip}">⚠️</span>` : '';
                 const photoThumb = (dev && dev.has_photo) ? `<img src="/api/devices/${encodeURIComponent(dev.key)}/photo" class="w-7 h-7 rounded object-cover" loading="lazy" alt="">` : '';
-                card.innerHTML = `<div class="flex flex-wrap gap-1 w-full justify-center items-center">${photoThumb}${dev?getFeatureBadges(dev.features):''}${credKey}${watchKey}${linkKey}${kumaKey}</div>
+                card.innerHTML = `<div class="flex flex-wrap gap-1 w-full justify-center items-center">${photoThumb}${dev?getFeatureBadges(dev.features):''}${credKey}${watchKey}${linkKey}${kumaKey}${conflictKey}</div>
                     <span class="text-base font-mono font-bold leading-none">${ipDisplay}</span>${badge}`;
                 applyFilter(card);
                 grid.appendChild(card);
@@ -562,13 +618,16 @@
                 .sort((a,b) => catCount[b]-catCount[a])
                 .forEach(c => { html += chip(c, `${catIcon[c]||'•'} ${catLabel[c]||c} <span class="opacity-50">${catCount[c]}</span>`); });
             const mysteryN = devs.filter(d => !isIdentified(d)).length;
+            const conflictN = devs.filter(d => d.ip_conflict).length;
             if(mysteryN) html += chip('unidentified', `❓ Mystery <span class="opacity-50">${mysteryN}</span>`);
             if(offlineN) html += chip('offline', `🔴 Offline <span class="opacity-50">${offlineN}</span>`);
+            if(conflictN) html += chip('conflict', `⚠️ Conflicts <span class="opacity-50">${conflictN}</span>`);
             bar.innerHTML = html;
         }
 
         function applyFilter(card){
             if(FILTER==='all'){ card.style.display=''; return; }
+            if(FILTER==='conflict'){ card.style.display = card.dataset.conflict==='1' ? '' : 'none'; return; }
             const t = card.dataset.type, c = card.dataset.category;
             let show = (t===FILTER) || (c===FILTER) || (FILTER==='camera' && (c==='camera'||c==='nvr')) || (FILTER==='network' && (c==='network'||c==='internet-ap'||c==='router'));
             card.style.display = show ? '' : 'none';
@@ -693,6 +752,14 @@
             document.getElementById('modal-type-header').innerText = dev ? (dev.type||dev.category||'DEVICE') : 'UNUSED ADDRESS';
             document.getElementById('modal-desc').innerText = dev ? (dev.vendor || dev.type || 'Unknown device') : 'No device responding at this address.';
             document.getElementById('modal-friendly-name').innerText = dev && dev.name ? '★ '+dev.name : '';
+            const mc = document.getElementById('modal-conflict');
+            if(dev && dev.ip_conflict && (dev.ip_conflict_with||[]).length){
+                mc.classList.remove('hidden');
+                const others = dev.ip_conflict_with.map(o =>
+                    `${o.name||o.vendor||o.mac||'device'} (${o.online?'online':'offline'})`).join(', ');
+                mc.innerHTML = `⚠ <b>IP conflict on ${dev.ip}.</b> Also answering here: ${others}. `
+                    + `Two devices share this address — give one a unique IP to fix the false "offline".`;
+            } else { mc.classList.add('hidden'); mc.innerHTML=''; }
             document.getElementById('modal-features-list').innerHTML = dev ? (dev.features||[]).map(f=>`<span class="px-2 py-1 bg-slate-100 rounded text-[10px] font-bold text-slate-600">${featureNames[f]||f}</span>`).join('') : '';
 
             const web = document.getElementById('modal-web-action');

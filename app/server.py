@@ -288,6 +288,14 @@ def api_hikvision(key):
     return jsonify({"ok": False, "error": res.get("error", "failed")})
 
 
+@app.route("/api/conflicts")
+def api_conflicts():
+    """IP address conflicts: IPs where 2+ devices (distinct MACs) are both live.
+    Powers the dashboard's conflict monitor so the operator can renumber the
+    offending Wi-Fi bridge / device."""
+    return jsonify({"conflicts": scanner.ip_conflicts()})
+
+
 @app.route("/api/health")
 def api_health():
     """Overall liveness — a target for a Kuma 'is Netwatch up' HTTP monitor."""
