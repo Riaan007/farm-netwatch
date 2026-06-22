@@ -39,6 +39,7 @@ DEFAULTS = {
         "ntfy_topic": "",
         "notify_site_offline": True,
         "offline_after_polls": 2,   # consecutive failed status polls before alerting
+        "notify_ip_conflict": True,  # alert when a site gains a new IP-address conflict
     },
     "poll": {
         "status_interval_s": 60,    # site reachability heartbeat

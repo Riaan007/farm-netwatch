@@ -36,7 +36,7 @@
     </header>
 
     <main class="max-w-7xl mx-auto p-6 flex-grow w-full">
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
             <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                 <p class="text-slate-500 text-xs font-semibold uppercase">Sites reachable</p>
                 <p id="stat-sites" class="text-3xl font-bold">--</p>
@@ -48,6 +48,10 @@
             <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                 <p class="text-slate-500 text-xs font-semibold uppercase">Watched down</p>
                 <p id="stat-watched" class="text-3xl font-bold text-amber-600">0</p>
+            </div>
+            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <p class="text-slate-500 text-xs font-semibold uppercase">IP conflicts</p>
+                <p id="stat-conflicts" class="text-3xl font-bold text-amber-600">0</p>
             </div>
             <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                 <p class="text-slate-500 text-xs font-semibold uppercase">Kuma monitors down</p>
@@ -253,6 +257,7 @@
             const counts = s.devices_total === null ? '<span class="text-slate-300">no data yet</span>'
                 : `<span class="text-2xl font-bold ${s.devices_online === s.devices_total ? 'text-emerald-600' : ''}">${s.devices_online}</span><span class="text-slate-400 text-sm">/${s.devices_total} online</span>`;
             const watched = s.watched_down ? `<span class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold">🔔 ${s.watched_down} watched down</span>` : '';
+            const conflicts = s.conflicts ? `<span class="px-2 py-0.5 bg-amber-100 text-amber-900 rounded-full text-[10px] font-bold border border-amber-300">⚠️ ${s.conflicts} IP conflict${s.conflicts>1?'s':''}</span>` : '';
             const stale = s.stale ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold">stale data</span>' : '';
             let kuma = '';
             if (s.kuma) {
@@ -273,7 +278,7 @@
                     </div>
                     <div class="text-right shrink-0">${latency}<p class="text-[11px] text-slate-400">scan ${fmtAgo(s.last_scan_ts)}</p></div>
                 </div>
-                <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${stale}</div>
+                <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${stale}</div>
                 <div>${sparkBars(s.spark)}<p class="text-[10px] text-slate-400 mt-1">Site reachability · last 24h ${s.reach_24h !== null ? '· ' + s.reach_24h + '%' : ''}</p></div>
                 <div class="flex justify-between items-center pt-2 border-t border-slate-100">
                     ${kuma || '<span></span>'}
@@ -301,6 +306,7 @@
             document.getElementById('stat-devices').textContent = withData.length
                 ? `${withData.reduce((a,s)=>a+s.devices_online,0)}/${withData.reduce((a,s)=>a+s.devices_total,0)}` : '--';
             document.getElementById('stat-watched').textContent = sites.reduce((a,s)=>a+(s.watched_down||0),0);
+            document.getElementById('stat-conflicts').textContent = sites.reduce((a,s)=>a+(s.conflicts||0),0);
             document.getElementById('stat-kuma').textContent = sites.reduce((a,s)=>a+((s.kuma&&s.kuma.down)||0),0);
         }
 

@@ -45,17 +45,23 @@ def _init(c):
         CREATE INDEX IF NOT EXISTS idx_site_samples ON site_samples(site_id, ts);
         """
     )
+    # Migration: `conflicts` (count of IP-conflict addresses) was added later.
+    cols = {r["name"] for r in c.execute("PRAGMA table_info(site_samples)")}
+    if "conflicts" not in cols:
+        c.execute("ALTER TABLE site_samples ADD COLUMN conflicts INTEGER")
     c.commit()
 
 
 def record(site_id, reachable, http_ms=None, devices_total=None,
-           devices_online=None, watched_down=None, kuma_up=None, kuma_down=None):
+           devices_online=None, watched_down=None, kuma_up=None, kuma_down=None,
+           conflicts=None):
     c = _conn()
     c.execute(
         "INSERT INTO site_samples (site_id, ts, reachable, http_ms, devices_total,"
-        " devices_online, watched_down, kuma_up, kuma_down) VALUES (?,?,?,?,?,?,?,?,?)",
+        " devices_online, watched_down, kuma_up, kuma_down, conflicts)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?)",
         (site_id, int(time.time()), 1 if reachable else 0, http_ms, devices_total,
-         devices_online, watched_down, kuma_up, kuma_down),
+         devices_online, watched_down, kuma_up, kuma_down, conflicts),
     )
     c.commit()
 

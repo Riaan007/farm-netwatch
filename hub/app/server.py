@@ -15,6 +15,7 @@ from flask import (Flask, jsonify, redirect, request, send_from_directory,
                    session)
 
 import auth
+import conflicts as conflictutil
 import hubconfig
 import notify
 import proxycfg
@@ -142,6 +143,7 @@ def _site_card(site):
         "devices_online": sum(1 for d in devices if d.get("online")) if devices else None,
         "watched_down": sum(1 for d in devices
                             if d.get("watch") and not d.get("online")) if devices else None,
+        "conflicts": len(conflictutil.conflict_map(devices)) if devices else None,
         "stale": stale,
         "fetched_at": fetched,
         "kuma": {"up": kuma.get("up"), "down": kuma.get("down"),
@@ -166,12 +168,15 @@ def api_alerts():
                 patch[k] = (body[k] or "").strip()
         if "notify_site_offline" in body:
             patch["notify_site_offline"] = bool(body["notify_site_offline"])
+        if "notify_ip_conflict" in body:
+            patch["notify_ip_conflict"] = bool(body["notify_ip_conflict"])
         hubconfig.update({"alerts": patch})
         return jsonify({"ok": True})
     a = hubconfig.load()["alerts"]
     return jsonify({"ntfy_server": a.get("ntfy_server", "https://ntfy.sh"),
                     "ntfy_topic": a.get("ntfy_topic", ""),
-                    "notify_site_offline": a.get("notify_site_offline", True)})
+                    "notify_site_offline": a.get("notify_site_offline", True),
+                    "notify_ip_conflict": a.get("notify_ip_conflict", True)})
 
 
 @app.route("/api/hub/alerts/test", methods=["POST"])
@@ -450,6 +455,33 @@ def api_site_devices(site_id):
         "card": _site_card(site),
         "devices": payload.get("devices") or [],
         "targets": payload.get("targets") or [],
+        "fetched_at": snap.get("devices_fetched"),
+        "stale": snap.get("stale", False) or not snap.get("reachable", False),
+    })
+
+
+@app.route("/api/hub/sites/<site_id>/conflicts")
+def api_site_conflicts(site_id):
+    """IP-address conflicts at this site, grouped by IP, from the cached device
+    snapshot (so they still render when the site is briefly unreachable)."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    snap = poller.snapshot(site_id)
+    devices = (snap.get("devices") or {}).get("devices") or []
+    cmap = conflictutil.conflict_map(devices)
+
+    def _brief(d):
+        return {"key": d.get("key"), "mac": d.get("mac"), "vendor": d.get("vendor"),
+                "name": d.get("name"), "category": d.get("category"),
+                "online": d.get("online"), "last_seen": d.get("last_seen")}
+
+    conflicts = [{"ip": ip,
+                  "devices": sorted((_brief(d) for d in cmap[ip]),
+                                    key=lambda x: x.get("last_seen") or 0, reverse=True)}
+                 for ip in conflictutil.conflict_ips(devices)]
+    return jsonify({
+        "conflicts": conflicts,
         "fetched_at": snap.get("devices_fetched"),
         "stale": snap.get("stale", False) or not snap.get("reachable", False),
     })

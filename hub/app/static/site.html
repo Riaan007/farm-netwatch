@@ -42,6 +42,7 @@
         <div id="stale-banner" class="hidden mb-6 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm font-medium">
             ⚠️ Showing the last data received from this site — it is currently unreachable over the VPN.
         </div>
+        <div id="conflict-monitor" class="hidden mb-6"></div>
 
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -202,6 +203,7 @@
                            'nas','voip','solar','media','iot','pc','server','unknown'];
         const devState = { q: '', group: 'category', sort: 'status', dir: 1 };
         let lastDevices = [], lastFetched = null;
+        let conflictIPset = new Set();   // populated by loadConflicts(), used to mark rows
 
         function devName(d){ return d.name || d.hostname || d.vendor || 'Unknown device'; }
 
@@ -282,7 +284,7 @@
             const cat = d.category || 'unknown';
             const name = devName(d);
             const watch = d.watch ? ' 🔔' : '';
-            const conflict = d.ip_conflict
+            const conflict = conflictIPset.has(d.ip)
                 ? ' <span title="IP conflict — another device also answers this address">⚠️</span>' : '';
             return `
             <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="toggleHistory(this, '${encodeURIComponent(d.key)}', '${d.ip || ''}')">
@@ -454,6 +456,47 @@
 
             loadReachability();
             loadInternet();
+            loadConflicts();
+        }
+
+        async function loadConflicts(){
+            const box = document.getElementById('conflict-monitor');
+            let data;
+            try { data = await fetch(`/api/hub/sites/${siteId}/conflicts`).then(r=>r.json()); }
+            catch(e){ box.classList.add('hidden'); return; }
+            const list = data.conflicts || [];
+            const newSet = new Set(list.map(c => c.ip));
+            // Re-render device rows if the conflict set changed (to add/remove ⚠).
+            if(newSet.size !== conflictIPset.size || [...newSet].some(ip => !conflictIPset.has(ip))){
+                conflictIPset = newSet;
+                renderDevices();
+            }
+            if(!list.length){ box.classList.add('hidden'); box.innerHTML=''; return; }
+            box.classList.remove('hidden');
+            const chipFor = d => {
+                const dot = d.online ? 'bg-emerald-500' : 'bg-red-500';
+                const sub = d.online ? 'online' : 'offline ' + fmtAgo(d.last_seen);
+                return `<div class="flex items-center gap-2 px-3 py-1.5 bg-white border border-amber-200 rounded-lg text-xs">
+                    <span class="status-dot ${dot}"></span>
+                    <span><b>${d.name || d.vendor || 'device'}</b> <span class="text-slate-400">${d.category||''}</span><br>
+                    <span class="font-mono text-[10px] text-slate-400">${d.mac||'no-mac'} · ${sub}</span></span>
+                </div>`;
+            };
+            box.innerHTML = `
+                <div class="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="text-lg">⚠️</span>
+                        <h3 class="font-bold text-amber-900 uppercase text-sm tracking-tight">IP conflicts (${list.length})</h3>
+                        <span class="text-xs text-amber-700">more than one device answers the same address — give one a unique IP</span>
+                    </div>
+                    <div class="space-y-3">` +
+                list.map(c => `
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <span class="font-mono font-bold text-amber-900 w-36 shrink-0">${c.ip}</span>
+                            <div class="flex flex-wrap gap-2">${c.devices.map(chipFor).join('')}</div>
+                        </div>`).join('') +
+                    `</div>
+                </div>`;
         }
 
         async function loadReachability(){

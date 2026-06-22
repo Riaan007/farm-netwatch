@@ -22,6 +22,7 @@ import time
 
 import requests
 
+import conflicts as conflictutil
 import hubconfig
 import kuma_status
 import notify
@@ -34,6 +35,13 @@ _CLASSES = ("status", "devices", "kuma")
 
 def _safe(site_id):
     return re.sub(r"[^A-Za-z0-9_.-]", "-", site_id)
+
+
+def _ip_sortkey(ip):
+    try:
+        return tuple(int(o) for o in (ip or "").split("."))
+    except ValueError:
+        return (9999,)
 
 
 class Poller:
@@ -201,11 +209,17 @@ class Poller:
         online = sum(1 for d in devices if d.get("online")) if devices else None
         watched_down = sum(1 for d in devices
                            if d.get("watch") and not d.get("online")) if devices else None
+        conflict_ips = conflictutil.conflict_ips(devices)
+        with self._lock:
+            self._snap.setdefault(sid, {})["conflict_ips"] = conflict_ips
+        self._maybe_alert_conflict(sid, site, conflict_ips, reachable=status is not None,
+                                   have_devices=bool(devices))
         sitehistory.record(
             sid, status is not None, http_ms=latency,
             devices_total=total, devices_online=online, watched_down=watched_down,
             kuma_up=kuma.get("up") if kuma.get("ok") else None,
             kuma_down=kuma.get("down") if kuma.get("ok") else None,
+            conflicts=len(conflict_ips) if devices else None,
         )
 
     def _maybe_alert_offline(self, sid, site, fire, miss):
@@ -227,6 +241,39 @@ class Poller:
         else:
             notify.push(alerts, f"Site back online: {name}",
                         f"'{name}' is reachable from the hub again.",
+                        tags=["white_check_mark"])
+
+    def _maybe_alert_conflict(self, sid, site, conflict_ips, reachable, have_devices):
+        """ntfy + log when a site gains a NEW IP conflict, or when all clear.
+
+        Edge-triggered against the set of conflicted IPs already alerted, so each
+        conflict pages once (not every poll). Skipped while the site is
+        unreachable / has no device data, so a dropped link doesn't look 'resolved'."""
+        if not have_devices or not reachable:
+            return
+        with self._lock:
+            snap = self._snap.setdefault(sid, {})
+            prev = set(snap.get("conflict_alerted") or [])
+            now = set(conflict_ips)
+            snap["conflict_alerted"] = sorted(now, key=_ip_sortkey)
+        new_ips = now - prev
+        cleared = prev and not now
+        if new_ips:
+            print(f"[poller] {sid}: IP conflict on {', '.join(sorted(new_ips, key=_ip_sortkey))}",
+                  flush=True)
+        alerts = hubconfig.load().get("alerts", {})
+        if not alerts.get("notify_ip_conflict", True) or not site.get("alerts_enabled", True):
+            return
+        name = site.get("name") or sid
+        if new_ips:
+            ips = ", ".join(sorted(now, key=_ip_sortkey))
+            notify.push(alerts, f"IP conflict: {name}",
+                        f"More than one device is answering the same address at '{name}': {ips}. "
+                        f"Give one device a unique IP.",
+                        priority="high", tags=["warning"])
+        elif cleared:
+            notify.push(alerts, f"IP conflict cleared: {name}",
+                        f"All IP-address conflicts at '{name}' are resolved.",
                         tags=["white_check_mark"])
 
     def _fetch_devices(self, sid, site, timeout):
