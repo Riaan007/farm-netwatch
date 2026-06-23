@@ -231,6 +231,14 @@
                     </div>
                     <p class="text-[10px] text-slate-400 mt-1">Forgets stale/offline devices (gear from another network, or kit you've retired) from the list, registry and uptime history. Use <b>0 days</b> to remove <b>all</b> currently-offline devices. Anything still live reappears on the next scan.</p>
                 </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Experimental</label>
+                    <label class="flex items-start gap-2 text-xs text-slate-600">
+                        <input id="setup-airos-setip" type="checkbox" class="w-4 h-4 mt-0.5">
+                        <span>Enable <b>Change IP for Ubiquiti airOS radios</b> (SSH) <span class="px-1.5 py-0.5 bg-rose-100 text-rose-800 rounded text-[9px] font-bold">RISKY</span><br>
+                        <span class="text-[10px] text-slate-400">Off by default. airOS has no clean API, so this edits the radio's config over SSH and reboots it — a wrong value can drop the link to a whole building. Test on a non-critical radio first. Needs the radio's SSH login saved on the device.</span></span>
+                    </label>
+                </div>
                 <div class="pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
                     <button onclick="quickScan(); closeSetup();" class="py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🚀</span> Quick Scan</button>
                     <button onclick="deepScan(); closeSetup();" class="py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🔬</span> Deep Scan</button>
@@ -303,6 +311,7 @@
                             <button onclick="runCommand('tracert')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Tracert</button>
                             <button id="hik-btn" onclick="fetchHik()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold hidden">📷 Camera info</button>
                             <button id="setip-btn" onclick="openSetIp()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold hidden">🛠️ Change IP</button>
+                            <button id="airos-btn" onclick="openAirosIp()" class="px-3 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold hidden">🛠️ Change IP (airOS)</button>
                             <button onclick="deepScanDevice()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold">🔬 Deep scan</button>
                         </div>
                         <div id="setip-panel" class="hidden mt-3 p-3 bg-rose-50 border border-rose-200 rounded-lg">
@@ -320,6 +329,23 @@
                                 <button onclick="applySetIp()" id="setip-apply" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold">Apply change</button>
                                 <button onclick="document.getElementById('setip-panel').classList.add('hidden')" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Cancel</button>
                                 <span id="setip-result" class="text-xs"></span>
+                            </div>
+                        </div>
+                        <div id="airos-panel" class="hidden mt-3 p-3 bg-rose-50 border border-rose-300 rounded-lg">
+                            <p class="text-xs font-bold text-rose-800 mb-2">🛠️ Change radio IP (Ubiquiti airOS · EXPERIMENTAL)</p>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">New IP</label>
+                                    <input id="airos-ip" type="text" class="w-full p-2 bg-white border rounded-lg text-sm font-mono" placeholder="192.168.88.50"></div>
+                                <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Subnet mask</label>
+                                    <input id="airos-mask" type="text" class="w-full p-2 bg-white border rounded-lg text-sm font-mono" placeholder="255.255.255.0"></div>
+                                <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Gateway</label>
+                                    <input id="airos-gw" type="text" class="w-full p-2 bg-white border rounded-lg text-sm font-mono" placeholder="192.168.88.1"></div>
+                            </div>
+                            <p class="text-[10px] text-rose-700 mt-2">⚠ <b>Backhaul radio.</b> This edits the radio's config over SSH and <b>reboots</b> it. A wrong value can drop the link to a whole building (and everything behind it) until fixed on-site. Test on a non-critical radio first.</p>
+                            <div class="flex gap-2 mt-2 items-center">
+                                <button onclick="applyAirosIp()" id="airos-apply" class="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold">Apply change</button>
+                                <button onclick="document.getElementById('airos-panel').classList.add('hidden')" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Cancel</button>
+                                <span id="airos-result" class="text-xs"></span>
                             </div>
                         </div>
                         <div id="quality-panel" class="hidden mt-3"></div>
@@ -427,6 +453,7 @@
         let MODAL_IP = null;
         let SELECT_MODE = false;
         let SELECTED_IPS = new Set();
+        let FEATURES = {};                 // experimental feature flags from /api/status
         let PROBLEMS = [];                 // latest /api/problems result
         let PROBLEM_KEYS = new Set();      // device keys involved in any problem (grid filter)
         const RISKY_PORTS = {21:'FTP', 23:'Telnet', 2323:'Telnet', 512:'rexec', 513:'rlogin', 514:'rsh'};
@@ -815,6 +842,47 @@
             } catch(e){ out.className='text-xs text-red-600'; out.textContent='Error: '+e; }
             btn.disabled = false;
         }
+        async function openAirosIp(){
+            const panel = document.getElementById('airos-panel');
+            panel.classList.remove('hidden');
+            const out = document.getElementById('airos-result');
+            out.className = 'text-xs text-slate-500'; out.textContent = 'Reading current settings over SSH…';
+            document.getElementById('airos-ip').value = '';
+            document.getElementById('airos-mask').value = '';
+            document.getElementById('airos-gw').value = '';
+            if(!CURRENT_KEY){ out.textContent=''; return; }
+            try {
+                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/airos-network')).json();
+                if(r.ok){
+                    document.getElementById('airos-mask').value = r.subnetMask || '255.255.255.0';
+                    document.getElementById('airos-gw').value = r.gateway || '';
+                    out.className='text-xs text-slate-400';
+                    out.textContent = `Currently ${r.ipAddress||'?'}`;
+                } else { out.className='text-xs text-amber-600'; out.textContent = r.error || 'Could not read settings'; }
+            } catch(e){ out.className='text-xs text-amber-600'; out.textContent='Could not read settings'; }
+        }
+        async function applyAirosIp(){
+            const dev = CURRENT_KEY ? DEV_BY_KEY[CURRENT_KEY] : null;
+            const newIp = document.getElementById('airos-ip').value.trim();
+            const mask = document.getElementById('airos-mask').value.trim();
+            const gw = document.getElementById('airos-gw').value.trim();
+            const out = document.getElementById('airos-result');
+            if(!newIp){ out.className='text-xs text-amber-600'; out.textContent='Enter a new IP'; return; }
+            if(!confirm(`Change radio ${dev?dev.ip:''} to ${newIp}?\n\n⚠ This is a BACKHAUL radio. It edits the config over SSH and reboots — if the subnet/gateway is wrong you can lose the link to a whole building until you fix it on-site. Continue?`)) return;
+            const btn = document.getElementById('airos-apply');
+            btn.disabled = true; out.className='text-xs text-slate-500'; out.textContent='Applying over SSH…';
+            try {
+                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/airos-set-ip',{
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ip:newIp, mask, gateway:gw})})).json();
+                if(r.ok){
+                    out.className='text-xs text-emerald-600';
+                    out.textContent = '✓ ' + (r.msg || ('Changed to '+newIp));
+                    setTimeout(()=>{ closeModal(); loadDevices(); }, 4000);
+                } else { out.className='text-xs text-red-600'; out.textContent = '⚠ '+(r.error||'failed'); }
+            } catch(e){ out.className='text-xs text-red-600'; out.textContent='Error: '+e; }
+            btn.disabled = false;
+        }
         async function fetchHik(){
             if(!CURRENT_KEY) return;
             const res = document.getElementById('cmd-result');
@@ -914,6 +982,11 @@
             hikBtn.classList.toggle('hidden', !isHik);
             document.getElementById('setip-btn').classList.toggle('hidden', !isHik);
             document.getElementById('setip-panel').classList.add('hidden');
+            // airOS Change IP: only for Ubiquiti radios, and only when the
+            // experimental feature is enabled in Settings.
+            const isAiros = dev && /ubiquiti/i.test(dev.vendor||'') && !isHik;
+            document.getElementById('airos-btn').classList.toggle('hidden', !(isAiros && FEATURES.airos_change_ip));
+            document.getElementById('airos-panel').classList.add('hidden');
 
             drawSpark([]); document.getElementById('up-24h').innerText='--'; document.getElementById('up-7d').innerText='--'; document.getElementById('up-30d').innerText='--';
             loadCreds(key);
@@ -1126,6 +1199,7 @@
                     renderCatAlerts(c.alerts.categories);
                 }
                 if(c.scan){ document.getElementById('setup-deep-on-new').checked = !!c.scan.deep_on_new; document.getElementById('setup-discovery').checked = c.scan.discovery !== false; }
+                document.getElementById('setup-airos-setip').checked = !!(c.features && c.features.airos_change_ip);
                 if(c.integrations && c.integrations.kuma){
                     const k = c.integrations.kuma;
                     document.getElementById('setup-kuma-url').value = k.base_url || '';
@@ -1487,6 +1561,7 @@
             let data = null;
             try { data = await (await fetch('/api/status')).json(); } catch(e){}
             if(data){
+                FEATURES = data.features || FEATURES;
                 applyStatus(data);
                 if(data.last_scan_ts && data.last_scan_ts !== LAST_SCAN_TS){
                     LAST_SCAN_TS = data.last_scan_ts;
@@ -1516,6 +1591,7 @@
                 categories: collectCatAlerts(),
                 deep_on_new: document.getElementById('setup-deep-on-new').checked,
                 discovery: document.getElementById('setup-discovery').checked,
+                airos_change_ip: document.getElementById('setup-airos-setip').checked,
                 kuma_base_url: document.getElementById('setup-kuma-url').value,
                 kuma_username: document.getElementById('setup-kuma-user').value,
                 kuma_password: document.getElementById('setup-kuma-pass').value

@@ -69,6 +69,13 @@ device drops offline.
 - **Hikvision deep info** — a "Camera info" button (and auto, on deep scans) pulls
   model / serial / firmware straight from a Hikvision camera/NVR via ISAPI using
   its saved login.
+- **Change a device's IP** — for **Hikvision** cameras, a "Change IP" button writes
+  a new static IP via ISAPI and reboots the camera to apply it (saved login
+  required). For **Ubiquiti airOS** radios there's an *experimental, off-by-default*
+  SSH equivalent — enable it under **Settings → Experimental** to test. It edits the
+  radio's config over SSH and reboots; treat with care on wireless backhaul (a wrong
+  value can drop a whole building's link), and prefer DHCP reservations / UISP where
+  you can.
 - **Asset details + photo** — serial number, model, and a **photo** per device
   (auto-filled by discovery/ISAPI where possible, editable otherwise); the photo
   shows on the grid card and in the details panel for quick visual identification.

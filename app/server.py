@@ -10,6 +10,7 @@ import re
 import urllib3
 from flask import Flask, jsonify, redirect, request, send_file, send_from_directory
 
+import airos
 import commands
 import config
 import creds
@@ -85,6 +86,7 @@ def api_status():
         "progress": st["progress"],
         "site": cfg["site"],
         "vpn": cfg["vpn"]["mode"],
+        "features": cfg.get("features", {}),
     })
 
 
@@ -185,6 +187,8 @@ def api_setup():
         kuma_patch["username"] = body["kuma_username"].strip()
     if kuma_patch:
         patch["integrations"] = {"kuma": kuma_patch}
+    if "airos_change_ip" in body:
+        patch["features"] = {"airos_change_ip": bool(body["airos_change_ip"])}
     # admin password -> obfuscated creds store (only when a non-empty value is sent)
     if body.get("kuma_password"):
         uname = body.get("kuma_username") or config.load()["integrations"]["kuma"].get("username", "")
@@ -335,6 +339,56 @@ def api_device_set_ip(key):
     res = hikvision.set_ip(cur_ip, user, pw, new_ip, mask, gateway)
     if res.get("ok"):
         # Accept the new IP as home (no drift flag) and go find it.
+        scanner.registry.setdefault(key, {})["known_ip"] = new_ip
+        scanner.save_registry()
+        scanner.trigger("quick", hosts=[new_ip])
+    return jsonify(res)
+
+
+def _airos_enabled():
+    return bool(config.load().get("features", {}).get("airos_change_ip"))
+
+
+@app.route("/api/devices/<path:key>/airos-network", methods=["GET"])
+def api_airos_network(key):
+    """Read a Ubiquiti airOS radio's current management IP over SSH (gated)."""
+    if not _airos_enabled():
+        return jsonify({"ok": False, "error": "airOS Change IP is turned off in Settings"})
+    ip, user, pw = _hik_target(key)        # same saved-credential lookup
+    if not ip:
+        return jsonify({"ok": False, "error": "unknown device IP"}), 400
+    return jsonify(airos.get_network(ip, user, pw))
+
+
+@app.route("/api/devices/<path:key>/airos-set-ip", methods=["POST"])
+def api_airos_set_ip(key):
+    """Change a Ubiquiti airOS radio's management IP over SSH (gated, EXPERIMENTAL).
+    Edits /tmp/system.cfg, persists and reboots. High blast radius on backhaul."""
+    if not _airos_enabled():
+        return jsonify({"ok": False, "error": "airOS Change IP is turned off in Settings"})
+    body = request.get_json(force=True)
+    new_ip = (body.get("ip") or "").strip()
+    mask = (body.get("mask") or "").strip()
+    gateway = (body.get("gateway") or "").strip()
+    try:
+        ipaddress.ip_address(new_ip)
+    except ValueError:
+        return jsonify({"ok": False, "error": f"Invalid new IP: {new_ip}"}), 400
+    for label, val in (("subnet mask", mask), ("gateway", gateway)):
+        if val:
+            try:
+                ipaddress.ip_address(val)
+            except ValueError:
+                return jsonify({"ok": False, "error": f"Invalid {label}: {val}"}), 400
+    cur_ip, user, pw = _hik_target(key)
+    if not cur_ip:
+        return jsonify({"ok": False, "error": "unknown device IP"}), 400
+    if not (user or pw):
+        return jsonify({"ok": False, "error": "Save the radio's SSH username/password first"})
+    if new_ip == cur_ip:
+        return jsonify({"ok": False, "error": "that is already the radio's IP"})
+    res = airos.set_ip(cur_ip, user, pw, new_ip, mask, gateway)
+    if res.get("ok"):
         scanner.registry.setdefault(key, {})["known_ip"] = new_ip
         scanner.save_registry()
         scanner.trigger("quick", hosts=[new_ip])

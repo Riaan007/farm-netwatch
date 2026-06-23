@@ -65,6 +65,12 @@ DEFAULTS = {
     "vpn": {
         "mode": "none",            # none | tailscale | wireguard
     },
+    # Experimental, opt-in features (off by default so they can be toggled for
+    # testing). airos_change_ip enables the SSH "Change IP" action on Ubiquiti
+    # airOS radios — risky on wireless backhaul, hence behind this flag.
+    "features": {
+        "airos_change_ip": False,
+    },
     # Extra IP addresses Netwatch puts on the Pi at boot so it can sit on several
     # subnets at once (each {iface, cidr, target, label, managed}). cidr is the Pi's
     # host address+prefix on that LAN, e.g. "10.5.2.50/24". Additive only — never
