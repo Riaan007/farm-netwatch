@@ -51,3 +51,126 @@ def fetch(ip, username, password, timeout=6):
             else:
                 last = f"HTTP {r.status_code}"
     return {"ok": False, "error": last}
+
+
+# ---- network config (read + change the camera's IP) ----------------------
+NET_PATH = "/ISAPI/System/Network/interfaces/1/ipAddress"
+
+
+def _ns(root):
+    """Default XML namespace of a parsed ISAPI doc (or '' if none)."""
+    return root.tag[1:].split("}", 1)[0] if root.tag.startswith("{") else ""
+
+
+def _q(ns, tag):
+    return f"{{{ns}}}{tag}" if ns else tag
+
+
+def _net_get_raw(ip, username, password, timeout):
+    """GET the interface ipAddress doc. Returns (scheme, auth, text), ('AUTH',..)
+    on auth failure, or None if unreachable."""
+    for scheme in ("http", "https"):
+        url = f"{scheme}://{ip}{NET_PATH}"
+        for auth in (HTTPDigestAuth(username, password), HTTPBasicAuth(username, password)):
+            try:
+                r = requests.get(url, auth=auth, timeout=timeout, verify=False)
+            except requests.RequestException:
+                continue
+            if r.status_code == 200 and r.text.strip():
+                return scheme, auth, r.text
+            if r.status_code in (401, 403):
+                return "AUTH", None, None
+    return None
+
+
+def get_network(ip, username, password, timeout=6):
+    """Read the camera's current IPv4 settings (to pre-fill the change form)."""
+    if not ip:
+        return {"ok": False, "error": "no IP"}
+    got = _net_get_raw(ip, username, password, timeout)
+    if got is None:
+        return {"ok": False, "error": "could not reach the camera's ISAPI network API"}
+    if got[0] == "AUTH":
+        return {"ok": False, "error": "authentication failed — check the saved username/password"}
+    _scheme, _auth, text = got
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return {"ok": False, "error": "unexpected response (not a Hikvision device?)"}
+    ns = _ns(root)
+
+    def _txt(tag):
+        el = root.find(_q(ns, tag))
+        return el.text.strip() if (el is not None and el.text) else ""
+
+    gw, gw_ip = root.find(_q(ns, "DefaultGateway")), ""
+    if gw is not None:
+        gwip = gw.find(_q(ns, "ipAddress"))
+        gw_ip = gwip.text.strip() if (gwip is not None and gwip.text) else ""
+    return {"ok": True, "addressingType": _txt("addressingType"),
+            "ipAddress": _txt("ipAddress"), "subnetMask": _txt("subnetMask"),
+            "gateway": gw_ip}
+
+
+def _edit_ip_xml(text, new_ip, mask, gateway):
+    """Read-modify-write the ISAPI ipAddress XML: force static + set the IPv4
+    fields, preserving every other element and the default namespace."""
+    root = ET.fromstring(text)
+    ns = _ns(root)
+    if ns:
+        ET.register_namespace("", ns)        # keep the default ns on re-serialise
+
+    def _set(tag, value):
+        el = root.find(_q(ns, tag))
+        if el is not None and value:
+            el.text = value
+
+    _set("addressingType", "static")
+    _set("ipAddress", new_ip)
+    _set("subnetMask", mask)
+    if gateway:
+        gw = root.find(_q(ns, "DefaultGateway"))
+        if gw is not None:
+            gwip = gw.find(_q(ns, "ipAddress"))
+            if gwip is not None:
+                gwip.text = gateway
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="unicode")
+
+
+def set_ip(ip, username, password, new_ip, mask="", gateway="", timeout=8):
+    """Change the camera's IPv4 address via ISAPI (read-modify-write PUT). The
+    camera applies it immediately and the connection drops — reconnect at the new
+    address. Returns {'ok': True, 'new_ip'} or {'ok': False, 'error': str}."""
+    if not (ip and new_ip):
+        return {"ok": False, "error": "missing current or new IP"}
+    got = _net_get_raw(ip, username, password, timeout)
+    if got is None:
+        return {"ok": False, "error": "could not reach the camera's ISAPI network API"}
+    if got[0] == "AUTH":
+        return {"ok": False, "error": "authentication failed — check the saved username/password"}
+    scheme, auth, text = got
+    try:
+        payload = _edit_ip_xml(text, new_ip, mask, gateway)
+    except ET.ParseError:
+        return {"ok": False, "error": "could not parse the camera's network config"}
+    url = f"{scheme}://{ip}{NET_PATH}"
+    try:
+        r = requests.put(url, data=payload.encode("utf-8"), auth=auth, timeout=timeout,
+                         verify=False, headers={"Content-Type": "application/xml"})
+    except requests.RequestException as e:
+        # A dropped connection right after PUT usually means it applied and moved.
+        return {"ok": False, "error": f"no confirmation ({e.__class__.__name__}) — the "
+                f"camera may already have moved to {new_ip}; verify with a scan"}
+    if r.status_code == 200:
+        return {"ok": True, "new_ip": new_ip}
+    if r.status_code in (401, 403):
+        return {"ok": False, "error": "authentication failed"}
+    detail = ""
+    try:
+        rr = ET.fromstring(r.text)
+        sub = rr.find(_q(_ns(rr), "subStatusCode"))
+        if sub is not None and sub.text:
+            detail = f" ({sub.text})"
+    except ET.ParseError:
+        pass
+    return {"ok": False, "error": f"camera rejected the change: HTTP {r.status_code}{detail}"}

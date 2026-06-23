@@ -288,6 +288,59 @@ def api_hikvision(key):
     return jsonify({"ok": False, "error": res.get("error", "failed")})
 
 
+def _hik_target(key):
+    """(ip, user, pw) for a Hikvision device by key, using its saved credentials."""
+    dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
+    c = creds.get(key)
+    return (dev["ip"] if dev else None), c["username"], c["password"]
+
+
+@app.route("/api/devices/<path:key>/network", methods=["GET"])
+def api_device_network(key):
+    """Read a Hikvision camera's current IPv4 settings (to pre-fill the change form)."""
+    ip, user, pw = _hik_target(key)
+    if not ip:
+        return jsonify({"ok": False, "error": "unknown device IP"}), 400
+    if not (user or pw):
+        return jsonify({"ok": False, "error": "Save the camera's username/password first"})
+    return jsonify(hikvision.get_network(ip, user, pw))
+
+
+@app.route("/api/devices/<path:key>/set-ip", methods=["POST"])
+def api_device_set_ip(key):
+    """Change a Hikvision camera's IP via ISAPI. Validates the new address, uses
+    the saved credentials, then (on success) baselines the new IP as 'home' so it
+    doesn't flag as drift and kicks off a scan of the new address."""
+    body = request.get_json(force=True)
+    new_ip = (body.get("ip") or "").strip()
+    mask = (body.get("mask") or "").strip()
+    gateway = (body.get("gateway") or "").strip()
+    try:
+        ipaddress.ip_address(new_ip)
+    except ValueError:
+        return jsonify({"ok": False, "error": f"Invalid new IP: {new_ip}"}), 400
+    for label, val in (("subnet mask", mask), ("gateway", gateway)):
+        if val:
+            try:
+                ipaddress.ip_address(val)
+            except ValueError:
+                return jsonify({"ok": False, "error": f"Invalid {label}: {val}"}), 400
+    cur_ip, user, pw = _hik_target(key)
+    if not cur_ip:
+        return jsonify({"ok": False, "error": "unknown device IP"}), 400
+    if not (user or pw):
+        return jsonify({"ok": False, "error": "Save the camera's username/password first"})
+    if new_ip == cur_ip:
+        return jsonify({"ok": False, "error": "that is already the camera's IP"})
+    res = hikvision.set_ip(cur_ip, user, pw, new_ip, mask, gateway)
+    if res.get("ok"):
+        # Accept the new IP as home (no drift flag) and go find it.
+        scanner.registry.setdefault(key, {})["known_ip"] = new_ip
+        scanner.save_registry()
+        scanner.trigger("quick", hosts=[new_ip])
+    return jsonify(res)
+
+
 @app.route("/api/problems")
 def api_problems():
     """All detected problems (IP conflict, risky ports, duplicate MAC, IP drift)
