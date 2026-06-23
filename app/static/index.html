@@ -315,7 +315,7 @@
                                 <div><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Gateway</label>
                                     <input id="setip-gw" type="text" class="w-full p-2 bg-white border rounded-lg text-sm font-mono" placeholder="192.168.88.1"></div>
                             </div>
-                            <p class="text-[10px] text-rose-700 mt-2">⚠ This writes to the live camera and it moves <b>immediately</b>. A wrong subnet/gateway can make it unreachable until fixed on-site. Make sure the new IP is free.</p>
+                            <p class="text-[10px] text-rose-700 mt-2">⚠ This writes to the live camera and it <b>reboots to apply</b> (offline ~1 min, comes back on the new IP). A wrong subnet/gateway can make it unreachable until fixed on-site. Make sure the new IP is free.</p>
                             <div class="flex gap-2 mt-2 items-center">
                                 <button onclick="applySetIp()" id="setip-apply" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold">Apply change</button>
                                 <button onclick="document.getElementById('setip-panel').classList.add('hidden')" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Cancel</button>
@@ -800,7 +800,7 @@
             const gw = document.getElementById('setip-gw').value.trim();
             const out = document.getElementById('setip-result');
             if(!newIp){ out.className='text-xs text-amber-600'; out.textContent='Enter a new IP'; return; }
-            if(!confirm(`Change ${dev?dev.ip:'this camera'} to ${newIp}?\n\nThe camera applies it immediately and drops its current connection. If the subnet/gateway is wrong it may need an on-site fix.`)) return;
+            if(!confirm(`Change ${dev?dev.ip:'this camera'} to ${newIp}?\n\nThe camera reboots to apply (offline ~1 min) and comes back on the new IP. If the subnet/gateway is wrong it may need an on-site fix.`)) return;
             const btn = document.getElementById('setip-apply');
             btn.disabled = true; out.className='text-xs text-slate-500'; out.textContent='Applying…';
             try {
@@ -809,8 +809,8 @@
                     body: JSON.stringify({ip:newIp, mask, gateway:gw})})).json();
                 if(r.ok){
                     out.className='text-xs text-emerald-600';
-                    out.textContent = `✓ Changed to ${newIp}. Finding it… (closing)`;
-                    setTimeout(()=>{ closeModal(); loadDevices(); }, 2500);
+                    out.textContent = '✓ ' + (r.msg || ('Changed to '+newIp));
+                    setTimeout(()=>{ closeModal(); loadDevices(); }, 3500);
                 } else { out.className='text-xs text-red-600'; out.textContent = '⚠ '+(r.error||'failed'); }
             } catch(e){ out.className='text-xs text-red-600'; out.textContent='Error: '+e; }
             btn.disabled = false;

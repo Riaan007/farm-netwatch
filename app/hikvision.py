@@ -137,10 +137,25 @@ def _edit_ip_xml(text, new_ip, mask, gateway):
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="unicode")
 
 
+def reboot(ip, scheme, auth, timeout=8):
+    """Reboot the camera (PUT /ISAPI/System/reboot). The connection drops as it
+    goes down — that's expected, so a RequestException counts as 'reboot sent'."""
+    url = f"{scheme}://{ip}/ISAPI/System/reboot"
+    try:
+        r = requests.put(url, auth=auth, timeout=timeout, verify=False)
+        return r.status_code in (200, 0) or r.status_code < 400
+    except requests.RequestException:
+        return True            # it went down — that's the reboot
+
+
 def set_ip(ip, username, password, new_ip, mask="", gateway="", timeout=8):
-    """Change the camera's IPv4 address via ISAPI (read-modify-write PUT). The
-    camera applies it immediately and the connection drops — reconnect at the new
-    address. Returns {'ok': True, 'new_ip'} or {'ok': False, 'error': str}."""
+    """Change the camera's IPv4 address via ISAPI (read-modify-write PUT).
+
+    Hikvision writes the new IP but, on many firmwares, only applies it after a
+    REBOOT (the PUT returns statusCode 7 / 'Reboot Required'). When it does, we
+    reboot the camera so the change actually takes effect; it comes back on the
+    new address in ~1 minute. Returns {'ok', 'new_ip', 'rebooted', 'msg'} or
+    {'ok': False, 'error'}."""
     if not (ip and new_ip):
         return {"ok": False, "error": "missing current or new IP"}
     got = _net_get_raw(ip, username, password, timeout)
@@ -158,19 +173,27 @@ def set_ip(ip, username, password, new_ip, mask="", gateway="", timeout=8):
         r = requests.put(url, data=payload.encode("utf-8"), auth=auth, timeout=timeout,
                          verify=False, headers={"Content-Type": "application/xml"})
     except requests.RequestException as e:
-        # A dropped connection right after PUT usually means it applied and moved.
         return {"ok": False, "error": f"no confirmation ({e.__class__.__name__}) — the "
                 f"camera may already have moved to {new_ip}; verify with a scan"}
-    if r.status_code == 200:
-        return {"ok": True, "new_ip": new_ip}
     if r.status_code in (401, 403):
         return {"ok": False, "error": "authentication failed"}
-    detail = ""
-    try:
-        rr = ET.fromstring(r.text)
-        sub = rr.find(_q(_ns(rr), "subStatusCode"))
-        if sub is not None and sub.text:
-            detail = f" ({sub.text})"
-    except ET.ParseError:
-        pass
-    return {"ok": False, "error": f"camera rejected the change: HTTP {r.status_code}{detail}"}
+    if r.status_code != 200:
+        detail = ""
+        try:
+            rr = ET.fromstring(r.text)
+            sub = rr.find(_q(_ns(rr), "subStatusCode"))
+            if sub is not None and sub.text:
+                detail = f" ({sub.text})"
+        except ET.ParseError:
+            pass
+        return {"ok": False, "error": f"camera rejected the change: HTTP {r.status_code}{detail}"}
+
+    # 200 OK — did it apply live, or is a reboot needed to take effect?
+    needs_reboot = "reboot" in (r.text or "").lower()
+    if needs_reboot:
+        # Reboot via the OLD address (still live right now) so the new IP applies.
+        reboot(ip, scheme, auth, timeout)
+        return {"ok": True, "new_ip": new_ip, "rebooted": True,
+                "msg": f"Camera is rebooting to apply {new_ip} (back in ~1 min)."}
+    return {"ok": True, "new_ip": new_ip, "rebooted": False,
+            "msg": f"Camera moved to {new_ip}."}
