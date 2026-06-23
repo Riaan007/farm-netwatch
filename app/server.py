@@ -290,9 +290,21 @@ def api_hikvision(key):
 
 @app.route("/api/problems")
 def api_problems():
-    """All detected problems (IP conflict, risky ports, duplicate MAC, IP drift,
-    device replaced) for the dashboard's Problems panel."""
+    """All detected problems (IP conflict, risky ports, duplicate MAC, IP drift)
+    for the dashboard's Problems panel."""
     return jsonify({"problems": scanner.problems()})
+
+
+@app.route("/api/devices/<path:key>/ack-ip", methods=["POST"])
+def api_ack_ip(key):
+    """Accept a device's current IP as its new 'home' — clears its drift flag."""
+    return jsonify(scanner.acknowledge_ip(key))
+
+
+@app.route("/api/problems/ack-drift", methods=["POST"])
+def api_ack_drift():
+    """Acknowledge every current IP-drift at once (after an intentional renumber)."""
+    return jsonify(scanner.acknowledge_all_drift())
 
 
 @app.route("/api/conflicts")

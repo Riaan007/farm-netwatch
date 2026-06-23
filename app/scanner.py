@@ -652,6 +652,18 @@ class Scanner:
         for dev in new_devices:
             notify.notify_new_device(alerts, dev)
 
+        # Baseline each seen device's "home" IP the first time we have one (also
+        # back-fills existing devices on upgrade), so only LATER moves flag as
+        # drift — and acknowledging just rewrites this value.
+        reg_baseline = False
+        for key, dev in found.items():
+            ip = dev.get("ip")
+            if ip and not self.registry.get(key, {}).get("known_ip"):
+                self.registry.setdefault(key, {})["known_ip"] = ip
+                reg_baseline = True
+        if reg_baseline:
+            self.save_registry()
+
         with self.lock:
             self.devices = result
             self.status["last_scan"] = _now_str()
@@ -787,14 +799,13 @@ class Scanner:
 
     def problems(self, window_s=None):
         """All detected problems as one typed list for the dashboard's Problems
-        panel and /api/problems. Live problems (conflict / risky ports / dup MAC)
-        are derived from the current device list; change problems (IP drift /
-        replaced) come from the recent event log."""
+        panel and /api/problems — all derived from the CURRENT device list (plus
+        the acknowledged home-IP baseline), so problems self-clear when fixed,
+        acknowledged or purged. No stale ghosts from the event log."""
         window = window_s or CONFLICT_WINDOW_S
         with self.lock:
             devs = list(self.devices.values())
             mac_multi = dict(self.mac_multi_ip)
-        by_key = {d.get("key"): d for d in devs}
 
         def _ipkey(ip):
             try:
@@ -839,32 +850,47 @@ class Scanner:
                 "detail": f"MAC {mac} answers on {len(ips)} IPs: {', '.join(ips)}",
                 "fix": "Check for a bridge, or a duplicate / spoofed MAC.",
             })
-        # 4. Recent change events (newest kept per device)
-        since = int(time.time()) - window
-        seen = set()
-        for etype, detail, fix in (
-            ("ip_change", "moved to a new IP (DHCP drift)",
-             "Reserve this device's IP in your DHCP server."),
-            ("replaced", "a different device now holds this IP",
-             "Confirm the swap is intended; the old device may have moved or gone."),
-        ):
-            for ev in history.events(etype=etype, since=since, limit=100):
-                sig = (etype, ev.get("key"), ev.get("ip"))
-                if sig in seen:
-                    continue
-                seen.add(sig)
-                d = by_key.get(ev.get("key"))
-                prev_ip = (ev.get("detail") or {}).get("prev_ip")
+        # 4. IP drift — current state, not the event log. A device whose live IP
+        # differs from its acknowledged "home" IP. Self-clears when you Acknowledge
+        # (sets home = current) or when the device is purged; no stale ghosts.
+        for d in devs:
+            if not d.get("online"):
+                continue
+            home = self.registry.get(d.get("key"), {}).get("known_ip")
+            if home and d.get("ip") and home != d["ip"]:
+                label = d.get("name") or d.get("vendor") or "device"
                 out.append({
-                    "type": etype, "severity": "low", "ip": ev.get("ip"),
-                    "devices": [_brief(d)] if d else [{
-                        "key": ev.get("key"), "mac": ev.get("mac"),
-                        "vendor": ev.get("vendor"), "name": ev.get("name")}],
-                    "detail": (ev.get("name") or ev.get("vendor") or ev.get("ip") or "device")
-                              + " " + detail + (f" (was {prev_ip})" if prev_ip else ""),
-                    "fix": fix, "ts": ev.get("ts"),
+                    "type": "ip_change", "severity": "low", "ip": d["ip"],
+                    "devices": [_brief(d)],
+                    "detail": f"{label} is now at {d['ip']} (home was {home})",
+                    "fix": "Acknowledge to accept the new address, or reserve it in DHCP.",
+                    "ack_key": d.get("key"),       # the device to acknowledge
                 })
         return out
+
+    def acknowledge_ip(self, key):
+        """Accept a device's current IP as its new 'home' — clears its drift flag."""
+        with self.lock:
+            dev = self.devices.get(key)
+            ip = dev.get("ip") if dev else None
+        if not ip:
+            return {"ok": False, "error": "device not currently online"}
+        self.registry.setdefault(key, {})["known_ip"] = ip
+        self.save_registry()
+        return {"ok": True, "key": key, "known_ip": ip}
+
+    def acknowledge_all_drift(self):
+        """Acknowledge every device currently flagged for IP drift in one go."""
+        with self.lock:
+            items = [(k, d.get("ip")) for k, d in self.devices.items()
+                     if d.get("online") and d.get("ip")
+                     and self.registry.get(k, {}).get("known_ip")
+                     and self.registry[k]["known_ip"] != d["ip"]]
+        for key, ip in items:
+            self.registry.setdefault(key, {})["known_ip"] = ip
+        if items:
+            self.save_registry()
+        return {"ok": True, "acknowledged": len(items)}
 
     def get_devices(self):
         with self.lock:
