@@ -48,10 +48,21 @@ def _now_str():
 
 
 def _icmp_up(ip):
-    """True if the host answers a single ICMP echo. Real reachability — unlike an
-    ARP reply, which a sleeping/offloaded Wi-Fi NIC still sends."""
+    """True if the host answers ICMP. Two packets with a 2s wait so a single
+    dropped packet on a busy wireless link doesn't read as 'down' — real
+    reachability, unlike an ARP reply a sleeping NIC still sends."""
     try:
-        return subprocess.run(["ping", "-c", "1", "-W", "1", ip],
+        return subprocess.run(["ping", "-c", "2", "-W", "2", ip],
+                              capture_output=True, timeout=8).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _icmp_sweep_alive(ip):
+    """One ICMP echo with a generous 2s wait, for the subnet sweep that catches
+    high-latency wireless hosts nmap's ARP discovery misses on a busy /24."""
+    try:
+        return subprocess.run(["ping", "-c", "1", "-W", "2", ip],
                               capture_output=True, timeout=4).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
@@ -403,6 +414,14 @@ class Scanner:
                         new_devices[:] = [d for d in new_devices
                                           if d.get("key") not in dropped]
 
+            # ICMP-sweep fallback: add live hosts nmap's ARP discovery missed
+            # (busy wireless /24). Runs AFTER the gate so these ICMP-proven hosts
+            # are never dropped by it.
+            if not only_hosts and cfg["scan"].get("icmp_sweep", True):
+                if self._sweep_pass(found, new_devices, superseded, ip_index, jobs,
+                                    cfg, online_ok, mode):
+                    self.save_registry()
+
             # Devices that were *expected* in this scan's scope (for offline detection).
             if only_hosts:
                 host_set = set(only_hosts)
@@ -578,6 +597,61 @@ class Scanner:
                     was_seen = True
             found[key] = rec
             rec_by_ip[ip] = rec
+            if not was_seen and key not in self.registry:
+                new_devices.append(rec)
+            self.seen_keys.add(key)
+        return reg_changed
+
+    def _sweep_pass(self, found, new_devices, superseded, ip_index, jobs, cfg, online_ok, mode):
+        """Catch hosts nmap's ARP discovery missed — common for high-latency
+        wireless backhaul radios on a busy /24, which answer ICMP fine but lose
+        the ARP race during a full-subnet sweep. ICMP-sweep each local target,
+        then targeted-nmap the responders nmap didn't already see (a small set,
+        so MAC + ports come back reliably); any that still give nothing are added
+        as an online IP-only device so they at least appear."""
+        local_nets = []
+        for group, _tokens, is_local in jobs:
+            if is_local and group:
+                try:
+                    n = ipaddress.ip_network(group, strict=False)
+                    if n.num_addresses <= 1024:          # don't sweep huge ranges
+                        local_nets.append(n)
+                except ValueError:
+                    pass
+        if not local_nets:
+            return False
+        have = {r["ip"] for r in found.values()}
+        candidates = [str(h) for n in local_nets for h in n.hosts() if str(h) not in have]
+        if not candidates:
+            return False
+        with self.lock:
+            self.status["progress"] = "icmp sweep (catching missed hosts)"
+        with concurrent.futures.ThreadPoolExecutor(max_workers=32) as ex:
+            alive = [ip for ip, up in zip(candidates, ex.map(_icmp_sweep_alive, candidates)) if up]
+        if not alive:
+            return False
+        detail = {h["ip"]: h for h in self._nmap(alive, mode, True)}
+        reg_changed = False
+        for ip in alive:
+            if any(r.get("ip") == ip for r in found.values()):
+                continue
+            h = detail.get(ip) or {"ip": ip, "mac": "", "nmap_vendor": "", "hostname": "",
+                                   "ports": [], "services": {}, "os": "", "rtt": None}
+            key, old_key = self._resolve_key(h, ip_index)
+            rec = self._build_record(h, self._target_for_ip(ip, cfg), True, online_ok,
+                                     (mode == "deep"), key)
+            rec["discovery"] = rec.get("discovery") or "icmp"
+            prev = self.devices.get(key, {})
+            rec["first_seen"] = prev.get("first_seen", rec["last_seen"])
+            was_seen = key in self.seen_keys
+            if old_key:
+                superseded.add(old_key)
+                if old_key in self.registry and key not in self.registry:
+                    self.registry[key] = self.registry.pop(old_key)
+                    reg_changed = True
+                if old_key in self.seen_keys:
+                    was_seen = True
+            found[key] = rec
             if not was_seen and key not in self.registry:
                 new_devices.append(rec)
             self.seen_keys.add(key)

@@ -35,6 +35,9 @@ DEFAULTS = {
         # A host that only answers ARP (e.g. a Wi-Fi NIC answering while the host
         # sleeps) is treated as OFFLINE. Turn off to count ARP presence as online.
         "require_reachable": True,
+        # After the nmap pass, ICMP-sweep the local subnet and add any pingable
+        # host nmap's ARP discovery missed (catches high-latency wireless radios).
+        "icmp_sweep": True,
         # Fine-grained latency sampling for the Uptime-Kuma-style per-device chart.
         # Pings watched/named online devices every interval into a short-retention
         # table (heartbeats). Scope: "watched_named" (default) or "online" (all).
