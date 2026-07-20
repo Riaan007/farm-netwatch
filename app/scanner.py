@@ -792,7 +792,7 @@ class Scanner:
         the monitor when the device's IP changes. Manual push-token monitors (no
         monitor_id): push status each scan as before."""
         ki = cfg.get("integrations", {}).get("kuma", {})
-        base = ki.get("base_url")
+        base = kuma.effective_base(ki)
         if not base:
             return
         self._ensure_internet_monitors(cfg, ki, base)

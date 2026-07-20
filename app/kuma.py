@@ -7,9 +7,36 @@ Two parts:
     generated client-side and passed in the `add` payload (that's how Kuma's own
     UI does it). python-socketio is imported lazily so push() needs no extra deps.
 """
+import re
 import secrets
+import socket
 
 import requests
+
+
+def lan_ip():
+    """This host's primary LAN IPv4 — the address other LAN devices reach it on."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 53))   # routing lookup only; nothing is sent
+            return s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        return "127.0.0.1"
+
+
+def effective_base(ki):
+    """The Kuma base URL to actually use. With `auto_url` on, the host part
+    follows this server's CURRENT LAN IP (Kuma runs alongside Netwatch), so the
+    dashboard's Open-Kuma link works from any device and stays right when DHCP
+    moves the Pi. The port is kept from base_url (default 3001)."""
+    base = (ki.get("base_url") or "").rstrip("/")
+    if not ki.get("auto_url"):
+        return base
+    m = re.search(r":(\d+)$", base)
+    return f"http://{lan_ip()}:{m.group(1) if m else '3001'}"
 
 
 def push(base_url, token, up, msg="", ping_ms=None):

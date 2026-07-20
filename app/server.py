@@ -96,7 +96,13 @@ def api_config():
         # Merge over the CURRENT config (not defaults) so a partial update never
         # silently resets unrelated fields such as `configured`.
         return jsonify(config.update(request.get_json(force=True)))
-    return jsonify(config.load())
+    cfg = config.load()
+    ki = cfg.get("integrations", {}).get("kuma")
+    if ki is not None:
+        # What the URL currently resolves to (== base_url when auto_url is off);
+        # the UI shows this and points its Open-Kuma links at it.
+        ki["resolved_url"] = kuma.effective_base(ki)
+    return jsonify(cfg)
 
 
 # ---- scan triggers -----------------------------------------------------
@@ -183,6 +189,8 @@ def api_setup():
         kuma_patch["enabled"] = bool(body["kuma_enabled"])
     if body.get("kuma_base_url"):
         kuma_patch["base_url"] = body["kuma_base_url"].strip()
+    if "kuma_auto_url" in body:
+        kuma_patch["auto_url"] = bool(body["kuma_auto_url"])
     if "kuma_username" in body:
         kuma_patch["username"] = body["kuma_username"].strip()
     if kuma_patch:
@@ -447,7 +455,7 @@ def api_kuma(key):
     """
     cfg = config.load()
     ki = cfg["integrations"]["kuma"]
-    base = (ki.get("base_url") or "").rstrip("/")
+    base = kuma.effective_base(ki)
 
     if request.method == "POST":
         body = request.get_json(force=True)
@@ -495,7 +503,8 @@ def api_kuma_sync_tags():
     ki = cfg["integrations"]["kuma"]
     user = ki.get("username", "")
     pw = creds.get("@kuma").get("password", "")
-    if not (ki.get("base_url") and user and pw):
+    base = kuma.effective_base(ki)
+    if not (base and user and pw):
         return jsonify({"ok": False, "error": "Set the Kuma URL, username and password first"})
     devs = {d["key"]: d for d in scanner.get_devices()}
     items = []
@@ -505,7 +514,7 @@ def api_kuma_sync_tags():
             continue
         cat = (devs.get(key) or {}).get("category") or reg.get("category") or "unknown"
         items.append((mid, cat))
-    return jsonify(kuma.tag_monitors(ki["base_url"], user, pw, items))
+    return jsonify(kuma.tag_monitors(base, user, pw, items))
 
 
 @app.route("/api/kuma/repair", methods=["POST"])
@@ -516,7 +525,8 @@ def api_kuma_repair():
     ki = cfg["integrations"]["kuma"]
     user = ki.get("username", "")
     pw = creds.get("@kuma").get("password", "")
-    if not (ki.get("base_url") and user and pw):
+    base = kuma.effective_base(ki)
+    if not (base and user and pw):
         return jsonify({"ok": False, "error": "Set the Kuma URL, username and password first"})
     devs = {d["key"]: d for d in scanner.get_devices()}
     items = []
@@ -525,7 +535,7 @@ def api_kuma_repair():
         ip = (devs.get(key) or {}).get("ip")
         if mid and ip:
             items.append((mid, ip))
-    res = kuma.ensure_ping(ki["base_url"], user, pw, items)
+    res = kuma.ensure_ping(base, user, pw, items)
     if res.get("ok"):
         for key, reg in scanner.registry.items():
             if reg.get("kuma_monitor_id"):
@@ -542,7 +552,7 @@ def api_kuma_monitor_bulk():
     monitored; the monitor then follows the device's IP via _kuma_sync."""
     cfg = config.load()
     ki = cfg["integrations"]["kuma"]
-    base = (ki.get("base_url") or "").rstrip("/")
+    base = kuma.effective_base(ki)
     user = ki.get("username", "")
     pw = creds.get("@kuma").get("password", "")
     if not (base and user and pw):
@@ -587,9 +597,10 @@ def api_kuma_test():
     body = request.get_json(silent=True) or {}
     user = body.get("username") or ki.get("username", "")
     pw = body.get("password") or creds.get("@kuma").get("password", "")
-    if not ((ki.get("base_url")) and user and pw):
+    base = kuma.effective_base(ki)
+    if not (base and user and pw):
         return jsonify({"ok": False, "error": "Enter Kuma URL, username and password"})
-    return jsonify(kuma.test_login(ki["base_url"], user, pw))
+    return jsonify(kuma.test_login(base, user, pw))
 
 
 @app.route("/api/devices/<path:key>/photo", methods=["GET", "POST", "DELETE"])

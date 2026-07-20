@@ -165,6 +165,9 @@
                         <input id="setup-kuma-url" type="text" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm font-mono" placeholder="http://localhost:3001">
                         <a id="kuma-open" href="#" target="_blank" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold whitespace-nowrap self-center">Open Kuma ↗</a>
                     </div>
+                    <label class="flex items-center gap-2 mt-2 text-xs text-slate-600">
+                        <input id="setup-kuma-auto" type="checkbox" class="w-4 h-4" onchange="kumaAutoToggle()"> Auto — use this server's IP (updates itself if DHCP moves the Pi)
+                    </label>
                     <div class="flex gap-2 mt-2">
                         <input id="setup-kuma-user" type="text" autocomplete="off" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Kuma admin username">
                         <input id="setup-kuma-pass" type="password" autocomplete="new-password" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Kuma admin password">
@@ -1202,8 +1205,11 @@
                 document.getElementById('setup-airos-setip').checked = !!(c.features && c.features.airos_change_ip);
                 if(c.integrations && c.integrations.kuma){
                     const k = c.integrations.kuma;
-                    document.getElementById('setup-kuma-url').value = k.base_url || '';
-                    document.getElementById('kuma-open').href = k.base_url || '#';
+                    KUMA_RESOLVED = k.resolved_url || k.base_url || '';
+                    document.getElementById('setup-kuma-auto').checked = !!k.auto_url;
+                    document.getElementById('setup-kuma-url').value = k.auto_url ? KUMA_RESOLVED : (k.base_url || '');
+                    kumaAutoToggle();
+                    document.getElementById('kuma-open').href = KUMA_RESOLVED || '#';
                     document.getElementById('setup-kuma-user').value = k.username || '';
                     document.getElementById('setup-kuma-pass').placeholder = k.username ? 'password saved — leave blank to keep' : 'Kuma admin password';
                 }
@@ -1491,12 +1497,21 @@
                 res.innerText = r.ok ? ('✓ tagged ' + r.tagged + ' monitor(s)') : ('⚠ ' + (r.error||'failed'));
             } catch(e){ res.className='text-xs ml-2 text-red-600'; res.innerText='Error: '+e; }
         }
+        // Kuma URL "Auto" mode: the field mirrors the server-resolved URL and is read-only.
+        let KUMA_RESOLVED = '';
+        function kumaAutoToggle(){
+            const url = document.getElementById('setup-kuma-url');
+            const auto = document.getElementById('setup-kuma-auto').checked;
+            url.readOnly = auto;
+            url.classList.toggle('text-slate-400', auto);
+            if(auto && KUMA_RESOLVED) url.value = KUMA_RESOLVED;
+        }
         async function testKuma(){
             const res = document.getElementById('kuma-test-result');
             const body = { username: document.getElementById('setup-kuma-user').value, password: document.getElementById('setup-kuma-pass').value };
             res.className = 'text-xs mt-1 text-slate-500'; res.innerText = 'Testing Kuma login…';
             // persist URL/user first so the server uses the right base
-            await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kuma_base_url:document.getElementById('setup-kuma-url').value, kuma_username:body.username})});
+            await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kuma_base_url:document.getElementById('setup-kuma-url').value, kuma_auto_url:document.getElementById('setup-kuma-auto').checked, kuma_username:body.username})});
             try {
                 const r = await (await fetch('/api/kuma/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
                 res.className = 'text-xs mt-1 ' + (r.ok ? 'text-emerald-600' : 'text-red-600');
@@ -1593,6 +1608,7 @@
                 discovery: document.getElementById('setup-discovery').checked,
                 airos_change_ip: document.getElementById('setup-airos-setip').checked,
                 kuma_base_url: document.getElementById('setup-kuma-url').value,
+                kuma_auto_url: document.getElementById('setup-kuma-auto').checked,
                 kuma_username: document.getElementById('setup-kuma-user').value,
                 kuma_password: document.getElementById('setup-kuma-pass').value
             })});

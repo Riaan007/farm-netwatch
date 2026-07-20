@@ -84,6 +84,7 @@ DEFAULTS = {
             "enabled": False,                        # set true once Kuma is wired up
             "internet_monitors": True,               # auto-create gateway+DNS monitors on enable
             "base_url": "http://localhost:3001",   # where Netwatch reaches Kuma
+            "auto_url": False,                       # True = host part follows this server's LAN IP
             "username": "",                          # Kuma admin (for the create-monitor API)
             # admin password is stored obfuscated in the creds store under "@kuma".
             # Monitors are created ONLY when you tick "Monitor in Uptime Kuma" on a
