@@ -38,6 +38,11 @@ DEFAULTS = {
         # After the nmap pass, ICMP-sweep the local subnet and add any pingable
         # host nmap's ARP discovery missed (catches high-latency wireless radios).
         "icmp_sweep": True,
+        # MACs (bare-hex lowercase) of proxy-ARP bridges — e.g. a Ubiquiti
+        # station fronting a camera pole answers ARP for every client behind
+        # the wireless link. Devices seen with one of these MACs are tracked
+        # per-IP instead of being merged into one MAC-keyed record.
+        "bridge_macs": [],
         # Fine-grained latency sampling for the Uptime-Kuma-style per-device chart.
         # Pings watched/named online devices every interval into a short-retention
         # table (heartbeats). Scope: "watched_named" (default) or "online" (all).

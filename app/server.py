@@ -17,6 +17,7 @@ import creds
 import hikvision
 import history
 import hubvpn
+import identify
 import netcfg
 import tunnels
 import kuma
@@ -414,6 +415,27 @@ def api_problems():
 def api_ack_ip(key):
     """Accept a device's current IP as its new 'home' — clears its drift flag."""
     return jsonify(scanner.acknowledge_ip(key))
+
+
+@app.route("/api/bridge-macs", methods=["GET", "POST"])
+def api_bridge_macs():
+    """MACs of proxy-ARP bridges (a wireless station answering ARP for every
+    device behind it). Devices fronted by one are tracked per-IP, so each
+    camera behind the link shows as its own device. POST {mac, enable}."""
+    cur = set(config.load()["scan"].get("bridge_macs") or [])
+    if request.method == "GET":
+        return jsonify({"bridge_macs": sorted(cur)})
+    body = request.get_json(force=True)
+    mac = identify.normalize_mac(body.get("mac") or "")
+    if not mac:
+        return jsonify({"ok": False, "error": "invalid MAC"}), 400
+    enable = bool(body.get("enable", True))
+    (cur.add if enable else cur.discard)(mac)
+    config.update({"scan": {"bridge_macs": sorted(cur)}})
+    scanner.apply_bridge_macs(cur, added=mac if enable else None)
+    scanner.wake()
+    scanner.trigger(mode="quick")   # re-key the fronted devices right away
+    return jsonify({"ok": True, "bridge_macs": sorted(cur)})
 
 
 @app.route("/api/problems/ack-drift", methods=["POST"])

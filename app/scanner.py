@@ -137,6 +137,9 @@ class Scanner:
         self.miss = {}             # key -> consecutive missed scans
         self.seen_keys = set()     # every key ever observed (for "new device")
         self.mac_multi_ip = {}     # mac -> [ips] when one MAC answers on 2+ IPs (last scan)
+        # Proxy-ARP bridge MACs (scan.bridge_macs): sightings carrying one of
+        # these MACs are keyed per-IP — see _resolve_key.
+        self._bridge_macs = self._load_bridge_macs(config.load())
         self.registry = self._load_registry()
         self._wake = threading.Event()
         self._hb_wake = threading.Event()
@@ -305,8 +308,14 @@ class Scanner:
         with self._scan_lock:                # only one scan runs at a time
             self._run_scan(mode, only_target, only_hosts)
 
+    @staticmethod
+    def _load_bridge_macs(cfg):
+        macs = cfg.get("scan", {}).get("bridge_macs") or []
+        return {m for m in (identify.normalize_mac(x) for x in macs) if m}
+
     def _run_scan(self, mode, only_target, only_hosts):
         cfg = config.load()
+        self._bridge_macs = self._load_bridge_macs(cfg)
         online_ok = cfg["scan"]["online_lookup"]
 
         # Build the list of nmap jobs: (group_label, [target tokens], is_local).
@@ -431,8 +440,9 @@ class Scanner:
             else:
                 expected = set(self.devices)
             # One MAC answering on 2+ IPs = duplicate / spoof / bridge.
+            # Known bridge MACs are expected to do this — not a problem.
             self.mac_multi_ip = {m: sorted(ips) for m, ips in mac_ips.items()
-                                 if len(ips) > 1}
+                                 if len(ips) > 1 and m not in self._bridge_macs}
             # A "replaced" event only when the old occupant didn't show this scan
             # (otherwise it's a live IP conflict, surfaced separately).
             for rec, pk in replaced_cands:
@@ -464,6 +474,11 @@ class Scanner:
         mac = identify.normalize_mac(h["mac"])
         ip = h["ip"]
         prev_at_ip = ip_index.get(ip)
+        if mac and mac in self._bridge_macs:
+            # A proxy-ARP bridge answers with its own MAC for every client
+            # behind it — the MAC can't be an identity there, so key by IP and
+            # each fronted device (camera, radio, …) stays its own record.
+            return ip, None
         if mac:
             key = ":".join(mac[i:i + 2] for i in range(0, 12, 2))
             old_key = prev_at_ip if (prev_at_ip and prev_at_ip != key and ":" not in prev_at_ip) else None
@@ -919,7 +934,7 @@ class Scanner:
         for mac, ips in sorted(mac_multi.items()):
             dev = next((d for d in devs if (d.get("mac") or "").lower() == mac.lower()), None)
             out.append({
-                "type": "same_mac_multi_ip", "severity": "medium",
+                "type": "same_mac_multi_ip", "severity": "medium", "mac": mac,
                 "ip": ", ".join(ips), "devices": [_brief(dev)] if dev else [],
                 "detail": f"MAC {mac} answers on {len(ips)} IPs: {', '.join(ips)}",
                 "fix": "Check for a bridge, or a duplicate / spoofed MAC.",
@@ -1012,6 +1027,16 @@ class Scanner:
                                            ("serial", serial), ("model", model), ("link", link))
                                           if v is not None})
         return reg
+
+    def apply_bridge_macs(self, macs, added=None):
+        """Live-apply scan.bridge_macs (already saved to config). When `added`
+        (bare-hex MAC) was just marked as a bridge, also drop its merged
+        MAC-keyed record and its dup-MAC problem right away — the per-IP
+        records take over on the next scan."""
+        self._bridge_macs = {m for m in (identify.normalize_mac(x) for x in macs) if m}
+        if added:
+            self.mac_multi_ip.pop(added, None)
+            self.delete_device(":".join(added[i:i + 2] for i in range(0, 12, 2)))
 
     def delete_device(self, key):
         """Forget a device entirely: registry, live state, miss counter,
