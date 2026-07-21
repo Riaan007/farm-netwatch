@@ -565,6 +565,11 @@
             await fetch('/api/bridge-macs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac, enable:false})});
             loadBridges(); setTimeout(refresh, 2500);
         }
+        async function clearConflict(ip){
+            if(!confirm('Clear the IP conflict on '+ip+' and re-test now?\n\nThe warning disappears and a scan of '+ip+' starts right away. If two devices are still fighting over the address, the conflict comes back within a scan or two — if you fixed it, it stays gone.')) return;
+            await fetch('/api/conflicts/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ip})});
+            setTimeout(refresh, 2500);
+        }
         async function markBridge(mac){
             if(!confirm('Treat MAC '+mac+' as a wireless bridge / proxy-ARP relay?\n\nEvery device answering behind it will be tracked by its own IP address, so each camera shows as a separate device. A rescan starts right away.\n\n(Undo any time: Settings → Wireless bridges → Remove.)')) return;
             await fetch('/api/bridge-macs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});
@@ -604,12 +609,16 @@
                     ? `<button onclick="markBridge('${p.mac}')"
                         class="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[11px] font-bold whitespace-nowrap">🌉 It's a bridge — track clients by IP</button>`
                     : '';
+                const clearBtn = p.type === 'ip_conflict'
+                    ? `<button onclick="clearConflict('${p.ip}')"
+                        class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold whitespace-nowrap">✓ Clear & re-test</button>`
+                    : '';
                 return `<div class="rounded-lg border ${sev} p-3">
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-white/60">${meta.label}</span>
                         <span class="font-mono font-bold text-sm">${p.ip||''}</span>
                         <span class="text-xs opacity-80">${p.detail||''}</span>
-                        <span class="ml-auto">${ack}${bridge}</span>
+                        <span class="ml-auto">${ack}${bridge}${clearBtn}</span>
                     </div>
                     <div class="flex flex-wrap gap-2 mt-2">${(p.devices||[]).map(chipFor).join('')}</div>
                     ${p.fix ? `<p class="text-[11px] mt-2 opacity-70">→ ${p.fix}</p>` : ''}

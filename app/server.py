@@ -453,6 +453,21 @@ def api_ack_ip(key):
     return jsonify(scanner.acknowledge_ip(key))
 
 
+@app.route("/api/conflicts/clear", methods=["POST"])
+def api_conflicts_clear():
+    """Clear an IP-conflict problem and re-test it: the warning is hidden unless
+    fresh (post-clear) sightings prove two devices still claim the address, and a
+    targeted rescan of the IP starts right away to provide that evidence."""
+    body = request.get_json(force=True)
+    ip = (body.get("ip") or "").strip()
+    if not ip:
+        return jsonify({"ok": False, "error": "ip required"}), 400
+    res = scanner.clear_conflict(ip)
+    scanner.wake()
+    scanner.trigger(mode="quick", hosts=[ip])
+    return jsonify(res)
+
+
 @app.route("/api/bridge-macs", methods=["GET", "POST"])
 def api_bridge_macs():
     """MACs of proxy-ARP bridges (a wireless station answering ARP for every

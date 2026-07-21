@@ -164,6 +164,7 @@ class Scanner:
         self.devices = st.get("devices", {})
         self.miss = st.get("miss", {})
         self.seen_keys = set(st.get("seen_keys", []))
+        self.conflict_ack = st.get("conflict_ack", {})   # ip -> cleared-at ts
         self.status["last_scan"] = st.get("last_scan", "--:--:--")
         self.status["last_scan_ts"] = st.get("last_scan_ts")
 
@@ -174,6 +175,7 @@ class Scanner:
             "seen_keys": sorted(self.seen_keys),
             "last_scan": self.status["last_scan"],
             "last_scan_ts": self.status["last_scan_ts"],
+            "conflict_ack": self.conflict_ack,
         })
 
     # ---- network helpers ----------------------------------------------
@@ -851,7 +853,10 @@ class Scanner:
         by_ip = {}
         for d in devs:
             ip = d.get("ip")
-            if ip and d.get("last_seen", 0) >= cutoff:
+            # A cleared conflict raises the bar: only sightings AFTER the clear
+            # count, so it reappears only on fresh evidence of both claimants.
+            cut = max(cutoff, self.conflict_ack.get(ip, 0))
+            if ip and d.get("last_seen", 0) >= cut:
                 by_ip.setdefault(ip, []).append(d)
         return {ip: ds for ip, ds in by_ip.items()
                 if len({d.get("key") for d in ds}) > 1}
@@ -1039,6 +1044,14 @@ class Scanner:
         if added:
             self.mac_multi_ip.pop(added, None)
             self.delete_device(":".join(added[i:i + 2] for i in range(0, 12, 2)))
+
+    def clear_conflict(self, ip):
+        """Clear an IP-conflict problem: from now on only NEW sightings at that
+        address count toward a conflict, so it self-revives if two devices are
+        still fighting over the IP and stays gone if the network was fixed."""
+        self.conflict_ack[ip] = int(time.time())
+        self._save_state()
+        return {"ok": True, "ip": ip}
 
     def _drop_kuma_monitor(self, key):
         """Best-effort: delete the device's auto-created Kuma monitor, so a
