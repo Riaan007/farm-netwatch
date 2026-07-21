@@ -104,6 +104,14 @@
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 17l6-5-6-5M12 19h8"/></svg>
                     SSH Pi
                 </button>
+                <button onclick="exportCsv()" class="btn btn-ghost" title="Download this site's device inventory as a CSV spreadsheet">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+                    CSV
+                </button>
+                <button onclick="aiReport()" id="ai-report-btn" class="btn btn-ghost !border-indigo-400/30 !bg-indigo-500/20 !text-indigo-200 hover:!bg-indigo-500/30" title="Generate a PDF site report analysed by Gemini AI (takes ~10-30s)">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7zM19 15l.9 2.4L22 18.3l-2.1.9L19 21.6l-.9-2.4-2.1-.9 2.1-.9zM5 15l.7 1.8 1.8.7-1.8.7L5 20l-.7-1.8-1.8-.7 1.8-.7z"/></svg>
+                    <span id="ai-report-label">AI Report</span>
+                </button>
                 <a id="link-netwatch" href="#" target="_blank" class="btn btn-ghost">Netwatch ↗&#xFE0E;</a>
                 <a id="link-kuma" href="#" target="_blank" class="hidden btn btn-success">Kuma ↗&#xFE0E;</a>
             </div>
@@ -659,6 +667,62 @@
             if (btn) btn.disabled = true;
             await fetch(`/api/hub/sites/${siteId}/poll`, {method:'POST'});
             setTimeout(() => { refresh(); if (btn) btn.disabled = false; }, 2500);
+        }
+
+        // ---- export the device inventory as CSV ----
+        function csvContent(){
+            const cols = ['name','category','type','ip','mac','vendor','hostname','model',
+                          'serial','online','last_seen','rtt_ms','ports','watch','kuma','os'];
+            const esc = v => { v = (v === null || v === undefined) ? '' : String(v);
+                               return /[",\n;]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+            const rows = lastDevices.slice().sort((a,b) => ipNum(a.ip) - ipNum(b.ip)).map(d => [
+                devName(d), d.category || '', d.type || '', d.ip || '', d.mac || '',
+                d.vendor || '', d.hostname || '', d.model || '', d.serial || '',
+                d.online ? 'online' : 'offline',
+                d.last_seen ? new Date(d.last_seen * 1000).toISOString() : '',
+                d.rtt != null ? d.rtt : '', (d.ports || []).join(' '),
+                d.watch ? 'yes' : '', d.has_kuma ? 'yes' : '', d.os || ''
+            ].map(esc).join(','));
+            return '\ufeff' + cols.join(',') + '\n' + rows.join('\n');
+        }
+        function exportCsv(){
+            if(!lastDevices.length){ alert('No device data yet — wait for a poll.'); return; }
+            const ts = new Date().toISOString().slice(0,16).replace(/[-:T]/g,'').replace(/(\d{8})/, '$1-');
+            const blob = new Blob([csvContent()], {type: 'text/csv;charset=utf-8'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `netwatch-${siteId}-devices-${ts}.csv`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        }
+
+        // ---- AI-driven PDF report (Gemini via the hub) ----
+        async function aiReport(){
+            const btn = document.getElementById('ai-report-btn');
+            const lbl = document.getElementById('ai-report-label');
+            btn.disabled = true; lbl.textContent = 'Analysing…';
+            try {
+                const r = await fetch(`/api/hub/sites/${siteId}/report`, {method: 'POST'});
+                const ct = r.headers.get('content-type') || '';
+                if (!r.ok || ct.includes('json')) {
+                    let msg = 'Report failed';
+                    try { msg = (await r.json()).error || msg; } catch(e){}
+                    alert(msg + '\n\n(The Gemini API key lives on the hub overview page under 🔔 Alerts → AI reports.)');
+                    return;
+                }
+                const blob = await r.blob();
+                const cd = r.headers.get('content-disposition') || '';
+                const m = cd.match(/filename="?([^";]+)"?/);
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = m ? m[1] : `netwatch-report-${siteId}.pdf`;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+            } catch(e){
+                alert('Report request failed: ' + e);
+            } finally {
+                btn.disabled = false; lbl.textContent = 'AI Report';
+            }
         }
 
         // ---- one-click SSH to the site's Pi (PuTTY via ssh://) ----

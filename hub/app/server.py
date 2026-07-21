@@ -5,15 +5,17 @@ VPN. All data endpoints sit behind a session login; /api/health stays open as
 a liveness probe.
 """
 import base64
+import io
 import ipaddress
 import os
 import re
 import time
 
 import requests
-from flask import (Flask, jsonify, redirect, request, send_from_directory,
-                   session)
+from flask import (Flask, jsonify, redirect, request, send_file,
+                   send_from_directory, session)
 
+import ai_report
 import auth
 import conflicts as conflictutil
 import hubconfig
@@ -197,6 +199,25 @@ def api_alerts_test():
                      tags=["bell"])
     return jsonify({"ok": bool(ok),
                     "error": None if ok else "No topic set, or ntfy unreachable."})
+
+
+@app.route("/api/hub/ai", methods=["GET", "POST"])
+def api_ai_settings():
+    """Gemini settings for the AI site reports. The key is write-only: GET only
+    says whether one is stored (plus its tail) so the UI can show state."""
+    if request.method == "POST":
+        body = request.get_json(force=True, silent=True) or {}
+        patch = {}
+        if "gemini_model" in body:
+            patch["gemini_model"] = (body["gemini_model"] or "").strip() or "gemini-2.5-flash"
+        if "gemini_api_key" in body:      # non-empty sets, empty string clears
+            patch["gemini_api_key"] = (body["gemini_api_key"] or "").strip()
+        hubconfig.update({"ai": patch})
+        return jsonify({"ok": True})
+    ai = hubconfig.load()["ai"]
+    key = ai.get("gemini_api_key", "")
+    return jsonify({"gemini_model": ai.get("gemini_model", "gemini-2.5-flash"),
+                    "key_set": bool(key), "key_tail": key[-4:] if key else ""})
 
 
 @app.route("/api/hub/overview")
@@ -721,6 +742,58 @@ def api_site_pi_ssh(site_id):
         return jsonify({"ok": True, "tunneled": True, **res})
     return jsonify({"ok": True, "tunneled": False, "host": vpn_ip, "port": 22,
                     "ip": vpn_ip, "device_port": 22, "scheme": ""})
+
+
+@app.route("/api/hub/sites/<site_id>/report", methods=["POST"])
+def api_site_report(site_id):
+    """AI-driven PDF report for one site: snapshot -> Gemini analysis -> PDF.
+    Slow by design (one Gemini round-trip); the button shows progress."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    card = _site_card(site)
+    snap = poller.snapshot(site_id)
+    devices = (snap.get("devices") or {}).get("devices") or []
+    if not devices:
+        return jsonify({"ok": False, "error": "No device data for this site yet — "
+                        "wait for a poll or hit Refresh."}), 409
+
+    poll = hubconfig.load()["poll"]
+    to = (poll["timeout_connect_s"], poll["timeout_read_s"])
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    live = conflictutil.fetch_site_conflicts(base, to)
+    if live is not None:
+        conflicts_ = live
+    else:
+        cmap = conflictutil.conflict_map(devices)
+        conflicts_ = [{"ip": ip, "devices": cmap[ip]}
+                      for ip in conflictutil.conflict_ips(devices)]
+    events = []
+    try:
+        r = requests.get(f"{base}/api/events", params={"limit": 150}, timeout=to)
+        r.raise_for_status()
+        events = r.json().get("events") or []
+    except (requests.RequestException, ValueError):
+        pass
+    internet = None
+    try:
+        r = requests.get(f"{base}/api/internet", timeout=to)
+        r.raise_for_status()
+        internet = r.json()
+    except (requests.RequestException, ValueError):
+        pass
+    reach = {"24h": sitehistory.reachability_pct(site_id, 86400),
+             "7d": sitehistory.reachability_pct(site_id, 7 * 86400),
+             "30d": sitehistory.reachability_pct(site_id, 30 * 86400)}
+
+    try:
+        pdf = ai_report.generate(card, devices, conflicts_, events, internet,
+                                 reach, hubconfig.load()["ai"])
+    except ai_report.ReportError as e:
+        return jsonify({"ok": False, "error": str(e)}), e.status
+    fname = f"netwatch-report-{site_id}-{time.strftime('%Y%m%d-%H%M')}.pdf"
+    return send_file(io.BytesIO(pdf), mimetype="application/pdf",
+                     as_attachment=True, download_name=fname)
 
 
 @app.route("/api/hub/sites/<site_id>/tunnels")

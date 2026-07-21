@@ -360,6 +360,22 @@
                     <button onclick="testAlerts()" class="btn btn-success">Send test</button>
                     <span id="al-result" class="text-xs"></span>
                 </div>
+                <div class="pt-4 border-t border-white/10">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">🤖 AI reports (Gemini)</h3>
+                    <p class="text-xs text-slate-500 mb-2">Powers the <b class="text-slate-300">AI Report</b> button on each site page — Gemini analyses the site snapshot and the hub builds a PDF. Get a key at <span class="font-mono text-cyan-300">aistudio.google.com</span>.</p>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Gemini API key</label>
+                        <input id="ai-key" type="password" autocomplete="off" class="inp font-mono" placeholder="AIza…">
+                    </div>
+                    <div class="mt-2">
+                        <label class="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Model</label>
+                        <input id="ai-model" type="text" class="inp font-mono" placeholder="gemini-2.5-flash">
+                    </div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <button onclick="saveAi()" class="btn btn-primary">Save AI settings</button>
+                        <span id="ai-result" class="text-xs"></span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -554,6 +570,7 @@
         async function openAlerts(){
             document.getElementById('alerts-modal').classList.remove('hidden');
             document.getElementById('al-result').textContent = '';
+            document.getElementById('ai-result').textContent = '';
             try {
                 const a = await (await fetch('/api/hub/alerts')).json();
                 document.getElementById('al-topic').value = a.ntfy_topic || '';
@@ -561,6 +578,25 @@
                 document.getElementById('al-site-offline').checked = a.notify_site_offline !== false;
                 document.getElementById('al-ip-conflict').checked = a.notify_ip_conflict !== false;
             } catch(e){}
+            try {
+                const ai = await (await fetch('/api/hub/ai')).json();
+                document.getElementById('ai-model').value = ai.gemini_model || 'gemini-2.5-flash';
+                document.getElementById('ai-key').value = '';
+                document.getElementById('ai-key').placeholder =
+                    ai.key_set ? `key saved (…${ai.key_tail}) — leave blank to keep` : 'AIza…';
+            } catch(e){}
+        }
+        async function saveAi(){
+            const r = document.getElementById('ai-result');
+            r.textContent = 'Saving…'; r.className = 'text-xs text-slate-500';
+            const body = { gemini_model: document.getElementById('ai-model').value };
+            const key = document.getElementById('ai-key').value.trim();
+            if (key) body.gemini_api_key = key;   // blank = keep the stored key
+            try {
+                await fetch('/api/hub/ai', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+                r.textContent = 'Saved.'; r.className = 'text-xs text-emerald-400';
+                document.getElementById('ai-key').value = '';
+            } catch(e){ r.textContent = 'Failed.'; r.className = 'text-xs text-rose-400'; }
         }
         function closeAlerts(){ document.getElementById('alerts-modal').classList.add('hidden'); }
         async function saveAlerts(){

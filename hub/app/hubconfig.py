@@ -41,6 +41,11 @@ DEFAULTS = {
         "offline_after_polls": 2,   # consecutive failed status polls before alerting
         "notify_ip_conflict": True,  # alert when a site gains a new IP-address conflict
     },
+    "ai": {
+        # Gemini API for the per-site AI PDF reports (hub Alerts & AI settings).
+        "gemini_api_key": "",
+        "gemini_model": "gemini-2.5-flash",
+    },
     "poll": {
         "status_interval_s": 60,    # site reachability heartbeat
         "devices_interval_s": 300,  # full device-list refresh
