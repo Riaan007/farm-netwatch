@@ -801,6 +801,18 @@ def api_site_backup_download(site_id, name):
                      download_name=f"netwatch-backup-{site_id}-{name}")
 
 
+@app.route("/api/hub/sites/<site_id>/backups/<name>", methods=["DELETE"])
+def api_site_backup_delete(site_id, name):
+    """Delete one stored backup from the hub. The filename pattern is enforced
+    in backups.delete_, so nothing outside the backup folder can be touched."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    if backups.delete_(site_id, name):
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "no such backup"}), 404
+
+
 @app.route("/api/hub/sites/<site_id>/restore", methods=["POST"])
 def api_site_restore(site_id):
     """Push a stored backup back to the site (newest, or {name}). Used after

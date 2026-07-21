@@ -98,3 +98,16 @@ def read(site_id, name):
             return f.read(), name
     except OSError:
         return None, None
+
+
+def delete_(site_id, name):
+    """Delete one stored backup. `name` must match the timestamp pattern (the
+    same guard as read() — no traversal outside the site's backup folder).
+    Returns True if a file was removed."""
+    if not _NAME_RE.match(name or ""):
+        return False
+    try:
+        os.remove(os.path.join(_dir(site_id), name))
+        return True
+    except OSError:
+        return False

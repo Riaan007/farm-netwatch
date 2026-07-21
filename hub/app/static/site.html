@@ -657,6 +657,7 @@
                     <span class="flex gap-1.5">
                         <a href="/api/hub/sites/${siteId}/backups/${b.name}" class="btn btn-ghost btn-sm">Download</a>
                         <button onclick="restoreFromHub('${b.name}')" class="btn btn-success btn-sm">Restore</button>
+                        <button onclick="deleteBackup('${b.name}')" class="btn btn-danger btn-sm" title="Delete this backup from the hub">🗑</button>
                     </span>
                 </div>`).join('');
         }
@@ -680,6 +681,17 @@
                 msg.className = 'text-xs ' + (j.ok ? 'text-emerald-400' : 'text-rose-400');
                 if(j.ok) setTimeout(refresh, 3000);
             } catch(e){ msg.textContent = 'failed'; msg.className = 'text-xs text-rose-400'; }
+        }
+
+        async function deleteBackup(name){
+            if(!confirm(`Delete backup ${name} from the hub?\n\nThis only removes the stored copy on the hub — the site itself is not touched. It cannot be undone (the next daily backup starts a fresh copy).`)) return;
+            const msg = document.getElementById('backup-msg');
+            try {
+                const j = await (await fetch(`/api/hub/sites/${siteId}/backups/${name}`, {method:'DELETE'})).json();
+                msg.textContent = j.ok ? '✓ Deleted' : (j.error || 'failed');
+                msg.className = 'text-xs ' + (j.ok ? 'text-emerald-400' : 'text-rose-400');
+            } catch(e){ msg.textContent = 'failed'; msg.className = 'text-xs text-rose-400'; }
+            loadBackups();
         }
 
         async function clearConflict(ip, soft){
