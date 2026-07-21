@@ -88,6 +88,7 @@ def api_status():
         "site": cfg["site"],
         "vpn": cfg["vpn"]["mode"],
         "features": cfg.get("features", {}),
+        "server_ip": kuma.lan_ip(),   # this Pi's own LAN address, shown in the UI
     })
 
 

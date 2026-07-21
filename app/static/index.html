@@ -25,6 +25,7 @@
                 <div>
                     <h1 class="text-2xl font-bold tracking-tight flex items-center gap-2">Farm Network Asset Identifier
                         <span id="internet-badge" class="hidden text-[11px] font-bold px-2 py-0.5 rounded-full"></span>
+                        <span id="pi-ip" class="hidden text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-700 text-slate-200 font-mono" title="This Pi's own LAN IP — the address of the server running Netwatch"></span>
                     </h1>
                     <p id="system-status" class="text-slate-400 text-xs mt-1 italic">Service Active</p>
                 </div>
@@ -166,7 +167,7 @@
                         <a id="kuma-open" href="#" target="_blank" class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold whitespace-nowrap self-center">Open Kuma ↗</a>
                     </div>
                     <label class="flex items-center gap-2 mt-2 text-xs text-slate-600">
-                        <input id="setup-kuma-auto" type="checkbox" class="w-4 h-4" onchange="kumaAutoToggle()"> Auto — use this server's IP (updates itself if DHCP moves the Pi)
+                        <input id="setup-kuma-auto" type="checkbox" class="w-4 h-4" onchange="kumaAutoToggle()"> Auto — use this Pi's IP <span id="kuma-auto-ip" class="font-mono font-bold text-slate-800"></span> (updates itself if DHCP moves the Pi)
                     </label>
                     <div class="flex gap-2 mt-2">
                         <input id="setup-kuma-user" type="text" autocomplete="off" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm" placeholder="Kuma admin username">
@@ -1234,6 +1235,7 @@
                 }
                 if(c.scan){ document.getElementById('setup-deep-on-new').checked = !!c.scan.deep_on_new; document.getElementById('setup-discovery').checked = c.scan.discovery !== false; }
                 document.getElementById('setup-airos-setip').checked = !!(c.features && c.features.airos_change_ip);
+                document.getElementById('kuma-auto-ip').textContent = PI_IP;
                 if(c.integrations && c.integrations.kuma){
                     const k = c.integrations.kuma;
                     KUMA_RESOLVED = k.resolved_url || k.base_url || '';
@@ -1531,6 +1533,7 @@
         }
         // Kuma URL "Auto" mode: the field mirrors the server-resolved URL and is read-only.
         let KUMA_RESOLVED = '';
+        let PI_IP = '';               // this Pi's own LAN IP (from /api/status)
         function kumaAutoToggle(){
             const url = document.getElementById('setup-kuma-url');
             const auto = document.getElementById('setup-kuma-auto').checked;
@@ -1609,6 +1612,12 @@
             try { data = await (await fetch('/api/status')).json(); } catch(e){}
             if(data){
                 FEATURES = data.features || FEATURES;
+                if(data.server_ip){
+                    PI_IP = data.server_ip;
+                    const el = document.getElementById('pi-ip');
+                    el.textContent = '📍 Pi ' + PI_IP;
+                    el.classList.remove('hidden');
+                }
                 applyStatus(data);
                 if(data.last_scan_ts && data.last_scan_ts !== LAST_SCAN_TS){
                     LAST_SCAN_TS = data.last_scan_ts;
