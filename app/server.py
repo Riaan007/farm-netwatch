@@ -3,9 +3,12 @@
 Keeps the three endpoints the original HTML already called (/api/status,
 /api/trigger, /api/setup) working, and adds the richer endpoints the new UI uses.
 """
+import base64
 import ipaddress
+import json
 import os
 import re
+import time
 
 import urllib3
 from flask import Flask, jsonify, redirect, request, send_file, send_from_directory
@@ -19,11 +22,12 @@ import history
 import hubvpn
 import identify
 import netcfg
+import sysmon
 import tunnels
 import kuma
 import notify
 from listener import listener
-from scanner import scanner, default_gateway
+from scanner import REGISTRY_PATH, scanner, default_gateway
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -863,6 +867,90 @@ def api_tunnel_close(tid):
     return jsonify({"ok": tunnels.manager.close(tid)})
 
 
+# ---- Pi self-health + config backup/restore ---------------------------------
+@app.route("/api/sysinfo")
+def api_sysinfo():
+    """This Pi's own health: temp, CPU, RAM, disk, uptime, undervoltage."""
+    snap = sysmon.monitor.snapshot()
+    if not snap:
+        snap = sysmon.monitor.sample()
+    return jsonify(snap)
+
+
+def _read_json_file(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+@app.route("/api/config/export")
+def api_config_export():
+    """Full settings bundle for disaster recovery / new-Pi deployment: config,
+    device registry (names, categories, watch/kuma flags), obfuscated logins +
+    their key, and the hub-VPN config. SENSITIVE — treat the file like a
+    password. The hub pulls this daily for its per-site backup store."""
+    key_b64 = None
+    try:
+        with open(creds.KEY_PATH, "rb") as f:
+            key_b64 = base64.b64encode(f.read()).decode()
+    except OSError:
+        pass
+    wg = None
+    try:
+        with open(hubvpn.WG_CONF) as f:
+            wg = f.read()
+    except OSError:
+        pass
+    cfg = config.load()
+    return jsonify({
+        "kind": "netwatch-backup", "version": 1, "created": int(time.time()),
+        "site_name": (cfg.get("site") or {}).get("name") or "",
+        "config": cfg,
+        "devices": _read_json_file(REGISTRY_PATH) or {},
+        "credentials": _read_json_file(creds.CRED_PATH),
+        "secret_key": key_b64,
+        "hubvpn_conf": wg,
+    })
+
+
+@app.route("/api/config/import", methods=["POST"])
+def api_config_import():
+    """Restore a backup bundle (from the hub or an uploaded file). Applies
+    settings + device registry + logins; the hub-VPN config is only applied
+    when this Pi has none (a fresh deployment), never over a working link."""
+    b = request.get_json(force=True, silent=True) or {}
+    if b.get("kind") != "netwatch-backup" or "config" not in b:
+        return jsonify({"ok": False, "error": "not a Netwatch backup file"}), 400
+    applied = []
+    cfg = b.get("config") or {}
+    cfg.pop("auth", None)          # never carry a foreign auth section (future-proof)
+    config.save(cfg)
+    applied.append("settings")
+    if isinstance(b.get("devices"), dict) and b["devices"]:
+        scanner.registry = b["devices"]
+        scanner.save_registry()
+        applied.append(f"device registry ({len(b['devices'])})")
+    if b.get("secret_key") and b.get("credentials") is not None:
+        try:
+            with open(creds.KEY_PATH, "wb") as f:
+                f.write(base64.b64decode(b["secret_key"]))
+            with open(creds.CRED_PATH, "w") as f:
+                json.dump(b["credentials"], f)
+            creds.reset_cache()
+            applied.append("device logins")
+        except (OSError, ValueError):
+            pass
+    if b.get("hubvpn_conf") and not hubvpn.has_config():
+        ok, msg = hubvpn.save_config(b["hubvpn_conf"])
+        if ok:
+            hubvpn.up()
+            applied.append("hub VPN link")
+    scanner.trigger(mode="quick")
+    return jsonify({"ok": True, "applied": applied})
+
+
 @app.route("/api/network")
 def api_network():
     """Interfaces, managed secondary IPs, NM connections + DHCP/static state."""
@@ -974,6 +1062,7 @@ def main():
     tunnels.manager.start()
     scanner.start()
     listener.start()
+    sysmon.monitor.start()
     port = int(os.environ.get("NETWATCH_PORT", "8090"))
     app.run(host="0.0.0.0", port=port, threaded=True)
 

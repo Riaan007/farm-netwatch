@@ -22,6 +22,7 @@ import time
 
 import requests
 
+import backups
 import conflicts as conflictutil
 import hubconfig
 import kuma_status
@@ -30,7 +31,9 @@ import sitehistory
 
 SNAP_DIR = os.path.join(os.environ.get("HUB_DATA", "/data"), "snapshots")
 
-_CLASSES = ("status", "devices", "kuma")
+_CLASSES = ("status", "devices", "kuma", "sysinfo", "backup")
+SYSINFO_INTERVAL_S = 300
+BACKUP_INTERVAL_S = 86400
 
 
 def _safe(site_id):
@@ -137,6 +140,12 @@ class Poller:
                         and now >= due["kuma"]:
                     due["kuma"] = now + poll["kuma_interval_s"]
                     jobs.append(("kuma", site))
+                if now >= due["sysinfo"]:
+                    due["sysinfo"] = now + SYSINFO_INTERVAL_S
+                    jobs.append(("sysinfo", site))
+                if now >= due["backup"]:
+                    due["backup"] = now + BACKUP_INTERVAL_S
+                    jobs.append(("backup", site))
 
         if jobs:
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -164,6 +173,25 @@ class Poller:
             with self._lock:
                 self._snap.setdefault(sid, {})["kuma"] = res
                 self._snap[sid]["kuma_fetched"] = int(time.time())
+        elif cls == "sysinfo":
+            info = None
+            try:
+                r = requests.get(self._base_url(site) + "/api/sysinfo",
+                                 timeout=timeout)
+                if r.status_code == 200:
+                    info = r.json()
+            except (requests.exceptions.RequestException, ValueError):
+                pass
+            with self._lock:
+                snap = self._snap.setdefault(sid, {})
+                if info:
+                    snap["sysinfo"] = info
+                    snap["sysinfo_fetched"] = int(time.time())
+        elif cls == "backup":
+            try:
+                backups.store(site, timeout)
+            except backups.BackupError as e:
+                print(f"[backups] {sid}: {e}", flush=True)
 
     def _fetch_status(self, sid, site, timeout):
         t0 = time.time()

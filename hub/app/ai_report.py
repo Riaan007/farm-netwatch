@@ -55,7 +55,7 @@ def _dev_name(d):
 
 
 # ---- facts: the compact JSON snapshot both Gemini and the PDF work from ------
-def gather_facts(card, devices, conflicts, events, internet, reach):
+def gather_facts(card, devices, conflicts, events, internet, reach, sysinfo=None):
     cats = {}
     for d in devices:
         c = d.get("category") or "unknown"
@@ -102,6 +102,15 @@ def gather_facts(card, devices, conflicts, events, internet, reach):
         "kuma": card.get("kuma"),
         "events_last_7d_counts": ev_counts,
         "recent_new_devices": new_devices,
+        "pi_health": ({
+            "model": sysinfo.get("model"),
+            "temp_c": sysinfo.get("temp_c"),
+            "cpu_pct": sysinfo.get("cpu_pct"),
+            "mem_used_pct": (sysinfo.get("mem") or {}).get("used_pct"),
+            "disks": sysinfo.get("disks"),
+            "uptime_days": round((sysinfo.get("uptime_s") or 0) / 86400, 1),
+            "throttled": sysinfo.get("throttled"),
+        } if sysinfo else None),
     }
 
 
@@ -424,8 +433,8 @@ def _ip_num(ip):
         return 1 << 40
 
 
-def generate(card, devices, conflicts, events, internet, reach, ai_cfg):
+def generate(card, devices, conflicts, events, internet, reach, ai_cfg, sysinfo=None):
     """One-stop: facts -> Gemini -> PDF bytes. Raises ReportError on failure."""
-    facts = gather_facts(card, devices, conflicts, events, internet, reach)
+    facts = gather_facts(card, devices, conflicts, events, internet, reach, sysinfo)
     ai = analyze(facts, ai_cfg)
     return build_pdf(facts, ai, devices, events)

@@ -160,12 +160,26 @@
             </div>
         </div>
 
+        <div id="pi-health" class="hidden panel px-4 py-2.5 -mt-4 mb-8 flex flex-wrap gap-x-5 gap-y-1.5 items-center text-xs"></div>
+
         <div class="panel p-5 mb-8">
             <div class="flex justify-between items-center mb-2">
                 <h2 class="text-xs font-bold text-slate-400 uppercase tracking-[0.18em]">VPN reachability · last 24h</h2>
                 <span id="reach-summary" class="text-xs text-slate-500 font-mono"></span>
             </div>
             <div id="reach-spark"></div>
+        </div>
+
+        <div class="panel p-5 mb-8">
+            <div class="flex justify-between items-center mb-2 flex-wrap gap-2">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-[0.18em]">💾 Config backups</h2>
+                <div class="flex items-center gap-2">
+                    <span id="backup-msg" class="text-xs"></span>
+                    <button onclick="backupNow()" id="backup-now-btn" class="btn btn-ghost btn-sm">Back up now</button>
+                </div>
+            </div>
+            <div id="backup-list" class="text-xs text-slate-500">Loading…</div>
+            <p class="text-[10px] text-slate-500 mt-2">The hub pulls a daily backup of this site's settings, device names/categories and saved logins. To rebuild on a fresh Pi: enroll it with the site's <b class="text-slate-300">Setup cmd</b> (overview → ⚙ Sites) so the VPN comes up, then click <b class="text-slate-300">Restore</b> here — the site gets its identity back.</p>
         </div>
 
         <div class="panel overflow-hidden">
@@ -572,6 +586,80 @@
             loadReachability();
             loadInternet();
             loadConflicts();
+            loadPiHealth();
+        }
+
+        // ---- Pi self-health strip (poller-cached from the site) ----
+        function healthClass(v, warn, crit){
+            if(v == null) return 'text-slate-500';
+            return v >= crit ? 'text-rose-400 font-bold' : v >= warn ? 'text-amber-400 font-bold' : 'text-emerald-400';
+        }
+        function fmtUp(s){
+            if(s == null) return '—';
+            if(s < 3600) return Math.floor(s/60)+'m';
+            if(s < 86400) return Math.floor(s/3600)+'h';
+            return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h';
+        }
+        async function loadPiHealth(){
+            const el = document.getElementById('pi-health');
+            let j; try { j = await (await fetch(`/api/hub/sites/${siteId}/sysinfo`)).json(); }
+            catch(e){ el.classList.add('hidden'); return; }
+            const s = j.sysinfo;
+            if(!s || !s.ts){ el.classList.add('hidden'); return; }
+            const worstDisk = (s.disks||[]).reduce((a,d)=>d.used_pct>(a?a.used_pct:-1)?d:a, null);
+            const th = s.throttled || {};
+            const uv = th.undervoltage_now ? '<span class="text-rose-400 font-bold">⚡ UNDERVOLTAGE NOW</span>'
+                     : th.throttled_now ? '<span class="text-amber-400 font-bold">🔥 throttled</span>'
+                     : (th.undervoltage_ever ? '<span class="text-amber-400/80" title="Undervoltage occurred since boot — check the PSU">⚡ UV since boot</span>' : '');
+            el.innerHTML =
+                `<span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">🩺 Pi health</span>`
+                + `<span class="text-slate-500">${(s.model||'').replace('Raspberry Pi','Pi')}</span>`
+                + `<span>🌡 <b class="${healthClass(s.temp_c, 75, 82)} tabular-nums">${s.temp_c != null ? s.temp_c+'°C' : '—'}</b></span>`
+                + `<span>CPU <b class="${healthClass(s.cpu_pct, 80, 95)} tabular-nums">${s.cpu_pct != null ? s.cpu_pct+'%' : '—'}</b> <span class="text-slate-500 tabular-nums">(load ${(s.load||[]).map(x=>x.toFixed(1)).join(' ')})</span></span>`
+                + `<span>RAM <b class="${healthClass((s.mem||{}).used_pct, 90, 97)} tabular-nums">${(s.mem||{}).used_pct != null ? s.mem.used_pct+'%' : '—'}</b></span>`
+                + (worstDisk ? `<span>💾 <b class="${healthClass(worstDisk.used_pct, 85, 95)} tabular-nums">${worstDisk.used_pct}%</b> <span class="text-slate-500">(${worstDisk.free_gb} GB free)</span></span>` : '')
+                + `<span class="text-slate-500">up <span class="tabular-nums">${fmtUp(s.uptime_s)}</span></span>`
+                + (uv ? `<span>${uv}</span>` : '')
+                + `<span class="text-slate-600 ml-auto">checked ${fmtAgo(j.fetched_at)}</span>`;
+            el.classList.remove('hidden');
+        }
+
+        // ---- hub-stored config backups ----
+        async function loadBackups(){
+            const el = document.getElementById('backup-list');
+            let j; try { j = await (await fetch(`/api/hub/sites/${siteId}/backups`)).json(); }
+            catch(e){ el.textContent = 'unavailable'; return; }
+            const bs = j.backups || [];
+            if(!bs.length){ el.innerHTML = '<span class="text-slate-600">No backups yet — the hub takes one daily, or click "Back up now". (Sites need the latest Netwatch image.)</span>'; return; }
+            el.innerHTML = bs.slice(0, 5).map((b, i) => `
+                <div class="flex items-center justify-between gap-2 py-1.5 ${i ? 'border-t border-white/5' : ''}">
+                    <span class="text-slate-300 tabular-nums">${new Date(b.ts*1000).toLocaleString()} <span class="text-slate-600">· ${(b.bytes/1024).toFixed(0)} kB${i===0 ? ' · latest' : ''}</span></span>
+                    <span class="flex gap-1.5">
+                        <a href="/api/hub/sites/${siteId}/backups/${b.name}" class="btn btn-ghost btn-sm">Download</a>
+                        <button onclick="restoreFromHub('${b.name}')" class="btn btn-success btn-sm">Restore</button>
+                    </span>
+                </div>`).join('');
+        }
+        async function backupNow(){
+            const btn = document.getElementById('backup-now-btn'), msg = document.getElementById('backup-msg');
+            btn.disabled = true; msg.textContent = 'Backing up…'; msg.className = 'text-xs text-slate-500';
+            try {
+                const j = await (await fetch(`/api/hub/sites/${siteId}/backup`, {method:'POST'})).json();
+                msg.textContent = j.ok ? '✓ Backed up' : (j.error || 'failed');
+                msg.className = 'text-xs ' + (j.ok ? 'text-emerald-400' : 'text-rose-400');
+            } catch(e){ msg.textContent = 'failed'; msg.className = 'text-xs text-rose-400'; }
+            btn.disabled = false; loadBackups();
+        }
+        async function restoreFromHub(name){
+            if(!confirm(`Restore backup ${name} to this site?\n\nThis REPLACES the site's settings, device names/categories and saved logins with the backup. Use after redeploying on a new Pi (enroll it with the Setup cmd first so the VPN is up).`)) return;
+            const msg = document.getElementById('backup-msg');
+            msg.textContent = 'Restoring…'; msg.className = 'text-xs text-slate-500';
+            try {
+                const j = await (await fetch(`/api/hub/sites/${siteId}/restore`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})})).json();
+                msg.textContent = j.ok ? ('✓ Restored: ' + (j.applied || []).join(', ')) : (j.error || 'failed');
+                msg.className = 'text-xs ' + (j.ok ? 'text-emerald-400' : 'text-rose-400');
+                if(j.ok) setTimeout(refresh, 3000);
+            } catch(e){ msg.textContent = 'failed'; msg.className = 'text-xs text-rose-400'; }
         }
 
         async function clearConflict(ip, soft){
@@ -915,6 +1003,7 @@
         function histShowIp(ip){ document.getElementById('hist-filter').value=ip; loadEvents(ip); }
 
         refresh();
+        loadBackups();
         setInterval(refresh, 30000);
     </script>
 </body>

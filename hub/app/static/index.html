@@ -420,6 +420,10 @@
             const conflicts = s.conflicts ? `<span class="chip bg-orange-500/15 text-orange-300 border border-orange-400/25">⚠️ ${s.conflicts} IP conflict${s.conflicts>1?'s':''}</span>` : '';
             const rotated = s.rotated ? `<span class="chip bg-slate-500/15 text-slate-400 border border-slate-400/20" title="The same address was held by different MACs in turn (rotating private Wi-Fi MAC, DHCP reuse) — not a live conflict">🔁 ${s.rotated} IP reuse</span>` : '';
             const stale = s.stale ? '<span class="chip bg-slate-500/15 text-slate-400">stale data</span>' : '';
+            const piHealth = s.pi_health === 'crit'
+                ? '<span class="chip bg-red-500/15 text-red-300 border border-red-400/30">🩺 Pi CRITICAL</span>'
+                : s.pi_health === 'warn'
+                    ? '<span class="chip bg-amber-500/15 text-amber-300">🩺 Pi warn</span>' : '';
             let kuma = '';
             if (s.kuma) {
                 const down = s.kuma.down ? `<span class="text-rose-400 font-bold">↓${s.kuma.down}</span>` : '';
@@ -442,7 +446,7 @@
                         <div class="text-right shrink-0 flex flex-col items-end gap-1">${latency}<p class="text-[11px] text-slate-500">scan ${fmtAgo(s.last_scan_ts)}</p></div>
                     </div>
                     <div>
-                        <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${rotated} ${stale}</div>
+                        <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${rotated} ${piHealth} ${stale}</div>
                         ${bar}
                     </div>
                     <div>${sparkBars(s.spark)}<p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Site reachability · last 24h ${s.reach_24h !== null ? '· ' + s.reach_24h + '%' : ''}</p></div>

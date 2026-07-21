@@ -123,6 +123,8 @@
             </div>
         </div>
 
+        <div id="pi-health" class="hidden panel px-4 py-2.5 -mt-4 mb-8 flex flex-wrap gap-x-5 gap-y-1.5 items-center text-xs"></div>
+
         <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
             <h2 id="current-view-title" class="text-lg font-bold text-slate-600 uppercase tracking-tight">All Subnet Addresses</h2>
             <div class="flex gap-2 flex-wrap items-center">
@@ -287,6 +289,15 @@
                         <p class="text-[10px] text-red-400 mt-1">⚠️ A wrong fixed IP/gateway can cut this Pi off. Changes auto-revert to DHCP unless you confirm — on a remote site, confirm only after you've checked the dashboard still loads.</p>
                     </div>
                     <p id="net-static-na" class="hidden text-[10px] text-slate-400 mt-2">Fixed-IP control needs the NetworkManager image (<code>docker-compose.netcfg.yml</code>) — not enabled on this host.</p>
+                </div>
+                <div class="pt-3 border-t border-white/10">
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">💾 Backup &amp; restore</label>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <button onclick="downloadBackup()" class="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 rounded-lg text-xs font-bold">⬇ Download backup</button>
+                        <label class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold cursor-pointer">⬆ Restore from file<input id="restore-file" type="file" accept=".json,application/json" class="hidden" onchange="restoreBackup()"></label>
+                        <span id="backup-result" class="text-xs"></span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Everything needed to rebuild this site on a new Pi: settings, device names/categories, saved logins and the hub-VPN link. The hub also backs this up automatically every day. <b>Treat the file like a password.</b></p>
                 </div>
                 <div class="pt-3 border-t border-white/10">
                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🧹 Maintenance · prune devices</label>
@@ -1741,7 +1752,72 @@
             else if(!document.getElementById('setup-modal').classList.contains('hidden')) closeSetup();
         });
 
-        function refresh(){ pollStatus(); loadDevices(); loadInternet(); }
+        function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); }
+
+        // ---- Pi self-health strip ----
+        function healthClass(v, warn, crit){
+            if(v == null) return 'text-slate-500';
+            return v >= crit ? 'text-rose-400 font-bold' : v >= warn ? 'text-amber-400 font-bold' : 'text-emerald-400';
+        }
+        function fmtUp(s){
+            if(s == null) return '—';
+            if(s < 3600) return Math.floor(s/60)+'m';
+            if(s < 86400) return Math.floor(s/3600)+'h';
+            return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h';
+        }
+        async function loadSysinfo(){
+            const el = document.getElementById('pi-health');
+            let s; try { s = await (await fetch('/api/sysinfo')).json(); } catch(e){ el.classList.add('hidden'); return; }
+            if(!s || !s.ts){ el.classList.add('hidden'); return; }
+            const worstDisk = (s.disks||[]).reduce((a,d)=>d.used_pct>(a?a.used_pct:-1)?d:a, null);
+            const th = s.throttled || {};
+            const uv = th.undervoltage_now ? '<span class="text-rose-400 font-bold">⚡ UNDERVOLTAGE NOW</span>'
+                     : th.throttled_now ? '<span class="text-amber-400 font-bold">🔥 throttled</span>'
+                     : (th.undervoltage_ever ? '<span class="text-amber-400/80" title="Undervoltage occurred since boot — check the PSU">⚡ UV since boot</span>' : '');
+            el.innerHTML =
+                `<span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">🩺 Pi health</span>`
+                + `<span class="text-slate-500">${(s.model||'').replace('Raspberry Pi','Pi')}</span>`
+                + `<span>🌡 <b class="${healthClass(s.temp_c, 75, 82)} tabular-nums">${s.temp_c != null ? s.temp_c+'°C' : '—'}</b></span>`
+                + `<span>CPU <b class="${healthClass(s.cpu_pct, 80, 95)} tabular-nums">${s.cpu_pct != null ? s.cpu_pct+'%' : '—'}</b> <span class="text-slate-500 tabular-nums">(load ${(s.load||[]).map(x=>x.toFixed(1)).join(' ')})</span></span>`
+                + `<span>RAM <b class="${healthClass((s.mem||{}).used_pct, 90, 97)} tabular-nums">${(s.mem||{}).used_pct != null ? s.mem.used_pct+'%' : '—'}</b></span>`
+                + (worstDisk ? `<span>💾 <b class="${healthClass(worstDisk.used_pct, 85, 95)} tabular-nums">${worstDisk.used_pct}%</b> <span class="text-slate-500">(${worstDisk.free_gb} GB free)</span></span>` : '')
+                + `<span class="text-slate-500">up <span class="tabular-nums">${fmtUp(s.uptime_s)}</span></span>`
+                + (uv ? `<span>${uv}</span>` : '');
+            el.classList.remove('hidden');
+        }
+        setInterval(loadSysinfo, 30000);
+
+        // ---- backup & restore ----
+        async function downloadBackup(){
+            const r = document.getElementById('backup-result');
+            try {
+                const data = await (await fetch('/api/config/export')).json();
+                const name = 'netwatch-backup-' + (data.site_name||'site').replace(/[^A-Za-z0-9_-]/g,'_')
+                    + '-' + new Date().toISOString().slice(0,10) + '.json';
+                const blob = new Blob([JSON.stringify(data, null, 1)], {type:'application/json'});
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+                setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+                r.textContent = 'Downloaded.'; r.className = 'text-xs text-emerald-400';
+            } catch(e){ r.textContent = 'Export failed'; r.className = 'text-xs text-rose-400'; }
+        }
+        async function restoreBackup(){
+            const inp = document.getElementById('restore-file');
+            const r = document.getElementById('backup-result');
+            if(!inp.files || !inp.files[0]) return;
+            let bundle;
+            try { bundle = JSON.parse(await inp.files[0].text()); }
+            catch(e){ r.textContent = 'Not a valid backup file'; r.className='text-xs text-rose-400'; inp.value=''; return; }
+            const who = bundle.site_name || 'unknown site';
+            const when = bundle.created ? new Date(bundle.created*1000).toLocaleString() : '?';
+            if(!confirm(`Restore backup of "${who}" (taken ${when})?\n\nThis REPLACES this Pi's settings, device names/categories and saved logins. The hub-VPN link is only applied if this Pi has none yet.`)){ inp.value=''; return; }
+            r.textContent = 'Restoring…'; r.className='text-xs text-slate-500';
+            try {
+                const res = await (await fetch('/api/config/import', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(bundle)})).json();
+                if(res.ok){ r.textContent = '✓ Restored: ' + res.applied.join(', ') + ' — rescanning…'; r.className='text-xs text-emerald-400'; setTimeout(refresh, 3000); }
+                else { r.textContent = res.error || 'Restore failed'; r.className='text-xs text-rose-400'; }
+            } catch(e){ r.textContent = 'Restore failed'; r.className='text-xs text-rose-400'; }
+            inp.value = '';
+        }
         // ---- local internet monitor badge ----
         async function loadInternet(){
             const b = document.getElementById('internet-badge');
@@ -1763,7 +1839,7 @@
             const link = document.getElementById('kuma-link');
             if(ku){ link.href = location.protocol+'//'+location.hostname+':'+port; link.classList.remove('hidden'); }
         }).catch(()=>{});
-        loadDevices(); loadInternet();
+        loadDevices(); loadInternet(); loadSysinfo();
         tick();
     </script>
 </body>

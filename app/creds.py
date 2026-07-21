@@ -22,6 +22,14 @@ _lock = threading.Lock()
 _key_cache = None
 
 
+def reset_cache():
+    """Forget the cached obfuscation key — call after restoring a backup that
+    replaced /data/secret.key so the imported credentials decrypt correctly."""
+    global _key_cache
+    with _lock:
+        _key_cache = None
+
+
 def _key():
     global _key_cache
     if _key_cache is not None:

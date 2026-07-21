@@ -17,6 +17,7 @@ from flask import (Flask, jsonify, redirect, request, send_file,
 
 import ai_report
 import auth
+import backups
 import conflicts as conflictutil
 import hubconfig
 import notify
@@ -167,7 +168,27 @@ def _site_card(site):
         "vpn_ip": site["vpn_ip"],
         "spark": sitehistory.series(site["id"], 86400, 48),
         "reach_24h": sitehistory.reachability_pct(site["id"], 86400),
+        "pi_health": _pi_health_level(snap),
     }
+
+
+def _pi_health_level(snap):
+    """'ok'/'warn'/'crit' from the freshest sysinfo, or None when unknown."""
+    info = snap.get("sysinfo")
+    fetched = snap.get("sysinfo_fetched") or 0
+    if not info or time.time() - fetched > 900:
+        return None
+    temp = info.get("temp_c")
+    disk = max((d.get("used_pct") or 0 for d in info.get("disks") or []), default=None)
+    mem = (info.get("mem") or {}).get("used_pct")
+    th = info.get("throttled") or {}
+    if (th.get("undervoltage_now") or (temp is not None and temp >= 82)
+            or (disk is not None and disk >= 95) or (mem is not None and mem >= 97)):
+        return "crit"
+    if (th.get("throttled_now") or (temp is not None and temp >= 75)
+            or (disk is not None and disk >= 85) or (mem is not None and mem >= 90)):
+        return "warn"
+    return "ok"
 
 
 @app.route("/api/hub/alerts", methods=["GET", "POST"])
@@ -724,6 +745,80 @@ def api_site_tunnel(site_id):
     return jsonify({"ok": True, **res})
 
 
+@app.route("/api/hub/sites/<site_id>/sysinfo")
+def api_site_sysinfo(site_id):
+    """The site Pi's own health (temp/CPU/RAM/disk/undervoltage), poller-cached."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    snap = poller.snapshot(site_id)
+    return jsonify({"sysinfo": snap.get("sysinfo"),
+                    "fetched_at": snap.get("sysinfo_fetched"),
+                    "level": _pi_health_level(snap)})
+
+
+@app.route("/api/hub/sites/<site_id>/backup", methods=["POST"])
+def api_site_backup(site_id):
+    """Pull a fresh settings backup from the site into the hub store, now."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    try:
+        entry = backups.store(site, (poll["timeout_connect_s"], poll["timeout_read_s"]))
+    except backups.BackupError as e:
+        return jsonify({"ok": False, "error": str(e)}), e.status
+    return jsonify({"ok": True, **entry})
+
+
+@app.route("/api/hub/sites/<site_id>/backups")
+def api_site_backups(site_id):
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    return jsonify({"backups": backups.list_(site_id)})
+
+
+@app.route("/api/hub/sites/<site_id>/backups/<name>")
+def api_site_backup_download(site_id, name):
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    data, name = backups.read(site_id, name)
+    if data is None:
+        return jsonify({"ok": False, "error": "no such backup"}), 404
+    return send_file(io.BytesIO(data), mimetype="application/json",
+                     as_attachment=True,
+                     download_name=f"netwatch-backup-{site_id}-{name}")
+
+
+@app.route("/api/hub/sites/<site_id>/restore", methods=["POST"])
+def api_site_restore(site_id):
+    """Push a stored backup back to the site (newest, or {name}). Used after
+    re-deploying a site on a fresh Pi: enroll it with the Setup cmd first so
+    the VPN is up, then restore — settings, device names and logins return."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    name = (request.get_json(silent=True) or {}).get("name")
+    data, name = backups.read(site_id, name)
+    if data is None:
+        return jsonify({"ok": False, "error": "no backup stored for this site"}), 404
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    try:
+        r = requests.post(f"{base}/api/config/import", data=data,
+                          headers={"Content-Type": "application/json"},
+                          timeout=(5, 30))
+        if r.status_code == 404:
+            return jsonify({"ok": False, "error": "this site's Netwatch is too old "
+                            "for restore — update it (docker compose pull)"}), 501
+        body = r.json()
+        body["restored_from"] = name
+        return jsonify(body), r.status_code
+    except (requests.RequestException, ValueError):
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+
+
 @app.route("/api/hub/sites/<site_id>/pi-ssh", methods=["POST"])
 def api_site_pi_ssh(site_id):
     """One-click SSH to the site's own Pi. VPN sites get a direct hub relay to
@@ -788,7 +883,8 @@ def api_site_report(site_id):
 
     try:
         pdf = ai_report.generate(card, devices, conflicts_, events, internet,
-                                 reach, hubconfig.load()["ai"])
+                                 reach, hubconfig.load()["ai"],
+                                 sysinfo=snap.get("sysinfo"))
     except ai_report.ReportError as e:
         return jsonify({"ok": False, "error": str(e)}), e.status
     fname = f"netwatch-report-{site_id}-{time.strftime('%Y%m%d-%H%M')}.pdf"
