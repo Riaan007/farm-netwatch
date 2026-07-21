@@ -695,6 +695,26 @@ def api_site_tunnel(site_id):
     return jsonify({"ok": True, **res})
 
 
+@app.route("/api/hub/sites/<site_id>/pi-ssh", methods=["POST"])
+def api_site_pi_ssh(site_id):
+    """One-click SSH to the site's own Pi. VPN sites get a direct hub relay to
+    <vpn_ip>:22 (one hop over wg0, no site-side help — works even while the
+    site's Netwatch is down or mid-update). LAN-registered sites (the home Pi)
+    need no relay: the browser's machine reaches them directly."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    vpn_ip = site["vpn_ip"]
+    if vpn_ip.startswith("10.8."):
+        try:
+            res = tunnels.manager.open_direct(site, vpn_ip, 22, _lan_host())
+        except tunnels.TunnelError as e:
+            return jsonify({"ok": False, "error": str(e)}), e.status
+        return jsonify({"ok": True, "tunneled": True, **res})
+    return jsonify({"ok": True, "tunneled": False, "host": vpn_ip, "port": 22,
+                    "ip": vpn_ip, "device_port": 22, "scheme": ""})
+
+
 @app.route("/api/hub/sites/<site_id>/tunnels")
 def api_site_tunnels(site_id):
     site, err = _site_or_404(site_id)

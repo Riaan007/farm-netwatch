@@ -100,6 +100,10 @@
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3.5 2"/></svg>
                     History
                 </button>
+                <button onclick="sshPi()" class="btn btn-ghost" title="One-click SSH to this site's Pi over the VPN — opens PuTTY via ssh://, or copy the host:port">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 17l6-5-6-5M12 19h8"/></svg>
+                    SSH Pi
+                </button>
                 <a id="link-netwatch" href="#" target="_blank" class="btn btn-ghost">Netwatch ↗&#xFE0E;</a>
                 <a id="link-kuma" href="#" target="_blank" class="hidden btn btn-success">Kuma ↗&#xFE0E;</a>
             </div>
@@ -635,6 +639,25 @@
             if (btn) btn.disabled = true;
             await fetch(`/api/hub/sites/${siteId}/poll`, {method:'POST'});
             setTimeout(() => { refresh(); if (btn) btn.disabled = false; }, 2500);
+        }
+
+        // ---- one-click SSH to the site's Pi (PuTTY via ssh://) ----
+        async function sshPi(){
+            let j;
+            try { j = await (await fetch(`/api/hub/sites/${siteId}/pi-ssh`, {method:'POST'})).json(); }
+            catch(e){ j = {ok:false, error:'request failed'}; }
+            if(!j.ok){ alert(j.error || 'Could not open the SSH tunnel'); return; }
+            cnIp = j.ip;
+            document.getElementById('cn-sub').textContent = 'Site Pi · ' + j.ip
+                + (j.tunneled ? ' · tunnel over VPN' : ' · same LAN, direct');
+            document.getElementById('cn-ports').innerHTML =
+                '<span class="text-xs text-slate-500">SSH to the Pi running Netwatch — log in with the Pi\'s own user &amp; password (e.g. to run <code class="text-cyan-300">docker compose pull</code>).</span>';
+            document.getElementById('cn-result').classList.add('hidden');
+            document.getElementById('cn-msg').textContent = '';
+            document.getElementById('cn-custom').value = '';
+            document.getElementById('connect-modal').classList.remove('hidden');
+            showResult(j);
+            loadActive();
         }
 
         // ---- connect to a device on the site's LAN (TCP tunnels) ----

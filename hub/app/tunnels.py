@@ -213,6 +213,43 @@ class HubTunnelManager:
         return {"id": t.id, "host": host, "port": hp, "scheme": scheme,
                 "ip": ip, "device_port": port}
 
+    def open_direct(self, site, ip, port, host):
+        """One-hop tunnel: hub LAN port -> ip:port straight over wg0, no site-side
+        relay. Used for SSH to the site Pi itself (its sshd listens on the wg
+        address), so it keeps working even while the site's Netwatch is down or
+        being updated. Reuses an existing direct tunnel to the same target."""
+        try:
+            port = int(port)
+            if not (1 <= port <= 65535):
+                raise ValueError
+        except (TypeError, ValueError):
+            raise TunnelError("Port must be 1-65535")
+        with self._lock:
+            for r in self._tuns.values():
+                if r["site_tid"] is None and r["site_id"] == site["id"] \
+                        and r["ip"] == ip and r["port"] == port:
+                    t = r["t"]
+                    t.last_active = time.time()
+                    scheme = "https" if port == 443 else ("http" if port in WEB_PORTS else "")
+                    return {"id": t.id, "host": host, "port": r["hub_port"],
+                            "scheme": scheme, "ip": ip, "device_port": port}
+            hp = self._free_port()
+            if hp is None:
+                raise TunnelError("Too many active tunnels", 429)
+            t = Tunnel("0.0.0.0", hp, ip, port)
+            try:
+                t.start()
+            except OSError as e:
+                raise TunnelError(f"Could not open relay: {e}", 500)
+            self._tuns[t.id] = {"t": t, "hub_port": hp, "site_id": site["id"],
+                                "site_tid": None, "vpn_ip": site["vpn_ip"],
+                                "netwatch_port": site.get("netwatch_port", 8090),
+                                "ip": ip, "port": port}
+        print(f"[tunnels] open-direct {t.id}: :{hp} -> {ip}:{port}", flush=True)
+        scheme = "https" if port == 443 else ("http" if port in WEB_PORTS else "")
+        return {"id": t.id, "host": host, "port": hp, "scheme": scheme,
+                "ip": ip, "device_port": port}
+
     def _info(self, tid, r):
         return {"id": tid, "hub_port": r["hub_port"], "site_id": r["site_id"],
                 "ip": r["ip"], "port": r["port"], "conns": r["t"].conns(),
@@ -231,7 +268,8 @@ class HubTunnelManager:
         if not r:
             return False
         r["t"].close()
-        self._close_site(r["vpn_ip"], r["netwatch_port"], r["site_tid"])
+        if r["site_tid"]:
+            self._close_site(r["vpn_ip"], r["netwatch_port"], r["site_tid"])
         print(f"[tunnels] close {tid}", flush=True)
         return True
 
@@ -249,7 +287,8 @@ class HubTunnelManager:
                         del self._tuns[tid]
             for r in doomed:
                 r["t"].close()
-                self._close_site(r["vpn_ip"], r["netwatch_port"], r["site_tid"])
+                if r["site_tid"]:
+                    self._close_site(r["vpn_ip"], r["netwatch_port"], r["site_tid"])
                 print(f"[tunnels] reaped {r['t'].id} -> {r['ip']}:{r['port']}", flush=True)
 
 
