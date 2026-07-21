@@ -257,12 +257,44 @@ def api_devices_prune():
     return jsonify({"ok": True, "removed": len(removed), "keys": removed})
 
 
+def _sync_watch_kuma(key, watch_on):
+    """Keep Kuma in step with the 🔔 watch flag: watching a device auto-creates
+    its ping monitor (when Kuma admin creds are configured); un-watching removes
+    the monitor again ONLY if the watch created it — a monitor ticked by hand
+    stays. Best-effort: the alert toggle must still work when Kuma is down."""
+    try:
+        ki = config.load()["integrations"]["kuma"]
+        base = kuma.effective_base(ki)
+        user = ki.get("username", "")
+        pw = creds.get("@kuma").get("password", "")
+        if not (base and user and pw):
+            return
+        reg = scanner.registry.get(key, {})
+        mid = reg.get("kuma_monitor_id")
+        if watch_on and not mid:
+            dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
+            if not (dev and dev.get("ip")):
+                return
+            res = kuma.provision(base, user, pw, scanner._kuma_name(dev), dev["ip"], 60,
+                                 dev.get("category"))
+            if res.get("ok"):
+                scanner.set_device_meta(key, kuma_monitor_id=res["monitor_id"],
+                                        kuma_ip=dev["ip"], kuma_by_watch=True)
+        elif not watch_on and mid and reg.get("kuma_by_watch"):
+            kuma.deprovision(base, user, pw, mid)
+            scanner.set_device_meta(key, kuma_token="", kuma_monitor_id=0,
+                                    kuma_by_watch=False)
+    except Exception as e:  # noqa: BLE001
+        print("watch-kuma sync error:", e, flush=True)
+
+
 @app.route("/api/devices/<path:key>", methods=["POST", "DELETE"])
 def api_device_meta(key):
     if request.method == "DELETE":
         removed = scanner.delete_device(key)
         return jsonify({"ok": removed}), (200 if removed else 404)
     body = request.get_json(force=True)
+    prev_watch = bool(scanner.registry.get(key, {}).get("watch"))
     reg = scanner.set_device_meta(
         key,
         name=body.get("name"),
@@ -273,6 +305,9 @@ def api_device_meta(key):
         model=body.get("model"),
         link=body.get("link"),
     )
+    if body.get("watch") is not None and bool(body["watch"]) != prev_watch:
+        _sync_watch_kuma(key, bool(body["watch"]))
+        reg = scanner.registry.get(key, reg)
     return jsonify({"ok": True, "registry": reg})
 
 
@@ -503,7 +538,8 @@ def api_kuma(key):
             mid = scanner.registry.get(key, {}).get("kuma_monitor_id")
             if mid:
                 kuma.deprovision(base, user, pw, mid)
-            scanner.set_device_meta(key, kuma_token="", kuma_monitor_id=0)
+            scanner.set_device_meta(key, kuma_token="", kuma_monitor_id=0,
+                                    kuma_by_watch=False)
             return jsonify({"ok": True})
         # manual token set
         scanner.set_device_meta(key, kuma_token=body.get("token", ""))

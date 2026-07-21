@@ -280,9 +280,13 @@ just keeps the monitor's IP in sync if the device's address changes, and deletes
 the monitor when you untick. (A *ping* monitor is used rather than a 30-min push,
 which would otherwise flap between scans.)
 
-Monitors are created **only for devices you tick** — never automatically during a
-scan. If you have monitors left over from an older version, **Settings → "Fix
-monitors → ping (60s)"** converts them in place.
+Monitors are created **only for devices you tick or 🔔 watch** — never
+automatically during a scan. Watching a device creates its monitor (when the
+admin creds are set); un-watching removes it again *only* if the watch created
+it, so a monitor you ticked by hand stays. **Forgetting a device also deletes
+its auto-created monitor** — no orphans left alerting in Kuma. If you have
+monitors left over from an older version, **Settings → "Fix monitors → ping
+(60s)"** converts them in place.
 
 Each monitor is **tagged with its device category** (Camera, Network, Printer,
 Server, …) so you can filter/group on a Kuma status page. New monitors are tagged

@@ -1001,7 +1001,7 @@ class Scanner:
 
     def set_device_meta(self, key, name=None, category=None, type_label=None,
                         watch=None, serial=None, model=None, link=None, kuma_token=None,
-                        kuma_monitor_id=None, kuma_ip=None):
+                        kuma_monitor_id=None, kuma_ip=None, kuma_by_watch=None):
         reg = self.registry.get(key, {})
         for field, val in (("name", name), ("category", category), ("type", type_label),
                            ("serial", serial), ("model", model)):
@@ -1017,6 +1017,8 @@ class Scanner:
             reg["kuma_monitor_id"] = kuma_monitor_id or 0
         if kuma_ip is not None:
             reg["kuma_ip"] = kuma_ip
+        if kuma_by_watch is not None:   # monitor exists because of the 🔔 watch
+            reg["kuma_by_watch"] = bool(kuma_by_watch)
         self.registry[key] = reg
         self.save_registry()
         with self.lock:
@@ -1038,9 +1040,26 @@ class Scanner:
             self.mac_multi_ip.pop(added, None)
             self.delete_device(":".join(added[i:i + 2] for i in range(0, 12, 2)))
 
+    def _drop_kuma_monitor(self, key):
+        """Best-effort: delete the device's auto-created Kuma monitor, so a
+        forgotten device doesn't leave an orphaned monitor alerting forever."""
+        mid = (self.registry.get(key) or {}).get("kuma_monitor_id")
+        if not mid:
+            return
+        try:
+            ki = config.load()["integrations"]["kuma"]
+            base = kuma.effective_base(ki)
+            user = ki.get("username", "")
+            pw = creds.get("@kuma").get("password", "")
+            if base and user and pw:
+                kuma.deprovision(base, user, pw, mid)
+        except Exception as e:  # noqa: BLE001 — forgetting must never fail on Kuma
+            print("kuma deprovision on forget error:", e, flush=True)
+
     def delete_device(self, key):
         """Forget a device entirely: registry, live state, miss counter,
-        seen-set and its uptime history. Returns True if anything was removed."""
+        seen-set, its uptime history — and its auto-created Kuma monitor."""
+        self._drop_kuma_monitor(key)
         removed = False
         if key in self.registry:
             del self.registry[key]
