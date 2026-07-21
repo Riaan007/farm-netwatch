@@ -781,7 +781,10 @@ class Scanner:
 
     def _ensure_internet_monitors(self, cfg, ki, base):
         """Create the default internet-uptime monitors once, when Kuma is enabled.
-        Idempotent via a registry marker (re-detects the gateway if it changes)."""
+        A registry marker skips the Kuma round-trip while the gateway is
+        unchanged; provisioning itself is ALSO idempotent by monitor name
+        (adopts/re-points existing ones, deletes stacked duplicates), so a
+        gateway change repairs the set in place instead of growing it."""
         # "By default" = whenever Kuma is actually configured (admin creds present),
         # not gated behind a separate toggle.
         if not ki.get("internet_monitors", True):
@@ -792,6 +795,11 @@ class Scanner:
             return
         marker = self.registry.get("__internet__") or {}
         gw = default_gateway()
+        if not gw:
+            # Transient loss of the default route (link flap mid-scan) must not
+            # read as "the gateway changed" — that used to stack a fresh set of
+            # monitors on every flap. Try again next scan.
+            return
         if marker and marker.get("gateway_ip") == gw:
             return   # already provisioned for this gateway
         try:

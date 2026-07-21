@@ -182,25 +182,68 @@ def provision(base_url, user, pw, name, ip, interval=60, category=None):
 def provision_internet(base_url, user, pw, gateway_ip, interval=60):
     """Create the default internet-uptime monitors, tagged 'Internet': ping the
     gateway + public DNS (8.8.8.8 / 1.1.1.1) AND a real DNS-resolution check of
-    google.com (so you can tell 'no link' from 'DNS broken'). Idempotency is the
-    caller's job (guard on a registry marker). Returns {ok, monitors:{name:{...}}}."""
+    google.com (so you can tell 'no link' from 'DNS broken').
+
+    Idempotent against Kuma itself, not just the caller's registry marker: an
+    existing monitor with the same name is ADOPTED (the Gateway one re-pointed
+    in place when the gateway changed, keeping its history), and same-name
+    duplicates left behind by older versions — which stacked a fresh set every
+    time the gateway flapped — are deleted, oldest kept.
+    Returns {ok, monitors:{name:{ok, monitor_id, ...}}}."""
+    import threading
     plan = []
     if gateway_ip:
         plan.append(("Gateway", "ping", gateway_ip))
     plan += [("Internet 8.8.8.8", "ping", "8.8.8.8"),
              ("Internet 1.1.1.1", "ping", "1.1.1.1"),
              ("DNS google.com", "dns", "google.com")]
+    listing, got_list = {}, threading.Event()
     try:
         sio, _ = _connect(base_url)
     except Exception as e:
         return {"ok": False, "error": f"cannot reach Kuma: {e}"}
+
+    # Kuma pushes the full monitor list as a `monitorList` event right after
+    # login — register the handler BEFORE logging in so it can't be missed.
+    @sio.on("monitorList")
+    def _ml(data):
+        if isinstance(data, dict):
+            listing.clear()
+            listing.update(data)
+        got_list.set()
+
     out = {}
     try:
         ok, msg = _login(sio, user, pw)
         if not ok:
             return {"ok": False, "error": msg}
+        got_list.wait(10)
+        by_name = {}
+        for m in listing.values():
+            if isinstance(m, dict) and m.get("name"):
+                by_name.setdefault(m["name"], []).append(m)
         tid = _ensure_tag(sio, {}, "Internet", "#0ea5e9")
         for name, mtype, target in plan:
+            have = sorted(by_name.get(name) or [], key=lambda m: m.get("id") or 0)
+            for extra in have[1:]:      # duplicates from the old flap bug
+                try:
+                    sio.call("deleteMonitor", extra["id"], timeout=15)
+                except Exception:
+                    pass
+            if have:
+                mid = have[0]["id"]
+                # re-point in place when the target moved (gateway renumbered)
+                if (have[0].get("hostname") or "") != target:
+                    try:
+                        mon = (sio.call("getMonitor", mid, timeout=15) or {}).get("monitor")
+                        if mon:
+                            mon["hostname"] = target
+                            sio.call("editMonitor", mon, timeout=15)
+                    except Exception:
+                        pass
+                out[name] = {"ok": True, "monitor_id": mid, "reused": True,
+                             "removed_dupes": len(have) - 1}
+                continue
             mon = {"name": name, "interval": int(interval), "maxretries": 2,
                    "retryInterval": int(interval), "resendInterval": 0,
                    "upsideDown": False, "notificationIDList": {},
