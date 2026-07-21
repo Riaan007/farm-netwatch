@@ -188,6 +188,11 @@
                     <span id="kuma-repair-result" class="text-xs"></span>
                     <span id="kuma-tag-result" class="text-xs ml-2"></span>
                 </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🌉 Wireless bridges (proxy-ARP)</label>
+                    <div id="bridge-list" class="space-y-1.5"></div>
+                    <p class="text-[10px] text-slate-400 mt-1">Devices behind these MACs are tracked by IP so each one shows separately. Once you fix the bridge/WiFi device itself (e.g. disable proxy-ARP), remove its MAC here to go back to normal MAC tracking — the devices re-merge (or appear under their real MACs) on the next scan.</p>
+                </div>
                 <div class="pt-3 border-t border-slate-100">
                     <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🔗 Central Hub VPN</label>
                     <div id="hub-status" class="text-sm mb-2 flex items-center gap-2 flex-wrap">
@@ -542,8 +547,25 @@
         // independent of the selected subnet.
         // Problems monitor: Netwatch's job is to find devices AND flag problems.
         // Up/down monitoring lives in Uptime Kuma; this panel is the "what's wrong".
+        async function loadBridges(){
+            const box = document.getElementById('bridge-list');
+            try {
+                const macs = (await (await fetch('/api/bridge-macs')).json()).bridge_macs || [];
+                box.innerHTML = macs.length ? macs.map(m => `
+                    <div class="flex items-center justify-between gap-2 text-xs p-1.5 border rounded-lg">
+                        <span class="font-mono">${m.match(/.{2}/g).join(':')}</span>
+                        <button onclick="removeBridge('${m}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[11px]">Remove — track by MAC again</button>
+                    </div>`).join('')
+                    : '<span class="text-[11px] text-slate-400">none — mark one from a "Same MAC, multiple IPs" problem card</span>';
+            } catch(e){ box.innerHTML = '<span class="text-[11px] text-slate-400">unavailable</span>'; }
+        }
+        async function removeBridge(mac){
+            if(!confirm('Track '+mac.match(/.{2}/g).join(':')+' by MAC again?\n\nDo this after fixing the bridge/WiFi device itself. On the next scan its devices either re-merge into one record, or show up under their real MACs (keeping their names) if proxy-ARP is off.')) return;
+            await fetch('/api/bridge-macs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac, enable:false})});
+            loadBridges(); setTimeout(refresh, 2500);
+        }
         async function markBridge(mac){
-            if(!confirm('Treat MAC '+mac+' as a wireless bridge / proxy-ARP relay?\n\nEvery device answering behind it will be tracked by its own IP address, so each camera shows as a separate device. A rescan starts right away.')) return;
+            if(!confirm('Treat MAC '+mac+' as a wireless bridge / proxy-ARP relay?\n\nEvery device answering behind it will be tracked by its own IP address, so each camera shows as a separate device. A rescan starts right away.\n\n(Undo any time: Settings → Wireless bridges → Remove.)')) return;
             await fetch('/api/bridge-macs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});
             setTimeout(refresh, 2500);
         }
@@ -1225,6 +1247,7 @@
             } catch(e){}
             refreshHubStatus();
             loadNetwork();
+            loadBridges();
         }
         function closeSetup(){ document.getElementById('setup-modal').classList.add('hidden'); }
 
