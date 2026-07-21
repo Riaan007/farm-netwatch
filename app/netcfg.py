@@ -149,6 +149,29 @@ def read_ipv4(con):
             "gateway": d.get("ipv4.gateway", ""), "dns": d.get("ipv4.dns", "")}
 
 
+def device_runtime(dev):
+    """The device's LIVE IPv4 state — what DHCP actually handed out right now:
+    {address (ip/prefix), gateway, dns}. The connection *profile* is empty for a
+    DHCP connection, so this is what the UI shows (and prefill comes from) —
+    like Windows' adapter status next to its IPv4 settings."""
+    rc, out = _run(["nmcli", "-t", "-f", "IP4.ADDRESS,IP4.GATEWAY,IP4.DNS",
+                    "device", "show", dev])
+    addr, gw, dns = "", "", []
+    if rc == 0:
+        for line in out.splitlines():
+            m = re.match(r"^([^:]+):(.*)$", line)
+            if not m or not m.group(2):
+                continue
+            k, v = m.group(1), m.group(2)
+            if k.startswith("IP4.ADDRESS") and not addr:
+                addr = v
+            elif k == "IP4.GATEWAY":
+                gw = v
+            elif k.startswith("IP4.DNS"):
+                dns.append(v)
+    return {"address": addr, "gateway": gw, "dns": ", ".join(dns)}
+
+
 def list_connections():
     rc, out = _run(["nmcli", "-t", "-f", "NAME,DEVICE,TYPE", "connection", "show", "--active"])
     cons = []
@@ -161,6 +184,7 @@ def list_connections():
                 c = {"name": name, "device": f[1], "type": f[2],
                      "primary": f[1] == primary}
                 c.update(read_ipv4(name))
+                c["runtime"] = device_runtime(f[1])
                 cons.append(c)
     return cons
 

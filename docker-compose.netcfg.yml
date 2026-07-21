@@ -9,9 +9,15 @@
 #
 # Requirements: the host must run NetworkManager and expose /run/dbus/system_bus_socket
 # (true on Debian/Raspberry Pi OS Bookworm+). On a dhcpcd host, don't use this override.
+#
+# No source checkout / don't want to build? A prebuilt variant is published as
+# ghcr.io/riaan007/farm-netwatch:netcfg — set it in .env and skip --build:
+#   NETWATCH_IMAGE_NETCFG=ghcr.io/riaan007/farm-netwatch:netcfg
+# To make the override stick for plain `docker compose` commands, also add to .env:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.netcfg.yml
 services:
   netwatch:
-    image: farm-netwatch:netcfg
+    image: ${NETWATCH_IMAGE_NETCFG:-farm-netwatch:netcfg}
     build:
       context: .
       args:

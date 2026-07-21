@@ -52,3 +52,19 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Second variant WITH NetworkManager/nmcli baked in, for the DHCP<->fixed-IP
+      # control (docker-compose.netcfg.yml) on sites that run the prebuilt image
+      # and have no source checkout to build from.
+      - name: Build and push (netcfg variant)
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm/v7,linux/arm64,linux/amd64
+          push: true
+          build-args: |
+            INSTALL_NM=1
+          tags: ghcr.io/${{ github.repository_owner }}/farm-netwatch:netcfg
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -30,10 +30,18 @@ device drops offline.
   main link; re-applied on reboot; can auto-add a scan target). Add **routed** ranges
   for networks reachable via the gateway. And switch a connection **DHCP→fixed IP** with
   an **auto-revert safety**: a bad change auto-reverts to DHCP after ~2 min (and on the
-  next boot) unless you confirm — so a remote Pi can't lock itself out. The fixed-IP
-  control needs the **opt-in NetworkManager image** (keeps `:latest` lean):
-  `docker compose -f docker-compose.yml -f docker-compose.netcfg.yml up -d --build`.
-  Extra IPs + routed ranges work on the default image.
+  next boot) unless you confirm — so a remote Pi can't lock itself out. The panel works
+  like Windows' adapter settings: it shows the connection's **live IPv4 address, subnet
+  mask, default gateway and DNS servers** (even while on DHCP), prefills the fixed-IP
+  form with them, accepts a dotted mask (`255.255.255.0`) or a prefix (`24`), and one
+  button returns to **Obtain automatically (DHCP)**. The fixed-IP control needs the
+  **opt-in NetworkManager image** (keeps `:latest` lean):
+  `docker compose -f docker-compose.yml -f docker-compose.netcfg.yml up -d --build`,
+  or on an installed site with no source use the prebuilt variant — in `.env` set
+  `NETWATCH_IMAGE_NETCFG=ghcr.io/riaan007/farm-netwatch:netcfg` and skip `--build`.
+  Add `COMPOSE_FILE=docker-compose.yml:docker-compose.netcfg.yml` to `.env` so plain
+  `docker compose` commands keep the override. Extra IPs + routed ranges work on the
+  default image.
 - **Site internet badge + Kuma link** — the site dashboard header shows a live
   **Internet** badge (gateway / upstream / DNS) and a **Kuma ↗** link to the site's
   own Uptime Kuma.
