@@ -3,162 +3,291 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#070b14">
     <title>Farm Network Asset Identifier · Hub</title>
+    <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><path d="M20 3 34 11v18L20 37 6 29V11z" fill="none" stroke="%2322d3ee" stroke-width="3"/><circle cx="20" cy="20" r="5" fill="%2334d399"/></svg>'>
     <link rel="stylesheet" href="/app.css">
     <style>
-        .stat-card { transition: all 0.2s ease; }
-        .stat-card:hover { transform: scale(1.02); border-color: #3b82f6; }
-        .site-card { transition: all 0.2s ease; }
-        .site-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; }
-        @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        :root { color-scheme: dark; }
+        body { background-color: #070b14; }
+        .bg-noc { position: fixed; inset: 0; z-index: -2; pointer-events: none;
+            background:
+                radial-gradient(1100px 520px at 12% -10%, rgba(34,211,238,.14), transparent 60%),
+                radial-gradient(900px 480px at 88% -5%, rgba(99,102,241,.12), transparent 55%),
+                radial-gradient(800px 700px at 50% 115%, rgba(16,185,129,.07), transparent 60%); }
+        .bg-grid { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+            background-image:
+                linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+            background-size: 34px 34px;
+            -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, black 25%, transparent 78%);
+            mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, black 25%, transparent 78%); }
+        .hdr { background: rgba(7,11,20,.78); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(148,163,184,.12); }
+        .hdr-line { height: 1px; background: linear-gradient(90deg, transparent, rgba(34,211,238,.55), rgba(16,185,129,.4), transparent); }
+        .brand-text { background: linear-gradient(90deg, #67e8f9, #bae6fd 45%, #6ee7b7);
+            -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .panel { background: linear-gradient(180deg, rgba(148,163,184,.09), rgba(148,163,184,.03));
+            border: 1px solid rgba(148,163,184,.14); border-radius: 1rem;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+        .panel-hover { transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+        .panel-hover:hover { transform: translateY(-2px); border-color: rgba(34,211,238,.4);
+            box-shadow: 0 0 0 1px rgba(34,211,238,.12), 0 14px 34px -16px rgba(34,211,238,.28); }
+        .card-down { border-color: rgba(244,63,94,.4); box-shadow: 0 0 26px -10px rgba(244,63,94,.35); }
+        .modal-card { background: rgba(10,16,30,.94); border: 1px solid rgba(148,163,184,.16);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 24px 70px -20px rgba(0,0,0,.85), 0 0 0 1px rgba(34,211,238,.06); }
+        .inp { background: rgba(2,6,23,.65); border: 1px solid rgba(148,163,184,.2); color: #e2e8f0;
+            border-radius: .6rem; padding: .55rem .75rem; font-size: .85rem; width: 100%;
+            transition: border-color .15s, box-shadow .15s; }
+        .inp::placeholder { color: #475569; }
+        .inp:focus { outline: none; border-color: rgba(34,211,238,.55); box-shadow: 0 0 0 3px rgba(34,211,238,.14); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+            border-radius: .6rem; border: 1px solid transparent; cursor: pointer;
+            font-weight: 700; font-size: .72rem; letter-spacing: .05em; text-transform: uppercase;
+            padding: .5rem .85rem; transition: all .15s ease; white-space: nowrap; }
+        .btn:disabled { opacity: .55; cursor: default; }
+        .btn-primary { background: linear-gradient(135deg, #0ea5e9, #06b6d4); color: #03141c;
+            border-color: rgba(103,232,249,.4); box-shadow: 0 2px 14px -4px rgba(34,211,238,.55); }
+        .btn-primary:hover { filter: brightness(1.12); box-shadow: 0 4px 20px -4px rgba(34,211,238,.7); }
+        .btn-ghost { background: rgba(148,163,184,.09); border-color: rgba(148,163,184,.18); color: #cbd5e1; }
+        .btn-ghost:hover { background: rgba(148,163,184,.16); border-color: rgba(34,211,238,.4); color: #f1f5f9; }
+        .btn-success { background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.35); color: #6ee7b7; }
+        .btn-success:hover { background: rgba(16,185,129,.24); }
+        .btn-danger { background: rgba(244,63,94,.12); border-color: rgba(244,63,94,.3); color: #fda4af; }
+        .btn-danger:hover { background: rgba(244,63,94,.2); }
+        .btn-sm { padding: .3rem .6rem; font-size: .66rem; border-radius: .5rem; }
+        .chip { display: inline-flex; align-items: center; gap: .3rem; padding: .15rem .55rem;
+            border-radius: 9999px; font-size: .66rem; font-weight: 700; }
+        .status-dot { height: 9px; width: 9px; border-radius: 9999px; display: inline-block; flex-shrink: 0; }
+        .status-dot.bg-emerald-500 { box-shadow: 0 0 9px 1px rgba(16,185,129,.85); }
+        .status-dot.bg-red-500 { box-shadow: 0 0 9px 1px rgba(239,68,68,.85); }
+        .status-dot.bg-slate-500 { box-shadow: 0 0 7px rgba(100,116,139,.7); }
+        @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
         .offline-blink { animation: pulse-soft 1.6s infinite; }
+        @keyframes ping-dot { 0% { transform: scale(1); opacity: .7; } 80%,100% { transform: scale(2.4); opacity: 0; } }
+        .live-dot { position: relative; }
+        .live-dot::after { content: ''; position: absolute; inset: 0; border-radius: 9999px;
+            background: #22d3ee; animation: ping-dot 2s cubic-bezier(0,0,.2,1) infinite; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(148,163,184,.2); border-radius: 8px; border: 2px solid #070b14; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.35); }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen font-sans text-slate-900 flex flex-col">
+<body class="min-h-screen font-sans text-slate-200 flex flex-col antialiased selection:bg-cyan-500/30">
+    <div class="bg-noc"></div>
+    <div class="bg-grid"></div>
 
-    <header class="bg-slate-900 text-white p-6 shadow-lg sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-            <div>
-                <h1 class="text-2xl font-bold tracking-tight">Farm Network Asset Identifier</h1>
-                <p class="text-slate-400 text-xs mt-1 italic">Central Hub · <span id="site-count">0</span> sites over VPN</p>
-            </div>
+    <header class="hdr sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
             <div class="flex items-center gap-3">
-                <button onclick="pollNow()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold uppercase">Refresh all</button>
-                <button onclick="openSites()" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-full transition-colors" title="Manage sites">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                <svg viewBox="0 0 40 40" class="w-10 h-10 shrink-0">
+                    <defs><linearGradient id="lg-brand" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#34d399"/>
+                    </linearGradient></defs>
+                    <path d="M20 3 34 11v18L20 37 6 29V11z" fill="none" stroke="url(#lg-brand)" stroke-width="1.6" opacity=".9"/>
+                    <circle cx="20" cy="20" r="9" fill="none" stroke="url(#lg-brand)" stroke-width="1.1" opacity=".5"/>
+                    <circle cx="20" cy="20" r="4.5" fill="none" stroke="url(#lg-brand)" stroke-width="1.1" opacity=".75"/>
+                    <circle cx="20" cy="20" r="1.8" fill="#22d3ee"/>
+                    <path d="M20 20 31 13" stroke="#22d3ee" stroke-width="1.4" stroke-linecap="round" opacity=".9"/>
+                </svg>
+                <div>
+                    <h1 class="text-xl sm:text-2xl font-bold tracking-tight brand-text">Farm Network Asset Identifier</h1>
+                    <p class="text-slate-500 text-[10px] mt-0.5 font-bold uppercase tracking-[0.25em]">Central Hub · <span id="site-count">0</span> sites over VPN</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap justify-center">
+                <div class="hidden lg:flex flex-col items-end mr-2">
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 live-dot"></span>
+                        <span class="text-[10px] font-bold tracking-[0.22em] text-cyan-300">LIVE</span>
+                    </div>
+                    <span id="last-upd" class="text-[10px] text-slate-500 tabular-nums">—</span>
+                </div>
+                <button onclick="pollNow()" id="refresh-btn" class="btn btn-primary">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4.6 9a8 8 0 0114-3.2M19.4 15a8 8 0 01-14 3.2"/></svg>
+                    Refresh all
                 </button>
-                <button onclick="openRemote()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase" title="Remote-access VPN for laptops/phones">📱 Remote</button>
-                <button onclick="openAlerts()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase" title="ntfy alert settings">🔔 Alerts</button>
-                <button onclick="logout()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">Logout</button>
+                <button onclick="openSites()" class="btn btn-ghost !px-2.5" title="Manage sites" aria-label="Manage sites">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </button>
+                <button onclick="openRemote()" class="btn btn-ghost" title="Remote-access VPN for laptops/phones">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path stroke-linecap="round" d="M11 18.5h2"/></svg>
+                    Remote
+                </button>
+                <button onclick="openAlerts()" class="btn btn-ghost" title="ntfy alert settings">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4a2 2 0 01-.6-1.4V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                    Alerts
+                </button>
+                <button onclick="logout()" class="btn btn-ghost" title="Sign out">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.4 6.6a8 8 0 11-12.8 0M12 2v8"/></svg>
+                    Logout
+                </button>
             </div>
         </div>
+        <div class="hdr-line"></div>
     </header>
 
-    <main class="max-w-7xl mx-auto p-6 flex-grow w-full">
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <p class="text-slate-500 text-xs font-semibold uppercase">Sites reachable</p>
-                <p id="stat-sites" class="text-3xl font-bold">--</p>
+    <main class="max-w-7xl mx-auto p-4 sm:p-6 flex-grow w-full">
+        <div id="status-strip"></div>
+
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-8">
+            <div class="panel panel-hover p-4 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-cyan-400/10 blur-2xl"></div>
+                <div class="flex items-center gap-2 text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.5 9h17M3.5 15h17M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/></svg>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Sites reachable</p>
+                </div>
+                <p id="stat-sites" class="text-3xl font-bold tabular-nums mt-1.5 text-slate-100">--</p>
             </div>
-            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <p class="text-slate-500 text-xs font-semibold uppercase">Devices online</p>
-                <p id="stat-devices" class="text-3xl font-bold text-emerald-600">--</p>
+            <div class="panel panel-hover p-4 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-emerald-400/10 blur-2xl"></div>
+                <div class="flex items-center gap-2 text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path stroke-linecap="round" d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Devices online</p>
+                </div>
+                <p id="stat-devices" class="text-3xl font-bold tabular-nums mt-1.5 text-emerald-400">--</p>
             </div>
-            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <p class="text-slate-500 text-xs font-semibold uppercase">Watched down</p>
-                <p id="stat-watched" class="text-3xl font-bold text-amber-600">0</p>
+            <div class="panel panel-hover p-4 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-amber-400/10 blur-2xl"></div>
+                <div class="flex items-center gap-2 text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4a2 2 0 01-.6-1.4V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Watched down</p>
+                </div>
+                <p id="stat-watched" class="text-3xl font-bold tabular-nums mt-1.5 text-amber-400">0</p>
             </div>
-            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <p class="text-slate-500 text-xs font-semibold uppercase">IP conflicts</p>
-                <p id="stat-conflicts" class="text-3xl font-bold text-amber-600">0</p>
+            <div class="panel panel-hover p-4 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-orange-400/10 blur-2xl"></div>
+                <div class="flex items-center gap-2 text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-orange-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.86l-8.02 13.9A2 2 0 004 21h16a2 2 0 001.72-3.24l-8.02-13.9a2 2 0 00-3.4 0z"/></svg>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">IP conflicts</p>
+                </div>
+                <p id="stat-conflicts" class="text-3xl font-bold tabular-nums mt-1.5 text-orange-400">0</p>
             </div>
-            <div class="stat-card bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <p class="text-slate-500 text-xs font-semibold uppercase">Kuma monitors down</p>
-                <p id="stat-kuma" class="text-3xl font-bold text-red-600">0</p>
+            <div class="panel panel-hover p-4 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-rose-400/10 blur-2xl"></div>
+                <div class="flex items-center gap-2 text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-rose-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Kuma monitors down</p>
+                </div>
+                <p id="stat-kuma" class="text-3xl font-bold tabular-nums mt-1.5 text-rose-400">0</p>
             </div>
         </div>
 
         <div id="site-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
-        <p id="empty-hint" class="hidden text-center text-slate-400 text-sm mt-12">
-            No sites yet — use the gear icon to register your first Netwatch site.
-        </p>
+        <div id="empty-hint" class="hidden">
+            <div class="panel max-w-md mx-auto mt-10 p-10 text-center">
+                <svg viewBox="0 0 40 40" class="w-14 h-14 mx-auto mb-4 opacity-70">
+                    <path d="M20 3 34 11v18L20 37 6 29V11z" fill="none" stroke="#22d3ee" stroke-width="1.4"/>
+                    <circle cx="20" cy="20" r="9" fill="none" stroke="#34d399" stroke-width="1.1" opacity=".6"/>
+                    <circle cx="20" cy="20" r="1.8" fill="#22d3ee"/>
+                </svg>
+                <p class="text-slate-200 font-bold">No sites connected yet</p>
+                <p class="text-sm text-slate-500 mt-1.5">Use the ✨ new-site wizard — it creates the VPN client and gives you a one-command installer for the farm Pi.</p>
+                <button onclick="openSites()" class="btn btn-primary mt-5">Open site manager</button>
+            </div>
+        </div>
     </main>
 
     <!-- Manage sites modal -->
-    <div id="sites-modal" onclick="if(event.target===this) closeSites()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
-        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
-            <div class="p-6 bg-slate-800 text-white flex justify-between items-center shrink-0">
-                <h2 class="text-xl font-bold">Sites</h2>
-                <button onclick="closeSites()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+    <div id="sites-modal" onclick="if(event.target===this) closeSites()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-5 sm:p-6 border-b border-white/10 flex justify-between items-center shrink-0">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-100">Sites</h2>
+                    <p class="text-[11px] text-slate-500">Register, edit or enroll farm sites on the hub.</p>
+                </div>
+                <button onclick="closeSites()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xl leading-none">&times;</button>
             </div>
-            <div class="p-6 space-y-4 overflow-y-auto grow">
+            <div class="p-5 sm:p-6 space-y-4 overflow-y-auto grow">
                 <div id="site-list" class="space-y-3"></div>
 
                 <!-- New-site wizard -->
-                <div id="wizard" class="pt-4 border-t border-slate-100">
-                    <h3 class="text-xs font-bold text-slate-400 uppercase mb-3">✨ New site wizard</h3>
+                <div id="wizard" class="pt-4 border-t border-white/10">
+                    <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">✨ New site wizard</h3>
                     <div id="wizard-form">
                         <div class="grid grid-cols-2 gap-2">
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site id (slug)</label>
-                                <input id="w-id" type="text" placeholder="plaas-noord" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Site id (slug)</label>
+                                <input id="w-id" type="text" placeholder="plaas-noord" class="inp font-mono">
                             </div>
                             <div>
-                                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Label</label>
-                                <input id="w-name" type="text" placeholder="North Farm" class="w-full p-2 bg-slate-50 border rounded-lg text-sm">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Label</label>
+                                <input id="w-name" type="text" placeholder="North Farm" class="inp">
                             </div>
                         </div>
-                        <label class="flex items-center gap-2 mt-3 text-xs text-slate-600">
-                            <input id="w-kuma" type="checkbox" checked class="w-4 h-4"> Site runs Uptime Kuma (port 3001, status page <code>farm</code>)
+                        <label class="flex items-center gap-2 mt-3 text-xs text-slate-400">
+                            <input id="w-kuma" type="checkbox" checked class="w-4 h-4 accent-cyan-400"> Site runs Uptime Kuma (port 3001, status page <code class="text-cyan-300">farm</code>)
                         </label>
-                        <p id="wizard-error" class="text-xs text-red-600 font-bold mt-2 hidden"></p>
-                        <button onclick="runWizard()" id="wizard-btn" class="w-full mt-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">Create site + VPN client</button>
-                        <p class="text-[10px] text-slate-400 mt-2">Creates the WireGuard client on the hub, registers the site, and gives you
+                        <p id="wizard-error" class="text-xs text-rose-400 font-bold mt-2 hidden"></p>
+                        <button onclick="runWizard()" id="wizard-btn" class="btn btn-primary w-full mt-3 !py-2.5">Create site + VPN client</button>
+                        <p class="text-[10px] text-slate-500 mt-2">Creates the WireGuard client on the hub, registers the site, and gives you
                             one command to paste on the farm Pi (fresh or existing) — it preflights, installs Docker / Kuma / Netwatch if missing, and links the VPN.</p>
                     </div>
                     <div id="wizard-result" class="hidden">
-                        <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-900 font-medium mb-3">
+                        <div class="p-3 bg-emerald-500/10 border border-emerald-400/25 rounded-lg text-sm text-emerald-200 font-medium mb-3">
                             ✅ Site <b id="r-id"></b> created — VPN IP <b id="r-ip" class="font-mono"></b>
                         </div>
-                        <p class="text-xs text-slate-700 font-bold mb-1">Option A — bare Pi / SSH (installs everything):</p>
-                        <p class="text-[11px] text-slate-500 mb-2">Paste this <b>once on the farm Pi's terminal</b>. It preflights, installs Docker / Kuma / Netwatch if missing, and links the VPN.</p>
-                        <textarea id="r-script" readonly rows="8" class="w-full p-2 bg-slate-900 text-emerald-300 rounded-lg text-[11px] font-mono leading-snug" spellcheck="false"></textarea>
+                        <p class="text-xs text-slate-300 font-bold mb-1">Option A — bare Pi / SSH (installs everything):</p>
+                        <p class="text-[11px] text-slate-500 mb-2">Paste this <b class="text-slate-300">once on the farm Pi's terminal</b>. It preflights, installs Docker / Kuma / Netwatch if missing, and links the VPN.</p>
+                        <textarea id="r-script" readonly rows="8" class="w-full p-2.5 bg-[#050b16] border border-white/10 text-emerald-300 rounded-lg text-[11px] font-mono leading-snug" spellcheck="false"></textarea>
                         <div class="flex gap-2 mt-2">
-                            <button onclick="copyScript()" id="copy-btn" class="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">📋 Copy command</button>
+                            <button onclick="copyScript()" id="copy-btn" class="btn btn-primary flex-grow !py-2.5">📋 Copy command</button>
                         </div>
-                        <p class="text-xs text-slate-700 font-bold mt-4 mb-1">Option B — Netwatch already running (no SSH):</p>
-                        <p class="text-[11px] text-slate-500 mb-2">On the site's dashboard go to <b>⚙ Settings → 🔗 Central Hub VPN</b>, paste this config (or the command above — either works), and click <b>Connect</b>. No ports opened on the site.</p>
-                        <textarea id="r-conf" readonly rows="7" class="w-full p-2 bg-slate-50 border rounded-lg text-[11px] font-mono leading-snug" spellcheck="false"></textarea>
+                        <p class="text-xs text-slate-300 font-bold mt-4 mb-1">Option B — Netwatch already running (no SSH):</p>
+                        <p class="text-[11px] text-slate-500 mb-2">On the site's dashboard go to <b class="text-slate-300">⚙ Settings → 🔗 Central Hub VPN</b>, paste this config (or the command above — either works), and click <b class="text-slate-300">Connect</b>. No ports opened on the site.</p>
+                        <textarea id="r-conf" readonly rows="7" class="w-full p-2.5 bg-[#050b16] border border-white/10 text-slate-300 rounded-lg text-[11px] font-mono leading-snug" spellcheck="false"></textarea>
                         <div class="flex gap-2 mt-2">
-                            <button onclick="copyConf()" id="copy-conf-btn" class="flex-grow py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm">📋 Copy WireGuard config</button>
-                            <button onclick="wizardReset()" class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm">Done</button>
+                            <button onclick="copyConf()" id="copy-conf-btn" class="btn btn-success flex-grow !py-2.5">📋 Copy WireGuard config</button>
+                            <button onclick="wizardReset()" class="btn btn-ghost px-4">Done</button>
                         </div>
-                        <p class="text-[10px] text-slate-400 mt-2">The card stays red until the site links. You can re-open this
-                            any time with the site's <b>Setup cmd</b> button above.</p>
+                        <p class="text-[10px] text-slate-500 mt-2">The card stays red until the site links. You can re-open this
+                            any time with the site's <b class="text-slate-300">Setup cmd</b> button above.</p>
                     </div>
                 </div>
 
-                <details class="pt-4 border-t border-slate-100">
-                    <summary class="text-xs font-bold text-slate-400 uppercase cursor-pointer select-none">Manual add / edit (existing VPN IP)</summary>
+                <details class="pt-4 border-t border-white/10">
+                    <summary class="text-xs font-bold text-slate-500 uppercase tracking-wider cursor-pointer select-none hover:text-cyan-300">Manual add / edit (existing VPN IP)</summary>
                     <div class="mt-3">
-                    <h3 class="text-xs font-bold text-slate-400 uppercase mb-3 hidden" id="form-title">Add a site</h3>
+                    <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 hidden" id="form-title">Add a site</h3>
                     <div class="grid grid-cols-2 gap-2">
                         <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Site id (slug)</label>
-                            <input id="f-id" type="text" placeholder="plaas-noord" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Site id (slug)</label>
+                            <input id="f-id" type="text" placeholder="plaas-noord" class="inp font-mono">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Label</label>
-                            <input id="f-name" type="text" placeholder="North Farm" class="w-full p-2 bg-slate-50 border rounded-lg text-sm">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Label</label>
+                            <input id="f-name" type="text" placeholder="North Farm" class="inp">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">VPN IP</label>
-                            <input id="f-ip" type="text" placeholder="10.8.0.2" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">VPN IP</label>
+                            <input id="f-ip" type="text" placeholder="10.8.0.2" class="inp font-mono">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Netwatch port</label>
-                            <input id="f-port" type="number" value="8090" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Netwatch port</label>
+                            <input id="f-port" type="number" value="8090" class="inp font-mono">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Kuma URL <span class="normal-case text-slate-300">(blank = off)</span></label>
-                            <input id="f-kuma" type="text" placeholder="http://10.8.0.2:3001" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Kuma URL <span class="normal-case text-slate-600">(blank = off)</span></label>
+                            <input id="f-kuma" type="text" placeholder="http://10.8.0.2:3001" class="inp font-mono">
                         </div>
                         <div>
-                            <label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">Kuma status-page slug</label>
-                            <input id="f-slug" type="text" placeholder="farm" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Kuma status-page slug</label>
+                            <input id="f-slug" type="text" placeholder="farm" class="inp font-mono">
                         </div>
                     </div>
-                    <label class="flex items-center gap-2 mt-3 text-xs text-slate-600">
-                        <input id="f-enabled" type="checkbox" checked class="w-4 h-4"> Poll this site
+                    <label class="flex items-center gap-2 mt-3 text-xs text-slate-400">
+                        <input id="f-enabled" type="checkbox" checked class="w-4 h-4 accent-cyan-400"> Poll this site
                     </label>
-                    <p id="form-error" class="text-xs text-red-600 font-bold mt-2 hidden"></p>
+                    <p id="form-error" class="text-xs text-rose-400 font-bold mt-2 hidden"></p>
                     <div class="flex gap-2 mt-3">
-                        <button onclick="saveSite()" class="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm">Save site</button>
-                        <button id="cancel-edit" onclick="resetForm()" class="hidden px-4 py-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-sm">Cancel</button>
+                        <button onclick="saveSite()" class="btn btn-primary flex-grow !py-2.5">Save site</button>
+                        <button id="cancel-edit" onclick="resetForm()" class="hidden btn btn-ghost px-4">Cancel</button>
                     </div>
-                    <p class="text-[10px] text-slate-400 mt-2">The VPN IP is the site's WireGuard address from the hub's wg-easy
-                        (the home site uses the Pi's LAN IP). Kuma needs a <b>published status page</b> at the slug for monitors to appear here.</p>
+                    <p class="text-[10px] text-slate-500 mt-2">The VPN IP is the site's WireGuard address from the hub's wg-easy
+                        (the home site uses the Pi's LAN IP). Kuma needs a <b class="text-slate-300">published status page</b> at the slug for monitors to appear here.</p>
                     </div>
                 </details>
             </div>
@@ -166,63 +295,69 @@
     </div>
 
     <!-- Remote-access modal -->
-    <div id="remote-modal" onclick="if(event.target===this) closeRemote()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
-        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
-            <div class="p-6 bg-slate-800 text-white flex justify-between items-center shrink-0">
-                <div><h2 class="text-xl font-bold">📱 Remote access</h2><p class="text-xs text-slate-300">Connect a laptop/phone to the office over WireGuard — use the hub as if you were here.</p></div>
-                <button onclick="closeRemote()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+    <div id="remote-modal" onclick="if(event.target===this) closeRemote()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-5 sm:p-6 border-b border-white/10 flex justify-between items-center shrink-0">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-100">📱 Remote access</h2>
+                    <p class="text-[11px] text-slate-500">Connect a laptop/phone to the office over WireGuard — use the hub as if you were here.</p>
+                </div>
+                <button onclick="closeRemote()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xl leading-none">&times;</button>
             </div>
-            <div class="p-6 overflow-y-auto text-sm space-y-3">
-                <div class="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[11px] text-amber-900">
+            <div class="p-5 sm:p-6 overflow-y-auto text-sm space-y-3">
+                <div class="bg-amber-500/10 border border-amber-400/25 rounded-lg p-2.5 text-[11px] text-amber-200">
                     <b>One-time router step:</b> forward <b>UDP 51820</b> to the hub (<span id="rm-hub-ip" class="font-mono"></span>). DDNS is already set, so devices connect to <span class="font-mono">farmcamsa.ddns.net</span>.
                 </div>
                 <div class="flex gap-2 items-center">
-                    <input id="rm-name" type="text" placeholder="device name (e.g. my-laptop)" class="flex-grow p-2 bg-slate-50 border rounded-lg text-sm">
-                    <button onclick="rmAdd()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold whitespace-nowrap">Add device</button>
+                    <input id="rm-name" type="text" placeholder="device name (e.g. my-laptop)" class="inp flex-grow">
+                    <button onclick="rmAdd()" class="btn btn-success shrink-0">Add device</button>
                 </div>
-                <div id="rm-new" class="hidden border rounded-lg p-3 bg-slate-50">
-                    <p class="text-xs font-bold mb-2">Scan in the <b>WireGuard</b> phone app, or download &amp; import on a laptop:</p>
+                <div id="rm-new" class="hidden border border-white/10 rounded-lg p-3 bg-white/5">
+                    <p class="text-xs font-bold text-slate-300 mb-2">Scan in the <b>WireGuard</b> phone app, or download &amp; import on a laptop:</p>
                     <div id="rm-qr" class="bg-white p-2 rounded-lg inline-block"></div>
                     <div class="mt-2 flex gap-2">
-                        <button id="rm-dl" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">⬇ Download .conf</button>
+                        <button id="rm-dl" class="btn btn-primary btn-sm">⬇ Download .conf</button>
                         <span id="rm-routes" class="text-[11px] text-slate-500 self-center"></span>
                     </div>
-                    <p class="text-[10px] text-slate-400 mt-2">Then connect, and open the hub at <span class="font-mono" id="rm-office-url"></span>. Split tunnel — your normal internet stays direct.</p>
+                    <p class="text-[10px] text-slate-500 mt-2">Then connect, and open the hub at <span class="font-mono text-cyan-300" id="rm-office-url"></span>. Split tunnel — your normal internet stays direct.</p>
                 </div>
                 <div>
-                    <label class="text-xs font-bold text-slate-400 uppercase block mb-1">Devices</label>
-                    <div id="rm-list" class="space-y-1 text-xs text-slate-500">none yet</div>
+                    <label class="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Devices</label>
+                    <div id="rm-list" class="space-y-1 text-xs text-slate-400">none yet</div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Alerts modal -->
-    <div id="alerts-modal" onclick="if(event.target===this) closeAlerts()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
-        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden">
-            <div class="p-6 bg-slate-800 text-white flex justify-between items-center shrink-0">
-                <h2 class="text-xl font-bold">🔔 Hub alerts</h2>
-                <button onclick="closeAlerts()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+    <div id="alerts-modal" onclick="if(event.target===this) closeAlerts()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-5 sm:p-6 border-b border-white/10 flex justify-between items-center shrink-0">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-100">🔔 Hub alerts</h2>
+                    <p class="text-[11px] text-slate-500">Push notifications when something needs you.</p>
+                </div>
+                <button onclick="closeAlerts()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xl leading-none">&times;</button>
             </div>
-            <div class="p-6 space-y-3 overflow-y-auto text-sm">
-                <p class="text-xs text-slate-500">Push notifications via <a href="https://ntfy.sh" target="_blank" class="underline">ntfy</a> when a farm site drops off the hub or an <b>IP conflict</b> appears. Subscribe to the topic in the ntfy app on your phone.</p>
+            <div class="p-5 sm:p-6 space-y-3 overflow-y-auto text-sm">
+                <p class="text-xs text-slate-500">Push notifications via <a href="https://ntfy.sh" target="_blank" class="underline text-cyan-300">ntfy</a> when a farm site drops off the hub or an <b class="text-slate-300">IP conflict</b> appears. Subscribe to the topic in the ntfy app on your phone.</p>
                 <div>
-                    <label class="text-xs font-bold text-slate-400 uppercase block mb-1">ntfy topic</label>
-                    <input id="al-topic" type="text" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono" placeholder="e.g. farm-hub-7f3a9 (keep it unguessable)">
+                    <label class="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">ntfy topic</label>
+                    <input id="al-topic" type="text" class="inp font-mono" placeholder="e.g. farm-hub-7f3a9 (keep it unguessable)">
                 </div>
                 <div>
-                    <label class="text-xs font-bold text-slate-400 uppercase block mb-1">ntfy server</label>
-                    <input id="al-server" type="text" class="w-full p-2 bg-slate-50 border rounded-lg text-sm font-mono" placeholder="https://ntfy.sh">
+                    <label class="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">ntfy server</label>
+                    <input id="al-server" type="text" class="inp font-mono" placeholder="https://ntfy.sh">
                 </div>
-                <label class="flex items-center gap-2 text-xs text-slate-600">
-                    <input id="al-site-offline" type="checkbox" class="w-4 h-4"> Notify when a <b>site goes offline</b> (and when it recovers)
+                <label class="flex items-center gap-2 text-xs text-slate-400">
+                    <input id="al-site-offline" type="checkbox" class="w-4 h-4 accent-cyan-400"> Notify when a <b class="text-slate-300">site goes offline</b> (and when it recovers)
                 </label>
-                <label class="flex items-center gap-2 text-xs text-slate-600">
-                    <input id="al-ip-conflict" type="checkbox" class="w-4 h-4"> Notify on a new <b>IP conflict</b> (two devices sharing one address)
+                <label class="flex items-center gap-2 text-xs text-slate-400">
+                    <input id="al-ip-conflict" type="checkbox" class="w-4 h-4 accent-cyan-400"> Notify on a new <b class="text-slate-300">IP conflict</b> (two devices sharing one address)
                 </label>
                 <div class="flex items-center gap-2 pt-2">
-                    <button onclick="saveAlerts()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">Save</button>
-                    <button onclick="testAlerts()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Send test</button>
+                    <button onclick="saveAlerts()" class="btn btn-primary">Save</button>
+                    <button onclick="testAlerts()" class="btn btn-success">Send test</button>
                     <span id="al-result" class="text-xs"></span>
                 </div>
             </div>
@@ -244,7 +379,7 @@
         function sparkBars(series){
             if (!series || !series.some(v => v !== null)) return '';
             return '<div class="flex items-end gap-px h-6">' + series.map(v => {
-                let c = 'bg-slate-200', h = 30;
+                let c = 'bg-white/10', h = 30;
                 if (v !== null) {
                     h = 100;
                     c = v >= 0.99 ? 'bg-emerald-400' : (v > 0 ? 'bg-amber-400' : 'bg-red-400');
@@ -257,38 +392,50 @@
             const dot = s.reachable
                 ? '<span class="status-dot bg-emerald-500"></span>'
                 : '<span class="status-dot bg-red-500 offline-blink"></span>';
-            const counts = s.devices_total === null ? '<span class="text-slate-300">no data yet</span>'
-                : `<span class="text-2xl font-bold ${s.devices_online === s.devices_total ? 'text-emerald-600' : ''}">${s.devices_online}</span><span class="text-slate-400 text-sm">/${s.devices_total} online</span>`;
-            const watched = s.watched_down ? `<span class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold">🔔 ${s.watched_down} watched down</span>` : '';
-            const conflicts = s.conflicts ? `<span class="px-2 py-0.5 bg-amber-100 text-amber-900 rounded-full text-[10px] font-bold border border-amber-300">⚠️ ${s.conflicts} IP conflict${s.conflicts>1?'s':''}</span>` : '';
-            const stale = s.stale ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold">stale data</span>' : '';
+            const topline = s.reachable
+                ? '<div class="h-[3px] w-full bg-gradient-to-r from-emerald-400/90 via-cyan-400/70 to-cyan-400/10"></div>'
+                : '<div class="h-[3px] w-full bg-gradient-to-r from-red-500/90 via-rose-500/60 to-rose-500/10 offline-blink"></div>';
+            const pct = s.devices_total ? Math.round(100 * s.devices_online / s.devices_total) : 0;
+            const counts = s.devices_total === null ? '<span class="text-slate-600 text-sm">no data yet</span>'
+                : `<span class="text-2xl font-bold tabular-nums ${s.devices_online === s.devices_total ? 'text-emerald-400' : 'text-slate-100'}">${s.devices_online}</span><span class="text-slate-500 text-sm">/${s.devices_total} online</span>`;
+            const bar = s.devices_total === null ? ''
+                : `<div class="h-1 rounded-full bg-white/10 overflow-hidden mt-1.5"><div class="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400" style="width:${pct}%"></div></div>`;
+            const watched = s.watched_down ? `<span class="chip bg-amber-500/15 text-amber-300">🔔 ${s.watched_down} watched down</span>` : '';
+            const conflicts = s.conflicts ? `<span class="chip bg-orange-500/15 text-orange-300 border border-orange-400/25">⚠️ ${s.conflicts} IP conflict${s.conflicts>1?'s':''}</span>` : '';
+            const stale = s.stale ? '<span class="chip bg-slate-500/15 text-slate-400">stale data</span>' : '';
             let kuma = '';
             if (s.kuma) {
-                const down = s.kuma.down ? `<span class="text-red-600 font-bold">↓${s.kuma.down}</span>` : '';
-                kuma = `<span class="text-[11px] text-slate-500">Kuma <span class="text-emerald-600 font-bold">↑${s.kuma.up}</span> ${down}</span>`;
+                const down = s.kuma.down ? `<span class="text-rose-400 font-bold">↓${s.kuma.down}</span>` : '';
+                kuma = `<span class="text-[11px] text-slate-500">Kuma <span class="text-emerald-400 font-bold">↑${s.kuma.up}</span> ${down}</span>`;
             } else if (s.kuma_state === 'no-status-page') {
-                kuma = '<span class="text-[11px] text-slate-400">Kuma: no status page</span>';
+                kuma = '<span class="text-[11px] text-slate-600">Kuma: no status page</span>';
             } else if (s.kuma_state === 'unreachable') {
-                kuma = '<span class="text-[11px] text-red-400">Kuma unreachable</span>';
+                kuma = '<span class="text-[11px] text-rose-400/80">Kuma unreachable</span>';
             }
-            const latency = s.latency_ms !== null && s.latency_ms !== undefined ? `<span class="text-[11px] text-slate-400 font-mono">${s.latency_ms} ms</span>` : '';
+            const latency = s.latency_ms !== null && s.latency_ms !== undefined ? `<span class="chip bg-cyan-500/10 text-cyan-300 font-mono normal-case">${s.latency_ms} ms</span>` : '';
             return `
-            <div class="site-card bg-white rounded-xl border ${s.reachable ? 'border-slate-200' : 'border-red-300'} shadow-sm p-5 flex flex-col gap-3">
-                <div class="flex justify-between items-start gap-2">
-                    <div class="min-w-0">
-                        <div class="flex items-center gap-2">${dot}<h3 class="font-bold text-lg truncate">${s.name}</h3></div>
-                        <p class="text-xs text-slate-400 truncate">${s.location || '&nbsp;'}</p>
+            <div class="${s.reachable ? 'panel panel-hover' : 'panel card-down'} overflow-hidden flex flex-col">
+                ${topline}
+                <div class="p-5 flex flex-col gap-3 grow">
+                    <div class="flex justify-between items-start gap-2">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">${dot}<h3 class="font-bold text-lg text-slate-100 truncate">${s.name}</h3></div>
+                            <p class="text-xs text-slate-500 truncate">${s.location || '&nbsp;'}</p>
+                        </div>
+                        <div class="text-right shrink-0 flex flex-col items-end gap-1">${latency}<p class="text-[11px] text-slate-500">scan ${fmtAgo(s.last_scan_ts)}</p></div>
                     </div>
-                    <div class="text-right shrink-0">${latency}<p class="text-[11px] text-slate-400">scan ${fmtAgo(s.last_scan_ts)}</p></div>
-                </div>
-                <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${stale}</div>
-                <div>${sparkBars(s.spark)}<p class="text-[10px] text-slate-400 mt-1">Site reachability · last 24h ${s.reach_24h !== null ? '· ' + s.reach_24h + '%' : ''}</p></div>
-                <div class="flex justify-between items-center pt-2 border-t border-slate-100">
-                    ${kuma || '<span></span>'}
-                    <div class="flex gap-2">
-                        <a href="/site/${s.id}" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold">Details</a>
-                        <a href="${s.links.netwatch}" target="_blank" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold">Netwatch ↗</a>
-                        ${s.links.kuma ? `<a href="${s.links.kuma}" target="_blank" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Kuma ↗</a>` : ''}
+                    <div>
+                        <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${stale}</div>
+                        ${bar}
+                    </div>
+                    <div>${sparkBars(s.spark)}<p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Site reachability · last 24h ${s.reach_24h !== null ? '· ' + s.reach_24h + '%' : ''}</p></div>
+                    <div class="flex justify-between items-center pt-3 border-t border-white/10 mt-auto">
+                        ${kuma || '<span></span>'}
+                        <div class="flex gap-1.5">
+                            <a href="/site/${s.id}" class="btn btn-primary btn-sm">Details</a>
+                            <a href="${s.links.netwatch}" target="_blank" class="btn btn-ghost btn-sm">Netwatch ↗&#xFE0E;</a>
+                            ${s.links.kuma ? `<a href="${s.links.kuma}" target="_blank" class="btn btn-success btn-sm">Kuma ↗&#xFE0E;</a>` : ''}
+                        </div>
                     </div>
                 </div>
             </div>`;
@@ -306,18 +453,49 @@
             const reach = sites.filter(s => s.reachable).length;
             document.getElementById('stat-sites').textContent = `${reach}/${sites.length}`;
             const withData = sites.filter(s => s.devices_total !== null);
-            document.getElementById('stat-devices').textContent = withData.length
-                ? `${withData.reduce((a,s)=>a+s.devices_online,0)}/${withData.reduce((a,s)=>a+s.devices_total,0)}` : '--';
-            document.getElementById('stat-watched').textContent = sites.reduce((a,s)=>a+(s.watched_down||0),0);
-            document.getElementById('stat-conflicts').textContent = sites.reduce((a,s)=>a+(s.conflicts||0),0);
-            document.getElementById('stat-kuma').textContent = sites.reduce((a,s)=>a+((s.kuma&&s.kuma.down)||0),0);
+            const devOn = withData.reduce((a,s)=>a+s.devices_online,0), devTot = withData.reduce((a,s)=>a+s.devices_total,0);
+            document.getElementById('stat-devices').textContent = withData.length ? `${devOn}/${devTot}` : '--';
+            const watched = sites.reduce((a,s)=>a+(s.watched_down||0),0);
+            const conflicts = sites.reduce((a,s)=>a+(s.conflicts||0),0);
+            const kumaDown = sites.reduce((a,s)=>a+((s.kuma&&s.kuma.down)||0),0);
+            document.getElementById('stat-watched').textContent = watched;
+            document.getElementById('stat-conflicts').textContent = conflicts;
+            document.getElementById('stat-kuma').textContent = kumaDown;
+
+            // status strip: one glance = "is everything fine?"
+            const strip = document.getElementById('status-strip');
+            if (strip) {
+                const issues = [];
+                if (reach < sites.length) issues.push(`${sites.length - reach} site${sites.length - reach > 1 ? 's' : ''} unreachable`);
+                if (watched) issues.push(`${watched} watched device${watched > 1 ? 's' : ''} down`);
+                if (conflicts) issues.push(`${conflicts} IP conflict${conflicts > 1 ? 's' : ''}`);
+                if (kumaDown) issues.push(`${kumaDown} Kuma monitor${kumaDown > 1 ? 's' : ''} down`);
+                if (!sites.length) strip.innerHTML = '';
+                else if (!issues.length) strip.innerHTML = `
+                    <div class="rounded-2xl border border-emerald-400/25 bg-emerald-500/[0.06] backdrop-blur flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 mb-6">
+                        <div class="flex items-center gap-2.5"><span class="status-dot bg-emerald-500"></span><span class="text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-300">All systems nominal</span></div>
+                        <span class="text-[11px] text-slate-500 tabular-nums">${reach}/${sites.length} sites · ${devOn}/${devTot} devices online</span>
+                    </div>`;
+                else strip.innerHTML = `
+                    <div class="rounded-2xl border border-amber-400/30 bg-amber-500/[0.07] backdrop-blur flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 mb-6">
+                        <div class="flex items-center gap-2.5"><span class="status-dot bg-red-500 offline-blink"></span><span class="text-[11px] font-bold uppercase tracking-[0.2em] text-amber-300">Attention required</span></div>
+                        <span class="text-[11px] text-amber-200/80">${issues.join(' · ')}</span>
+                    </div>`;
+            }
+            const upd = document.getElementById('last-upd');
+            if (upd) upd.textContent = 'updated ' + new Date().toLocaleTimeString();
         }
 
         async function pollNow(){
-            const data = await fetch('/api/hub/sites').then(r=>r.json());
-            await Promise.all(data.sites.map(s =>
-                fetch(`/api/hub/sites/${s.id}/poll`, {method:'POST'})));
-            setTimeout(refresh, 2500);
+            const btn = document.getElementById('refresh-btn');
+            if (btn) btn.disabled = true;
+            try {
+                const data = await fetch('/api/hub/sites').then(r=>r.json());
+                await Promise.all(data.sites.map(s =>
+                    fetch(`/api/hub/sites/${s.id}/poll`, {method:'POST'})));
+            } finally {
+                setTimeout(() => { refresh(); if (btn) btn.disabled = false; }, 2500);
+            }
         }
 
         async function logout(){ await fetch('/api/logout', {method:'POST'}); location.href='/login'; }
@@ -339,9 +517,9 @@
             try {
                 const j = await (await fetch('/api/hub/remote')).json();
                 const cs = j.clients || [];
-                el.innerHTML = cs.length ? cs.map(c => `<div class="flex items-center justify-between gap-2 p-1.5 border rounded">
-                    <span><b>${c.name}</b> <span class="font-mono text-slate-400">${c.address||''}</span></span>
-                    <button onclick="rmDel('${c.id}','${c.name}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[11px]">Remove</button>
+                el.innerHTML = cs.length ? cs.map(c => `<div class="flex items-center justify-between gap-2 p-1.5 border border-white/10 rounded-lg">
+                    <span class="text-slate-300"><b>${c.name}</b> <span class="font-mono text-slate-500">${c.address||''}</span></span>
+                    <button onclick="rmDel('${c.id}','${c.name}')" class="btn btn-danger btn-sm">Remove</button>
                 </div>`).join('') : 'none yet';
             } catch(e){ el.textContent = 'failed to load'; }
         }
@@ -394,8 +572,8 @@
                     notify_site_offline: document.getElementById('al-site-offline').checked,
                     notify_ip_conflict: document.getElementById('al-ip-conflict').checked
                 })});
-                r.textContent = 'Saved.'; r.className = 'text-xs text-emerald-600';
-            } catch(e){ r.textContent = 'Failed.'; r.className = 'text-xs text-red-600'; }
+                r.textContent = 'Saved.'; r.className = 'text-xs text-emerald-400';
+            } catch(e){ r.textContent = 'Failed.'; r.className = 'text-xs text-rose-400'; }
         }
         async function testAlerts(){
             const r = document.getElementById('al-result');
@@ -404,23 +582,23 @@
             try {
                 const j = await (await fetch('/api/hub/alerts/test', {method:'POST'})).json();
                 r.textContent = j.ok ? 'Test sent — check your phone.' : (j.error || 'Failed');
-                r.className = 'text-xs ' + (j.ok ? 'text-emerald-600' : 'text-red-600');
-            } catch(e){ r.textContent = 'Failed.'; r.className = 'text-xs text-red-600'; }
+                r.className = 'text-xs ' + (j.ok ? 'text-emerald-400' : 'text-rose-400');
+            } catch(e){ r.textContent = 'Failed.'; r.className = 'text-xs text-rose-400'; }
         }
         function closeSites(){ document.getElementById('sites-modal').classList.add('hidden'); resetForm(); }
 
         async function loadSites(){
             const data = await fetch('/api/hub/sites').then(r=>r.json());
             document.getElementById('site-list').innerHTML = data.sites.map(s => `
-                <div class="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                <div class="flex items-center justify-between gap-2 p-3 bg-white/5 rounded-lg border border-white/10">
                     <div class="min-w-0">
-                        <p class="font-bold text-sm truncate">${s.name || s.id} <span class="font-mono font-normal text-xs text-slate-400">${s.vpn_ip}:${s.netwatch_port}</span></p>
-                        <p class="text-[10px] text-slate-400 font-mono truncate">${s.id}${s.kuma_url ? ' · kuma: ' + s.kuma_url + ' /' + s.kuma_status_slug : ''}${s.enabled ? '' : ' · paused'}</p>
+                        <p class="font-bold text-sm text-slate-200 truncate">${s.name || s.id} <span class="font-mono font-normal text-xs text-slate-500">${s.vpn_ip}:${s.netwatch_port}</span></p>
+                        <p class="text-[10px] text-slate-500 font-mono truncate">${s.id}${s.kuma_url ? ' · kuma: ' + s.kuma_url + ' /' + s.kuma_status_slug : ''}${s.enabled ? '' : ' · paused'}</p>
                     </div>
                     <div class="flex gap-1 shrink-0">
-                        ${s.wg_client_id ? `<button onclick="enrollCmd('${s.id}')" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-bold" title="Show the command to run on the farm Pi">Setup cmd</button>` : ''}
-                        <button onclick='editSite(${JSON.stringify(s)})' class="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">Edit</button>
-                        <button onclick="deleteSite('${s.id}', ${s.wg_client_id ? 'true' : 'false'})" class="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-xs font-bold">Delete</button>
+                        ${s.wg_client_id ? `<button onclick="enrollCmd('${s.id}')" class="btn btn-success btn-sm" title="Show the command to run on the farm Pi">Setup cmd</button>` : ''}
+                        <button onclick='editSite(${JSON.stringify(s)})' class="btn btn-ghost btn-sm">Edit</button>
+                        <button onclick="deleteSite('${s.id}', ${s.wg_client_id ? 'true' : 'false'})" class="btn btn-danger btn-sm">Delete</button>
                     </div>
                 </div>`).join('');
         }

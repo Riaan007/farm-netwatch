@@ -3,99 +3,184 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#070b14">
     <title>Site · Farm Network Asset Identifier Hub</title>
+    <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><path d="M20 3 34 11v18L20 37 6 29V11z" fill="none" stroke="%2322d3ee" stroke-width="3"/><circle cx="20" cy="20" r="5" fill="%2334d399"/></svg>'>
     <link rel="stylesheet" href="/app.css">
     <style>
-        .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; }
-        @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        :root { color-scheme: dark; }
+        body { background-color: #070b14; }
+        .bg-noc { position: fixed; inset: 0; z-index: -2; pointer-events: none;
+            background:
+                radial-gradient(1100px 520px at 12% -10%, rgba(34,211,238,.14), transparent 60%),
+                radial-gradient(900px 480px at 88% -5%, rgba(99,102,241,.12), transparent 55%),
+                radial-gradient(800px 700px at 50% 115%, rgba(16,185,129,.07), transparent 60%); }
+        .bg-grid { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+            background-image:
+                linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+            background-size: 34px 34px;
+            -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, black 25%, transparent 78%);
+            mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, black 25%, transparent 78%); }
+        .hdr { background: rgba(7,11,20,.78); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(148,163,184,.12); }
+        .hdr-line { height: 1px; background: linear-gradient(90deg, transparent, rgba(34,211,238,.55), rgba(16,185,129,.4), transparent); }
+        .panel { background: linear-gradient(180deg, rgba(148,163,184,.09), rgba(148,163,184,.03));
+            border: 1px solid rgba(148,163,184,.14); border-radius: 1rem;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+        .panel-hover { transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+        .panel-hover:hover { transform: translateY(-2px); border-color: rgba(34,211,238,.4);
+            box-shadow: 0 0 0 1px rgba(34,211,238,.12), 0 14px 34px -16px rgba(34,211,238,.28); }
+        .panel-accent { background: linear-gradient(135deg, rgba(14,165,233,.18), rgba(34,211,238,.05));
+            border: 1px solid rgba(34,211,238,.35); border-radius: 1rem;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+        .modal-card { background: rgba(10,16,30,.94); border: 1px solid rgba(148,163,184,.16);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 24px 70px -20px rgba(0,0,0,.85), 0 0 0 1px rgba(34,211,238,.06); }
+        .inp { background: rgba(2,6,23,.65); border: 1px solid rgba(148,163,184,.2); color: #e2e8f0;
+            border-radius: .6rem; padding: .55rem .75rem; font-size: .85rem; width: 100%;
+            transition: border-color .15s, box-shadow .15s; }
+        .inp::placeholder { color: #475569; }
+        .inp:focus { outline: none; border-color: rgba(34,211,238,.55); box-shadow: 0 0 0 3px rgba(34,211,238,.14); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+            border-radius: .6rem; border: 1px solid transparent; cursor: pointer;
+            font-weight: 700; font-size: .72rem; letter-spacing: .05em; text-transform: uppercase;
+            padding: .5rem .85rem; transition: all .15s ease; white-space: nowrap; }
+        .btn:disabled { opacity: .55; cursor: default; }
+        .btn-primary { background: linear-gradient(135deg, #0ea5e9, #06b6d4); color: #03141c;
+            border-color: rgba(103,232,249,.4); box-shadow: 0 2px 14px -4px rgba(34,211,238,.55); }
+        .btn-primary:hover { filter: brightness(1.12); box-shadow: 0 4px 20px -4px rgba(34,211,238,.7); }
+        .btn-ghost { background: rgba(148,163,184,.09); border-color: rgba(148,163,184,.18); color: #cbd5e1; }
+        .btn-ghost:hover { background: rgba(148,163,184,.16); border-color: rgba(34,211,238,.4); color: #f1f5f9; }
+        .btn-success { background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.35); color: #6ee7b7; }
+        .btn-success:hover { background: rgba(16,185,129,.24); }
+        .btn-danger { background: rgba(244,63,94,.12); border-color: rgba(244,63,94,.3); color: #fda4af; }
+        .btn-danger:hover { background: rgba(244,63,94,.2); }
+        .btn-sm { padding: .3rem .6rem; font-size: .66rem; border-radius: .5rem; }
+        .chip { display: inline-flex; align-items: center; gap: .3rem; padding: .15rem .55rem;
+            border-radius: 9999px; font-size: .66rem; font-weight: 700; }
+        .status-dot { height: 8px; width: 8px; border-radius: 9999px; display: inline-block; flex-shrink: 0; }
+        .status-dot.bg-emerald-500 { box-shadow: 0 0 8px 1px rgba(16,185,129,.85); }
+        .status-dot.bg-red-500 { box-shadow: 0 0 8px 1px rgba(239,68,68,.85); }
+        .status-dot.bg-slate-500 { box-shadow: 0 0 6px rgba(100,116,139,.7); }
+        @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
         .offline-blink { animation: pulse-soft 1.6s infinite; }
-        .beat { width: 6px; border-radius: 2px; height: 20px; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(148,163,184,.2); border-radius: 8px; border: 2px solid #070b14; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.35); }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen font-sans text-slate-900 flex flex-col">
+<body class="min-h-screen font-sans text-slate-200 flex flex-col antialiased selection:bg-cyan-500/30">
+    <div class="bg-noc"></div>
+    <div class="bg-grid"></div>
 
-    <header class="bg-slate-900 text-white p-6 shadow-lg sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-            <div class="flex items-center gap-4 min-w-0">
-                <a href="/" class="p-2 bg-slate-700 hover:bg-slate-600 rounded-full shrink-0" title="Back to overview">
+    <header class="hdr sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+                <a href="/" class="btn btn-ghost !px-2.5 shrink-0" title="Back to overview" aria-label="Back to overview">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
                 </a>
                 <div class="min-w-0">
-                    <h1 class="text-2xl font-bold tracking-tight flex items-center gap-2">
+                    <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2.5">
                         <span id="reach-dot" class="status-dot bg-slate-500"></span>
                         <span id="site-name" class="truncate">…</span>
                         <span id="internet-badge" class="hidden text-[11px] font-bold px-2 py-0.5 rounded-full"></span>
                     </h1>
-                    <p id="site-sub" class="text-slate-400 text-xs mt-1 italic">&nbsp;</p>
+                    <p id="site-sub" class="text-slate-500 text-xs mt-0.5">&nbsp;</p>
                 </div>
             </div>
-            <div class="flex items-center gap-3">
-                <button onclick="pollNow()" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-bold uppercase">Refresh</button>
-                <button onclick="openHistory()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">History</button>
-                <a id="link-netwatch" href="#" target="_blank" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-bold uppercase">Netwatch ↗</a>
-                <a id="link-kuma" href="#" target="_blank" class="hidden px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-xs font-bold uppercase">Kuma ↗</a>
+            <div class="flex items-center gap-2 flex-wrap justify-center">
+                <button onclick="pollNow()" id="refresh-btn" class="btn btn-primary">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4.6 9a8 8 0 0114-3.2M19.4 15a8 8 0 01-14 3.2"/></svg>
+                    Refresh
+                </button>
+                <button onclick="openHistory()" class="btn btn-ghost">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3.5 2"/></svg>
+                    History
+                </button>
+                <a id="link-netwatch" href="#" target="_blank" class="btn btn-ghost">Netwatch ↗&#xFE0E;</a>
+                <a id="link-kuma" href="#" target="_blank" class="hidden btn btn-success">Kuma ↗&#xFE0E;</a>
             </div>
         </div>
+        <div class="hdr-line"></div>
     </header>
 
-    <main class="max-w-7xl mx-auto p-6 flex-grow w-full">
-        <div id="stale-banner" class="hidden mb-6 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm font-medium">
+    <main class="max-w-7xl mx-auto p-4 sm:p-6 flex-grow w-full">
+        <div id="stale-banner" class="hidden mb-6 p-3 bg-amber-500/10 border border-amber-400/30 text-amber-200 rounded-xl text-sm font-medium backdrop-blur">
             ⚠️ Showing the last data received from this site — it is currently unreachable over the VPN.
         </div>
         <div id="conflict-monitor" class="hidden mb-6"></div>
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <p class="text-slate-500 text-xs font-semibold uppercase">Devices online</p>
-                <p id="stat-devices" class="text-3xl font-bold">--</p>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-8">
+            <div class="panel panel-hover p-4 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-emerald-400/10 blur-2xl"></div>
+                <div class="flex items-center gap-2 text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><path stroke-linecap="round" d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Devices online</p>
+                </div>
+                <p id="stat-devices" class="text-3xl font-bold tabular-nums mt-1.5 text-slate-100">--</p>
             </div>
-            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <p class="text-slate-500 text-xs font-semibold uppercase">Watched down</p>
-                <p id="stat-watched" class="text-3xl font-bold text-amber-600">0</p>
+            <div class="panel panel-hover p-4 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-amber-400/10 blur-2xl"></div>
+                <div class="flex items-center gap-2 text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4a2 2 0 01-.6-1.4V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Watched down</p>
+                </div>
+                <p id="stat-watched" class="text-3xl font-bold tabular-nums mt-1.5 text-amber-400">0</p>
             </div>
-            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <p class="text-slate-500 text-xs font-semibold uppercase">Site reachability 24h</p>
-                <p id="stat-reach" class="text-3xl font-bold">--</p>
+            <div class="panel panel-hover p-4 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-cyan-400/10 blur-2xl"></div>
+                <div class="flex items-center gap-2 text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Site reachability 24h</p>
+                </div>
+                <p id="stat-reach" class="text-3xl font-bold tabular-nums mt-1.5 text-slate-100">--</p>
             </div>
-            <div class="bg-blue-600 p-4 rounded-xl shadow-md text-white">
-                <p class="text-blue-100 text-xs font-semibold uppercase">Last scan</p>
-                <p id="stat-scan" class="text-lg font-bold mt-1 tracking-tighter truncate">--</p>
+            <div class="panel-accent p-4 relative overflow-hidden">
+                <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-cyan-400/20 blur-2xl"></div>
+                <div class="flex items-center gap-2 text-cyan-200/70">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3.5 2"/></svg>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Last scan</p>
+                </div>
+                <p id="stat-scan" class="text-lg font-bold tabular-nums mt-2 text-cyan-100 truncate">--</p>
             </div>
         </div>
 
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-8">
+        <div class="panel p-5 mb-8">
             <div class="flex justify-between items-center mb-2">
-                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-tight">VPN reachability · last 24h</h2>
-                <span id="reach-summary" class="text-xs text-slate-400 font-mono"></span>
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-[0.18em]">VPN reachability · last 24h</h2>
+                <span id="reach-summary" class="text-xs text-slate-500 font-mono"></span>
             </div>
             <div id="reach-spark"></div>
         </div>
 
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div class="p-5 flex flex-wrap gap-3 justify-between items-center border-b border-slate-100">
-                <h2 class="text-sm font-bold text-slate-700 uppercase tracking-tight">Devices</h2>
+        <div class="panel overflow-hidden">
+            <div class="p-5 flex flex-wrap gap-3 justify-between items-center border-b border-white/10">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-[0.18em]">Devices</h2>
                 <div class="flex flex-wrap gap-2 items-center">
                     <input id="dev-search" type="search" placeholder="Search name / IP / vendor…"
                            oninput="devState.q=this.value;renderDevices()"
-                           class="p-2 bg-slate-50 border rounded-lg text-sm w-52">
+                           class="inp !w-52">
                     <select onchange="devState.group=this.value;renderDevices()"
-                            class="p-2 bg-slate-50 border rounded-lg text-sm">
+                            class="inp !w-auto">
                         <option value="category" selected>Group: Category</option>
                         <option value="status">Group: Status</option>
                         <option value="none">Group: None</option>
                     </select>
-                    <span id="device-count" class="text-xs text-slate-400"></span>
+                    <span id="device-count" class="text-xs text-slate-500 tabular-nums"></span>
                 </div>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead>
-                        <tr class="text-left text-[10px] text-slate-400 uppercase border-b border-slate-100 select-none">
-                            <th class="px-5 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('name')">Device <span id="s-name"></span></th>
-                            <th class="px-3 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('category')">Category <span id="s-category"></span></th>
-                            <th class="px-3 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('ip')">IP <span id="s-ip"></span></th>
-                            <th class="px-3 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('rtt')">RTT <span id="s-rtt"></span></th>
-                            <th class="px-3 py-2.5 cursor-pointer hover:text-slate-600" onclick="setSort('last_seen')">Last seen <span id="s-last_seen"></span></th>
+                        <tr class="text-left text-[10px] text-slate-500 uppercase tracking-wider border-b border-white/10 select-none">
+                            <th class="px-5 py-2.5 cursor-pointer hover:text-cyan-300" onclick="setSort('name')">Device <span id="s-name"></span></th>
+                            <th class="px-3 py-2.5 cursor-pointer hover:text-cyan-300" onclick="setSort('category')">Category <span id="s-category"></span></th>
+                            <th class="px-3 py-2.5 cursor-pointer hover:text-cyan-300" onclick="setSort('ip')">IP <span id="s-ip"></span></th>
+                            <th class="px-3 py-2.5 cursor-pointer hover:text-cyan-300" onclick="setSort('rtt')">RTT <span id="s-rtt"></span></th>
+                            <th class="px-3 py-2.5 cursor-pointer hover:text-cyan-300" onclick="setSort('last_seen')">Last seen <span id="s-last_seen"></span></th>
                             <th class="px-3 py-2.5"></th>
                         </tr>
                     </thead>
@@ -106,49 +191,49 @@
     </main>
 
     <!-- Connect-to-device modal -->
-    <div id="connect-modal" onclick="if(event.target===this) closeConnect()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
-        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
-            <div class="p-5 bg-slate-800 text-white flex justify-between items-center shrink-0">
-                <div><h2 class="text-lg font-bold">Connect to device</h2><p id="cn-sub" class="text-xs text-slate-300"></p></div>
-                <button onclick="closeConnect()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+    <div id="connect-modal" onclick="if(event.target===this) closeConnect()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
+        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-5 border-b border-white/10 flex justify-between items-center shrink-0">
+                <div><h2 class="text-lg font-bold text-slate-100">Connect to device</h2><p id="cn-sub" class="text-xs text-slate-500"></p></div>
+                <button onclick="closeConnect()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xl leading-none">&times;</button>
             </div>
             <div class="p-5 overflow-y-auto text-sm space-y-4">
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Pick a port</label>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Pick a port</label>
                     <div id="cn-ports" class="flex flex-wrap gap-2 mb-2"></div>
                     <div class="flex gap-2 items-center">
-                        <input id="cn-custom" type="number" min="1" max="65535" placeholder="custom port" class="w-32 p-2 bg-slate-50 border rounded-lg text-sm">
-                        <button onclick="openTunnel()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Open tunnel</button>
+                        <input id="cn-custom" type="number" min="1" max="65535" placeholder="custom port" class="inp !w-32">
+                        <button onclick="openTunnel()" class="btn btn-success">Open tunnel</button>
                         <span id="cn-msg" class="text-xs"></span>
                     </div>
                 </div>
-                <div id="cn-result" class="hidden p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm"></div>
+                <div id="cn-result" class="hidden p-3 rounded-lg bg-emerald-500/10 border border-emerald-400/25 text-sm text-slate-200"></div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Active tunnels</label>
-                    <div id="cn-active" class="space-y-1 text-xs text-slate-500">none</div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Active tunnels</label>
+                    <div id="cn-active" class="space-y-1 text-xs text-slate-400">none</div>
                 </div>
-                <p class="text-[10px] text-slate-400">Tunnels open on demand and auto-close when idle. For SSH/PuTTY use the <b>host:port</b>; for a web UI use the link. The device's own login still applies. These ports are on your LAN only — don't forward them to the internet.</p>
+                <p class="text-[10px] text-slate-500">Tunnels open on demand and auto-close when idle. For SSH/PuTTY use the <b class="text-slate-300">host:port</b>; for a web UI use the link. The device's own login still applies. These ports are on your LAN only — don't forward them to the internet.</p>
             </div>
         </div>
     </div>
 
     <!-- History / event log modal -->
-    <div id="history-modal" onclick="if(event.target===this) closeHistory()" class="fixed inset-0 bg-slate-900/60 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
-        <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden">
-            <div class="p-5 bg-slate-800 text-white flex justify-between items-center shrink-0">
+    <div id="history-modal" onclick="if(event.target===this) closeHistory()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
+        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-5 border-b border-white/10 flex justify-between items-center shrink-0">
                 <div>
-                    <h2 class="text-lg font-bold">Device &amp; IP history</h2>
-                    <p class="text-xs text-slate-300">Every device that joined, went offline, returned, or took over an IP — kept even after a device is forgotten.</p>
+                    <h2 class="text-lg font-bold text-slate-100">Device &amp; IP history</h2>
+                    <p class="text-xs text-slate-500">Every device that joined, went offline, returned, or took over an IP — kept even after a device is forgotten.</p>
                 </div>
-                <button onclick="closeHistory()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/15 hover:bg-white/30 text-xl leading-none">&times;</button>
+                <button onclick="closeHistory()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xl leading-none">&times;</button>
             </div>
-            <div class="px-5 pt-3 shrink-0 flex flex-wrap gap-2 items-center border-b border-slate-100 pb-3">
-                <div class="flex bg-slate-100 rounded-lg p-0.5 text-xs font-bold">
-                    <button id="ht-timeline" onclick="histTab('timeline')" class="px-3 py-1.5 rounded-md bg-white shadow">Timeline</button>
+            <div class="px-5 pt-3 shrink-0 flex flex-wrap gap-2 items-center border-b border-white/10 pb-3">
+                <div class="flex bg-white/5 rounded-lg p-0.5 text-xs font-bold">
+                    <button id="ht-timeline" onclick="histTab('timeline')" class="px-3 py-1.5 rounded-md bg-cyan-500/20 text-cyan-200 shadow">Timeline</button>
                     <button id="ht-byip" onclick="histTab('byip')" class="px-3 py-1.5 rounded-md text-slate-500">By IP</button>
                 </div>
-                <input id="hist-filter" oninput="renderHistory()" type="text" placeholder="Filter by IP, name or vendor…" class="flex-grow min-w-[160px] p-2 bg-slate-50 border rounded-lg text-sm">
-                <select id="hist-type" onchange="loadEvents()" class="p-2 bg-slate-50 border rounded-lg text-sm">
+                <input id="hist-filter" oninput="renderHistory()" type="text" placeholder="Filter by IP, name or vendor…" class="inp !w-auto flex-grow min-w-[160px]">
+                <select id="hist-type" onchange="loadEvents()" class="inp !w-auto">
                     <option value="">All events</option>
                     <option value="new">New device</option>
                     <option value="offline">Went offline</option>
@@ -156,7 +241,7 @@
                     <option value="ip_change">IP reassigned</option>
                 </select>
             </div>
-            <div id="hist-body" class="p-5 overflow-y-auto text-sm">Loading…</div>
+            <div id="hist-body" class="p-5 overflow-y-auto text-sm text-slate-300">Loading…</div>
         </div>
     </div>
 
@@ -168,14 +253,14 @@
             printer:"🖨️", nas:"💾", voip:"☎️", alarm:"🚨", solar:"☀️", media:"📺", iot:"💡", pc:"💻",
             server:"🖥️", unknown:"❓" };
         const catChip = {
-            camera: "bg-rose-50 text-rose-900", nvr: "bg-rose-100 text-rose-900",
-            network: "bg-indigo-50 text-indigo-900", "internet-ap": "bg-purple-50 text-purple-900",
-            router: "bg-indigo-100 text-indigo-900", printer: "bg-amber-50 text-amber-900",
-            nas: "bg-cyan-50 text-cyan-900", voip: "bg-teal-50 text-teal-900",
-            alarm: "bg-red-50 text-red-900",
-            solar: "bg-yellow-50 text-yellow-900", media: "bg-blue-50 text-blue-900",
-            iot: "bg-emerald-50 text-emerald-900", pc: "bg-slate-100 text-slate-700",
-            server: "bg-slate-200 text-slate-800", unknown: "bg-slate-50 text-slate-500",
+            camera: "bg-rose-500/15 text-rose-300", nvr: "bg-rose-400/20 text-rose-200",
+            network: "bg-indigo-500/15 text-indigo-300", "internet-ap": "bg-purple-500/15 text-purple-300",
+            router: "bg-indigo-400/20 text-indigo-200", printer: "bg-amber-500/15 text-amber-300",
+            nas: "bg-cyan-500/15 text-cyan-300", voip: "bg-teal-500/15 text-teal-300",
+            alarm: "bg-red-500/15 text-red-300",
+            solar: "bg-yellow-500/15 text-yellow-300", media: "bg-blue-500/15 text-blue-300",
+            iot: "bg-emerald-500/15 text-emerald-300", pc: "bg-slate-500/20 text-slate-300",
+            server: "bg-slate-400/20 text-slate-200", unknown: "bg-slate-500/10 text-slate-400",
         };
 
         function fmtAgo(ts){
@@ -188,9 +273,9 @@
         }
 
         function sparkBars(series, tall){
-            if (!series || !series.some(v => v !== null)) return '<p class="text-xs text-slate-300">no samples yet</p>';
+            if (!series || !series.some(v => v !== null)) return '<p class="text-xs text-slate-600">no samples yet</p>';
             return `<div class="flex items-end gap-px ${tall ? 'h-10' : 'h-6'}">` + series.map(v => {
-                let c = 'bg-slate-200', h = 30;
+                let c = 'bg-white/10', h = 30;
                 if (v !== null) {
                     h = 100;
                     c = v >= 0.99 ? 'bg-emerald-400' : (v > 0 ? 'bg-amber-400' : 'bg-red-400');
@@ -268,14 +353,14 @@
                     const label = devState.group === 'status'
                         ? (k === 'online' ? '🟢 Online' : '🔴 Offline')
                         : `${catIcon[k] || '•'} ${k}`;
-                    return `<tr class="bg-slate-50 border-y border-slate-100">
-                        <td colspan="6" class="px-5 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                            ${label} <span class="font-normal normal-case text-slate-400">· ${on}/${list.length} online</span>
+                    return `<tr class="bg-white/[0.03] border-y border-white/5">
+                        <td colspan="6" class="px-5 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                            ${label} <span class="font-normal normal-case text-slate-500">· ${on}/${list.length} online</span>
                         </td></tr>` + list.map(deviceRow).join('');
                 }).join('');
             }
             document.getElementById('device-rows').innerHTML =
-                html || '<tr><td colspan="6" class="px-5 py-6 text-center text-sm text-slate-300">No devices match.</td></tr>';
+                html || '<tr><td colspan="6" class="px-5 py-6 text-center text-sm text-slate-600">No devices match.</td></tr>';
             document.getElementById('device-count').textContent =
                 (q ? `${devs.length} of ${lastDevices.length}` : `${lastDevices.length} devices`)
                 + (lastFetched ? ' · updated ' + fmtAgo(lastFetched) : '');
@@ -298,19 +383,19 @@
             // useful info, but flagged as possibly stale when this IP is in conflict.
             const stale = conflictIPset.has(d.ip);
             const sub = (d.hostname && d.hostname !== name)
-                ? `<div class="text-[10px] ${stale ? 'text-amber-500' : 'text-slate-400'} font-mono truncate max-w-[240px]"
+                ? `<div class="text-[10px] ${stale ? 'text-amber-400' : 'text-slate-500'} font-mono truncate max-w-[240px]"
                         title="hostname (reverse DNS)${stale ? ' — may be stale: this IP has an address conflict' : ''}">${d.hostname}${stale ? ' ⚠' : ''}</div>`
                 : '';
             return `
-            <tr class="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onclick="toggleHistory(this, '${encodeURIComponent(d.key)}', '${d.ip || ''}')">
-                <td class="px-5 py-2.5"><div class="flex items-center gap-2">${dot}<div class="min-w-0"><span class="font-medium">${name}${watch}${conflict}</span>${sub}</div></div></td>
+            <tr class="border-b border-white/5 hover:bg-cyan-400/5 transition-colors cursor-pointer" onclick="toggleHistory(this, '${encodeURIComponent(d.key)}', '${d.ip || ''}')">
+                <td class="px-5 py-2.5"><div class="flex items-center gap-2">${dot}<div class="min-w-0"><span class="font-medium text-slate-200">${name}${watch}${conflict}</span>${sub}</div></div></td>
                 <td class="px-3 py-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${catChip[cat] || catChip.unknown}">${catIcon[cat] || '•'} ${cat}</span></td>
-                <td class="px-3 py-2.5 font-mono text-xs">${d.ip || '—'}</td>
-                <td class="px-3 py-2.5 font-mono text-xs">${d.rtt != null ? d.rtt + ' ms' : '—'}</td>
+                <td class="px-3 py-2.5 font-mono text-xs text-slate-300">${d.ip || '—'}</td>
+                <td class="px-3 py-2.5 font-mono text-xs text-slate-400">${d.rtt != null ? d.rtt + ' ms' : '—'}</td>
                 <td class="px-3 py-2.5 text-xs text-slate-500">${d.online ? 'now' : fmtAgo(d.last_seen)}</td>
                 <td class="px-3 py-2.5 text-right whitespace-nowrap">
-                    ${d.ip ? `<button onclick="event.stopPropagation(); openConnect('${d.ip}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-bold">Connect</button>` : ''}
-                    <span class="text-slate-300 text-xs ml-1">▾</span>
+                    ${d.ip ? `<button onclick="event.stopPropagation(); openConnect('${d.ip}')" class="px-2 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 rounded-md text-[11px] font-bold">Connect</button>` : ''}
+                    <span class="text-slate-600 text-xs ml-1">▾</span>
                 </td>
             </tr>`;
         }
@@ -320,15 +405,15 @@
             if (next && next.dataset.history) { next.remove(); return; }
             const tr = document.createElement('tr');
             tr.dataset.history = '1';
-            tr.innerHTML = `<td colspan="6" class="px-5 py-3 bg-slate-50 text-xs text-slate-400">Loading uptime…</td>`;
+            tr.innerHTML = `<td colspan="6" class="px-5 py-3 bg-white/[0.03] text-xs text-slate-500">Loading uptime…</td>`;
             row.after(tr);
             const rid = 'diag-' + Math.random().toString(36).slice(2, 8);
             const diagBlock = ip ? `
-                <div class="mt-3 pt-3 border-t border-slate-200 flex flex-wrap gap-2 items-center">
-                    <span class="text-[10px] uppercase font-bold text-slate-400 mr-1">Diagnostics</span>
-                    <button onclick="diag('ping','${ip}','${rid}',this)" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">📡 Ping</button>
-                    <button onclick="diag('quality','${ip}','${rid}',this)" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-bold">📶 Connection test</button>
-                    <button onclick="diag('deep','${ip}','${rid}',this)" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold">🔬 Deep scan</button>
+                <div class="mt-3 pt-3 border-t border-white/10 flex flex-wrap gap-2 items-center">
+                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider mr-1">Diagnostics</span>
+                    <button onclick="diag('ping','${ip}','${rid}',this)" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-xs font-bold">📡 Ping</button>
+                    <button onclick="diag('quality','${ip}','${rid}',this)" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-xs font-bold">📶 Connection test</button>
+                    <button onclick="diag('deep','${ip}','${rid}',this)" class="px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-xs font-bold">🔬 Deep scan</button>
                 </div>
                 <div id="${rid}" class="mt-2"></div>` : '';
             const cid = 'chart-' + Math.random().toString(36).slice(2, 8);
@@ -338,19 +423,19 @@
             const pct = v => v == null ? '--' : v + '%';
             const chartBlock = `
                 <div class="flex items-center justify-between mb-1">
-                    <span class="text-[10px] uppercase font-bold text-slate-400">Latency &amp; uptime</span>
-                    <div id="${cid}-rng" class="flex bg-slate-100 rounded-lg p-0.5 text-[11px] font-bold">
-                        ${['30m','1h','12h','24h'].map(rr => `<button data-r="${rr}" onclick="loadBeats('${key}','${cid}','${rr}')" class="px-2 py-0.5 rounded-md ${rr==='1h'?'bg-white shadow':'text-slate-500'}">${rr}</button>`).join('')}
+                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Latency &amp; uptime</span>
+                    <div id="${cid}-rng" class="flex bg-white/5 rounded-lg p-0.5 text-[11px] font-bold">
+                        ${['30m','1h','12h','24h'].map(rr => `<button data-r="${rr}" onclick="loadBeats('${key}','${cid}','${rr}')" class="px-2 py-0.5 rounded-md ${rr==='1h'?'bg-cyan-500/20 text-cyan-200 shadow':'text-slate-500'}">${rr}</button>`).join('')}
                     </div>
                 </div>
-                <div id="${cid}"><p class="text-xs text-slate-300">loading…</p></div>`;
-            tr.innerHTML = `<td colspan="6" class="px-5 py-3 bg-slate-50">
+                <div id="${cid}"><p class="text-xs text-slate-600">loading…</p></div>`;
+            tr.innerHTML = `<td colspan="6" class="px-5 py-3 bg-white/[0.03]">
                 <div class="flex items-start gap-6 flex-wrap">
                     <div class="grow min-w-[220px]">${chartBlock}</div>
                     <div class="flex gap-4 text-center text-xs">
-                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">24h</div><div class="font-bold">${pct(sum.uptime_24h)}</div></div>
-                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">7d</div><div class="font-bold">${pct(sum.uptime_7d)}</div></div>
-                        <div><div class="text-[10px] text-slate-400 uppercase font-bold">30d</div><div class="font-bold">${pct(sum.uptime_30d)}</div></div>
+                        <div><div class="text-[10px] text-slate-500 uppercase font-bold">24h</div><div class="font-bold text-slate-200">${pct(sum.uptime_24h)}</div></div>
+                        <div><div class="text-[10px] text-slate-500 uppercase font-bold">7d</div><div class="font-bold text-slate-200">${pct(sum.uptime_7d)}</div></div>
+                        <div><div class="text-[10px] text-slate-500 uppercase font-bold">30d</div><div class="font-bold text-slate-200">${pct(sum.uptime_30d)}</div></div>
                     </div>
                 </div>${diagBlock}</td>`;
             loadBeats(key, cid, '1h');
@@ -361,16 +446,16 @@
             const el = document.getElementById(cid); if (!el) return;
             const rng = document.getElementById(cid + '-rng');
             if (rng) rng.querySelectorAll('button').forEach(b =>
-                b.className = 'px-2 py-0.5 rounded-md ' + (b.dataset.r === range ? 'bg-white shadow' : 'text-slate-500'));
-            el.innerHTML = '<p class="text-xs text-slate-300">loading…</p>';
+                b.className = 'px-2 py-0.5 rounded-md ' + (b.dataset.r === range ? 'bg-cyan-500/20 text-cyan-200 shadow' : 'text-slate-500'));
+            el.innerHTML = '<p class="text-xs text-slate-600">loading…</p>';
             try {
                 const j = await (await fetch(`/api/hub/sites/${siteId}/history/${key}/beats?range=${range}`)).json();
                 el.innerHTML = latencyChart(j.points || []);
-            } catch(e) { el.innerHTML = '<p class="text-xs text-red-600">unavailable</p>'; }
+            } catch(e) { el.innerHTML = '<p class="text-xs text-rose-400">unavailable</p>'; }
         }
         function latencyChart(points){
             if (!points.length || !points.some(p => p.rtt != null || p.up != null))
-                return '<p class="text-xs text-slate-300">No samples yet — watched/named devices are pinged every 60s.</p>';
+                return '<p class="text-xs text-slate-600">No samples yet — watched/named devices are pinged every 60s.</p>';
             const W = 320, H = 64, PAD = 4;
             const rtts = points.filter(p => p.rtt != null).map(p => p.rtt);
             const maxR = Math.max(10, ...rtts), n = points.length;
@@ -382,9 +467,9 @@
                 else cur.push(`${x(i).toFixed(1)},${y(p.rtt).toFixed(1)}`);
             });
             if (cur.length) segs.push(cur);
-            const lines = segs.map(s => `<polyline fill="none" stroke="#10b981" stroke-width="1.5" points="${s.join(' ')}"/>`).join('');
+            const lines = segs.map(s => `<polyline fill="none" stroke="#22d3ee" stroke-width="1.5" points="${s.join(' ')}"/>`).join('');
             const bars = points.map(p => {
-                const c = p.up == null ? 'bg-slate-200' : p.up >= 0.99 ? 'bg-emerald-400' : p.up > 0 ? 'bg-amber-400' : 'bg-red-400';
+                const c = p.up == null ? 'bg-white/10' : p.up >= 0.99 ? 'bg-emerald-400' : p.up > 0 ? 'bg-amber-400' : 'bg-red-400';
                 return `<div class="flex-1 ${c}"></div>`;
             }).join('');
             const avgUp = points.reduce((a, p) => a + (p.up || 0), 0) / n;
@@ -393,7 +478,7 @@
             return `
                 <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="w-full" style="height:48px">${lines}</svg>
                 <div class="flex items-stretch gap-px h-2 mt-0.5">${bars}</div>
-                <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1">
                     <span>min ${f(rtts.length ? Math.min(...rtts) : null)} · avg ${f(avgR)} · max ${f(rtts.length ? maxR : null)} ms</span>
                     <span>uptime ${(avgUp * 100).toFixed(0)}%</span>
                 </div>`;
@@ -408,37 +493,37 @@
                 btn.textContent = 'Starting…';
                 try {
                     await fetch(`/api/hub/sites/${siteId}/trigger`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'deep', hosts:[ip]})});
-                    out.innerHTML = `<p class="text-xs text-slate-500">🔬 Deep scan started on ${ip} (all 65535 ports + service/version + OS). Takes a few minutes; the device list updates after the next refresh.</p>`;
+                    out.innerHTML = `<p class="text-xs text-slate-400">🔬 Deep scan started on ${ip} (all 65535 ports + service/version + OS). Takes a few minutes; the device list updates after the next refresh.</p>`;
                     setTimeout(refresh, 4000);
-                } catch(e){ out.innerHTML = '<p class="text-xs text-red-600">Failed to start deep scan.</p>'; }
+                } catch(e){ out.innerHTML = '<p class="text-xs text-rose-400">Failed to start deep scan.</p>'; }
                 btn.textContent = orig; btn.disabled = false;
                 return;
             }
             const action = kind === 'quality' ? 'quality' : 'ping';
             btn.textContent = (kind === 'quality' ? 'Testing…' : 'Pinging…');
-            out.innerHTML = `<p class="text-xs text-slate-500">Running ${kind} on ${ip} via the site…</p>`;
+            out.innerHTML = `<p class="text-xs text-slate-400">Running ${kind} on ${ip} via the site…</p>`;
             try {
                 const r = await (await fetch(`/api/hub/sites/${siteId}/command`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action, ip})})).json();
                 if (kind === 'quality') renderQuality(out, r.quality);
-                else out.innerHTML = `<pre class="text-[11px] bg-white border rounded-lg p-2 overflow-x-auto whitespace-pre-wrap">${(r.result || r.error || '(no output)').replace(/</g,'&lt;')}</pre>`;
-            } catch(e){ out.innerHTML = '<p class="text-xs text-red-600">Site unreachable.</p>'; }
+                else out.innerHTML = `<pre class="text-[11px] bg-[#050b16] border border-white/10 text-emerald-300/90 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap">${(r.result || r.error || '(no output)').replace(/</g,'&lt;')}</pre>`;
+            } catch(e){ out.innerHTML = '<p class="text-xs text-rose-400">Site unreachable.</p>'; }
             btn.textContent = orig; btn.disabled = false;
         }
         function renderQuality(panel, q){
-            if(!q || !q.ok){ panel.innerHTML = '<p class="text-xs text-red-600">'+((q&&q.error)||'Test failed')+'</p>'; return; }
-            const styles = { excellent:'bg-green-100 text-green-800', good:'bg-emerald-100 text-emerald-800', fair:'bg-amber-100 text-amber-800', poor:'bg-red-100 text-red-800', down:'bg-slate-200 text-slate-700' };
+            if(!q || !q.ok){ panel.innerHTML = '<p class="text-xs text-rose-400">'+((q&&q.error)||'Test failed')+'</p>'; return; }
+            const styles = { excellent:'bg-emerald-500/20 text-emerald-300', good:'bg-emerald-500/15 text-emerald-300', fair:'bg-amber-500/15 text-amber-300', poor:'bg-rose-500/15 text-rose-300', down:'bg-slate-500/20 text-slate-300' };
             const label = { excellent:'Excellent', good:'Good', fair:'Fair', poor:'Poor', down:'No response' };
             const cls = styles[q.rating] || styles.down;
-            const metric = (lbl,val,unit)=>`<div class="bg-white rounded-lg p-2 border text-center"><div class="text-[10px] text-slate-400 uppercase font-bold">${lbl}</div><div class="text-sm font-bold">${val==null?'--':val}${val==null?'':unit}</div></div>`;
+            const metric = (lbl,val,unit)=>`<div class="bg-white/5 rounded-lg p-2 border border-white/10 text-center"><div class="text-[10px] text-slate-500 uppercase font-bold">${lbl}</div><div class="text-sm font-bold text-slate-100">${val==null?'--':val}${val==null?'':unit}</div></div>`;
             panel.innerHTML = `
                 <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs font-bold text-slate-500 uppercase">Connection quality</span>
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Connection quality</span>
                     <span class="px-3 py-1 rounded-full text-xs font-bold ${cls}">${label[q.rating]||q.rating}</span>
                 </div>
                 <div class="grid grid-cols-4 gap-2">
                     ${metric('Loss', q.loss, '%')}${metric('Avg', q.avg, 'ms')}${metric('Jitter', q.jitter, 'ms')}${metric('Max', q.max, 'ms')}
                 </div>
-                <p class="text-[10px] text-slate-400 mt-1">${q.recv}/${q.sent} replies${q.note ? ' · '+q.note : ''}</p>`;
+                <p class="text-[10px] text-slate-500 mt-1">${q.recv}/${q.sent} replies${q.note ? ' · '+q.note : ''}</p>`;
         }
 
         async function refresh(){
@@ -499,25 +584,25 @@
             const chipFor = d => {
                 const dot = d.online ? 'bg-emerald-500' : 'bg-red-500';
                 const sub = d.online ? 'online' : 'offline ' + fmtAgo(d.last_seen);
-                return `<div class="flex items-center gap-2 px-3 py-1.5 bg-white border border-amber-200 rounded-lg text-xs">
+                return `<div class="flex items-center gap-2 px-3 py-1.5 bg-[#0b1322] border border-amber-400/25 rounded-lg text-xs">
                     <span class="status-dot ${dot}"></span>
-                    <span><b>${d.name || d.vendor || 'device'}</b> <span class="text-slate-400">${d.category||''}</span><br>
-                    <span class="font-mono text-[10px] text-slate-400">${d.mac||'no-mac'} · ${sub}</span></span>
+                    <span class="text-slate-300"><b>${d.name || d.vendor || 'device'}</b> <span class="text-slate-500">${d.category||''}</span><br>
+                    <span class="font-mono text-[10px] text-slate-500">${d.mac||'no-mac'} · ${sub}</span></span>
                 </div>`;
             };
             box.innerHTML = `
-                <div class="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+                <div class="rounded-2xl border border-amber-400/35 bg-amber-500/[0.08] backdrop-blur p-4">
                     <div class="flex items-center gap-2 mb-3">
                         <span class="text-lg">⚠️</span>
-                        <h3 class="font-bold text-amber-900 uppercase text-sm tracking-tight">IP conflicts (${list.length})</h3>
-                        <span class="text-xs text-amber-700">more than one device answers the same address — give one a unique IP</span>
+                        <h3 class="font-bold text-amber-300 uppercase text-sm tracking-wide">IP conflicts (${list.length})</h3>
+                        <span class="text-xs text-amber-200/70">more than one device answers the same address — give one a unique IP</span>
                     </div>
                     <div class="space-y-3">` +
                 list.map(c => `
                         <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-                            <span class="font-mono font-bold text-amber-900 w-36 shrink-0">${c.ip}</span>
+                            <span class="font-mono font-bold text-amber-300 w-36 shrink-0">${c.ip}</span>
                             <div class="flex flex-wrap gap-2">${c.devices.map(chipFor).join('')}</div>
-                            <button onclick="clearConflict('${c.ip}')" class="sm:ml-auto shrink-0 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold whitespace-nowrap">✓ Clear &amp; re-test</button>
+                            <button onclick="clearConflict('${c.ip}')" class="btn btn-success btn-sm sm:ml-auto shrink-0">✓ Clear &amp; re-test</button>
                         </div>`).join('') +
                     `</div>
                 </div>`;
@@ -537,24 +622,26 @@
             let s; try { s = await fetch(`/api/hub/sites/${siteId}/internet`).then(r=>r.json()); } catch(e){ b.classList.add('hidden'); return; }
             if (!s || s.checked_ts == null) { b.classList.add('hidden'); return; }
             let txt, cls;
-            if (s.ok)                       { txt = '🌐 Internet OK';   cls = 'bg-emerald-100 text-emerald-700'; }
-            else if (s.has_gateway && !s.gateway) { txt = '🔴 Gateway down'; cls = 'bg-red-100 text-red-700'; }
-            else if (!s.dns && s.external)  { txt = '🟠 DNS broken';    cls = 'bg-amber-100 text-amber-700'; }
-            else                            { txt = '🟠 No upstream';   cls = 'bg-amber-100 text-amber-700'; }
+            if (s.ok)                       { txt = '🌐 Internet OK';   cls = 'bg-emerald-500/15 text-emerald-300 border border-emerald-400/25'; }
+            else if (s.has_gateway && !s.gateway) { txt = '🔴 Gateway down'; cls = 'bg-red-500/15 text-red-300 border border-red-400/25'; }
+            else if (!s.dns && s.external)  { txt = '🟠 DNS broken';    cls = 'bg-amber-500/15 text-amber-300 border border-amber-400/25'; }
+            else                            { txt = '🟠 No upstream';   cls = 'bg-amber-500/15 text-amber-300 border border-amber-400/25'; }
             b.textContent = txt; b.className = 'text-[11px] font-bold px-2 py-0.5 rounded-full ' + cls;
             b.classList.remove('hidden');
         }
 
         async function pollNow(){
+            const btn = document.getElementById('refresh-btn');
+            if (btn) btn.disabled = true;
             await fetch(`/api/hub/sites/${siteId}/poll`, {method:'POST'});
-            setTimeout(refresh, 2500);
+            setTimeout(() => { refresh(); if (btn) btn.disabled = false; }, 2500);
         }
 
         // ---- connect to a device on the site's LAN (TCP tunnels) ----
         let cnIp = null;
         const COMMON = [{p:22,l:'SSH'},{p:80,l:'HTTP'},{p:443,l:'HTTPS'},{p:8080,l:'HTTP-alt'},{p:3389,l:'RDP'},{p:554,l:'RTSP'}];
         function portChip(p, label){
-            return `<button onclick="openTunnel(${p})" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-100 rounded-lg text-xs font-mono">${p}${label?` <span class="text-slate-400">${label}</span>`:''}</button>`;
+            return `<button onclick="openTunnel(${p})" class="px-2.5 py-1 bg-white/5 hover:bg-cyan-500/15 border border-white/10 text-slate-300 rounded-lg text-xs font-mono">${p}${label?` <span class="text-slate-500">${label}</span>`:''}</button>`;
         }
         function openConnect(ip){
             cnIp = ip;
@@ -564,7 +651,7 @@
             const seen = new Set(); let chips = '';
             (d.ports || []).forEach(p => { seen.add(p); const s = services[String(p)]; chips += portChip(p, s ? String(s).split(' ')[0] : ''); });
             COMMON.forEach(c => { if(!seen.has(c.p)){ seen.add(c.p); chips += portChip(c.p, c.l); } });
-            document.getElementById('cn-ports').innerHTML = chips || '<span class="text-xs text-slate-400">No scanned ports — enter a custom port</span>';
+            document.getElementById('cn-ports').innerHTML = chips || '<span class="text-xs text-slate-500">No scanned ports — enter a custom port</span>';
             document.getElementById('cn-result').classList.add('hidden');
             document.getElementById('cn-msg').textContent = '';
             document.getElementById('cn-custom').value = '';
@@ -575,28 +662,28 @@
         async function openTunnel(port){
             port = port || parseInt(document.getElementById('cn-custom').value, 10);
             const msg = document.getElementById('cn-msg');
-            if(!port){ msg.textContent = 'Pick or enter a port.'; msg.className = 'text-xs text-amber-600'; return; }
+            if(!port){ msg.textContent = 'Pick or enter a port.'; msg.className = 'text-xs text-amber-400'; return; }
             msg.textContent = 'Opening…'; msg.className = 'text-xs text-slate-500';
             try{
                 const r = await fetch(`/api/hub/sites/${siteId}/tunnel`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ip: cnIp, port})});
                 const j = await r.json();
-                if(!j.ok){ msg.textContent = j.error || 'Failed'; msg.className = 'text-xs text-red-600'; return; }
+                if(!j.ok){ msg.textContent = j.error || 'Failed'; msg.className = 'text-xs text-rose-400'; return; }
                 msg.textContent = ''; showResult(j); loadActive();
-            }catch(e){ msg.textContent = 'Request failed'; msg.className = 'text-xs text-red-600'; }
+            }catch(e){ msg.textContent = 'Request failed'; msg.className = 'text-xs text-rose-400'; }
         }
         function showResult(j){
             const box = document.getElementById('cn-result');
             const hp = `${j.host}:${j.port}`;
-            let body = `<div class="font-bold mb-1">Tunnel open → ${j.ip}:${j.device_port}</div>`;
+            let body = `<div class="font-bold text-slate-100 mb-1">Tunnel open → ${j.ip}:${j.device_port}</div>`;
             if(j.scheme){
-                body += `<a href="${j.scheme}://${hp}" target="_blank" class="text-blue-600 underline font-mono">${j.scheme}://${hp}</a><div class="text-[11px] text-slate-500 mt-1">Opens the device's web page.</div>`;
+                body += `<a href="${j.scheme}://${hp}" target="_blank" class="text-cyan-300 underline font-mono">${j.scheme}://${hp}</a><div class="text-[11px] text-slate-500 mt-1">Opens the device's web page.</div>`;
             } else if(j.device_port == 22){
-                body += `<a href="ssh://${j.host}:${j.port}" class="text-blue-600 underline font-mono">ssh://${j.host}:${j.port}</a> <span class="font-mono text-slate-500">(${hp})</span>
-                    <div class="text-[11px] text-slate-500 mt-1">Click opens PuTTY if it's set as the <code>ssh://</code> handler, or use the host:port manually (Host <span class="font-mono">${j.host}</span>, Port <span class="font-mono">${j.port}</span>).</div>`;
+                body += `<a href="ssh://${j.host}:${j.port}" class="text-cyan-300 underline font-mono">ssh://${j.host}:${j.port}</a> <span class="font-mono text-slate-500">(${hp})</span>
+                    <div class="text-[11px] text-slate-500 mt-1">Click opens PuTTY if it's set as the <code>ssh://</code> handler, or use the host:port manually (Host <span class="font-mono text-slate-300">${j.host}</span>, Port <span class="font-mono text-slate-300">${j.port}</span>).</div>`;
             } else {
-                body += `<div class="font-mono">${hp}</div><div class="text-[11px] text-slate-500 mt-1">Use this in PuTTY/SSH — e.g. <span class="font-mono">ssh -p ${j.port} user@${j.host}</span></div>`;
+                body += `<div class="font-mono text-slate-200">${hp}</div><div class="text-[11px] text-slate-500 mt-1">Use this in PuTTY/SSH — e.g. <span class="font-mono text-slate-300">ssh -p ${j.port} user@${j.host}</span></div>`;
             }
-            body += `<button onclick="copyText('${hp}', this)" class="mt-2 px-2 py-1 bg-white border rounded text-[11px]">Copy host:port</button>`;
+            body += `<button onclick="copyText('${hp}', this)" class="mt-2 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-md text-[11px]">Copy host:port</button>`;
             box.innerHTML = body; box.classList.remove('hidden');
         }
         // The hub is served over plain HTTP on the LAN, so navigator.clipboard
@@ -624,15 +711,15 @@
                 if(!ts.length){ el.innerHTML = 'none'; return; }
                 el.innerHTML = ts.map(t => {
                     const hp = `${location.hostname}:${t.hub_port}`;
-                    const tgt = t.scheme ? `<a href="${t.scheme}://${hp}" target="_blank" class="text-blue-600 underline">${hp}</a>`
-                              : t.port == 22 ? `<a href="ssh://${hp}" class="text-blue-600 underline" title="opens PuTTY if registered as the ssh:// handler">${hp}</a>`
+                    const tgt = t.scheme ? `<a href="${t.scheme}://${hp}" target="_blank" class="text-cyan-300 underline">${hp}</a>`
+                              : t.port == 22 ? `<a href="ssh://${hp}" class="text-cyan-300 underline" title="opens PuTTY if registered as the ssh:// handler">${hp}</a>`
                               : `<span class="font-mono">${hp}</span>`;
-                    return `<div class="flex items-center justify-between gap-2 p-1.5 border rounded">
-                        <span>${t.ip}:${t.port} → ${tgt} <span class="text-slate-400">(${t.conns} conn)</span></span>
-                        <button onclick="closeTunnel('${t.id}')" class="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 rounded text-[11px]">Close</button>
+                    return `<div class="flex items-center justify-between gap-2 p-1.5 border border-white/10 rounded-lg">
+                        <span>${t.ip}:${t.port} → ${tgt} <span class="text-slate-500">(${t.conns} conn)</span></span>
+                        <button onclick="closeTunnel('${t.id}')" class="btn btn-danger btn-sm">Close</button>
                     </div>`;
                 }).join('');
-            }catch(e){ el.innerHTML = '<span class="text-red-600">failed to load</span>'; }
+            }catch(e){ el.innerHTML = '<span class="text-rose-400">failed to load</span>'; }
         }
         async function closeTunnel(tid){
             await fetch(`/api/hub/sites/${siteId}/tunnel/${tid}`, {method:'DELETE'});
@@ -642,10 +729,10 @@
         // ---- device & IP history (proxied from the site) ----
         let HIST_TAB='timeline', HIST_EVENTS=[], HIST_IPS=[];
         const EV_META={
-            'new':      {icon:'🟦', label:'New device',   cls:'text-blue-700 bg-blue-50'},
-            'offline':  {icon:'🔴', label:'Went offline',  cls:'text-red-700 bg-red-50'},
-            'online':   {icon:'🟢', label:'Back online',   cls:'text-emerald-700 bg-emerald-50'},
-            'ip_change':{icon:'🔄', label:'IP reassigned', cls:'text-amber-700 bg-amber-50'},
+            'new':      {icon:'🟦', label:'New device',   cls:'text-sky-300 bg-sky-500/15'},
+            'offline':  {icon:'🔴', label:'Went offline',  cls:'text-rose-300 bg-rose-500/15'},
+            'online':   {icon:'🟢', label:'Back online',   cls:'text-emerald-300 bg-emerald-500/15'},
+            'ip_change':{icon:'🔄', label:'IP reassigned', cls:'text-amber-300 bg-amber-500/15'},
         };
         const tsFull=ts=>ts?new Date(ts*1000).toLocaleString():'—';
         const tsAgo=ts=>{ if(!ts)return''; const s=Math.floor(Date.now()/1000-ts); if(s<60)return s+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; };
@@ -653,8 +740,8 @@
         function closeHistory(){ document.getElementById('history-modal').classList.add('hidden'); }
         function histTab(t){
             HIST_TAB=t;
-            document.getElementById('ht-timeline').className='px-3 py-1.5 rounded-md '+(t==='timeline'?'bg-white shadow':'text-slate-500');
-            document.getElementById('ht-byip').className='px-3 py-1.5 rounded-md '+(t==='byip'?'bg-white shadow':'text-slate-500');
+            document.getElementById('ht-timeline').className='px-3 py-1.5 rounded-md '+(t==='timeline'?'bg-cyan-500/20 text-cyan-200 shadow':'text-slate-500');
+            document.getElementById('ht-byip').className='px-3 py-1.5 rounded-md '+(t==='byip'?'bg-cyan-500/20 text-cyan-200 shadow':'text-slate-500');
             document.getElementById('hist-type').style.display=(t==='timeline')?'':'none';
             if(t==='timeline') loadEvents(); else loadIpHistory();
         }
@@ -664,7 +751,7 @@
             document.getElementById('hist-body').innerHTML='Loading…';
             try { HIST_EVENTS=(await (await fetch(url)).json()).events||[]; } catch(e){ HIST_EVENTS=[]; }
             HIST_TAB='timeline';
-            document.getElementById('ht-timeline').className='px-3 py-1.5 rounded-md bg-white shadow';
+            document.getElementById('ht-timeline').className='px-3 py-1.5 rounded-md bg-cyan-500/20 text-cyan-200 shadow';
             document.getElementById('ht-byip').className='px-3 py-1.5 rounded-md text-slate-500';
             document.getElementById('hist-type').style.display='';
             renderHistory();
@@ -687,32 +774,32 @@
             const q=(document.getElementById('hist-filter').value||'').toLowerCase();
             if(HIST_TAB==='byip'){
                 let ips=HIST_IPS.filter(r=>!q||(r.ip||'').toLowerCase().includes(q)||(r.name||'').toLowerCase().includes(q)||(r.vendor||'').toLowerCase().includes(q));
-                if(!ips.length){ body.innerHTML='<p class="text-slate-400">No history yet.</p>'; return; }
+                if(!ips.length){ body.innerHTML='<p class="text-slate-500">No history yet.</p>'; return; }
                 body.innerHTML=ips.map(r=>{
                     const m=EV_META[r.last_type]||{icon:'•',label:r.last_type||''};
                     const who=r.name||r.vendor||r.hostname||r.mac||'unknown';
-                    return `<button onclick="histShowIp('${r.ip}')" class="w-full text-left p-3 mb-2 border rounded-lg hover:bg-slate-50 flex items-center justify-between gap-3">
-                        <div><span class="font-mono font-bold">${r.ip}</span> <span class="text-slate-500">— ${who}</span>
-                        <div class="text-[11px] text-slate-400">${r.device_count} device(s) · ${r.event_count} event(s) here</div></div>
-                        <div class="text-right shrink-0"><div class="text-xs">${m.icon} ${m.label}</div><div class="text-[11px] text-slate-400">${tsAgo(r.last_ts)}</div></div>
+                    return `<button onclick="histShowIp('${r.ip}')" class="w-full text-left p-3 mb-2 border border-white/10 rounded-lg hover:bg-white/5 flex items-center justify-between gap-3">
+                        <div><span class="font-mono font-bold text-slate-200">${r.ip}</span> <span class="text-slate-500">— ${who}</span>
+                        <div class="text-[11px] text-slate-500">${r.device_count} device(s) · ${r.event_count} event(s) here</div></div>
+                        <div class="text-right shrink-0"><div class="text-xs">${m.icon} ${m.label}</div><div class="text-[11px] text-slate-500">${tsAgo(r.last_ts)}</div></div>
                     </button>`;
                 }).join('');
                 return;
             }
             let evs=HIST_EVENTS.filter(e=>!q||[e.ip,e.name,e.vendor,e.hostname,e.mac].some(x=>(x||'').toLowerCase().includes(q)));
-            if(!evs.length){ body.innerHTML='<p class="text-slate-400">No matching events yet. They appear as devices join, go offline, return, or change IP.</p>'; return; }
+            if(!evs.length){ body.innerHTML='<p class="text-slate-500">No matching events yet. They appear as devices join, go offline, return, or change IP.</p>'; return; }
             body.innerHTML=evs.map(e=>{
                 const m=EV_META[e.type]||{icon:'•',label:e.type,cls:''};
                 const who=e.name||e.vendor||e.hostname||e.mac||'Unknown device';
                 const det=evDetail(e);
-                return `<div class="p-3 mb-2 border rounded-lg">
+                return `<div class="p-3 mb-2 border border-white/10 rounded-lg">
                     <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2 min-w-0">
                             <span class="text-xs font-bold px-2 py-0.5 rounded-full ${m.cls}">${m.icon} ${m.label}</span>
-                            <span class="font-semibold truncate">${who}</span>
-                            <button onclick="loadEvents('${e.ip}')" class="font-mono text-xs text-blue-600 hover:underline shrink-0">${e.ip||''}</button>
+                            <span class="font-semibold text-slate-200 truncate">${who}</span>
+                            <button onclick="loadEvents('${e.ip}')" class="font-mono text-xs text-cyan-300 hover:underline shrink-0">${e.ip||''}</button>
                         </div>
-                        <span class="text-[11px] text-slate-400 shrink-0" title="${tsFull(e.ts)}">${tsAgo(e.ts)}</span>
+                        <span class="text-[11px] text-slate-500 shrink-0" title="${tsFull(e.ts)}">${tsAgo(e.ts)}</span>
                     </div>
                     ${det?`<div class="text-[11px] text-slate-500 mt-1">${det}</div>`:''}
                 </div>`;
