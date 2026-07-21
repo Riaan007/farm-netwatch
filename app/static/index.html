@@ -381,6 +381,7 @@
                                 <option value="printer">🖨️ Printer / MFP</option>
                                 <option value="nas">💾 NAS / Storage</option>
                                 <option value="voip">☎️ VoIP / Phone</option>
+                                <option value="alarm">🚨 Alarm system</option>
                                 <option value="solar">☀️ Solar / Inverter</option>
                                 <option value="media">📺 Media / TV</option>
                                 <option value="iot">💡 IoT / Smart device</option>
@@ -489,6 +490,7 @@
             printer:     "bg-cyan-50 border-cyan-200 text-cyan-900 border-2 shadow-sm",
             nas:         "bg-blue-50 border-blue-200 text-blue-900 border-2 shadow-sm",
             voip:        "bg-green-50 border-green-200 text-green-900 border-2 shadow-sm",
+            alarm:       "bg-red-50 border-red-200 text-red-900 border-2 shadow-sm",
             solar:       "bg-yellow-50 border-yellow-300 text-yellow-900 border-2 shadow-sm",
             media:       "bg-orange-50 border-orange-200 text-orange-900 border-2 shadow-sm",
             iot:         "bg-teal-50 border-teal-200 text-teal-900 border-2 shadow-sm",
@@ -497,10 +499,10 @@
             unknown:     "bg-amber-50 border-amber-300 text-amber-900 border-2"
         };
         const catIcon = { camera:"📷", nvr:"🎥", network:"📶", "internet-ap":"🌎", router:"🧭",
-            printer:"🖨️", nas:"💾", voip:"☎️", solar:"☀️", media:"📺", iot:"💡", pc:"💻",
+            printer:"🖨️", nas:"💾", voip:"☎️", alarm:"🚨", solar:"☀️", media:"📺", iot:"💡", pc:"💻",
             server:"🖥️", unknown:"❓" };
         const catLabel = { camera:"Camera", nvr:"NVR", network:"Network", "internet-ap":"Internet AP",
-            router:"Router", printer:"Printer", nas:"NAS", voip:"VoIP", solar:"Solar", media:"Media",
+            router:"Router", printer:"Printer", nas:"NAS", voip:"VoIP", alarm:"Alarm", solar:"Solar", media:"Media",
             iot:"IoT", pc:"PC", server:"Server", unknown:"Unknown" };
         // The two groups the user watches most closely (shown with online/offline counts).
         const GROUPS = {
@@ -1476,7 +1478,7 @@
             refreshHubStatus();
         }
 
-        const CAT_ALERT_ORDER = ['camera','nvr','network','internet-ap','router','printer','nas','voip','solar','media','iot','pc','server','unknown'];
+        const CAT_ALERT_ORDER = ['camera','nvr','alarm','network','internet-ap','router','printer','nas','voip','solar','media','iot','pc','server','unknown'];
         function catRuleToVal(rule){
             if(!rule) return 'default';
             const off=!!rule.offline, on=!!rule.online;

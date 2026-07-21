@@ -180,6 +180,10 @@ def classify(vendor, open_ports, banner, hostname):
             or 5060 in ports:
         return "voip", "VoIP / Phone", "med"
 
+    # Alarm / security panels (Risco, Ajax, Paradox ...)
+    if has("risco", "ajax systems", "paradox security", "alarm panel", "alarm system"):
+        return "alarm", "Alarm system", "med"
+
     # Solar / inverters / energy (common on farms)
     if has("victron", "fronius", "goodwe", "sungrow", "deye", "solaredge", "growatt",
            "huawei sun", "sma ", "inverter", "solar", "shelly em"):
