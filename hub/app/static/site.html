@@ -600,26 +600,46 @@
             if(s < 86400) return Math.floor(s/3600)+'h';
             return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h';
         }
+        function healthStripHtml(s){
+            const worstDisk = (s.disks||[]).reduce((a,d)=>d.used_pct>(a?a.used_pct:-1)?d:a, null);
+            const th = s.throttled || {};
+            const uv = th.undervoltage_now ? '<span class="text-rose-400 font-bold">⚡ UNDERVOLTAGE NOW</span>'
+                     : th.throttled_now ? '<span class="text-amber-400 font-bold">🔥 throttled</span>'
+                     : (th.undervoltage_ever ? '<span class="text-amber-400/80" title="Undervoltage occurred since boot — check the PSU">⚡ UV since boot</span>' : '');
+            const dtf = (s.disks||[]).map(d=>d.trend&&d.trend.days_to_full).filter(v=>v!=null);
+            const minDays = dtf.length ? Math.min(...dtf) : null;
+            const fullSeg = (minDays != null && minDays < 90)
+                ? ` <span class="${minDays<=5?'text-rose-400 font-bold':minDays<=14?'text-amber-400 font-bold':'text-slate-500'}" title="Predicted from the last 14 days of growth">full in ~${Math.round(minDays)}d</span>` : '';
+            const ck = s.clock || {};
+            const clockSeg = (ck.offset_s != null && Math.abs(ck.offset_s) >= 120)
+                ? `<span>⏱ <b class="${Math.abs(ck.offset_s)>=600?'text-rose-400':'text-amber-400'}" title="vs ${ck.server}">clock off ${Math.round(ck.offset_s)}s</b></span>` : '';
+            const sm = s.smart || {};
+            const smDevs = sm.devices || [];
+            const smartSeg = (sm.available && smDevs.length)
+                ? `<span title="${smDevs.map(d=>(d.dev||'')+' '+(d.model||'')+': '+(d.healthy?'OK':'FAILING')+(d.notes?' ('+d.notes+')':'')).join(' | ').replace(/"/g,'&quot;')}">SSD ${smDevs.every(d=>d.healthy)?'<b class="text-emerald-400">✓</b>':'<b class="text-rose-400">⚠ FAILING</b>'}</span>` : '';
+            const co = s.containers || {};
+            const contSeg = co.available
+                ? `<span title="${(co.containers||[]).map(c=>c.name+': '+c.state).join(' | ').replace(/"/g,'&quot;')}">🐳 <b class="tabular-nums text-slate-300">${(co.containers||[]).length}</b>${(co.flapping||[]).length?` <b class="text-amber-400">⚠ ${co.flapping.join(', ')}</b>`:' <b class="text-emerald-400">✓</b>'}</span>` : '';
+            const wd = s.watchdog || {};
+            const wdSeg = wd.active ? '<span class="text-emerald-400/80" title="Hardware watchdog armed — a hard-hung Pi reboots itself after ~15s">🐶 WD</span>'
+                        : (wd.enabled && wd.note) ? `<span class="text-slate-500" title="${(wd.note||'').replace(/"/g,'&quot;')}">🐶 host-owned</span>` : '';
+            return `<span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">🩺 Pi health</span>`
+                + `<span class="text-slate-500">${(s.model||'').replace('Raspberry Pi','Pi')}</span>`
+                + `<span>🌡 <b class="${healthClass(s.temp_c, 75, 82)} tabular-nums">${s.temp_c != null ? s.temp_c+'°C' : '—'}</b></span>`
+                + `<span>CPU <b class="${healthClass(s.cpu_pct, 80, 95)} tabular-nums">${s.cpu_pct != null ? s.cpu_pct+'%' : '—'}</b> <span class="text-slate-500 tabular-nums">(load ${(s.load||[]).map(x=>x.toFixed(1)).join(' ')})</span></span>`
+                + `<span>RAM <b class="${healthClass((s.mem||{}).used_pct, 90, 97)} tabular-nums">${(s.mem||{}).used_pct != null ? s.mem.used_pct+'%' : '—'}</b></span>`
+                + (worstDisk ? `<span>💾 <b class="${healthClass(worstDisk.used_pct, 85, 95)} tabular-nums">${worstDisk.used_pct}%</b> <span class="text-slate-500">(${worstDisk.free_gb} GB free)</span>${fullSeg}</span>` : '')
+                + `<span class="text-slate-500">up <span class="tabular-nums">${fmtUp(s.uptime_s)}</span></span>`
+                + (smartSeg ? smartSeg : '') + (contSeg ? contSeg : '') + (clockSeg ? clockSeg : '')
+                + (uv ? `<span>${uv}</span>` : '') + (wdSeg ? wdSeg : '');
+        }
         async function loadPiHealth(){
             const el = document.getElementById('pi-health');
             let j; try { j = await (await fetch(`/api/hub/sites/${siteId}/sysinfo`)).json(); }
             catch(e){ el.classList.add('hidden'); return; }
             const s = j.sysinfo;
             if(!s || !s.ts){ el.classList.add('hidden'); return; }
-            const worstDisk = (s.disks||[]).reduce((a,d)=>d.used_pct>(a?a.used_pct:-1)?d:a, null);
-            const th = s.throttled || {};
-            const uv = th.undervoltage_now ? '<span class="text-rose-400 font-bold">⚡ UNDERVOLTAGE NOW</span>'
-                     : th.throttled_now ? '<span class="text-amber-400 font-bold">🔥 throttled</span>'
-                     : (th.undervoltage_ever ? '<span class="text-amber-400/80" title="Undervoltage occurred since boot — check the PSU">⚡ UV since boot</span>' : '');
-            el.innerHTML =
-                `<span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">🩺 Pi health</span>`
-                + `<span class="text-slate-500">${(s.model||'').replace('Raspberry Pi','Pi')}</span>`
-                + `<span>🌡 <b class="${healthClass(s.temp_c, 75, 82)} tabular-nums">${s.temp_c != null ? s.temp_c+'°C' : '—'}</b></span>`
-                + `<span>CPU <b class="${healthClass(s.cpu_pct, 80, 95)} tabular-nums">${s.cpu_pct != null ? s.cpu_pct+'%' : '—'}</b> <span class="text-slate-500 tabular-nums">(load ${(s.load||[]).map(x=>x.toFixed(1)).join(' ')})</span></span>`
-                + `<span>RAM <b class="${healthClass((s.mem||{}).used_pct, 90, 97)} tabular-nums">${(s.mem||{}).used_pct != null ? s.mem.used_pct+'%' : '—'}</b></span>`
-                + (worstDisk ? `<span>💾 <b class="${healthClass(worstDisk.used_pct, 85, 95)} tabular-nums">${worstDisk.used_pct}%</b> <span class="text-slate-500">(${worstDisk.free_gb} GB free)</span></span>` : '')
-                + `<span class="text-slate-500">up <span class="tabular-nums">${fmtUp(s.uptime_s)}</span></span>`
-                + (uv ? `<span>${uv}</span>` : '')
+            el.innerHTML = healthStripHtml(s)
                 + `<span class="text-slate-600 ml-auto">checked ${fmtAgo(j.fetched_at)}</span>`;
             el.classList.remove('hidden');
         }

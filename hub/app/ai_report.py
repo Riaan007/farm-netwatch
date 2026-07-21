@@ -110,6 +110,10 @@ def gather_facts(card, devices, conflicts, events, internet, reach, sysinfo=None
             "disks": sysinfo.get("disks"),
             "uptime_days": round((sysinfo.get("uptime_s") or 0) / 86400, 1),
             "throttled": sysinfo.get("throttled"),
+            "clock_offset_s": (sysinfo.get("clock") or {}).get("offset_s"),
+            "smart": sysinfo.get("smart"),
+            "containers_flapping": (sysinfo.get("containers") or {}).get("flapping"),
+            "hardware_watchdog_active": (sysinfo.get("watchdog") or {}).get("active"),
         } if sysinfo else None),
     }
 

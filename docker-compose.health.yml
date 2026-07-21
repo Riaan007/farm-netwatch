@@ -1,0 +1,23 @@
+# Farm Netwatch — OPT-IN "health add-on" overlay.
+#
+# Unlocks the parts of the Pi self-health monitor that need extra access:
+#   * SMART disk health   (smartctl needs the raw disk devices)
+#   * hardware watchdog   (/dev/watchdog — auto-reboot on a hard hang;
+#                          still OFF until enabled in Settings -> Experimental)
+#   * container restart watch (read the Docker socket)
+#
+# Enable it PERSISTENTLY by adding this line to the site's .env:
+#
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.health.yml
+#
+# after which every plain `docker compose pull && docker compose up -d`
+# includes it automatically. New installs get this from install.sh.
+#
+# `privileged` is a deliberate trade-off: the scanner already runs with host
+# networking + NET_ADMIN on a single-purpose appliance Pi; privileged adds the
+# /dev access the disk/watchdog checks need without chasing device names.
+services:
+  netwatch:
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro

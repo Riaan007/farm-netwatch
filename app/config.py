@@ -76,6 +76,13 @@ DEFAULTS = {
     "features": {
         "airos_change_ip": False,
     },
+    # Pi self-health monitor. watchdog arms /dev/watchdog (auto-reboot on a hard
+    # hang) — needs the health add-on (docker-compose.health.yml) for /dev access
+    # and is deliberately opt-in: an armed watchdog reboots the Pi if Netwatch
+    # is killed without a clean stop.
+    "sysmon": {
+        "watchdog": False,
+    },
     # Extra IP addresses Netwatch puts on the Pi at boot so it can sit on several
     # subnets at once (each {iface, cidr, target, label, managed}). cidr is the Pi's
     # host address+prefix on that LAN, e.g. "10.5.2.50/24". Additive only — never

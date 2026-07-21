@@ -175,6 +175,8 @@ hdr "3/5  Fetching app files & configuration"
 mkdir -p "$DIR/data"
 curl -fsSL "$REPO_RAW/docker-compose.yml" -o "$DIR/docker-compose.yml"
 ok "docker-compose.yml → $DIR"
+curl -fsSL "$REPO_RAW/docker-compose.health.yml" -o "$DIR/docker-compose.health.yml"
+ok "docker-compose.health.yml → $DIR (health add-on)"
 # Strip the local "build:" block so a Pi without the source never builds.
 sed -i '/^    build:/,/^      context: \./d' "$DIR/docker-compose.yml" || true
 
@@ -202,6 +204,8 @@ NETWATCH_IMAGE=$IMAGE
 NETWATCH_PORT=$PORT
 TZ=$TZONE
 COMPOSE_PROFILES=$PROFILES
+# health add-on: SMART disk checks, /dev/watchdog, container restart watch
+COMPOSE_FILE=docker-compose.yml:docker-compose.health.yml
 EOF
 ok "Wrote $DIR/.env  (profiles: ${PROFILES:-none})"
 

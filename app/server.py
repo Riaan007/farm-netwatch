@@ -203,6 +203,8 @@ def api_setup():
         patch["integrations"] = {"kuma": kuma_patch}
     if "airos_change_ip" in body:
         patch["features"] = {"airos_change_ip": bool(body["airos_change_ip"])}
+    if "watchdog" in body:
+        patch["sysmon"] = {"watchdog": bool(body["watchdog"])}
     # admin password -> obfuscated creds store (only when a non-empty value is sent)
     if body.get("kuma_password"):
         uname = body.get("kuma_username") or config.load()["integrations"]["kuma"].get("username", "")

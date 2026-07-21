@@ -33,7 +33,7 @@ ENV PYTHONUNBUFFERED=1 \
 # host netns — the site dials out to the hub, opening NO inbound ports).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       nmap iproute2 iputils-ping wireguard-tools ca-certificates tzdata \
-      openssh-client sshpass \
+      openssh-client sshpass smartmontools \
     && rm -rf /var/lib/apt/lists/*
 
 # OPT-IN: DHCP<->static IP control via NetworkManager. The lean :latest image leaves

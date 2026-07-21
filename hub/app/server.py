@@ -182,11 +182,20 @@ def _pi_health_level(snap):
     disk = max((d.get("used_pct") or 0 for d in info.get("disks") or []), default=None)
     mem = (info.get("mem") or {}).get("used_pct")
     th = info.get("throttled") or {}
+    days = min((d["trend"]["days_to_full"] for d in info.get("disks") or []
+                if d.get("trend") and d["trend"].get("days_to_full") is not None),
+               default=None)
+    off = abs((info.get("clock") or {}).get("offset_s") or 0)
+    smart_bad = any(not d.get("healthy")
+                    for d in (info.get("smart") or {}).get("devices") or [])
+    flapping = bool((info.get("containers") or {}).get("flapping"))
     if (th.get("undervoltage_now") or (temp is not None and temp >= 82)
-            or (disk is not None and disk >= 95) or (mem is not None and mem >= 97)):
+            or (disk is not None and disk >= 95) or (mem is not None and mem >= 97)
+            or smart_bad or (days is not None and days <= 5) or off >= 600):
         return "crit"
     if (th.get("throttled_now") or (temp is not None and temp >= 75)
-            or (disk is not None and disk >= 85) or (mem is not None and mem >= 90)):
+            or (disk is not None and disk >= 85) or (mem is not None and mem >= 90)
+            or flapping or (days is not None and days <= 14) or off >= 120):
         return "warn"
     return "ok"
 
