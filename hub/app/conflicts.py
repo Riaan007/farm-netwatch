@@ -7,7 +7,24 @@ image that doesn't yet report `ip_conflict`. Same rule as the site scanner:
 """
 import time
 
+import requests
+
 CONFLICT_WINDOW_S = 24 * 3600
+
+
+def fetch_site_conflicts(base, timeout):
+    """The site's own /api/conflicts — the authoritative source, since the site
+    honours its "Clear & re-test" acknowledgements (the hub-side computation
+    below can't know about those). Returns [{ip, devices}] or None when the
+    site is unreachable — callers then fall back to computing from the cached
+    device snapshot."""
+    try:
+        r = requests.get(f"{base}/api/conflicts", timeout=timeout)
+        r.raise_for_status()
+        return [{"ip": c.get("ip"), "devices": c.get("devices") or []}
+                for c in (r.json().get("conflicts") or [])]
+    except (requests.RequestException, ValueError):
+        return None
 
 
 def _ipkey(ip):

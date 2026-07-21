@@ -462,29 +462,69 @@ def api_site_devices(site_id):
 
 @app.route("/api/hub/sites/<site_id>/conflicts")
 def api_site_conflicts(site_id):
-    """IP-address conflicts at this site, grouped by IP, from the cached device
-    snapshot (so they still render when the site is briefly unreachable)."""
+    """IP-address conflicts at this site. Asked LIVE from the site first — the
+    site's own list honours its "Clear & re-test" acks, so a cleared conflict
+    vanishes here on the next poll too. Falls back to computing from the cached
+    device snapshot when the site is briefly unreachable."""
     site, err = _site_or_404(site_id)
     if err:
         return err
-    snap = poller.snapshot(site_id)
-    devices = (snap.get("devices") or {}).get("devices") or []
-    cmap = conflictutil.conflict_map(devices)
 
     def _brief(d):
         return {"key": d.get("key"), "mac": d.get("mac"), "vendor": d.get("vendor"),
                 "name": d.get("name"), "category": d.get("category"),
                 "online": d.get("online"), "last_seen": d.get("last_seen")}
 
+    poll = hubconfig.load()["poll"]
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    live = conflictutil.fetch_site_conflicts(
+        base, (poll["timeout_connect_s"], poll["timeout_read_s"]))
+    if live is not None:
+        return jsonify({
+            "conflicts": [{"ip": c["ip"], "devices": [_brief(d) for d in c["devices"]]}
+                          for c in live],
+            "fetched_at": int(time.time()),
+            "source": "site",
+        })
+
+    snap = poller.snapshot(site_id)
+    devices = (snap.get("devices") or {}).get("devices") or []
+    cmap = conflictutil.conflict_map(devices)
     conflicts = [{"ip": ip,
                   "devices": sorted((_brief(d) for d in cmap[ip]),
                                     key=lambda x: x.get("last_seen") or 0, reverse=True)}
                  for ip in conflictutil.conflict_ips(devices)]
     return jsonify({
         "conflicts": conflicts,
+        "source": "cached",
         "fetched_at": snap.get("devices_fetched"),
         "stale": snap.get("stale", False) or not snap.get("reachable", False),
     })
+
+
+@app.route("/api/hub/sites/<site_id>/conflicts/clear", methods=["POST"])
+def api_site_conflicts_clear(site_id):
+    """Proxy the site's "Clear & re-test": the conflict is hidden unless fresh
+    (post-clear) sightings re-confirm it, and the site starts a targeted rescan
+    of the IP right away."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    ip = ((request.get_json(silent=True) or {}).get("ip") or "").strip()
+    if not ip:
+        return jsonify({"ok": False, "error": "ip required"}), 400
+    poll = hubconfig.load()["poll"]
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    try:
+        r = requests.post(f"{base}/api/conflicts/clear", json={"ip": ip},
+                          timeout=(poll["timeout_connect_s"], poll["timeout_read_s"]))
+        if r.status_code == 404:
+            return jsonify({"ok": False, "error": "this site's Netwatch is too old — "
+                            "update it (docker compose pull) to clear from the hub"}), 501
+        r.raise_for_status()
+        return jsonify(r.json())
+    except (requests.exceptions.RequestException, ValueError):
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
 
 
 @app.route("/api/hub/sites/<site_id>/history/<path:key>")

@@ -209,7 +209,14 @@ class Poller:
         online = sum(1 for d in devices if d.get("online")) if devices else None
         watched_down = sum(1 for d in devices
                            if d.get("watch") and not d.get("online")) if devices else None
-        conflict_ips = conflictutil.conflict_ips(devices)
+        # Prefer the site's own conflict list — it honours "Clear & re-test"
+        # acks, so badges and alerts drop a cleared conflict on the next poll.
+        site_conf = (conflictutil.fetch_site_conflicts(self._base_url(site), timeout)
+                     if status is not None else None)
+        if site_conf is not None:
+            conflict_ips = sorted((c["ip"] for c in site_conf), key=_ip_sortkey)
+        else:
+            conflict_ips = conflictutil.conflict_ips(devices)
         with self._lock:
             self._snap.setdefault(sid, {})["conflict_ips"] = conflict_ips
         self._maybe_alert_conflict(sid, site, conflict_ips, reachable=status is not None,

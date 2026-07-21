@@ -473,6 +473,14 @@
             loadConflicts();
         }
 
+        async function clearConflict(ip){
+            if(!confirm('Clear the IP conflict on '+ip+' and re-test now?\n\nThe site hides the warning and rescans '+ip+' right away. If two devices still fight over the address it comes back within a scan or two — if fixed, it stays gone.')) return;
+            let r;
+            try { r = await fetch(`/api/hub/sites/${siteId}/conflicts/clear`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ip})}).then(x=>x.json()); }
+            catch(e){ r = {ok:false, error:'request failed'}; }
+            if(!r.ok){ alert('Could not clear: ' + (r.error||'failed')); return; }
+            setTimeout(loadConflicts, 1200);
+        }
         async function loadConflicts(){
             const box = document.getElementById('conflict-monitor');
             let data;
@@ -508,6 +516,7 @@
                         <div class="flex flex-col sm:flex-row sm:items-center gap-2">
                             <span class="font-mono font-bold text-amber-900 w-36 shrink-0">${c.ip}</span>
                             <div class="flex flex-wrap gap-2">${c.devices.map(chipFor).join('')}</div>
+                            <button onclick="clearConflict('${c.ip}')" class="sm:ml-auto shrink-0 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold whitespace-nowrap">✓ Clear &amp; re-test</button>
                         </div>`).join('') +
                     `</div>
                 </div>`;
