@@ -129,6 +129,10 @@ def _site_card(site):
         or not fetched
         or time.time() - fetched > 2 * poll_cfg["devices_interval_s"]
     )
+    fallback_live, fallback_rot = ([], [])
+    if snap.get("conflict_ips") is None and devices:
+        fallback_live, fallback_rot = conflictutil.split_ips(
+            conflictutil.conflict_entries(devices))
     return {
         "id": site["id"],
         "name": (status.get("site") or {}).get("name") or site.get("name") or site["id"],
@@ -143,10 +147,14 @@ def _site_card(site):
         "devices_online": sum(1 for d in devices if d.get("online")) if devices else None,
         "watched_down": sum(1 for d in devices
                             if d.get("watch") and not d.get("online")) if devices else None,
-        # Prefer the poller's conflict list (site-fed, honours Clear & re-test);
-        # recompute from cached devices only before the first poll fills it.
+        # Prefer the poller's lists (site-fed, honour Clear & re-test and the
+        # live-vs-rotated split); recompute from cached devices only before the
+        # first poll fills them. `conflicts` = live only; `rotated` = the softer
+        # identity-rotation / IP-reuse count.
         "conflicts": (len(snap["conflict_ips"]) if snap.get("conflict_ips") is not None
-                      else (len(conflictutil.conflict_map(devices)) if devices else None)),
+                      else (len(fallback_live) if devices else None)),
+        "rotated": (len(snap["rotated_ips"]) if snap.get("rotated_ips") is not None
+                    else (len(fallback_rot) if devices else None)),
         "stale": stale,
         "fetched_at": fetched,
         "kuma": {"up": kuma.get("up"), "down": kuma.get("down"),
@@ -465,10 +473,11 @@ def api_site_devices(site_id):
 
 @app.route("/api/hub/sites/<site_id>/conflicts")
 def api_site_conflicts(site_id):
-    """IP-address conflicts at this site. Asked LIVE from the site first — the
-    site's own list honours its "Clear & re-test" acks, so a cleared conflict
-    vanishes here on the next poll too. Falls back to computing from the cached
-    device snapshot when the site is briefly unreachable."""
+    """IP-address problems at this site — live conflicts and identity-rotated /
+    IP-reuse entries, each tagged with `kind`. Asked LIVE from the site first —
+    the site's own list honours its "Clear & re-test" acks and knows the
+    live-vs-rotated split. Falls back to classifying the cached device snapshot
+    when the site is briefly unreachable."""
     site, err = _site_or_404(site_id)
     if err:
         return err
@@ -480,23 +489,22 @@ def api_site_conflicts(site_id):
 
     poll = hubconfig.load()["poll"]
     base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
-    live = conflictutil.fetch_site_conflicts(
+    site_entries = conflictutil.fetch_site_conflicts(
         base, (poll["timeout_connect_s"], poll["timeout_read_s"]))
-    if live is not None:
+    if site_entries is not None:
         return jsonify({
-            "conflicts": [{"ip": c["ip"], "devices": [_brief(d) for d in c["devices"]]}
-                          for c in live],
+            "conflicts": [{"ip": c["ip"], "kind": c["kind"],
+                           "devices": [_brief(d) for d in c["devices"]]}
+                          for c in site_entries],
             "fetched_at": int(time.time()),
             "source": "site",
         })
 
     snap = poller.snapshot(site_id)
     devices = (snap.get("devices") or {}).get("devices") or []
-    cmap = conflictutil.conflict_map(devices)
-    conflicts = [{"ip": ip,
-                  "devices": sorted((_brief(d) for d in cmap[ip]),
-                                    key=lambda x: x.get("last_seen") or 0, reverse=True)}
-                 for ip in conflictutil.conflict_ips(devices)]
+    conflicts = [{"ip": e["ip"], "kind": e["kind"],
+                  "devices": [_brief(d) for d in e["devices"]]}
+                 for e in conflictutil.conflict_entries(devices)]
     return jsonify({
         "conflicts": conflicts,
         "source": "cached",

@@ -455,9 +455,9 @@ def api_ack_ip(key):
 
 @app.route("/api/conflicts/clear", methods=["POST"])
 def api_conflicts_clear():
-    """Clear an IP-conflict problem and re-test it: the warning is hidden unless
-    fresh (post-clear) sightings prove two devices still claim the address, and a
-    targeted rescan of the IP starts right away to provide that evidence."""
+    """Clear an IP-conflict or identity-rotated problem and re-test it: the
+    card is hidden unless fresh (post-clear) sightings show 2+ claimants again,
+    and a targeted rescan of the IP starts right away to provide that evidence."""
     body = request.get_json(force=True)
     ip = (body.get("ip") or "").strip()
     if not ip:
@@ -497,8 +497,13 @@ def api_ack_drift():
 
 @app.route("/api/conflicts")
 def api_conflicts():
-    """IP address conflicts only — thin alias kept for the hub/back-compat."""
-    return jsonify({"conflicts": scanner.ip_conflicts()})
+    """IP address conflicts for the hub. LIVE conflicts (claimants proven up
+    together) stay under `conflicts` — the key old hubs read, so sequential
+    identity rotation / IP reuse no longer pages anyone — and the softer
+    entries ship under `rotated` for hubs that know the new type."""
+    allc = scanner.ip_conflicts()
+    return jsonify({"conflicts": [c for c in allc if c.get("live")],
+                    "rotated": [c for c in allc if not c.get("live")]})
 
 
 @app.route("/api/health")

@@ -239,9 +239,13 @@ New-device and offline alerts also carry tap-to-run action buttons (Deep scan, P
   alerts); up/down is Kuma's job.
 - **Netwatch = inventory + problems.** Find devices, scan, identify, and **flag
   problems** in the dashboard's **Problems** panel (and `GET /api/problems`):
-  IP conflict · IP changed (DHCP drift) · device replaced at an IP · same MAC on
-  multiple IPs · risky exposed ports (Telnet/FTP/…) · plus the existing new-device
-  and "mystery" discovery flags. Fix problems on the network; Kuma handles uptime.
+  IP conflict (red — only when 2+ devices are **proven up on one address at the
+  same time**, via same-pass overlap or an active ARP re-check) · identity
+  rotated / IP reuse (soft — the address was handed between MACs *in turn*, e.g.
+  iOS/Android/TV randomized "private Wi-Fi addresses" rotating, or DHCP reuse) ·
+  IP changed (DHCP drift) · device replaced at an IP · same MAC on multiple IPs ·
+  risky exposed ports (Telnet/FTP/…) · plus the existing new-device and "mystery"
+  discovery flags. Fix problems on the network; Kuma handles uptime.
 
 Flag devices for Kuma one at a time (a device's **Monitor in Uptime Kuma** tick) or
 in bulk from **Settings → Integrations**: **Monitor all cameras / all identified**.

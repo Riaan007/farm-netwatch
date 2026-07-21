@@ -293,7 +293,8 @@
                            'nas','voip','solar','media','iot','pc','server','unknown'];
         const devState = { q: '', group: 'category', sort: 'status', dir: 1 };
         let lastDevices = [], lastFetched = null;
-        let conflictIPset = new Set();   // populated by loadConflicts(), used to mark rows
+        let conflictIPset = new Set();   // LIVE conflicts, populated by loadConflicts(), marks rows ⚠️
+        let rotatedIPset = new Set();    // identity rotated / IP reuse — soft 🔁 marker only
 
         // Identity priority: a user name, then the device's own classified type /
         // vendor (MAC + HTTP banner), then the hostname LAST. Hostname comes from
@@ -382,7 +383,9 @@
             const name = devName(d);
             const watch = d.watch ? ' 🔔' : '';
             const conflict = conflictIPset.has(d.ip)
-                ? ' <span title="IP conflict — another device also answers this address">⚠️</span>' : '';
+                ? ' <span title="IP conflict — another device also answers this address">⚠️</span>'
+                : (rotatedIPset.has(d.ip)
+                    ? ' <span title="Identity rotated / IP reuse — this address was recently held by a different MAC (rotating private Wi-Fi address or DHCP reuse), not a live conflict">🔁</span>' : '');
             // Show the hostname as a muted subtitle when it differs from the name —
             // useful info, but flagged as possibly stale when this IP is in conflict.
             const stale = conflictIPset.has(d.ip);
@@ -563,8 +566,11 @@
             loadConflicts();
         }
 
-        async function clearConflict(ip){
-            if(!confirm('Clear the IP conflict on '+ip+' and re-test now?\n\nThe site hides the warning and rescans '+ip+' right away. If two devices still fight over the address it comes back within a scan or two — if fixed, it stays gone.')) return;
+        async function clearConflict(ip, soft){
+            const msg = soft
+                ? 'Clear the "identity rotated / IP reuse" note on '+ip+' and re-test?\n\nThe note is dismissed and the site rescans '+ip+'. It only returns if different MACs claim the address again (e.g. on the next private Wi-Fi MAC rotation).'
+                : 'Clear the IP conflict on '+ip+' and re-test now?\n\nThe site hides the warning and rescans '+ip+' right away. If two devices still fight over the address it comes back within a scan or two — if fixed, it stays gone.';
+            if(!confirm(msg)) return;
             let r;
             try { r = await fetch(`/api/hub/sites/${siteId}/conflicts/clear`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ip})}).then(x=>x.json()); }
             catch(e){ r = {ok:false, error:'request failed'}; }
@@ -577,39 +583,53 @@
             try { data = await fetch(`/api/hub/sites/${siteId}/conflicts`).then(r=>r.json()); }
             catch(e){ box.classList.add('hidden'); return; }
             const list = data.conflicts || [];
-            const newSet = new Set(list.map(c => c.ip));
-            // Re-render device rows if the conflict set changed (to add/remove ⚠).
-            if(newSet.size !== conflictIPset.size || [...newSet].some(ip => !conflictIPset.has(ip))){
-                conflictIPset = newSet;
+            // Old sites/hubs may omit `kind` — treat those entries as live conflicts.
+            const liveList = list.filter(c => (c.kind || 'ip_conflict') !== 'identity_rotated');
+            const rotList  = list.filter(c => c.kind === 'identity_rotated');
+            const newLive = new Set(liveList.map(c => c.ip));
+            const newRot  = new Set(rotList.map(c => c.ip));
+            // Re-render device rows if either set changed (to add/remove ⚠ / 🔁).
+            const changed = (a,b) => a.size !== b.size || [...a].some(ip => !b.has(ip));
+            if(changed(newLive, conflictIPset) || changed(newRot, rotatedIPset)){
+                conflictIPset = newLive; rotatedIPset = newRot;
                 renderDevices();
             }
             if(!list.length){ box.classList.add('hidden'); box.innerHTML=''; return; }
             box.classList.remove('hidden');
-            const chipFor = d => {
+            const chipFor = (d, border) => {
                 const dot = d.online ? 'bg-emerald-500' : 'bg-red-500';
                 const sub = d.online ? 'online' : 'offline ' + fmtAgo(d.last_seen);
-                return `<div class="flex items-center gap-2 px-3 py-1.5 bg-[#0b1322] border border-amber-400/25 rounded-lg text-xs">
+                return `<div class="flex items-center gap-2 px-3 py-1.5 bg-[#0b1322] border ${border} rounded-lg text-xs">
                     <span class="status-dot ${dot}"></span>
                     <span class="text-slate-300"><b>${d.name || d.vendor || 'device'}</b> <span class="text-slate-500">${d.category||''}</span><br>
                     <span class="font-mono text-[10px] text-slate-500">${d.mac||'no-mac'} · ${sub}</span></span>
                 </div>`;
             };
-            box.innerHTML = `
+            const rowsFor = (cs, border, ipColor, soft) => cs.map(c => `
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <span class="font-mono font-bold ${ipColor} w-36 shrink-0">${c.ip}</span>
+                            <div class="flex flex-wrap gap-2">${c.devices.map(d=>chipFor(d, border)).join('')}</div>
+                            <button onclick="clearConflict('${c.ip}', ${soft})" class="btn ${soft?'btn-ghost':'btn-success'} btn-sm sm:ml-auto shrink-0">✓ Clear &amp; re-test</button>
+                        </div>`).join('');
+            const liveHtml = !liveList.length ? '' : `
                 <div class="rounded-2xl border border-amber-400/35 bg-amber-500/[0.08] backdrop-blur p-4">
                     <div class="flex items-center gap-2 mb-3">
                         <span class="text-lg">⚠️</span>
-                        <h3 class="font-bold text-amber-300 uppercase text-sm tracking-wide">IP conflicts (${list.length})</h3>
-                        <span class="text-xs text-amber-200/70">more than one device answers the same address — give one a unique IP</span>
+                        <h3 class="font-bold text-amber-300 uppercase text-sm tracking-wide">IP conflicts (${liveList.length})</h3>
+                        <span class="text-xs text-amber-200/70">more than one device answers the same address at the same time — give one a unique IP</span>
                     </div>
-                    <div class="space-y-3">` +
-                list.map(c => `
-                        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-                            <span class="font-mono font-bold text-amber-300 w-36 shrink-0">${c.ip}</span>
-                            <div class="flex flex-wrap gap-2">${c.devices.map(chipFor).join('')}</div>
-                            <button onclick="clearConflict('${c.ip}')" class="btn btn-success btn-sm sm:ml-auto shrink-0">✓ Clear &amp; re-test</button>
-                        </div>`).join('') +
-                    `</div>
+                    <div class="space-y-3">${rowsFor(liveList, 'border-amber-400/25', 'text-amber-300', false)}</div>
                 </div>`;
+            const rotHtml = !rotList.length ? '' : `
+                <div class="rounded-2xl border border-slate-500/35 bg-slate-500/[0.08] backdrop-blur p-4${liveList.length?' mt-3':''}">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="text-lg">🔁</span>
+                        <h3 class="font-bold text-slate-300 uppercase text-sm tracking-wide">Identity rotated / IP reuse (${rotList.length})</h3>
+                        <span class="text-xs text-slate-400">the address was held by different MACs in turn (rotating private Wi-Fi MAC, DHCP reuse) — never online together, not a live conflict</span>
+                    </div>
+                    <div class="space-y-3">${rowsFor(rotList, 'border-slate-500/25', 'text-slate-300', true)}</div>
+                </div>`;
+            box.innerHTML = liveHtml + rotHtml;
         }
 
         async function loadReachability(){

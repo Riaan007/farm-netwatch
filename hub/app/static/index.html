@@ -353,7 +353,7 @@
                     <input id="al-site-offline" type="checkbox" class="w-4 h-4 accent-cyan-400"> Notify when a <b class="text-slate-300">site goes offline</b> (and when it recovers)
                 </label>
                 <label class="flex items-center gap-2 text-xs text-slate-400">
-                    <input id="al-ip-conflict" type="checkbox" class="w-4 h-4 accent-cyan-400"> Notify on a new <b class="text-slate-300">IP conflict</b> (two devices sharing one address)
+                    <input id="al-ip-conflict" type="checkbox" class="w-4 h-4 accent-cyan-400"> Notify on a new <b class="text-slate-300">IP conflict</b> (two devices live on one address at the same time — rotated Wi-Fi identities never page)
                 </label>
                 <div class="flex items-center gap-2 pt-2">
                     <button onclick="saveAlerts()" class="btn btn-primary">Save</button>
@@ -402,6 +402,7 @@
                 : `<div class="h-1 rounded-full bg-white/10 overflow-hidden mt-1.5"><div class="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400" style="width:${pct}%"></div></div>`;
             const watched = s.watched_down ? `<span class="chip bg-amber-500/15 text-amber-300">🔔 ${s.watched_down} watched down</span>` : '';
             const conflicts = s.conflicts ? `<span class="chip bg-orange-500/15 text-orange-300 border border-orange-400/25">⚠️ ${s.conflicts} IP conflict${s.conflicts>1?'s':''}</span>` : '';
+            const rotated = s.rotated ? `<span class="chip bg-slate-500/15 text-slate-400 border border-slate-400/20" title="The same address was held by different MACs in turn (rotating private Wi-Fi MAC, DHCP reuse) — not a live conflict">🔁 ${s.rotated} IP reuse</span>` : '';
             const stale = s.stale ? '<span class="chip bg-slate-500/15 text-slate-400">stale data</span>' : '';
             let kuma = '';
             if (s.kuma) {
@@ -425,7 +426,7 @@
                         <div class="text-right shrink-0 flex flex-col items-end gap-1">${latency}<p class="text-[11px] text-slate-500">scan ${fmtAgo(s.last_scan_ts)}</p></div>
                     </div>
                     <div>
-                        <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${stale}</div>
+                        <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${rotated} ${stale}</div>
                         ${bar}
                     </div>
                     <div>${sparkBars(s.spark)}<p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Site reachability · last 24h ${s.reach_24h !== null ? '· ' + s.reach_24h + '%' : ''}</p></div>

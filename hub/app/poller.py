@@ -210,15 +210,18 @@ class Poller:
         watched_down = sum(1 for d in devices
                            if d.get("watch") and not d.get("online")) if devices else None
         # Prefer the site's own conflict list — it honours "Clear & re-test"
-        # acks, so badges and alerts drop a cleared conflict on the next poll.
+        # acks and knows live-vs-rotated (pass overlap + ARP verification the
+        # hub can't see). Only LIVE conflicts feed the badge and the ntfy
+        # alert; rotated identities are shown softly on the site page.
         site_conf = (conflictutil.fetch_site_conflicts(self._base_url(site), timeout)
                      if status is not None else None)
-        if site_conf is not None:
-            conflict_ips = sorted((c["ip"] for c in site_conf), key=_ip_sortkey)
-        else:
-            conflict_ips = conflictutil.conflict_ips(devices)
+        entries = (site_conf if site_conf is not None
+                   else conflictutil.conflict_entries(devices))
+        conflict_ips, rotated_ips = conflictutil.split_ips(entries)
         with self._lock:
-            self._snap.setdefault(sid, {})["conflict_ips"] = conflict_ips
+            snap2 = self._snap.setdefault(sid, {})
+            snap2["conflict_ips"] = conflict_ips
+            snap2["rotated_ips"] = rotated_ips
         self._maybe_alert_conflict(sid, site, conflict_ips, reachable=status is not None,
                                    have_devices=bool(devices))
         sitehistory.record(
@@ -251,7 +254,9 @@ class Poller:
                         tags=["white_check_mark"])
 
     def _maybe_alert_conflict(self, sid, site, conflict_ips, reachable, have_devices):
-        """ntfy + log when a site gains a NEW IP conflict, or when all clear.
+        """ntfy + log when a site gains a NEW live IP conflict, or when all
+        clear. Identity rotation / IP reuse never pages — it only shows as a
+        soft card on the site page.
 
         Edge-triggered against the set of conflicted IPs already alerted, so each
         conflict pages once (not every poll). Skipped while the site is
@@ -275,8 +280,8 @@ class Poller:
         if new_ips:
             ips = ", ".join(sorted(now, key=_ip_sortkey))
             notify.push(alerts, f"IP conflict: {name}",
-                        f"More than one device is answering the same address at '{name}': {ips}. "
-                        f"Give one device a unique IP.",
+                        f"Two devices are answering the same address at the same "
+                        f"time at '{name}': {ips}. Give one device a unique IP.",
                         priority="high", tags=["warning"])
         elif cleared:
             notify.push(alerts, f"IP conflict cleared: {name}",

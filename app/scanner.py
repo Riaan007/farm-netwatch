@@ -32,10 +32,12 @@ SEED_PATH = os.path.join(os.path.dirname(__file__), "defaults", "devices.json")
 
 QUICK_PORTS = "22,53,80,443,515,554,631,1883,2000,5000,5060,8000,8080,8291,8443,9000,9100"
 
-# Two distinct MACs both seen at one IP within this window = a live address
-# conflict (e.g. a Wi-Fi bridge and a camera sharing an IP). Old stale records
-# whose IP was later reused by a different device fall outside the window and
-# are not flagged.
+# Two distinct MACs both seen at one IP within this window = an address worth
+# flagging. HOW it is flagged depends on overlap evidence: only claimants proven
+# up TOGETHER (same scan pass / ARP verification) are a red live "ip_conflict";
+# claimants that held the IP in turn — iOS/Android/TV randomized private Wi-Fi
+# MACs rotating, DHCP reuse — are the softer "identity_rotated" problem type.
+# Old stale records whose IP was later reused fall outside the window entirely.
 CONFLICT_WINDOW_S = 24 * 3600
 
 # Plaintext / remote-admin ports worth flagging as a security problem.
@@ -165,6 +167,9 @@ class Scanner:
         self.miss = st.get("miss", {})
         self.seen_keys = set(st.get("seen_keys", []))
         self.conflict_ack = st.get("conflict_ack", {})   # ip -> cleared-at ts
+        # ip -> {"ts", "keys"}: last time 2+ claimants were PROVEN up together
+        # at that IP (same scan pass / ARP verification) — the live-conflict bit.
+        self.conflict_live = st.get("conflict_live", {})
         self.status["last_scan"] = st.get("last_scan", "--:--:--")
         self.status["last_scan_ts"] = st.get("last_scan_ts")
 
@@ -176,6 +181,7 @@ class Scanner:
             "last_scan": self.status["last_scan"],
             "last_scan_ts": self.status["last_scan_ts"],
             "conflict_ack": self.conflict_ack,
+            "conflict_live": self.conflict_live,
         })
 
     # ---- network helpers ----------------------------------------------
@@ -455,7 +461,11 @@ class Scanner:
                         "prev_vendor": old.get("vendor"), "prev_mac": old.get("mac")}))
 
             scanned_keys = (expected | set(found)) - superseded
+            self._note_overlaps(found)
             self._finalize(found, new_devices, scanned_keys, superseded, cfg, extra_events)
+            # Actively ARP-verify addresses that LOOK conflicted, to tell a real
+            # fight over an IP apart from sequential MAC rotation / IP reuse.
+            self._verify_suspect_conflicts()
             # Adaptive identification: a regular scan that turns up a *new* device
             # queues a deep scan of just that host to identify it accurately.
             if mode == "quick" and cfg["scan"].get("deep_on_new"):
@@ -846,9 +856,84 @@ class Scanner:
             daemon=True,
         ).start()
 
+    # ---- conflict classification ---------------------------------------
+    def _note_overlaps(self, found):
+        """Record IPs where THIS scan pass saw 2+ distinct keys up at once
+        (e.g. overlapping targets) — direct proof of a live conflict. Also
+        prunes live markers that have aged out of the conflict window."""
+        claims = {}
+        for r in found.values():
+            if r.get("ip"):
+                claims.setdefault(r["ip"], set()).add(r["key"])
+        now = int(time.time())
+        cutoff = now - CONFLICT_WINDOW_S
+        self.conflict_live = {ip: v for ip, v in self.conflict_live.items()
+                              if v.get("ts", 0) >= cutoff}
+        for ip, keys in claims.items():
+            if len(keys) > 1:
+                self.conflict_live[ip] = {"ts": now, "keys": sorted(keys)}
+
+    def _arp_claimants(self, ip, rounds=5, gap=0.4):
+        """MACs answering ARP for `ip` right now: flush its neighbour entry,
+        ping, read the fresh cache — several times. In a live conflict both
+        fighters answer every ARP request and the cached MAC flips between them
+        within seconds; a rotated identity only ever answers with its current
+        MAC. Bridge MACs are ignored (they proxy-answer for their clients)."""
+        macs = set()
+        for i in range(rounds):
+            if i:
+                time.sleep(gap)
+            try:  # flush so each round is a fresh ARP race, not a cached entry
+                subprocess.run(["ip", "neigh", "flush", "to", ip],
+                               capture_output=True, timeout=4)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            if not _icmp_sweep_alive(ip):
+                continue
+            m = identify.normalize_mac(discovery.arp_table().get(ip, ""))
+            if m and m not in self._bridge_macs:
+                macs.add(m)
+            if len(macs) > 1:
+                break
+        return macs
+
+    def _verify_suspect_conflicts(self, limit=8):
+        """After a scan: actively probe every local IP that has 2+ recent
+        claimants. Proof of overlap promotes (and keeps) it a live ip_conflict;
+        no proof lets it surface as the softer identity_rotated problem."""
+        with self.lock:
+            devs = list(self.devices.values())
+        suspects = [ip for ip in self._conflict_map(devs) if self._is_local_ip(ip)]
+        now = int(time.time())
+        changed = False
+        for ip in suspects[:limit]:
+            if now - (self.conflict_live.get(ip) or {}).get("ts", 0) < 60:
+                continue                       # proven live moments ago
+            macs = self._arp_claimants(ip)
+            if len(macs) > 1:
+                self.conflict_live[ip] = {"ts": int(time.time()), "keys": sorted(
+                    ":".join(m[i:i + 2] for i in range(0, 12, 2)) for m in macs)}
+                changed = True
+        if changed:
+            self._save_state()
+
+    @staticmethod
+    def _is_laa(mac):
+        """Locally-administered MAC (second hex digit 2/6/A/E) — the mark of a
+        randomized 'private Wi-Fi address' (iOS/Android/smart TVs)."""
+        m = identify.normalize_mac(mac or "")
+        return bool(m) and m[1] in "26ae"
+
+    def _conflict_is_live(self, ip, cutoff):
+        """True when overlapping claimants (2+ up at once) were PROVEN at this
+        IP within the window — and after any Clear & re-test ack."""
+        ts = (self.conflict_live.get(ip) or {}).get("ts", 0)
+        return ts >= max(cutoff, self.conflict_ack.get(ip, 0))
+
     def _conflict_map(self, devs, window_s=None):
         """{ip: [device, ...]} for IPs claimed by 2+ distinct devices (MAC keys)
-        both seen within `window_s` — a live address conflict."""
+        both seen within `window_s` — live conflict or identity rotation; see
+        _conflict_is_live for which."""
         cutoff = int(time.time()) - (window_s or CONFLICT_WINDOW_S)
         by_ip = {}
         for d in devs:
@@ -862,12 +947,14 @@ class Scanner:
                 if len({d.get("key") for d in ds}) > 1}
 
     def ip_conflicts(self, window_s=None):
-        """Current IP address conflicts, for the dashboard's conflict monitor and
-        the /api/conflicts endpoint. One entry per conflicted IP, newest sighting
-        first, so the operator can renumber the offending device."""
+        """Every multi-claimant IP, for /api/conflicts and the hub. One entry
+        per IP, newest sighting first; `live`/`kind` say whether the claimants
+        were proven up together (real conflict) or held the IP in turn
+        (identity rotation / IP reuse)."""
         with self.lock:
             devs = list(self.devices.values())
         cmap = self._conflict_map(devs, window_s)
+        cutoff = int(time.time()) - (window_s or CONFLICT_WINDOW_S)
 
         def _ipkey(ip):
             try:
@@ -878,8 +965,11 @@ class Scanner:
         out = []
         for ip in sorted(cmap, key=_ipkey):
             ds = sorted(cmap[ip], key=lambda d: d.get("last_seen", 0), reverse=True)
+            live = self._conflict_is_live(ip, cutoff)
             out.append({
                 "ip": ip,
+                "live": live,
+                "kind": "ip_conflict" if live else "identity_rotated",
                 "count": len(ds),
                 "any_online": any(d.get("online") for d in ds),
                 "devices": [{
@@ -913,15 +1003,40 @@ class Scanner:
                     "online": d.get("online"), "last_seen": d.get("last_seen")}
 
         out = []
-        # 1. IP conflicts (two live MACs on one address)
+        # 1. An IP with 2+ claimants. RED ip_conflict only when they were proven
+        # up at the same time; claimants that held the IP in turn (rotating
+        # private Wi-Fi MACs, DHCP reuse) get the softer identity_rotated type.
         cmap = self._conflict_map(devs, window)
+        cutoff = int(time.time()) - window
         for ip in sorted(cmap, key=_ipkey):
             ds = sorted(cmap[ip], key=lambda d: d.get("last_seen", 0), reverse=True)
+            if self._conflict_is_live(ip, cutoff):
+                out.append({
+                    "type": "ip_conflict", "severity": "high", "ip": ip,
+                    "devices": [_brief(d) for d in ds],
+                    "detail": f"{len(ds)} devices answer {ip} at the same time",
+                    "fix": "Give one device a unique IP, then add a DHCP reservation.",
+                })
+                continue
+            others = ds[1:]
+            if others and all(self._is_laa(d.get("mac")) for d in others):
+                detail = (f"{len(ds)} MACs held {ip} in turn; the earlier ones are "
+                          "randomized private Wi-Fi addresses — likely one device "
+                          "rotating its MAC")
+            elif any(self._is_laa(d.get("mac")) for d in ds):
+                detail = (f"{len(ds)} MACs held {ip} in turn, one of them randomized — "
+                          "likely a device alternating between its real and its "
+                          "private Wi-Fi MAC")
+            else:
+                detail = (f"{len(ds)} devices used {ip} in turn "
+                          "(never seen online together)")
             out.append({
-                "type": "ip_conflict", "severity": "high", "ip": ip,
+                "type": "identity_rotated", "severity": "low", "ip": ip,
                 "devices": [_brief(d) for d in ds],
-                "detail": f"{len(ds)} devices answer {ip}",
-                "fix": "Give one device a unique IP, then add a DHCP reservation.",
+                "detail": detail,
+                "fix": "Usually harmless (MAC rotation / DHCP reuse). Clear & re-test "
+                       "to dismiss; if it keeps returning, disable the device's "
+                       "private Wi-Fi address or reserve its IP in DHCP.",
             })
         # 2. Risky exposed ports
         for d in devs:
@@ -990,9 +1105,12 @@ class Scanner:
         with self.lock:
             devs = list(self.devices.values())
         cmap = self._conflict_map(devs)
+        cutoff = int(time.time()) - CONFLICT_WINDOW_S
         for d in devs:
             others = [p for p in cmap.get(d.get("ip"), []) if p.get("key") != d.get("key")]
-            d["ip_conflict"] = bool(others)
+            live = bool(others) and self._conflict_is_live(d.get("ip"), cutoff)
+            d["ip_conflict"] = live
+            d["ip_rotated"] = bool(others) and not live
             d["ip_conflict_with"] = [{
                 "key": p.get("key"), "mac": p.get("mac"), "vendor": p.get("vendor"),
                 "name": p.get("name"), "category": p.get("category"),
@@ -1046,9 +1164,10 @@ class Scanner:
             self.delete_device(":".join(added[i:i + 2] for i in range(0, 12, 2)))
 
     def clear_conflict(self, ip):
-        """Clear an IP-conflict problem: from now on only NEW sightings at that
-        address count toward a conflict, so it self-revives if two devices are
-        still fighting over the IP and stays gone if the network was fixed."""
+        """Clear an ip_conflict OR identity_rotated problem: from now on only
+        NEW sightings at that address count toward either, so a real conflict
+        self-revives (and re-proves itself live), a fixed one stays gone, and a
+        rotated identity stays gone until the next rotation claims the IP."""
         self.conflict_ack[ip] = int(time.time())
         self._save_state()
         return {"ok": True, "ip": ip}
