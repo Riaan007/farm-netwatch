@@ -143,7 +143,10 @@ def _site_card(site):
         "devices_online": sum(1 for d in devices if d.get("online")) if devices else None,
         "watched_down": sum(1 for d in devices
                             if d.get("watch") and not d.get("online")) if devices else None,
-        "conflicts": len(conflictutil.conflict_map(devices)) if devices else None,
+        # Prefer the poller's conflict list (site-fed, honours Clear & re-test);
+        # recompute from cached devices only before the first poll fills it.
+        "conflicts": (len(snap["conflict_ips"]) if snap.get("conflict_ips") is not None
+                      else (len(conflictutil.conflict_map(devices)) if devices else None)),
         "stale": stale,
         "fetched_at": fetched,
         "kuma": {"up": kuma.get("up"), "down": kuma.get("down"),
