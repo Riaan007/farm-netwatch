@@ -37,7 +37,8 @@ for a in "${@:-}"; do
     --yes|-y) ASSUME_YES=1 ;;
     --no-kuma) NO_KUMA=1 ;;
     --no-vpn) HUB_VPN=0 ;;
-    -h|--help) sed -n '2,20p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) { sed -n '2,20p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; } \
+      || echo "Piped run — see the header of install.sh on GitHub for the options."; exit 0 ;;
   esac
 done
 
@@ -51,11 +52,15 @@ bad()  { printf '  %s✗%s %s\n' "$RED" "$R" "$*"; FAILS=$((FAILS+1)); }
 die()  { printf '%sERROR:%s %s\n' "$RED" "$R" "$*" >&2; exit 1; }
 WARNS=0; FAILS=0
 
+# A usable terminal must be OPENABLE — /dev/tty exists as a node even when the
+# process has no controlling terminal (ssh without -t, cron); only the open fails.
+HAS_TTY=0; { : </dev/tty; } 2>/dev/null && HAS_TTY=1
+
 # Prompt yes/no. Uses /dev/tty so it still works when the script is piped from
 # curl, as long as a terminal is attached. Unattended (no tty / --yes) = default.
 ask() { # $1 question  $2 default(Y|N) -> echoes y|n
   local def="${2:-Y}" ans
-  if [ "$ASSUME_YES" = 1 ] || [ ! -e /dev/tty ]; then
+  if [ "$ASSUME_YES" = 1 ] || [ "$HAS_TTY" != 1 ]; then
     [ "${def^^}" = "Y" ] && echo y || echo n; return
   fi
   read -rp "$1 [$( [ "${def^^}" = Y ] && echo 'Y/n' || echo 'y/N')] " ans </dev/tty || ans=""
@@ -218,8 +223,10 @@ say "Starting the stack…"
 docker compose up -d
 
 wait_for() { local n="$1" url="$2" i; for i in $(seq 1 "${3:-20}"); do curl -fsS -o /dev/null --max-time 4 "$url" 2>/dev/null && { ok "$n is up"; return 0; }; sleep 3; done; warn "$n not responding yet at $url"; return 1; }
-wait_for "Netwatch" "http://localhost:$PORT/api/health" 12
-[ "$WANT_KUMA" = 1 ] && wait_for "Uptime Kuma" "http://localhost:$KUMA_PORT/" 14
+# || true: a slow-to-start service must not abort the installer via set -e —
+# the final section still prints where to look and how to retry.
+wait_for "Netwatch" "http://localhost:$PORT/api/health" 12 || true
+[ "$WANT_KUMA" = 1 ] && { wait_for "Uptime Kuma" "http://localhost:$KUMA_PORT/" 14 || true; }
 VPNIP=""
 if [ "$HUB_READY" = 1 ]; then
   sleep 3

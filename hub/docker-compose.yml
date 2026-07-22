@@ -1,5 +1,8 @@
 # Farm Netwatch HUB — central multi-site dashboard + WireGuard server (wg-easy).
 #
+# Fresh machine? Use the guided installer instead (pulls the prebuilt image):
+#   curl -fsSL https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install-hub.sh | sudo bash
+# From this source checkout:
 #   cp .env.example .env     # set WG_HOST, WG_PASSWORD_HASH, HUB_PASSWORD
 #   docker compose up -d --build
 #
@@ -72,6 +75,9 @@ services:
       - HUB_PROXY_RANGE=${HUB_PROXY_RANGE:-8200-8231}
       # Device-tunnel port range — MUST match the published range on wg-easy above.
       - HUB_TCP_RANGE=${HUB_TCP_RANGE:-8300-8331}
+      # First-boot seed: register a "home" site (a Netwatch on this same machine)
+      # at this LAN IP. Blank = start with no sites. Ignored once hub.json exists.
+      - HUB_HOME_IP=${HUB_HOME_IP:-}
       - TZ=${TZ:-UTC}
     volumes:
       - ./data/hub:/data

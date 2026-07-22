@@ -328,6 +328,24 @@ are addressed **only by their unique VPN IP** — LAN routes are never advertise
 
 ### Hub setup (once)
 
+One command on a fresh Pi (Pi 4/5 with a **64-bit** OS, or any amd64 box):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Riaan007/farm-netwatch/main/install-hub.sh | sudo bash
+```
+
+It preflights the machine, installs Docker/WireGuard if missing, pulls the
+prebuilt hub stack (`ghcr.io/riaan007/farm-netwatch-hub` + wg-easy + Caddy),
+asks for your DDNS name and passwords (anything left blank is generated and
+shown once at the end), and can **also install a local Netwatch site** so the
+hub Pi scans its own LAN — pre-registered as the "home" card. Preflight only:
+append `-s -- --check`. Flags/env: `--yes`, `--no-site`, `WG_HOST`,
+`WG_PASSWORD`, `HUB_PASSWORD`, `HUB_DIR` (/opt/netwatch-hub), `HUB_PORT` (8091).
+Env vars must survive sudo — for an unattended run use e.g.
+`WG_HOST=myfarm.ddns.net ASSUME_YES=1 curl -fsSL …/install-hub.sh | sudo -E bash`.
+
+From a source checkout instead:
+
 ```bash
 cd hub && cp .env.example .env      # set WG_HOST, WG_PASSWORD_HASH, HUB_PASSWORD
 docker compose up -d --build
@@ -336,9 +354,20 @@ docker compose up -d --build
 1. Forward **UDP 51820** on your router to the hub machine. Do **not** forward
    8091/51821 — reach them over the VPN (or LAN); the login is defense in depth.
 2. Open the hub at `http://<hub-lan-ip>:8091`, sign in, and check the
-   pre-seeded **home** site goes green.
+   **home** site goes green (pre-seeded when `HUB_HOME_IP` is set — the
+   installer does this if you chose the local site).
 3. Open wg-easy at `http://<hub-lan-ip>:51821` and create one client per farm
-   site (note each one's `10.8.0.x`), plus clients for your phone/laptop.
+   site (note each one's `10.8.0.x`), plus clients for your phone/laptop —
+   or skip this and let the **✨ New site wizard** do it per site.
+
+**Moving a hub to a new machine:** run the installer on the new Pi, then
+`docker compose down`, copy the old hub's `data/` directory over
+`/opt/netwatch-hub/data` (WireGuard server keys + clients, site registry,
+backups), and `docker compose up -d`. Point your DDNS/port-forward at the new
+machine — sites reconnect without re-enrolling. Note: the copied `data/` keeps
+the **old** hub dashboard password (it lives in `data/hub/hub.json`; the new
+`.env`'s `HUB_PASSWORD` only seeds a first boot), while wg-easy's admin
+password stays the **new** one from `.env`.
 
 > **Heads-up:** the hub app shares wg-easy's network namespace (that's how it
 > reaches `10.8.0.x`). Always restart the stack with `docker compose up -d`

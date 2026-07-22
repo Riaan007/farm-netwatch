@@ -53,6 +53,34 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # HUB image (hub/ stack: multi-site dashboard). 64-bit only — bcrypt ships
+      # no armv7 wheels, and a hub realistically runs on a Pi 4/5 with 64-bit OS.
+      # ONE-TIME after the first push: a brand-new GHCR package defaults to
+      # PRIVATE — flip it to Public (package settings) or install-hub.sh's
+      # anonymous `docker compose pull` fails for everyone.
+      - name: Hub image metadata
+        id: meta_hub
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/farm-netwatch-hub
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=sha,format=short
+
+      - name: Build and push (hub image)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: hub/Dockerfile
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ steps.meta_hub.outputs.tags }}
+          labels: ${{ steps.meta_hub.outputs.labels }}
+          # own cache scope so the hub build doesn't evict the site image's cache
+          cache-from: type=gha,scope=hub
+          cache-to: type=gha,mode=max,scope=hub
+
       # Second variant WITH NetworkManager/nmcli baked in, for the DHCP<->fixed-IP
       # control (docker-compose.netcfg.yml) on sites that run the prebuilt image
       # and have no source checkout to build from.

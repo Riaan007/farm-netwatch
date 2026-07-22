@@ -13,6 +13,12 @@ CONFIG_PATH = os.path.join(DATA_DIR, "hub.json")
 
 _lock = threading.Lock()
 
+# LAN IP of a Netwatch site running on the hub machine itself (install-hub.sh
+# sets it). First boot pre-seeds a "home" site card for it; blank = no seed.
+# It must be the LAN IP, not localhost: the hub shares wg-easy's network
+# namespace, where localhost is not the host.
+_HOME_IP = os.environ.get("HUB_HOME_IP", "").strip()
+
 DEFAULTS = {
     "hub": {
         "name": "Farm Network Asset Identifier",
@@ -66,13 +72,13 @@ DEFAULTS = {
         {
             "id": "home",
             "name": "Home",
-            "vpn_ip": "192.168.88.250",
+            "vpn_ip": _HOME_IP,
             "netwatch_port": 8090,
-            "kuma_url": "http://192.168.88.250:3001",
+            "kuma_url": f"http://{_HOME_IP}:3001",
             "kuma_status_slug": "farm",
             "enabled": True,
         },
-    ],
+    ] if _HOME_IP else [],
 }
 
 
