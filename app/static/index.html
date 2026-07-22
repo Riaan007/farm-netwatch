@@ -1846,6 +1846,18 @@
             const co = s.containers || {};
             const contSeg = co.available
                 ? `<span title="${(co.containers||[]).map(c=>c.name+': '+c.state).join(' | ').replace(/"/g,'&quot;')}">🐳 <b class="tabular-nums text-slate-300">${(co.containers||[]).length}</b>${(co.flapping||[]).length?` <b class="text-amber-400">⚠ ${co.flapping.join(', ')}</b>`:' <b class="text-emerald-400">✓</b>'}</span>` : '';
+            const sto = s.storage || {};
+            const stoFs = sto.filesystems || [];
+            const stoBad = stoFs.some(f=>f.ro || (f.write_test && f.write_test.ok === false));
+            const extErr = (sto.ext4_errors||[]).reduce((a,e)=>a+(e.count||0),0);
+            const stoSlow = stoFs.some(f=>f.write_test && f.write_test.fsync_ms > 5000);
+            const card = (sto.cards||[])[0];
+            let stoSeg = '';
+            if (stoBad) stoSeg = '<span>💳 <b class="text-rose-400">STORAGE FAILING (read-only)</b></span>';
+            else if (extErr) stoSeg = `<span title="ext4 recorded filesystem errors — corruption has started">💳 <b class="text-rose-400">${extErr} fs errors</b></span>`;
+            else if ((sto.io_errors_new||0) > 0) stoSeg = `<span title="storage I/O errors in the kernel log">💳 <b class="text-amber-400">I/O errors</b></span>`;
+            else if (stoSlow) stoSeg = '<span title="write+fsync latency over 5s — the card controller is struggling">💳 <b class="text-amber-400">slow writes</b></span>';
+            else if (card) stoSeg = `<span title="${card.dev} ${card.name||''} manufactured ${card.date||'?'}${card.age_years!=null?' — '+card.age_years+' years old':''} · write test ${((stoFs[0]||{}).write_test||{}).fsync_ms||'?'} ms">💳 SD ${card.age_years > 5 ? '<b class="text-amber-400">'+Math.round(card.age_years)+'y old</b>' : '<b class="text-emerald-400">✓</b>'}</span>`;
             const wd = s.watchdog || {};
             const wdSeg = wd.active ? '<span class="text-emerald-400/80" title="Hardware watchdog armed — a hard-hung Pi reboots itself after ~15s">🐶 WD</span>'
                         : (wd.enabled && wd.note) ? `<span class="text-slate-500" title="${(wd.note||'').replace(/"/g,'&quot;')}">🐶 host-owned</span>` : '';
@@ -1856,7 +1868,7 @@
                 + `<span>RAM <b class="${healthClass((s.mem||{}).used_pct, 90, 97)} tabular-nums">${(s.mem||{}).used_pct != null ? s.mem.used_pct+'%' : '—'}</b></span>`
                 + (worstDisk ? `<span>💾 <b class="${healthClass(worstDisk.used_pct, 85, 95)} tabular-nums">${worstDisk.used_pct}%</b> <span class="text-slate-500">(${worstDisk.free_gb} GB free)</span>${fullSeg}</span>` : '')
                 + `<span class="text-slate-500">up <span class="tabular-nums">${fmtUp(s.uptime_s)}</span></span>`
-                + (smartSeg ? smartSeg : '') + (contSeg ? contSeg : '') + (clockSeg ? clockSeg : '')
+                + (smartSeg ? smartSeg : '') + (stoSeg ? stoSeg : '') + (contSeg ? contSeg : '') + (clockSeg ? clockSeg : '')
                 + (uv ? `<span>${uv}</span>` : '') + (wdSeg ? wdSeg : '');
         }
         async function loadSysinfo(){

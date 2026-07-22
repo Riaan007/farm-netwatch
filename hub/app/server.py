@@ -189,13 +189,20 @@ def _pi_health_level(snap):
     smart_bad = any(not d.get("healthy")
                     for d in (info.get("smart") or {}).get("devices") or [])
     flapping = bool((info.get("containers") or {}).get("flapping"))
+    sto = info.get("storage") or {}
+    sto_crit = (any(f.get("ro") or (f.get("write_test") or {}).get("ok") is False
+                    for f in sto.get("filesystems") or [])
+                or any(e.get("count") for e in sto.get("ext4_errors") or []))
+    sto_warn = (sto.get("io_errors_new") or 0) > 0
     if (th.get("undervoltage_now") or (temp is not None and temp >= 82)
             or (disk is not None and disk >= 95) or (mem is not None and mem >= 97)
-            or smart_bad or (days is not None and days <= 5) or off >= 600):
+            or smart_bad or (days is not None and days <= 5) or off >= 600
+            or sto_crit):
         return "crit"
     if (th.get("throttled_now") or (temp is not None and temp >= 75)
             or (disk is not None and disk >= 85) or (mem is not None and mem >= 90)
-            or flapping or (days is not None and days <= 14) or off >= 120):
+            or flapping or (days is not None and days <= 14) or off >= 120
+            or sto_warn):
         return "warn"
     return "ok"
 

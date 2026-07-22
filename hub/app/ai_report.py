@@ -114,6 +114,15 @@ def gather_facts(card, devices, conflicts, events, internet, reach, sysinfo=None
             "smart": sysinfo.get("smart"),
             "containers_flapping": (sysinfo.get("containers") or {}).get("flapping"),
             "hardware_watchdog_active": (sysinfo.get("watchdog") or {}).get("active"),
+            "sd_flash_storage": ({
+                "readonly_or_write_failing": any(
+                    f.get("ro") or (f.get("write_test") or {}).get("ok") is False
+                    for f in (sysinfo.get("storage") or {}).get("filesystems") or []),
+                "ext4_errors": sum(e.get("count") or 0 for e in
+                                   (sysinfo.get("storage") or {}).get("ext4_errors") or []),
+                "kernel_io_errors_recent": (sysinfo.get("storage") or {}).get("io_errors_new"),
+                "cards": (sysinfo.get("storage") or {}).get("cards"),
+            } if sysinfo.get("storage") else None),
         } if sysinfo else None),
     }
 

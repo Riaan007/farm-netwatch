@@ -26,6 +26,7 @@ import glob
 import http.client
 import json
 import os
+import re
 import shutil
 import signal
 import socket
@@ -47,6 +48,12 @@ SAMPLE_S = 60
 REALERT_S = 6 * 3600          # repeat an unresolved warning at most every 6h
 CLOCK_EVERY_S = 3600
 SMART_EVERY_S = 1800
+STORAGE_EVERY_S = 600
+
+# kernel messages that mean the storage medium is in trouble
+_IO_ERR_RE = re.compile(
+    r"I/O error|EXT4-fs error|blk_update_request.+error|"
+    r"mmc\d+:.*(?:error|timeout)|Buffer I/O error", re.IGNORECASE)
 
 # warn = "act before it breaks"; crit = "it is breaking"
 THRESH = {
@@ -198,6 +205,10 @@ class SysMonitor:
         self._smart_next = 0
         self._cont_started = {}    # container name -> last StartedAt seen
         self._cont_changes = {}    # container name -> [restart timestamps]
+        self._storage = None       # cached SD/flash health section
+        self._storage_next = 0
+        self._kmsg_seq = -1        # last /dev/kmsg sequence processed
+        self._io_total = 0         # storage I/O errors seen since container start
         self._wd_fd = None
         self._wd_sig = False
         self._wd_err = None
@@ -353,6 +364,140 @@ class SysMonitor:
         return {"available": True, "containers": out,
                 "flapping": [c["name"] for c in out if c["flapping"]]}
 
+    # ---- SD card / flash storage health -------------------------------------
+    # SD cards and USB sticks have no SMART, so we watch the SYMPTOMS of a dying
+    # medium instead: the filesystem being remounted read-only (the kernel's
+    # death announcement), ext4 error counters, storage I/O errors in the kernel
+    # log, a tiny write+fsync probe (definitive, and its latency spikes when the
+    # card controller starts struggling), and the card's own identity/age from
+    # the SD CID register (manufacture date — old no-name cards fail first).
+    @staticmethod
+    def _mount_info(path):
+        best = None
+        try:
+            with open("/proc/mounts") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) < 4:
+                        continue
+                    mnt = parts[1].replace("\\040", " ")
+                    if path == mnt or path.startswith(mnt.rstrip("/") + "/") or mnt == "/":
+                        if best is None or len(mnt) > len(best[1]):
+                            best = (parts[0], mnt, parts[2], parts[3])
+        except OSError:
+            return None
+        if not best:
+            return None
+        return {"device": best[0], "fstype": best[2],
+                "ro": "ro" in best[3].split(",")}
+
+    @staticmethod
+    def _write_probe(directory):
+        """1-block write+fsync+readback. Definitive 'is this disk still taking
+        writes' test; latency in ms doubles as an early-degradation signal."""
+        path = os.path.join(directory, ".sysmon_write_test")
+        payload = os.urandom(512)
+        t0 = time.time()
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.write(fd, payload)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            with open(path, "rb") as f:
+                ok = f.read() == payload
+            os.remove(path)
+            return {"ok": ok, "fsync_ms": round((time.time() - t0) * 1000, 1)}
+        except OSError as e:
+            return {"ok": False, "error": e.__class__.__name__,
+                    "fsync_ms": round((time.time() - t0) * 1000, 1)}
+
+    @staticmethod
+    def _ext4_errors():
+        out, checked = [], 0
+        for p in glob.glob("/sys/fs/ext4/*/errors_count"):
+            v = _read(p)
+            if v is None or not v.isdigit():
+                continue
+            checked += 1
+            if int(v):
+                dev = os.path.basename(os.path.dirname(p))
+                last = _read(os.path.join(os.path.dirname(p), "last_error_time"))
+                out.append({"dev": dev, "count": int(v), "last_error": last})
+        return out, checked
+
+    def _scan_kmsg(self):
+        """Count NEW storage-error lines in the kernel ring buffer (needs the
+        health add-on for /dev/kmsg). Sequence numbers dedupe re-reads."""
+        try:
+            fd = os.open("/dev/kmsg", os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            return None
+        new = 0
+        try:
+            while True:
+                try:
+                    rec = os.read(fd, 8192).decode("utf-8", "replace")
+                except (BlockingIOError, OSError):
+                    break
+                try:
+                    hdr, msg = rec.split(";", 1)
+                    seq = int(hdr.split(",")[1])
+                except (ValueError, IndexError):
+                    continue
+                if seq <= self._kmsg_seq:
+                    continue
+                self._kmsg_seq = seq
+                if _IO_ERR_RE.search(msg):
+                    new += 1
+        finally:
+            os.close(fd)
+        self._io_total += new
+        return new
+
+    @staticmethod
+    def _sd_cards():
+        out = []
+        for dev in glob.glob("/sys/block/mmcblk*"):
+            base = os.path.join(dev, "device")
+            if not os.path.isdir(base):
+                continue
+            date = _read(os.path.join(base, "date"))       # "MM/YYYY"
+            age = None
+            if date and "/" in date:
+                try:
+                    mm, yy = date.split("/")
+                    age = round((time.time() -
+                                 time.mktime((int(yy), int(mm), 1, 0, 0, 0, 0, 1, -1)))
+                                / (365.25 * 86400), 1)
+                except (ValueError, OverflowError):
+                    pass
+            out.append({"dev": os.path.basename(dev),
+                        "name": _read(os.path.join(base, "name")),
+                        "date": date, "age_years": age})
+        return out
+
+    def _check_storage(self):
+        if time.time() < self._storage_next:
+            return
+        self._storage_next = time.time() + STORAGE_EVERY_S
+        fs = []
+        info = self._mount_info(DATA_DIR) or {}
+        info = {"mount": "data", **info, "write_test": self._write_probe(DATA_DIR)}
+        fs.append(info)
+        ext_err, ext_checked = self._ext4_errors()
+        io_new = self._scan_kmsg()
+        self._storage = {
+            "checked_ts": int(time.time()),
+            "filesystems": fs,
+            "ext4_errors": ext_err, "ext4_checked": ext_checked,
+            "io_errors_new": io_new,
+            "io_errors_total": self._io_total if io_new is not None else None,
+            "kmsg_available": io_new is not None,
+            "cards": self._sd_cards(),
+        }
+
     # ---- hardware watchdog --------------------------------------------------
     def _wd_reconcile(self, cfg):
         want = bool((cfg.get("sysmon") or {}).get("watchdog"))
@@ -425,6 +570,7 @@ class SysMonitor:
         self._track_disks(disks)
         self._check_clock()
         self._check_smart()
+        self._check_storage()
         containers = self._check_containers()
         snap = {
             "ts": int(time.time()),
@@ -439,6 +585,7 @@ class SysMonitor:
             "throttled": _throttled(),
             "clock": self._clock,
             "smart": self._smart,
+            "storage": self._storage,
             "containers": containers,
             "watchdog": {"supported": os.path.exists(WD_DEV),
                          "enabled": bool((config.load().get("sysmon") or {})
@@ -568,6 +715,39 @@ class SysMonitor:
                    f"Container(s) {', '.join(flap)} keep restarting — the service "
                    "is effectively down. Check `docker logs` on the Pi." if flap
                    else "Containers")
+
+        # SD/flash symptoms: read-only or failed writes = the card is dying NOW;
+        # ext4 errors = corruption already started; kernel I/O errors = warning.
+        sto = snap.get("storage") or {}
+        problems, level = [], "ok"
+        for f_ in sto.get("filesystems") or []:
+            wt = f_.get("write_test") or {}
+            if f_.get("ro"):
+                problems.append(f"the {f_.get('mount')} filesystem is READ-ONLY "
+                                "(the kernel gave up on the medium)")
+                level = "crit"
+            elif wt.get("ok") is False:
+                problems.append(f"writing to {f_.get('mount')} FAILS "
+                                f"({wt.get('error') or 'readback mismatch'})")
+                level = "crit"
+            elif (wt.get("fsync_ms") or 0) > 5000:
+                problems.append(f"writes are extremely slow ({wt['fsync_ms']} ms "
+                                "fsync) — the card controller is struggling")
+                level = "warn" if level == "ok" else level
+        ext_bad = sum(e.get("count") or 0 for e in sto.get("ext4_errors") or [])
+        if ext_bad:
+            problems.append(f"{ext_bad} filesystem error(s) recorded by ext4 — "
+                            "corruption has started")
+            level = "crit"
+        if (sto.get("io_errors_new") or 0) > 0:
+            problems.append(f"{sto['io_errors_new']} new storage I/O error(s) in "
+                            "the kernel log")
+            level = "warn" if level == "ok" else level
+        self._fire(alerts_cfg, "storage", level,
+                   f"[{site}] Pi SD/flash storage FAILING",
+                   ("; ".join(problems) + " — back up now (the hub keeps a daily "
+                    "config backup) and replace the card/drive.") if problems
+                   else "Storage")
 
     # ---- thread -------------------------------------------------------------
     def start(self):
