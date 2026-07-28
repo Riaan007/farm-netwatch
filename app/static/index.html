@@ -49,6 +49,32 @@
         .ip-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px -6px rgba(34,211,238,.3); border-color: rgba(34,211,238,.45); }
         .stat-card { transition: all 0.2s ease; }
         .stat-card:hover { transform: scale(1.02); border-color: rgba(34,211,238,.5); }
+        /* Header toolbar. One row that scrolls sideways rather than wrapping —
+           wrapping used to drop the settings gear onto a line of its own. */
+        .tbar { display: flex; align-items: center; gap: .5rem; flex-shrink: 0;
+            overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+        .tbar::-webkit-scrollbar { display: none; }
+        .tbtn { display: inline-flex; align-items: center; justify-content: center; gap: .35rem;
+            height: 34px; padding: 0 .7rem; white-space: nowrap; border-radius: .6rem;
+            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em;
+            color: #cbd5e1; background: rgba(148,163,184,.10);
+            border: 1px solid rgba(148,163,184,.16); transition: all .15s ease; }
+        .tbtn:hover { background: rgba(148,163,184,.20); color: #e2e8f0; border-color: rgba(148,163,184,.3); }
+        .tbtn-primary { color: #fff; background: #0891b2; border-color: rgba(103,232,249,.45);
+            box-shadow: 0 2px 14px -4px rgba(34,211,238,.6); }
+        .tbtn-primary:hover { background: #06b6d4; color: #fff; }
+        .tbtn-ok { color: #6ee7b7; background: rgba(16,185,129,.14); border-color: rgba(52,211,153,.35); }
+        .tbtn-ok:hover { background: rgba(16,185,129,.24); color: #a7f3d0; }
+        .tbtn-on { color: #67e8f9; background: rgba(34,211,238,.18); border-color: rgba(34,211,238,.45); }
+        .tbtn-icon { width: 34px; padding: 0; border-radius: 999px; }
+        /* Status pills next to the subtitle — all the same height, so the header
+           reads as one line of state instead of a stack of boxes. */
+        .chip { display: inline-flex; align-items: center; gap: .3rem; height: 22px;
+            padding: 0 .55rem; border-radius: 999px; font-size: 10.5px; font-weight: 700;
+            white-space: nowrap; border: 1px solid transparent; }
+        /* This block loads AFTER app.css, so a bare `display` here outranks
+           Tailwind's .hidden and would pin the Kuma link and status pills open. */
+        .tbtn.hidden, .chip.hidden, .tbar.hidden { display: none; }
         .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; }
         .status-dot.bg-emerald-500 { box-shadow: 0 0 8px 1px rgba(16,185,129,.85); }
         .status-dot.bg-red-500 { box-shadow: 0 0 8px 1px rgba(239,68,68,.85); }
@@ -68,9 +94,9 @@
     <div class="bg-grid"></div>
 
     <header class="hdr sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
-            <div class="flex items-center gap-4">
-                <svg viewBox="0 0 40 40" class="w-10 h-10 shrink-0">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3 sm:gap-4">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+                <svg viewBox="0 0 40 40" class="w-9 h-9 shrink-0">
                     <defs><linearGradient id="lg-brand" x1="0" y1="0" x2="1" y2="1">
                         <stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#34d399"/>
                     </linearGradient></defs>
@@ -80,23 +106,24 @@
                     <circle cx="20" cy="20" r="1.8" fill="#22d3ee"/>
                     <path d="M20 20 31 13" stroke="#22d3ee" stroke-width="1.4" stroke-linecap="round" opacity=".9"/>
                 </svg>
-                <div>
-                    <h1 class="text-2xl font-bold tracking-tight flex items-center gap-2"><span class="brand-text">Farm Network Asset Identifier</span>
-                        <span id="internet-badge" class="hidden text-[11px] font-bold px-2 py-0.5 rounded-full"></span>
-                        <span id="pi-ip" class="hidden text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/10 border border-white/10 text-slate-600 font-mono" title="This Pi's own LAN IP — the address of the server running Netwatch"></span>
-                    </h1>
-                    <p id="system-status" class="text-slate-400 text-xs mt-1 italic">Service Active</p>
+                <div class="min-w-0">
+                    <h1 class="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight truncate"><span class="brand-text">Farm Network Asset Identifier</span></h1>
+                    <div class="flex items-center gap-2 flex-wrap mt-0.5">
+                        <p id="system-status" class="text-slate-400 text-xs italic">Service Active</p>
+                        <span id="internet-badge" class="chip hidden"></span>
+                        <span id="pi-ip" class="chip hidden bg-white/10 !border-white/10 text-slate-400 font-mono" title="This Pi's own LAN IP — the address of the server running Netwatch"></span>
+                    </div>
                 </div>
             </div>
-            <div class="flex items-center gap-3 flex-wrap justify-center">
-                <select id="target-select" onchange="onTargetChange()" class="hidden md:block bg-[#0b1322] text-slate-200 text-xs rounded-lg px-3 py-2 border border-white/15"></select>
-                <a id="kuma-link" href="#" target="_blank" class="hidden px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 text-emerald-300 rounded-lg text-xs font-bold uppercase">Kuma ↗&#xFE0E;</a>
-                <button id="select-btn" onclick="toggleSelectMode()" class="px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-lg text-xs font-bold uppercase">Select</button>
-                <button onclick="quickScan()" class="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 border border-cyan-300/40 rounded-lg text-xs font-bold uppercase shadow-[0_2px_14px_-4px_rgba(34,211,238,0.55)]">Scan</button>
-                <button onclick="openHistory()" class="px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-lg text-xs font-bold uppercase" title="Device & IP event history">History</button>
-                <button onclick="openBulkCreds()" class="px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-lg text-xs font-bold uppercase" title="Set or copy logins across many devices">🔑 Logins</button>
-                <button onclick="openSetup()" class="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full transition-colors" title="Settings">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <div class="tbar">
+                <select id="target-select" onchange="onTargetChange()" class="h-[34px] bg-[#0b1322] text-slate-200 text-xs rounded-lg px-2 border border-white/15 max-w-[11rem]"></select>
+                <button onclick="quickScan()" class="tbtn tbtn-primary" title="Scan the selected network now">Scan</button>
+                <a id="kuma-link" href="#" target="_blank" class="tbtn tbtn-ok hidden" title="Open Uptime Kuma">Kuma ↗&#xFE0E;</a>
+                <button id="select-btn" onclick="toggleSelectMode()" class="tbtn" title="Select several devices to act on at once">Select</button>
+                <button onclick="openHistory()" class="tbtn" title="Device &amp; IP event history">History</button>
+                <button onclick="openBulkCreds()" class="tbtn" title="Set or copy logins across many devices">🔑 Logins</button>
+                <button onclick="openSetup()" class="tbtn tbtn-icon" aria-label="Settings" title="Settings">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                 </button>
             </div>
         </div>
@@ -105,7 +132,7 @@
 
     <main class="max-w-7xl mx-auto p-6 flex-grow w-full">
         <div id="conflict-monitor" class="hidden mb-6"></div>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
             <div onclick="filterGrid('identified')" class="stat-card panel p-4 cursor-pointer">
                 <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Identified</p>
                 <p id="stat-identified" class="text-3xl font-bold tabular-nums text-slate-100">0</p>
@@ -118,6 +145,14 @@
                 <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Offline</p>
                 <p id="stat-offline" class="text-3xl font-bold tabular-nums text-rose-400">0</p>
             </div>
+            <div id="stat-wifi-card" class="stat-card panel p-4 cursor-pointer hidden" onclick="jumpToWifi()"
+                 title="Wireless links read from your radios">
+                <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Wireless links</p>
+                <p class="flex items-baseline gap-2">
+                    <span id="stat-wifi" class="text-3xl font-bold tabular-nums text-slate-100">0</span>
+                    <span id="stat-wifi-note" class="text-[11px] font-bold"></span>
+                </p>
+            </div>
             <div class="panel-accent p-4 text-cyan-100">
                 <p class="text-cyan-200/70 text-xs font-semibold uppercase tracking-wider">Last Scan</p>
                 <p id="stat-last-scan" class="text-lg font-bold mt-1 tracking-tighter truncate tabular-nums">--:--:--</p>
@@ -127,10 +162,10 @@
         <div id="pi-health" class="hidden panel px-4 py-2.5 -mt-4 mb-8 flex flex-wrap gap-x-5 gap-y-1.5 items-center text-xs"></div>
 
         <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
-            <h2 id="current-view-title" class="text-lg font-bold text-slate-600 uppercase tracking-tight">All Subnet Addresses</h2>
+            <h2 id="current-view-title" class="text-lg font-bold text-slate-300 uppercase tracking-tight">All Subnet Addresses</h2>
             <div class="flex gap-2 flex-wrap items-center">
                 <div id="filter-bar" class="flex gap-2 flex-wrap items-center"></div>
-                <button onclick="deepScan()" class="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-xs font-bold uppercase">Deep Scan</button>
+                <button onclick="deepScan()" class="tbtn !text-indigo-200 !bg-indigo-500/20 !border-indigo-400/30 hover:!bg-indigo-500/30">Deep Scan</button>
             </div>
         </div>
 
@@ -961,7 +996,7 @@
         function toggleSelectMode(){
             SELECT_MODE = !SELECT_MODE;
             const b = document.getElementById('select-btn');
-            b.classList.toggle('bg-cyan-600', SELECT_MODE);
+            b.classList.toggle('tbtn-on', SELECT_MODE);
             b.innerText = SELECT_MODE ? 'Selecting…' : 'Select';
             if(!SELECT_MODE) clearSelection(); else updateSelectBar();
         }
@@ -2163,12 +2198,12 @@
             const ss = document.getElementById('system-status');
             if(data.is_scanning){
                 ss.innerHTML = '<span class="scanning">⟳ '+(data.progress||"Scanning network…")+'</span>';
-                ss.className = "text-xs mt-1 italic";
+                ss.className = "text-xs italic";
             } else {
                 const site = (data.site && data.site.name) ? data.site.name+' · ' : '';
                 ss.innerHTML = '<span class="inline-block w-2 h-2 rounded-full bg-green-400 mr-1 align-middle animate-pulse"></span>'
                     + site + 'Live · auto-updates every scan';
-                ss.className = "text-slate-400 text-xs mt-1 italic";
+                ss.className = "text-slate-400 text-xs italic";
             }
         }
 
@@ -2233,7 +2268,43 @@
             else if(!document.getElementById('setup-modal').classList.contains('hidden')) closeSetup();
         });
 
-        function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); }
+        // ---- wireless tile: only appears once radios are actually being read ----
+        async function loadWifiTile(){
+            const card = document.getElementById('stat-wifi-card');
+            let o; try { o = await (await fetch('/api/radio/overview')).json(); } catch(e){ return; }
+            const radios = Object.values(o.radios || {});
+            if(!radios.length){ card.classList.add('hidden'); return; }
+            // Both ends of a link report it, so count unique pairs — an AP with
+            // four stations plus those stations is four links, not eight.
+            const pairs = new Set();
+            Object.entries(o.radios || {}).forEach(([key, r]) =>
+                (r.links || []).forEach(l => pairs.add(
+                    [String(key).toUpperCase(), String(l.peer||'').toUpperCase()].sort().join('|'))));
+            const links = pairs.size;
+            const unread = radios.filter(r => !r.ok).length;
+            const crit = (o.problems || []).filter(p => p.level === 'crit').length;
+            const warn = (o.problems || []).length - crit;
+            const note = document.getElementById('stat-wifi-note');
+            document.getElementById('stat-wifi').innerText = links;
+            if(crit){ note.className = 'text-[11px] font-bold text-rose-400'; note.innerText = crit + ' critical'; }
+            else if(warn){ note.className = 'text-[11px] font-bold text-amber-400'; note.innerText = warn + ' warning'; }
+            else if(unread){ note.className = 'text-[11px] font-bold text-slate-500'; note.innerText = unread + ' unread'; }
+            else { note.className = 'text-[11px] font-bold text-emerald-400'; note.innerText = 'all healthy'; }
+            card.classList.remove('hidden');
+        }
+        // Jump to whatever the tile is reporting: the problem cards if there are
+        // any, otherwise the radios themselves in the grid.
+        function jumpToWifi(){
+            const box = document.getElementById('conflict-monitor');
+            if(!box.classList.contains('hidden') && PROBLEMS.some(p => p.type === 'wifi_degraded')){
+                box.scrollIntoView({behavior:'smooth', block:'center'});
+                return;
+            }
+            const first = DATA.devices.find(d => /ubiquiti/i.test(d.vendor||''));
+            if(first) openModal(first.key, first.ip);
+        }
+
+        function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); }
 
         // ---- Pi self-health strip ----
         function healthClass(v, warn, crit){
@@ -2341,7 +2412,7 @@
             else if (s.has_gateway && !s.gateway)  { txt='🔴 Gateway down'; cls='bg-red-500/20 text-red-300'; }
             else if (!s.dns && s.external)         { txt='🟠 DNS broken';   cls='bg-amber-500/20 text-amber-300'; }
             else                                   { txt='🟠 No upstream';  cls='bg-amber-500/20 text-amber-300'; }
-            b.textContent = txt; b.className = 'text-[11px] font-bold px-2 py-0.5 rounded-full ' + cls;
+            b.textContent = txt; b.className = 'chip ' + cls;
             b.classList.remove('hidden');
         }
         // preload ntfy settings + Kuma link (host the browser used, port from base_url)
@@ -2352,7 +2423,7 @@
             const link = document.getElementById('kuma-link');
             if(ku){ link.href = location.protocol+'//'+location.hostname+':'+port; link.classList.remove('hidden'); }
         }).catch(()=>{});
-        loadDevices(); loadInternet(); loadSysinfo();
+        loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile();
         tick();
     </script>
 </body>
