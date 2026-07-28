@@ -481,7 +481,16 @@ def api_airos_wifi(key):
         return jsonify({"ok": False, "error": "unknown device IP"}), 400
     if not (user or pw):
         return jsonify({"ok": False, "error": "Save the radio's SSH username/password first"})
-    return jsonify(airos.get_wifi(ip, user, pw))
+    res = airos.get_wifi(ip, user, pw)
+    if res.get("ok"):
+        # Record model/firmware like the Hikvision fetch does. Radios arrive
+        # with an empty model, and "copy this login to the same model" in Bulk
+        # logins can only group devices that HAVE one.
+        scanner.set_device_meta(key, model=res.get("platform") or None)
+        if res.get("firmware"):
+            scanner.registry.setdefault(key, {})["firmware"] = res["firmware"]
+            scanner.save_registry()
+    return jsonify(res)
 
 
 @app.route("/api/devices/<path:key>/airos-set-ip", methods=["POST"])
