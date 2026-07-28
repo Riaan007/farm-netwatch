@@ -42,8 +42,16 @@ def gather_facts(site_label, overview, histories, devices):
     radios = []
     for key, last in (overview.get("radios") or {}).items():
         if not last.get("ok"):
-            radios.append({"name": last.get("name") or key, "ip": last.get("ip"),
-                           "reachable": False, "error": last.get("error")})
+            # Read failure ≠ device down. The uptime monitor owns up/down; this is
+            # only "we could not log in and ask", which is usually a credential or
+            # SSH-access problem on a device that is answering perfectly well.
+            radios.append({
+                "name": last.get("name") or key, "ip": last.get("ip"),
+                "telemetry_read": "failed", "error": last.get("error"),
+                "note": "Could not be READ over SSH. This says nothing about whether "
+                        "the device is online — do not report it as offline; treat it "
+                        "as a credentials/SSH-access item.",
+            })
             continue
         s = last.get("sample") or {}
         hist = histories.get(key) or {}
@@ -65,7 +73,7 @@ def gather_facts(site_label, overview, histories, devices):
         samples = hist.get("samples") or []
         radios.append({
             "name": last.get("name") or key, "ip": last.get("ip"),
-            "reachable": True, "mode": last.get("mode"), "ssid": last.get("ssid"),
+            "telemetry_read": "ok", "mode": last.get("mode"), "ssid": last.get("ssid"),
             "frequency": s.get("freq"), "channel_width": s.get("chanbw"),
             "noise_dbm": s.get("noise"), "noise_trend": _trend(samples, "noise"),
             "airtime_pct": s.get("airtime"), "airtime_trend": _trend(samples, "airtime"),
@@ -88,15 +96,22 @@ PROMPT = """You are a wireless network engineer reviewing a farm's point-to-mult
 Ubiquiti airMAX network. Long outdoor links carry cameras and site connectivity;
 a site visit costs half a day, so advice must be specific enough to act on in one trip.
 
-Interpretation guide:
-- Signal is dBm (closer to 0 is better). -50 to -65 is healthy for these links;
-  below -75 is poor. A DROP from the link's own normal matters more than the absolute.
-- The two antenna chains should be within a few dB. A large gap means a mis-aimed
-  dish, a damaged/wet pigtail, or water in a connector.
-- airMAX link score is 0-100; below 50 is poor. Air time above 80% is congestion.
-- Noise floor rising means new interference nearby.
-- Asset details (bearing, mast height, dish model) are the installer's notes — use
-  them when suggesting a re-aim, and say when they are missing and would help.
+Use EXACTLY these thresholds — they are the ones the site's own monitor alerts on,
+and your advice must not contradict its findings:
+- Signal (dBm, closer to 0 is better): concerning at -75, serious at -82. A DROP of
+  6 dB from that link's own normal is a warning, 10 dB is serious. The drop matters
+  more than the absolute: a link that has always run at -70 is fine.
+- Antenna chain difference: normal below 8 dB. 8-12 dB is a warning, over 12 dB is
+  serious — a mis-aimed dish, a damaged/wet pigtail, or water in a connector. Do NOT
+  call a gap under 8 dB a problem; mention it only as something to watch.
+- airMAX link score (0-100): poor below 50, serious below 35, or a 20-point fall
+  from its own normal.
+- Air time: congested above 80%, serious above 92%.
+- Noise floor: a rise of 8 dB above that radio's own normal means new interference.
+A "*_trend" object gives first/last/min/max over the window; when it is absent there
+is no history yet, so judge on absolutes only and say the baseline is still building.
+Asset details (bearing, mast height, dish model) are the installer's notes — use them
+when suggesting a re-aim, and say when they are missing and would help.
 
 Return ONLY JSON:
 {"summary": "2-3 sentences on the state of the wireless network",
@@ -124,8 +139,13 @@ def diagnose(facts, ai_cfg):
     body = {
         "contents": [{"role": "user",
                       "parts": [{"text": PROMPT + json.dumps(facts, ensure_ascii=False)}]}],
+        # 2.5-flash bills reasoning against the SAME budget as the answer, and a
+        # truncated answer comes back as unparseable JSON rather than a short
+        # one. Six radios exhausted 8192 on thinking alone, so the budget is
+        # capped explicitly and the rest left for the work list.
         "generationConfig": {"response_mime_type": "application/json",
-                             "temperature": 0.3, "maxOutputTokens": 3072},
+                             "temperature": 0.3, "maxOutputTokens": 8192,
+                             "thinkingConfig": {"thinkingBudget": 1024}},
     }
     try:
         r = requests.post(url, params={"key": key}, json=body, timeout=(5, 75))
@@ -138,7 +158,15 @@ def diagnose(facts, ai_cfg):
             msg = r.text[:200]
         raise DoctorError(f"Gemini API error ({r.status_code}): {msg}")
     try:
-        parts = r.json()["candidates"][0]["content"]["parts"]
+        cand = r.json()["candidates"][0]
+    except (KeyError, IndexError, ValueError) as e:
+        raise DoctorError(f"Gemini returned no answer: {e}")
+    if cand.get("finishReason") == "MAX_TOKENS":
+        raise DoctorError("Gemini ran out of output budget before finishing — too many "
+                          "radios for one pass. Analyse fewer radios or raise "
+                          "maxOutputTokens.")
+    try:
+        parts = cand["content"]["parts"]
         out = json.loads("".join(p.get("text", "") for p in parts))
     except (KeyError, IndexError, ValueError) as e:
         raise DoctorError(f"Gemini returned an unparseable answer: {e}")
