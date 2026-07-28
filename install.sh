@@ -127,6 +127,16 @@ for hp in "ghcr.io:443" "get.docker.com:443" "${RAWHOST}:443"; do
 done
 [ "$NET_OK" = 1 ] && ok "Internet: reachable" || bad "Internet: cannot reach ghcr.io / docker / github"
 
+# Docker Hub serves the Uptime Kuma image and is the registry most likely to
+# hang on a thin farm link. Probe it properly (TLS, not just a TCP connect) —
+# "TLS handshake timeout" is exactly what a bare port check would miss. /v2/
+# answers 401 unauthenticated; any HTTP code means the handshake worked.
+if [ "$WANT_KUMA" = 1 ] && command -v curl >/dev/null 2>&1; then
+  DHCODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 12 https://registry-1.docker.io/v2/ 2>/dev/null || echo 000)
+  if [ "$DHCODE" != "000" ]; then ok "Docker Hub: reachable (Uptime Kuma)"
+  else warn "Docker Hub (registry-1.docker.io) is not answering — Uptime Kuma may not download; the install will continue without it if so"; fi
+fi
+
 # Ports free
 port_busy() { command -v ss >/dev/null 2>&1 && ss -ltnH 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1\$"; }
 if command -v ss >/dev/null 2>&1; then
@@ -204,7 +214,9 @@ if [ "$HUB_VPN" = 1 ]; then
 fi
 
 TZONE="${TZ:-$(cat /etc/timezone 2>/dev/null || echo UTC)}"
-cat > "$DIR/.env" <<EOF
+# Rewritten later if a profile has to be dropped (e.g. Kuma's image won't pull).
+write_env() {
+  cat > "$DIR/.env" <<EOF
 NETWATCH_IMAGE=$IMAGE
 NETWATCH_PORT=$PORT
 TZ=$TZONE
@@ -212,13 +224,52 @@ COMPOSE_PROFILES=$PROFILES
 # health add-on: SMART disk checks, /dev/watchdog, container restart watch
 COMPOSE_FILE=docker-compose.yml:docker-compose.health.yml
 EOF
+}
+drop_profile() { PROFILES=$(printf ',%s,' "$PROFILES" | sed "s/,$1,/,/" | sed 's/^,//; s/,$//'); write_env; }
+write_env
 ok "Wrote $DIR/.env  (profiles: ${PROFILES:-none})"
 
 # ============================================================================
 hdr "4/5  Pulling images & starting"
 cd "$DIR"
+# Pull per service, with retries. A plain `docker compose pull` is all-or-
+# nothing: one slow registry (Docker Hub, which serves Uptime Kuma, is the
+# usual offender on farm links — "TLS handshake timeout") aborts every other
+# download and kills the install. Netwatch itself comes from GHCR and must
+# succeed; the optional extras only warn and drop their profile.
+pull_one() {                    # pull_one <service> <tries>
+  local svc="$1" tries="${2:-3}" i
+  for i in $(seq 1 "$tries"); do
+    docker compose pull "$svc" && return 0
+    if [ "$i" -lt "$tries" ]; then
+      warn "pull of '$svc' failed (attempt $i/$tries) — retrying in $((i * 10))s…"
+      sleep $((i * 10))
+    fi
+  done
+  return 1
+}
+
 say "Pulling images (this can take a few minutes the first time)…"
-docker compose pull
+pull_one netwatch 4 || die "could not pull $IMAGE — check this Pi's internet/DNS, then re-run this installer."
+
+case ",$PROFILES," in *,wg-client,*)
+  pull_one wg-client 3 || {
+    warn "Could not pull the WireGuard sidecar — starting WITHOUT the hub tunnel."
+    echo "     Retry later:  cd $DIR && docker compose pull wg-client && docker compose up -d"
+    echo "     (or link this site from the dashboard: Settings → Central Hub VPN)"
+    drop_profile wg-client; HUB_READY=0
+  } ;;
+esac
+
+if [ "$WANT_KUMA" = 1 ]; then
+  pull_one uptime-kuma 3 || {
+    warn "Could not pull Uptime Kuma from Docker Hub — installing without it."
+    echo "     Everything else works; Kuma only adds uptime history / status pages."
+    echo "     Add it later:  cd $DIR && sed -i 's/^COMPOSE_PROFILES=.*/&,kuma/' .env && docker compose pull uptime-kuma && docker compose up -d"
+    drop_profile kuma; WANT_KUMA=0
+  }
+fi
+
 say "Starting the stack…"
 docker compose up -d
 
