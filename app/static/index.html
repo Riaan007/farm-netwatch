@@ -1078,6 +1078,11 @@
                 ['Security', r.security, ''],
                 ['Clients', r.connections, ''],
                 ['LAN', r.lanSpeed, ''],
+                // A big gap between the two chains means a mis-aligned dish.
+                ['Chain 0 / 1', (r.chain0 && r.chain1) ? r.chain0+' / '+r.chain1+' dBm' : '', ''],
+                ['Airtime', r.airtime ? r.airtime+'%' : '', ''],
+                ['Capacity ↓/↑', (r.capacityDown && r.capacityUp)
+                    ? Math.round(r.capacityDown/1000)+' / '+Math.round(r.capacityUp/1000)+' Mbps' : '', ''],
                 ['Uptime', r.uptime ? fmtUp(parseInt(r.uptime, 10)) : '', ''],
             ].filter(c => always.includes(c[0]) || (c[1] !== '' && c[1] != null))
              .map(c => wifiCell(c[0], c[1], c[2])).join('')
@@ -1103,16 +1108,22 @@
                 html += '<p class="text-[10px] font-bold text-slate-400 uppercase mt-3 mb-1">'
                      + (r.source==='unifi' ? 'Connected clients (' : 'Wireless links (')+st.length+')</p>'
                      + '<div class="overflow-x-auto"><table class="w-full text-[11px] font-mono">'
-                     + '<tr class="text-slate-500 text-left"><th class="pr-3">MAC</th><th class="pr-3">IP</th><th class="pr-3">Name</th>'
-                     + '<th class="pr-3">Signal</th><th class="pr-3">CCQ</th><th class="pr-3">TX/RX</th><th>Uptime</th></tr>';
+                     + '<tr class="text-slate-500 text-left"><th class="pr-3">Name</th><th class="pr-3">IP</th><th class="pr-3">Model</th>'
+                     + '<th class="pr-3">Signal</th><th class="pr-3">Far end</th><th class="pr-3">Score &darr;/&uarr;</th>'
+                     + '<th class="pr-3">TX/RX</th><th class="pr-3">Distance</th><th>Uptime</th></tr>';
                 st.forEach(s => {
+                    const score = (s.scoreDown!=null && s.scoreDown!=='') ? s.scoreDown+'/'+s.scoreUp : (s.ccq||'');
+                    const dist = (s.distance==='' || s.distance==null) ? ''
+                        : (s.distance >= 1000 ? (s.distance/1000).toFixed(1)+' km' : s.distance+' m');
                     html += '<tr class="border-t border-white/5 text-slate-300">'
-                         + '<td class="pr-3 py-1">'+wifiEsc(s.mac||'—')+'</td>'
+                         + '<td class="pr-3 py-1">'+wifiEsc(s.name||s.mac||'—')+'</td>'
                          + '<td class="pr-3">'+wifiEsc(s.ip||'—')+'</td>'
-                         + '<td class="pr-3">'+wifiEsc(s.name||'—')+'</td>'
+                         + '<td class="pr-3">'+wifiEsc(s.model||'—')+'</td>'
                          + '<td class="pr-3 '+sigClass(parseFloat(s.signal))+'">'+wifiEsc(s.signal)+'</td>'
-                         + '<td class="pr-3">'+wifiEsc(s.ccq)+'</td>'
+                         + '<td class="pr-3 '+sigClass(parseFloat(s.remoteSignal))+'">'+wifiEsc(s.remoteSignal||'—')+'</td>'
+                         + '<td class="pr-3">'+wifiEsc(score||'—')+'</td>'
                          + '<td class="pr-3">'+wifiEsc(s.tx)+'/'+wifiEsc(s.rx)+'</td>'
+                         + '<td class="pr-3">'+wifiEsc(dist||'—')+'</td>'
                          + '<td>'+(s.uptime ? fmtUp(parseInt(s.uptime,10)) : '—')+'</td></tr>';
                 });
                 html += '</table></div>';

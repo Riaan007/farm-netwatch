@@ -119,10 +119,40 @@ _FIELDS = {
     "uptime":      ["uptime"],
     "cpuLoad":     ["cpuload", "loadavg"],
     "temperature": ["temperature"],
+    # airMAX AC extras (LiteAP / PowerBeam 5AC). Chain signals matter most —
+    # a big gap between the two chains means the dish is mis-aligned.
+    "chain0":      ["chain0signal"],
+    "chain1":      ["chain1signal"],
+    "airtime":     ["airtime"],
+    "capacityDown": ["wlandownlinkcapacity"],
+    "capacityUp":  ["wlanuplinkcapacity"],
 }
 
-_MODES = {"ap": "Access Point", "sta": "Station", "ap-wds": "Access Point (WDS)",
-          "sta-wds": "Station (WDS)", "aprepeater": "AP Repeater"}
+
+def _mode_label(mode):
+    """airOS opmodes are compound: ap / sta + ptp|ptmp + -ac (airMAX AC) + -wds.
+    Build the label from the parts rather than enumerating every combination."""
+    m = (mode or "").strip().lower()
+    if not m:
+        return ""
+    if m.startswith("ap"):
+        base = "Access Point"
+    elif m.startswith("sta"):
+        base = "Station"
+    else:
+        return mode
+    extra = []
+    if "ptmp" in m:
+        extra.append("PtMP")
+    elif "ptp" in m:
+        extra.append("PtP")
+    if m.endswith("-ac"):
+        extra.append("airMAX AC")
+    if "wds" in m:
+        extra.append("WDS")
+    if "repeater" in m:
+        extra.append("Repeater")
+    return f"{base} ({', '.join(extra)})" if extra else base
 
 
 def _status_kv(text):
@@ -149,9 +179,15 @@ def _pick(kv, names):
     return ""
 
 
-def _stations(blob):
+def _stations(blob, essid=""):
     """Normalise `wstalist` JSON (the connected-station table on an AP; on a
-    station it describes the AP it is associated with). Missing/!JSON = []."""
+    station it describes the AP it is associated with). Missing/!JSON = [].
+
+    The entry's own `name` is the AP's SSID, not the far end's identity — the
+    remote device's hostname/platform live in its `remote` block (verified on a
+    LiteAP AC serving four PowerBeam 5ACs). `remote.signal` is what the far end
+    hears back, which is the number you actually align a dish on.
+    """
     blob = (blob or "").strip()
     if not blob.startswith("["):
         return []
@@ -164,15 +200,21 @@ def _stations(blob):
         if not isinstance(s, dict):
             continue
         remote = s.get("remote") if isinstance(s.get("remote"), dict) else {}
+        name = remote.get("hostname") or s.get("name") or ""
         out.append({
             "mac": s.get("mac", ""),
             "ip": s.get("lastip") or remote.get("ipaddr", ""),
-            "name": s.get("name") or remote.get("hostname", ""),
+            "name": "" if name == essid else name,      # `name` == our own SSID = no identity
+            "model": remote.get("platform", ""),
             "signal": s.get("signal", ""),
+            "remoteSignal": remote.get("signal", ""),
             "noise": s.get("noisefloor", s.get("noise", "")),
             "ccq": s.get("ccq", ""),
             "tx": s.get("tx", ""),
             "rx": s.get("rx", ""),
+            "scoreDown": s.get("dl_linkscore", ""),
+            "scoreUp": s.get("ul_linkscore", ""),
+            "latency": s.get("tx_latency", ""),
             "distance": s.get("distance", ""),
             "uptime": s.get("uptime", ""),
         })
@@ -299,8 +341,10 @@ def get_wifi(ip, user, password):
     res["security"] = res["security"] or cfg.get("wireless.1.security.type", "")
     res["channelWidth"] = res["channelWidth"] or cfg.get("radio.1.chanbw", "")
     res["country"] = cfg.get("radio.1.countrycode", "")
-    res["mode_label"] = _MODES.get(res["mode"].strip().lower(), res["mode"])
-    res["stations"] = _stations(wsta_txt)
+    res["mode_label"] = _mode_label(res["mode"])
+    if res["frequency"].isdigit():        # mca-status gives a bare number
+        res["frequency"] += " MHz"
+    res["stations"] = _stations(wsta_txt, res["ssid"])
     res["networks"] = []
     res["source"] = "airos"
     if not (kv or cfg):

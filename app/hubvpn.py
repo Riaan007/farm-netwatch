@@ -222,6 +222,19 @@ def boot():
 
     Keeps the site joined across container/host restarts (the job the sidecar
     container used to do for terminal-joined sites).
+
+    NEVER touch an interface that is already up. Sites joined from the terminal
+    run the wg-client SIDECAR, which owns the very same wg0.conf — and up()
+    starts with `wg-quick down` + `ip link delete wg0`. On those sites a plain
+    restart of this container used to delete the sidecar's live interface and
+    then try to re-own it; if that re-own failed the site fell off the VPN and
+    could only be recovered on-site (hit Tankwa Farm, 2026-07-28). Only one
+    process may own wg0 — if something already has it, leave it alone.
+
+    A genuinely stale wg0 (half-up, no handshake) is therefore no longer cleared
+    automatically at boot; Settings → Central Hub VPN → Connect still calls up(),
+    which force-removes the interface and re-owns it. Losing an automatic
+    recovery is worth it: the failure mode it caused needs a farm visit.
     """
-    if has_config():
+    if has_config() and not is_up():
         up()
