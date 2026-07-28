@@ -411,6 +411,23 @@ def api_airos_network(key):
     return jsonify(airos.get_network(ip, user, pw))
 
 
+@app.route("/api/devices/<path:key>/airos-wifi", methods=["GET"])
+def api_airos_wifi(key):
+    """Read a Ubiquiti airOS radio's wireless status over SSH (read-only).
+
+    Deliberately NOT behind the airos_change_ip flag: that gate exists because
+    set_ip() reboots a backhaul radio, and this only reads. It shares the same
+    SSH path, so it doubles as the safe pre-flight for the IP change — if this
+    returns data, the saved credentials and SSH access are good.
+    """
+    ip, user, pw = _hik_target(key)        # same saved-credential lookup
+    if not ip:
+        return jsonify({"ok": False, "error": "unknown device IP"}), 400
+    if not (user or pw):
+        return jsonify({"ok": False, "error": "Save the radio's SSH username/password first"})
+    return jsonify(airos.get_wifi(ip, user, pw))
+
+
 @app.route("/api/devices/<path:key>/airos-set-ip", methods=["POST"])
 def api_airos_set_ip(key):
     """Change a Ubiquiti airOS radio's management IP over SSH (gated, EXPERIMENTAL).
