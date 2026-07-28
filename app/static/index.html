@@ -94,6 +94,7 @@
                 <button id="select-btn" onclick="toggleSelectMode()" class="px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-lg text-xs font-bold uppercase">Select</button>
                 <button onclick="quickScan()" class="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 border border-cyan-300/40 rounded-lg text-xs font-bold uppercase shadow-[0_2px_14px_-4px_rgba(34,211,238,0.55)]">Scan</button>
                 <button onclick="openHistory()" class="px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-lg text-xs font-bold uppercase" title="Device & IP event history">History</button>
+                <button onclick="openBulkCreds()" class="px-3 py-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-lg text-xs font-bold uppercase" title="Set or copy logins across many devices">🔑 Logins</button>
                 <button onclick="openSetup()" class="p-2 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full transition-colors" title="Settings">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                 </button>
@@ -169,6 +170,66 @@
                 </select>
             </div>
             <div id="hist-body" class="p-5 overflow-y-auto text-sm">Loading…</div>
+        </div>
+    </div>
+
+    <!-- Bulk credentials: one login onto many devices, or copy from one device -->
+    <div id="bulkcred-modal" onclick="if(event.target===this) closeBulkCreds()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-[70] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-5 border-b border-white/10 flex justify-between items-center shrink-0">
+                <div>
+                    <h2 class="text-xl font-bold">🔑 Bulk logins</h2>
+                    <p class="text-xs text-slate-500">Set one username/password on many devices, or copy a login you've already saved onto the identical ones.</p>
+                </div>
+                <button onclick="closeBulkCreds()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-xl leading-none">&times;</button>
+            </div>
+            <div class="p-5 overflow-y-auto space-y-4">
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase block mb-1">Login to apply</label>
+                    <div class="flex bg-white/5 rounded-lg p-0.5 text-xs font-bold w-fit mb-2">
+                        <button id="bulk-tab-type" onclick="bulkCredMode('type')" class="px-3 py-1.5 rounded-md bg-cyan-500/20 text-cyan-200">Type a login</button>
+                        <button id="bulk-tab-copy" onclick="bulkCredMode('copy')" class="px-3 py-1.5 rounded-md text-slate-500">Copy from a device</button>
+                    </div>
+                    <div id="bulk-pane-type" class="space-y-2">
+                        <input id="bulk-user" type="text" autocomplete="off" class="w-full p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Username">
+                        <div class="flex gap-2">
+                            <input id="bulk-pass" type="password" autocomplete="new-password" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Password">
+                            <button onclick="toggleBulkPass()" id="bulk-eye" class="px-3 bg-white/10 hover:bg-white/20 rounded-lg text-sm" title="Show / hide">👁</button>
+                        </div>
+                        <input id="bulk-notes" type="text" class="w-full p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Notes (optional)">
+                    </div>
+                    <div id="bulk-pane-copy" class="hidden">
+                        <select id="bulk-source" onchange="renderBulkTargets()" class="w-full p-2 bg-[#050b16] border rounded-lg text-sm"></select>
+                        <p class="text-[10px] text-slate-500 mt-1">Only devices that already have a login saved are listed.</p>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase block mb-1">Devices to update</label>
+                    <div class="flex gap-2 flex-wrap items-center mb-2">
+                        <select id="bulk-match" onchange="renderBulkTargets()" class="p-2 bg-[#050b16] border rounded-lg text-xs">
+                            <option value="model">Same model</option>
+                            <option value="vendor">Same vendor</option>
+                            <option value="category">Same category</option>
+                            <option value="all">All devices</option>
+                        </select>
+                        <input id="bulk-filter" oninput="renderBulkTargets()" type="text" placeholder="Filter by name, IP, vendor…" class="flex-grow min-w-[140px] p-2 bg-[#050b16] border rounded-lg text-xs">
+                        <button onclick="bulkSelectAll(true)" class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">All</button>
+                        <button onclick="bulkSelectAll(false)" class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">None</button>
+                    </div>
+                    <div id="bulk-targets" class="border border-white/10 rounded-lg max-h-64 overflow-y-auto divide-y divide-white/5"></div>
+                </div>
+
+                <label class="flex items-start gap-2 text-xs cursor-pointer">
+                    <input id="bulk-overwrite" type="checkbox" class="w-4 h-4 mt-0.5">
+                    <span>Overwrite devices that already have a login <span class="text-slate-500">(off = those are left untouched)</span></span>
+                </label>
+                <div class="flex gap-2 items-center flex-wrap">
+                    <button onclick="applyBulkCreds(false)" id="bulk-apply" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm font-bold">Apply to selected</button>
+                    <button onclick="applyBulkCreds(true)" class="px-3 py-2 bg-rose-700/80 hover:bg-rose-700 text-white rounded-lg text-xs font-bold" title="Remove the saved login from the selected devices">Clear logins</button>
+                    <span id="bulk-status" class="text-xs"></span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -491,6 +552,7 @@
                             <div class="flex gap-2 items-center">
                                 <button onclick="saveCreds()" class="px-4 py-2 bg-cyan-600 text-white rounded-lg text-sm font-bold">Save login</button>
                                 <button onclick="clearCreds()" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-bold">Clear</button>
+                                <button onclick="openBulkCreds(CURRENT_KEY)" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-bold" title="Copy this login to the identical devices">👥 Copy to similar…</button>
                                 <span id="cred-status" class="text-xs"></span>
                             </div>
                             <p class="text-[10px] text-slate-400 leading-snug">Stored on the Pi, obfuscated at rest. Anyone who can open this dashboard can reveal it — keep port 8090 on a trusted LAN / behind the VPN.</p>
@@ -1426,6 +1488,124 @@
                 loadDevices();   // refresh the 🔑 indicator on the grid
             } catch(e){ flashCred('Save failed', false); }
         }
+        // ---- bulk credentials ----
+        // "Same model/vendor/category" is judged against a reference device: the
+        // one you're copying from, or the device whose card opened this modal.
+        let BULK_REF = null, BULK_MODE = 'type', BULK_CHECKED = {};
+
+        function openBulkCreds(refKey){
+            BULK_REF = refKey || null;
+            BULK_CHECKED = {};
+            document.getElementById('bulk-status').innerText = '';
+            const withCreds = Object.values(DEV_BY_KEY).filter(d => d.has_credentials);
+            const sel = document.getElementById('bulk-source');
+            sel.innerHTML = withCreds.length
+                ? withCreds.map(d => '<option value="'+wifiEsc(d.key)+'">'+wifiEsc(devLabel(d))+'</option>').join('')
+                : '<option value="">— no device has a login saved yet —</option>';
+            if(refKey && withCreds.some(d => d.key === refKey)) sel.value = refKey;
+            // Opening from a device card that already has a login: copying is
+            // almost always what you want, so start on that tab.
+            bulkCredMode(refKey && sel.value === refKey ? 'copy' : 'type');
+            document.getElementById('bulk-match').value = BULK_REF ? 'model' : 'all';
+            renderBulkTargets();
+            document.getElementById('bulkcred-modal').classList.remove('hidden');
+        }
+        function closeBulkCreds(){ document.getElementById('bulkcred-modal').classList.add('hidden'); }
+        function devLabel(d){
+            return (d.name || d.hostname || d.ip) + ' · ' + d.ip + (d.model ? ' · '+d.model : (d.vendor ? ' · '+d.vendor : ''));
+        }
+        function bulkCredMode(mode){
+            BULK_MODE = mode;
+            document.getElementById('bulk-pane-type').classList.toggle('hidden', mode !== 'type');
+            document.getElementById('bulk-pane-copy').classList.toggle('hidden', mode !== 'copy');
+            document.getElementById('bulk-tab-type').className = 'px-3 py-1.5 rounded-md ' + (mode==='type' ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-500');
+            document.getElementById('bulk-tab-copy').className = 'px-3 py-1.5 rounded-md ' + (mode==='copy' ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-500');
+            renderBulkTargets();
+        }
+        function toggleBulkPass(){
+            const f = document.getElementById('bulk-pass');
+            f.type = f.type === 'password' ? 'text' : 'password';
+            document.getElementById('bulk-eye').innerText = f.type === 'password' ? '👁' : '🙈';
+        }
+        function bulkRefDev(){
+            const src = BULK_MODE === 'copy' ? document.getElementById('bulk-source').value : null;
+            return DEV_BY_KEY[src] || DEV_BY_KEY[BULK_REF] || null;
+        }
+        function bulkMatches(){
+            const how = document.getElementById('bulk-match').value;
+            const ref = bulkRefDev();
+            const q = document.getElementById('bulk-filter').value.trim().toLowerCase();
+            const srcKey = BULK_MODE === 'copy' ? document.getElementById('bulk-source').value : null;
+            return Object.values(DEV_BY_KEY).filter(d => {
+                if(d.key === srcKey) return false;                 // never target the source
+                if(how !== 'all'){
+                    if(!ref) return false;
+                    // An empty field on either side can't establish sameness —
+                    // matching on "" would sweep in every unidentified device.
+                    const a = (d[how]||'').toLowerCase(), b = (ref[how]||'').toLowerCase();
+                    if(!a || !b || a !== b) return false;
+                }
+                if(q && !((d.name||'')+' '+d.ip+' '+(d.vendor||'')+' '+(d.model||'')).toLowerCase().includes(q)) return false;
+                return true;
+            }).sort((a,b) => ipSort(a.ip, b.ip));
+        }
+        function renderBulkTargets(){
+            const list = bulkMatches();
+            const box = document.getElementById('bulk-targets');
+            const ref = bulkRefDev();
+            const how = document.getElementById('bulk-match').value;
+            if(!list.length){
+                box.innerHTML = '<p class="p-3 text-xs text-slate-500">No devices match'
+                    + (how!=='all' && !ref ? ' — pick a device to compare against, or choose “All devices”.'
+                                           : (how!=='all' && ref ? ' the '+how+' of '+wifiEsc(devLabel(ref))+'.' : '.')) + '</p>';
+                return;
+            }
+            box.innerHTML = list.map(d => {
+                const checked = BULK_CHECKED[d.key] !== false;   // default: everything shown is selected
+                BULK_CHECKED[d.key] = checked;
+                return '<label class="flex items-center gap-2 p-2 text-xs cursor-pointer hover:bg-white/5">'
+                    + '<input type="checkbox" class="w-4 h-4 shrink-0" data-bulkkey="'+wifiEsc(d.key)+'" '+(checked?'checked':'')+' onchange="BULK_CHECKED[this.dataset.bulkkey]=this.checked">'
+                    + '<span class="font-mono text-slate-400 w-28 shrink-0">'+wifiEsc(d.ip)+'</span>'
+                    + '<span class="flex-grow truncate">'+wifiEsc(d.name || d.hostname || '—')+'</span>'
+                    + '<span class="text-slate-500 truncate hidden sm:inline">'+wifiEsc(d.model || d.vendor || '')+'</span>'
+                    + (d.has_credentials ? '<span title="Already has a login">🔑</span>' : '')
+                    + '</label>';
+            }).join('');
+        }
+        function bulkSelectAll(on){
+            bulkMatches().forEach(d => { BULK_CHECKED[d.key] = on; });
+            renderBulkTargets();
+        }
+        async function applyBulkCreds(clear){
+            const keys = bulkMatches().map(d => d.key).filter(k => BULK_CHECKED[k]);
+            const st = document.getElementById('bulk-status');
+            if(!keys.length){ st.className='text-xs text-rose-400'; st.innerText='Select at least one device'; return; }
+            if(clear && !confirm('Remove the saved login from '+keys.length+' device(s)?')) return;
+            const body = { keys, overwrite: document.getElementById('bulk-overwrite').checked, clear: !!clear };
+            if(!clear && BULK_MODE === 'copy') body.copy_from = document.getElementById('bulk-source').value;
+            if(!clear && BULK_MODE === 'type'){
+                body.username = document.getElementById('bulk-user').value;
+                body.password = document.getElementById('bulk-pass').value;
+                body.notes = document.getElementById('bulk-notes').value;
+            }
+            const btn = document.getElementById('bulk-apply');
+            btn.disabled = true; st.className='text-xs text-slate-400'; st.innerText='Applying…';
+            try {
+                const r = await (await fetch('/api/credentials/bulk', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})).json();
+                if(r.ok){
+                    const c = r.counts || {};
+                    const parts = [];
+                    if(c.saved) parts.push(c.saved+' updated');
+                    if(c.cleared) parts.push(c.cleared+' cleared');
+                    if(c.skipped) parts.push(c.skipped+' left alone (already had a login)');
+                    st.className='text-xs text-emerald-400';
+                    st.innerText = parts.join(' · ') || 'Nothing to do';
+                    loadDevices();
+                } else { st.className='text-xs text-rose-400'; st.innerText = r.error || 'Failed'; }
+            } catch(e){ st.className='text-xs text-rose-400'; st.innerText = 'Error: '+e; }
+            btn.disabled = false;
+        }
+
         async function clearCreds(){
             setCredFields('', '', '');
             if(!CURRENT_KEY) return;
@@ -1926,7 +2106,9 @@
         // Esc closes whichever modal is open
         document.addEventListener('keydown', (e) => {
             if(e.key !== 'Escape') return;
-            if(!document.getElementById('modal').classList.contains('hidden')) closeModal();
+            // Bulk logins sits above the device modal (z-70) — close it first.
+            if(!document.getElementById('bulkcred-modal').classList.contains('hidden')) closeBulkCreds();
+            else if(!document.getElementById('modal').classList.contains('hidden')) closeModal();
             else if(!document.getElementById('setup-modal').classList.contains('hidden')) closeSetup();
         });
 

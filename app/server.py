@@ -250,6 +250,62 @@ def api_credentials(key):
     return jsonify(creds.get(key))
 
 
+@app.route("/api/credentials/bulk", methods=["POST"])
+def api_credentials_bulk():
+    """Apply one login to many devices at once, or copy a device's saved login
+    onto others. A farm site has whole families of identical gear (a pole of
+    PowerBeams, a row of Hikvision cameras) sharing one login — entering it
+    device by device is what stops people saving it at all.
+
+    Body: {"keys": [device keys],
+           "username"/"password"/"notes": literal values,   OR
+           "copy_from": "<device key>"  — reuse that device's stored login,
+           "overwrite": false  — false leaves devices that already have a login,
+           "clear": false      — true wipes the login on every target instead}
+
+    Returns per-key outcomes so the UI can say exactly what changed.
+    """
+    body = request.get_json(force=True)
+    keys = [k for k in (body.get("keys") or []) if isinstance(k, str) and k.strip()]
+    if not keys:
+        return jsonify({"ok": False, "error": "no devices selected"}), 400
+
+    clear = bool(body.get("clear"))
+    overwrite = bool(body.get("overwrite"))
+    source = (body.get("copy_from") or "").strip()
+    if clear:
+        username = password = notes = ""
+    elif source:
+        src = creds.get(source)
+        username, password, notes = src["username"], src["password"], src["notes"]
+        if not (username or password):
+            return jsonify({"ok": False,
+                            "error": "the device you're copying from has no login saved"}), 400
+    else:
+        username = (body.get("username") or "").strip()
+        password = body.get("password") or ""
+        notes = (body.get("notes") or "").strip()
+        if not (username or password):
+            return jsonify({"ok": False,
+                            "error": "enter a username or password (or tick Clear)"}), 400
+
+    have = creds.keys_with_creds()
+    results = []
+    for key in keys:
+        if key == source:
+            results.append({"key": key, "status": "source"})
+            continue
+        if not clear and not overwrite and key in have:
+            results.append({"key": key, "status": "skipped"})
+            continue
+        creds.set_(key, username, password, notes)
+        results.append({"key": key, "status": "cleared" if clear else "saved"})
+    counts = {}
+    for r in results:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    return jsonify({"ok": True, "counts": counts, "results": results})
+
+
 @app.route("/api/devices/prune", methods=["POST"])
 def api_devices_prune():
     """Forget stale devices. Body: {"days": N} removes offline devices not seen
