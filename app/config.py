@@ -76,6 +76,16 @@ DEFAULTS = {
     "features": {
         "airos_change_ip": False,
     },
+    # Wireless telemetry from Ubiquiti radios (radiomon.py). Read-only SSH, only
+    # ever touches radios that have a saved login. It rides along with the scan
+    # but keeps its own cadence — polling a radio every scan would be pointless
+    # traffic on a link that is already the bottleneck.
+    "radio": {
+        "enabled": True,
+        "poll_min": 15,            # minutes between polls of the SAME radio
+        "history_days": 30,        # telemetry retention
+        "alerts": True,            # ntfy on degradation (uses the alerts section)
+    },
     # Pi self-health monitor. watchdog arms /dev/watchdog (auto-reboot on a hard
     # hang) — needs the health add-on (docker-compose.health.yml) for /dev access
     # and is deliberately opt-in: an armed watchdog reboots the Pi if Netwatch

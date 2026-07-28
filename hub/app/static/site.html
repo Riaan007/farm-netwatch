@@ -112,6 +112,10 @@
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7zM19 15l.9 2.4L22 18.3l-2.1.9L19 21.6l-.9-2.4-2.1-.9 2.1-.9zM5 15l.7 1.8 1.8.7-1.8.7L5 20l-.7-1.8-1.8-.7 1.8-.7z"/></svg>
                     <span id="ai-report-label">AI Report</span>
                 </button>
+                <button onclick="wifiDoctor()" id="wifi-doctor-btn" class="btn btn-ghost !border-cyan-400/30 !bg-cyan-500/20 !text-cyan-200 hover:!bg-cyan-500/30" title="Analyse this site's wireless links with Gemini and get a work list (takes ~10-30s)">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12a7 7 0 0114 0M8.5 15a3.5 3.5 0 017 0M12 18.5h.01"/></svg>
+                    <span id="wifi-doctor-label">Wi-Fi Doctor</span>
+                </button>
                 <a id="link-netwatch" href="#" target="_blank" class="btn btn-ghost">Netwatch ↗&#xFE0E;</a>
                 <a id="link-kuma" href="#" target="_blank" class="hidden btn btn-success">Kuma ↗&#xFE0E;</a>
             </div>
@@ -217,6 +221,19 @@
     </main>
 
     <!-- Connect-to-device modal -->
+    <div id="wifi-modal" onclick="if(event.target===this) closeWifi()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
+        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+            <div class="p-5 border-b border-white/10 flex justify-between items-center shrink-0">
+                <div>
+                    <h2 class="text-lg font-bold text-slate-100">📡 Wi-Fi Doctor</h2>
+                    <p id="wd-sub" class="text-xs text-slate-500">Wireless links analysed by Gemini, grounded in this site's own telemetry.</p>
+                </div>
+                <button onclick="closeWifi()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xl leading-none">&times;</button>
+            </div>
+            <div id="wd-body" class="p-5 overflow-y-auto text-sm space-y-4"></div>
+        </div>
+    </div>
+
     <div id="connect-modal" onclick="if(event.target===this) closeConnect()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
         <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-lg w-full max-h-[92vh] flex flex-col overflow-hidden">
             <div class="p-5 border-b border-white/10 flex justify-between items-center shrink-0">
@@ -829,6 +846,62 @@
         }
 
         // ---- AI-driven PDF report (Gemini via the hub) ----
+        // ---- Wi-Fi Doctor: site telemetry -> Gemini -> a work list ----
+        function closeWifi(){ document.getElementById('wifi-modal').classList.add('hidden'); }
+        function wdEsc(s){
+            return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+        }
+        async function wifiDoctor(){
+            const btn = document.getElementById('wifi-doctor-btn');
+            const lbl = document.getElementById('wifi-doctor-label');
+            const body = document.getElementById('wd-body');
+            document.getElementById('wifi-modal').classList.remove('hidden');
+            body.innerHTML = '<p class="text-slate-400">Reading the radios and analysing…</p>';
+            btn.disabled = true; lbl.textContent = 'Analysing…';
+            try {
+                const r = await fetch(`/api/hub/sites/${siteId}/wifi-doctor`, {method: 'POST'});
+                const j = await r.json();
+                if(!j.ok){
+                    body.innerHTML = '<p class="text-rose-300">'+wdEsc(j.error||'Analysis failed')+'</p>'
+                        + '<p class="text-xs text-slate-500 mt-2">The Gemini API key lives on the hub overview page under 🔔 Alerts → AI reports.</p>';
+                    return;
+                }
+                const a = j.analysis || {};
+                const tone = {healthy:'text-emerald-300', watch:'text-amber-300',
+                              degraded:'text-orange-300', critical:'text-rose-300'}[a.overall] || 'text-slate-300';
+                let h = '<div class="p-3 rounded-xl bg-white/5 border border-white/10">'
+                      + '<p class="text-xs font-bold uppercase '+tone+'">'+wdEsc(a.overall||'')+'</p>'
+                      + '<p class="mt-1 text-slate-200">'+wdEsc(a.summary)+'</p>'
+                      + '<p class="text-[11px] text-slate-500 mt-2">'+j.radio_count+' radio(s) read · '
+                      + j.finding_count+' finding(s) from the site\'s own rules · '+wdEsc(a.model||'')+'</p></div>';
+                if((a.links||[]).length){
+                    h += '<div><h3 class="text-xs font-bold text-slate-500 uppercase mb-2">Links needing attention</h3><div class="space-y-2">'
+                       + a.links.map(l => {
+                            const sev = {high:'border-rose-400/40 bg-rose-500/10', medium:'border-amber-400/40 bg-amber-500/10'}[l.severity]
+                                      || 'border-white/10 bg-white/5';
+                            return '<div class="p-3 rounded-xl border '+sev+'">'
+                                + '<p class="font-bold text-slate-100">'+wdEsc(l.name)+'</p>'
+                                + '<p class="text-slate-300">'+wdEsc(l.verdict)+'</p>'
+                                + ((l.likely_causes||[]).length ? '<p class="text-xs text-slate-400 mt-2">Likely: '
+                                    + l.likely_causes.map(wdEsc).join(' · ')+'</p>' : '')
+                                + ((l.actions||[]).length ? '<ol class="list-decimal ml-5 mt-2 text-xs text-slate-300 space-y-1">'
+                                    + l.actions.map(x => '<li>'+wdEsc(x)+'</li>').join('')+'</ol>' : '')
+                                + '</div>';
+                         }).join('') + '</div></div>';
+                }
+                const list = (title, items) => (items||[]).length
+                    ? '<div><h3 class="text-xs font-bold text-slate-500 uppercase mb-2">'+title+'</h3>'
+                      + '<ul class="list-disc ml-5 space-y-1 text-slate-300">'+items.map(x => '<li>'+wdEsc(x)+'</li>').join('')+'</ul></div>'
+                    : '';
+                h += list('Do these first', a.site_actions) + list('Keep an eye on', a.watch);
+                body.innerHTML = h;
+            } catch(e){
+                body.innerHTML = '<p class="text-rose-300">Request failed: '+wdEsc(e)+'</p>';
+            } finally {
+                btn.disabled = false; lbl.textContent = 'Wi-Fi Doctor';
+            }
+        }
+
         async function aiReport(){
             const btn = document.getElementById('ai-report-btn');
             const lbl = document.getElementById('ai-report-label');

@@ -8,12 +8,14 @@ import ipaddress
 import json
 import os
 import re
+import threading
 import time
 
 import urllib3
 from flask import Flask, jsonify, redirect, request, send_file, send_from_directory
 
 import airos
+import assets
 import commands
 import config
 import creds
@@ -22,6 +24,7 @@ import history
 import hubvpn
 import identify
 import netcfg
+import radiomon
 import sysmon
 import tunnels
 import kuma
@@ -248,6 +251,77 @@ def api_credentials(key):
         return jsonify({"ok": True, "has_credentials": saved})
     # GET returns the decrypted secret on demand (not part of the polled feed)
     return jsonify(creds.get(key))
+
+
+@app.route("/api/asset-schema")
+def api_asset_schema():
+    """Field definitions per category — the UI renders the form from this."""
+    cat = request.args.get("category")
+    if cat:
+        return jsonify({"ok": True, **assets.schema(cat)})
+    return jsonify({"ok": True, **assets.all_schemas()})
+
+
+@app.route("/api/devices/<path:key>/asset", methods=["GET", "POST"])
+def api_device_asset(key):
+    """Read/write a device's asset register entry (category-specific details)."""
+    dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
+    reg = scanner.registry.get(key, {})
+    category = (dev or {}).get("category") or reg.get("category") or "unknown"
+    if request.method == "POST":
+        body = request.get_json(force=True)
+        values = assets.clean(category, body.get("asset") or body)
+        scanner.registry.setdefault(key, {})["asset"] = values
+        scanner.save_registry()
+        return jsonify({"ok": True, "asset": values,
+                        "completeness": assets.completeness(category, values)})
+    values = reg.get("asset") or {}
+    return jsonify({"ok": True, "category": category, "asset": values,
+                    **assets.schema(category),
+                    "completeness": assets.completeness(category, values)})
+
+
+@app.route("/api/radio/overview")
+def api_radio_overview():
+    """Every monitored radio's latest reading plus the current problem list."""
+    snap = radiomon.monitor.snapshot()
+    return jsonify({
+        "ok": True,
+        "enabled": bool((config.load().get("radio") or {}).get("enabled", True)),
+        "radios": snap["radios"],
+        "problems": sorted(snap["problems"],
+                           key=lambda p: (p["level"] != "crit", p["device"])),
+        "polling": snap["busy"],
+    })
+
+
+@app.route("/api/radio/poll", methods=["POST"])
+def api_radio_poll():
+    """Force a poll now instead of waiting for the next scan."""
+    cfg = config.load()
+    devices = {d["key"]: d for d in scanner.get_devices() if d.get("key")}
+    scanner_registry = scanner.registry
+    threading.Thread(
+        target=radiomon.monitor.poll_round,
+        args=(cfg, devices, scanner_registry),
+        kwargs={"force": True}, daemon=True).start()
+    return jsonify({"ok": True, "started": True})
+
+
+@app.route("/api/devices/<path:key>/radio-history")
+def api_radio_history(key):
+    """Trend data for one radio: its own samples plus each link's series."""
+    window = int(request.args.get("hours", 24)) * 3600
+    links = {}
+    for row in history.radio_link_series(key, window_s=window):
+        links.setdefault(row["peer"], {"peer": row["peer"], "name": row["name"],
+                                       "model": row["model"], "points": []})
+        links[row["peer"]]["points"].append(row)
+    return jsonify({"ok": True, "key": key, "hours": window // 3600,
+                    "samples": history.radio_series(key, window_s=window),
+                    "links": list(links.values()),
+                    "problems": [p for p in radiomon.monitor.snapshot()["problems"]
+                                 if p["key"] == key]})
 
 
 @app.route("/api/credentials/bulk", methods=["POST"])
@@ -530,9 +604,29 @@ def api_airos_set_ip(key):
 
 @app.route("/api/problems")
 def api_problems():
-    """All detected problems (IP conflict, risky ports, duplicate MAC, IP drift)
-    for the dashboard's Problems panel."""
-    return jsonify({"problems": scanner.problems()})
+    """All detected problems (IP conflict, risky ports, duplicate MAC, IP drift,
+    degrading wireless links) for the dashboard's Problems panel."""
+    return jsonify({"problems": scanner.problems() + _radio_problems()})
+
+
+def _radio_problems():
+    """Radio telemetry findings, shaped like scanner.problems() entries so the
+    Problems panel and the hub render them with no special-casing."""
+    devs = {d["key"]: d for d in scanner.get_devices() if d.get("key")}
+    out = []
+    for p in radiomon.monitor.snapshot()["problems"]:
+        d = devs.get(p["key"], {})
+        out.append({
+            "type": "wifi_degraded",
+            "severity": "high" if p["level"] == "crit" else "medium",
+            "ip": p.get("ip"), "detail": p["what"], "fix": p["hint"],
+            "metric": p["metric"], "peer": p.get("peer"),
+            "devices": [{"key": p["key"], "ip": p.get("ip"),
+                         "name": d.get("name") or p.get("device"),
+                         "vendor": d.get("vendor"), "category": d.get("category"),
+                         "mac": d.get("mac"), "online": d.get("online", True)}],
+        })
+    return out
 
 
 @app.route("/api/devices/<path:key>/ack-ip", methods=["POST"])

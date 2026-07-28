@@ -24,6 +24,7 @@ import hubvpn
 import identify
 import kuma
 import notify
+import radiomon
 
 DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
 STATE_PATH = os.path.join(DATA_DIR, "scan_state.json")
@@ -771,6 +772,12 @@ class Scanner:
             self.status["last_scan_ts"] = int(time.time())
         self._save_state()
         self._kuma_sync(cfg, result)   # keep Kuma monitors pointed at the right IP / push manual ones
+        # Radio telemetry rides along with the scan but keeps its own cadence and
+        # runs off-thread: SSH to a pole of radios can take longer than the scan
+        # itself, and a slow link must never hold up the device list.
+        threading.Thread(
+            target=self._radio_poll, args=(cfg, dict(result), dict(self.registry)),
+            daemon=True).start()
         try:
             history.prune(cfg["scan"]["history_days"])
             # Event log keeps a long, independent retention (default ~1 year) so a
@@ -778,6 +785,12 @@ class Scanner:
             history.prune_events(cfg["scan"].get("event_log_days", 365))
         except Exception:
             pass
+
+    def _radio_poll(self, cfg, devices, registry):
+        try:
+            radiomon.monitor.poll_round(cfg, devices, registry)
+        except Exception as e:  # noqa: BLE001 - telemetry must never break scanning
+            print("radiomon error:", e, flush=True)
 
     def _ensure_internet_monitors(self, cfg, ki, base):
         """Create the default internet-uptime monitors once, when Kuma is enabled.

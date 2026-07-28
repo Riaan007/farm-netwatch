@@ -66,8 +66,142 @@ def _init(c):
             rtt    REAL
         );
         CREATE INDEX IF NOT EXISTS idx_hb_key_ts ON heartbeats(key, ts);
+
+        -- Wireless telemetry from Ubiquiti radios (see radiomon.py). One row per
+        -- radio per poll, plus one row per wireless LINK — a link's health is a
+        -- property of the pair, not of either radio, and it is where a failing
+        -- backhaul shows up first.
+        CREATE TABLE IF NOT EXISTS radio_samples (
+            key    TEXT NOT NULL,
+            ts     INTEGER NOT NULL,
+            ip     TEXT,
+            mode   TEXT,
+            ssid   TEXT,
+            freq   TEXT,
+            chanbw TEXT,
+            signal REAL,
+            noise  REAL,
+            chain0 REAL,
+            chain1 REAL,
+            airtime REAL,
+            cap_dl REAL,
+            cap_ul REAL,
+            tx_rate REAL,
+            rx_rate REAL,
+            links  INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_radio_key_ts ON radio_samples(key, ts);
+
+        CREATE TABLE IF NOT EXISTS radio_links (
+            key    TEXT NOT NULL,          -- the radio we polled
+            ts     INTEGER NOT NULL,
+            peer   TEXT NOT NULL,          -- far-end MAC
+            name   TEXT,
+            ip     TEXT,
+            model  TEXT,
+            signal REAL,                   -- what we hear
+            remote_signal REAL,            -- what the far end hears back
+            score_dl REAL,
+            score_ul REAL,
+            tx     REAL,
+            rx     REAL,
+            latency REAL,
+            distance REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_rlink_key_ts  ON radio_links(key, ts);
+        CREATE INDEX IF NOT EXISTS idx_rlink_peer_ts ON radio_links(peer, ts);
         """
     )
+    c.commit()
+
+
+# ---- radio telemetry --------------------------------------------------------
+_RADIO_COLS = ("ip", "mode", "ssid", "freq", "chanbw", "signal", "noise", "chain0",
+               "chain1", "airtime", "cap_dl", "cap_ul", "tx_rate", "rx_rate", "links")
+_LINK_COLS = ("peer", "name", "ip", "model", "signal", "remote_signal", "score_dl",
+              "score_ul", "tx", "rx", "latency", "distance")
+
+
+def radio_record(key, sample, links, ts=None):
+    """Store one poll: `sample` and each `links` entry are dicts keyed by the
+    column names above; anything missing lands as NULL."""
+    ts = int(ts or time.time())
+    c = _conn()
+    c.execute(
+        f"INSERT INTO radio_samples (key, ts, {','.join(_RADIO_COLS)}) "
+        f"VALUES (?,?,{','.join('?' * len(_RADIO_COLS))})",
+        (key, ts, *(sample.get(col) for col in _RADIO_COLS)),
+    )
+    if links:
+        c.executemany(
+            f"INSERT INTO radio_links (key, ts, {','.join(_LINK_COLS)}) "
+            f"VALUES (?,?,{','.join('?' * len(_LINK_COLS))})",
+            [(key, ts, *(ln.get(col) for col in _LINK_COLS)) for ln in links],
+        )
+    c.commit()
+
+
+def radio_series(key, window_s=86400, limit=500):
+    """Radio-level samples for a key, oldest first."""
+    since = int(time.time()) - window_s
+    rows = _conn().execute(
+        "SELECT * FROM radio_samples WHERE key=? AND ts>=? ORDER BY ts DESC LIMIT ?",
+        (key, since, limit)).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+def radio_link_series(key, peer=None, window_s=86400, limit=2000):
+    """Per-link samples for a radio (optionally one peer), oldest first."""
+    since = int(time.time()) - window_s
+    sql = "SELECT * FROM radio_links WHERE key=? AND ts>=?"
+    args = [key, since]
+    if peer:
+        sql += " AND peer=?"
+        args.append(peer)
+    sql += " ORDER BY ts DESC LIMIT ?"
+    args.append(limit)
+    rows = _conn().execute(sql, args).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+def radio_baseline(key, column, window_s=7 * 86400, settle_s=3600, peer=None):
+    """Median of `column` over the window, IGNORING the most recent `settle_s`.
+
+    Excluding the fresh samples matters: a slow degradation would otherwise creep
+    into its own baseline and never trip a threshold. Returns (median, n).
+    """
+    if column not in (set(_RADIO_COLS) | set(_LINK_COLS)):
+        raise ValueError(f"unknown column {column!r}")
+    table = "radio_links" if peer is not None else "radio_samples"
+    now = int(time.time())
+    sql = (f"SELECT {column} AS v FROM {table} WHERE key=? AND ts>=? AND ts<=? "
+           f"AND {column} IS NOT NULL")
+    args = [key, now - window_s, now - settle_s]
+    if peer:
+        sql += " AND peer=?"
+        args.append(peer)
+    vals = sorted(r["v"] for r in _conn().execute(sql, args).fetchall())
+    if not vals:
+        return None, 0
+    mid = len(vals) // 2
+    med = vals[mid] if len(vals) % 2 else (vals[mid - 1] + vals[mid]) / 2.0
+    return med, len(vals)
+
+
+def radio_peers_seen(key, window_s=86400):
+    """Peers this radio has had a link with in the window: {peer: (name, last_ts)}."""
+    since = int(time.time()) - window_s
+    rows = _conn().execute(
+        "SELECT peer, MAX(ts) AS last_ts, name FROM radio_links "
+        "WHERE key=? AND ts>=? GROUP BY peer", (key, since)).fetchall()
+    return {r["peer"]: (r["name"], r["last_ts"]) for r in rows}
+
+
+def radio_prune(retention_days):
+    cutoff = int(time.time()) - int(retention_days) * 86400
+    c = _conn()
+    c.execute("DELETE FROM radio_samples WHERE ts < ?", (cutoff,))
+    c.execute("DELETE FROM radio_links WHERE ts < ?", (cutoff,))
     c.commit()
 
 

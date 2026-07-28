@@ -539,6 +539,19 @@
                         </div>
                     </div>
 
+                    <div id="asset-section" class="pt-3 border-t border-white/10">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <label class="text-xs font-bold text-slate-400 uppercase">🗃️ Asset details</label>
+                            <span id="asset-progress" class="text-[10px] text-slate-500"></span>
+                        </div>
+                        <div id="asset-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+                        <div class="flex gap-2 items-center mt-2">
+                            <button onclick="saveAsset()" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm font-bold">Save details</button>
+                            <span id="asset-status" class="text-xs"></span>
+                        </div>
+                        <p class="text-[10px] text-slate-500 mt-1">Fields follow the device's category — set the category above and reopen to switch the form.</p>
+                    </div>
+
                     <div id="cred-section" class="pt-3 border-t border-white/10">
                         <label class="text-xs font-bold text-slate-400 uppercase block mb-2">🔑 Login credentials</label>
                         <div class="space-y-2">
@@ -613,6 +626,7 @@
             same_mac_multi_ip: {label:'Same MAC, multiple IPs', sev:'medium'},
             ip_change:         {label:'IP changed (DHCP drift)', sev:'low'},
             replaced:          {label:'Device replaced at IP', sev:'low'},
+            wifi_degraded:     {label:'Wi-Fi link',           sev:'high'},
         };
         const SEV_STYLE = {high:'border-red-500/40 bg-red-500/10 text-red-200',
             medium:'border-amber-400/40 bg-amber-500/10 text-amber-200',
@@ -1106,6 +1120,25 @@
                  + '<div class="text-[10px] font-bold text-slate-500 uppercase">'+wifiEsc(label)+'</div>'
                  + '<div class="text-sm font-mono '+(cls||'text-slate-200')+'">'+wifiEsc(value||'—')+'</div></div>';
         }
+        // Inline sparkline + first-vs-last delta. dBm values are negative, so the
+        // arrow is coloured by direction of change, not by sign.
+        function miniSpark(vals, w=110, h=18){
+            const min = Math.min(...vals), max = Math.max(...vals), span = (max - min) || 1;
+            const pts = vals.map((v, i) =>
+                (i * w / (vals.length - 1)).toFixed(1) + ',' + (h - ((v - min) / span) * h).toFixed(1));
+            return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" class="shrink-0">'
+                 + '<polyline points="'+pts.join(' ')+'" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.85"/></svg>';
+        }
+        function trendRow(label, vals, unit){
+            const first = vals[0], last = vals[vals.length - 1], d = last - first;
+            const cls = Math.abs(d) < 2 ? 'text-slate-400' : (d > 0 ? 'text-emerald-300' : 'text-rose-300');
+            const arrow = Math.abs(d) < 2 ? '→' : (d > 0 ? '↑' : '↓');
+            return '<div class="flex items-center gap-2 '+cls+'">'
+                 + '<span class="w-28 shrink-0 truncate text-slate-300">'+wifiEsc(label)+'</span>'
+                 + miniSpark(vals)
+                 + '<span class="font-mono">'+last.toFixed(0)+' '+unit+'</span>'
+                 + '<span class="font-mono">'+arrow+' '+(d>0?'+':'')+d.toFixed(0)+'</span></div>';
+        }
         async function fetchAirosWifi(){
             if(!CURRENT_KEY) return;
             const panel = document.getElementById('airos-wifi-panel');
@@ -1190,6 +1223,36 @@
                 });
                 html += '</table></div>';
             }
+            // Trend + current findings from the stored telemetry. A single
+            // reading says little; "normally -56, now -70" is the whole point.
+            try {
+                const h = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/radio-history?hours=24')).json();
+                if(h.ok){
+                    if((h.problems||[]).length){
+                        html += '<div class="mt-3 space-y-1">' + h.problems.map(p =>
+                            '<div class="p-2 rounded-lg text-[11px] border '
+                            + (p.level==='crit' ? 'border-rose-400/40 bg-rose-500/10 text-rose-200'
+                                                : 'border-amber-400/40 bg-amber-500/10 text-amber-200')
+                            + '"><b>'+wifiEsc(p.what)+'</b><br><span class="opacity-75">→ '+wifiEsc(p.hint)+'</span></div>').join('') + '</div>';
+                    }
+                    const sig = (h.samples||[]).map(s => s.signal).filter(v => v != null);
+                    const noi = (h.samples||[]).map(s => s.noise).filter(v => v != null);
+                    if(sig.length > 1 || (h.links||[]).length){
+                        html += '<p class="text-[10px] font-bold text-slate-400 uppercase mt-3 mb-1">Trend · last 24 h ('+(h.samples||[]).length+' samples)</p>'
+                             + '<div class="space-y-1 text-[11px]">';
+                        if(sig.length > 1) html += trendRow('Signal', sig, 'dBm');
+                        if(noi.length > 1) html += trendRow('Noise', noi, 'dBm');
+                        (h.links||[]).forEach(l => {
+                            const pts = l.points.map(p => p.signal).filter(v => v != null);
+                            if(pts.length > 1) html += trendRow(l.name || l.peer, pts, 'dBm');
+                        });
+                        html += '</div>';
+                    } else {
+                        html += '<p class="text-[10px] text-slate-500 mt-3">No trend yet — telemetry builds up as the scans run.</p>';
+                    }
+                }
+            } catch(e){}
+
             const rawKeys = Object.keys(r.raw||{});
             if(rawKeys.length){
                 html += '<details class="mt-3"><summary class="text-[11px] text-slate-400 cursor-pointer">All '+rawKeys.length+' fields the radio reported</summary>'
@@ -1282,6 +1345,7 @@
             } else extra.classList.add('hidden');
             loadPhoto(key, dev);
             loadKuma(key, dev);
+            loadAsset(key);
             const hikBtn = document.getElementById('hik-btn');
             const isHik = dev && (['camera','nvr'].includes(dev.category) || /hikvision|hangzhou/i.test(dev.vendor||''));
             hikBtn.classList.toggle('hidden', !isHik);
@@ -1440,6 +1504,63 @@
             const watch = document.getElementById('edit-watch').checked;
             await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ watch }) });
             loadDevices();   // refresh the 🔔 indicator
+        }
+
+        // ---- asset register (category-driven fields) ----
+        let ASSET_FIELDS = [];
+        async function loadAsset(key){
+            const sec = document.getElementById('asset-section');
+            const box = document.getElementById('asset-fields');
+            ASSET_FIELDS = [];
+            document.getElementById('asset-status').innerText = '';
+            if(!key){ sec.style.display = 'none'; return; }
+            sec.style.display = '';
+            box.innerHTML = '<p class="text-xs text-slate-500">Loading…</p>';
+            let a;
+            try { a = await (await fetch('/api/devices/'+encodeURIComponent(key)+'/asset')).json(); }
+            catch(e){ box.innerHTML = '<p class="text-xs text-rose-400">Could not load</p>'; return; }
+            ASSET_FIELDS = a.fields || [];
+            const v = a.asset || {};
+            box.innerHTML = ASSET_FIELDS.map(f => {
+                const id = 'asset-f-'+f.k, val = v[f.k] || '';
+                const cls = 'w-full p-2 bg-[#050b16] border rounded-lg text-sm';
+                let input;
+                if(f.type === 'select'){
+                    input = '<select id="'+id+'" class="'+cls+'">' + (f.options||[]).map(o =>
+                        '<option value="'+wifiEsc(o)+'"'+(o===val?' selected':'')+'>'+wifiEsc(o||'—')+'</option>').join('') + '</select>';
+                } else if(f.type === 'textarea'){
+                    input = '<textarea id="'+id+'" rows="2" class="'+cls+'">'+wifiEsc(val)+'</textarea>';
+                } else {
+                    input = '<input id="'+id+'" type="'+(f.type==='date'?'date':(f.type==='number'?'number':'text'))
+                          + '" value="'+wifiEsc(val)+'" placeholder="'+wifiEsc(f.placeholder||'')+'" class="'+cls+'">';
+                }
+                const wide = (f.type === 'textarea') ? ' sm:col-span-2' : '';
+                return '<div class="'+wide+'"><label class="block text-[10px] font-bold text-slate-400 uppercase mb-1">'
+                     + wifiEsc(f.label)+'</label>'+input+'</div>';
+            }).join('');
+            showAssetProgress(a.completeness);
+        }
+        function showAssetProgress(c){
+            const el = document.getElementById('asset-progress');
+            if(!c){ el.innerText = ''; return; }
+            el.className = 'text-[10px] ' + (c.pct >= 80 ? 'text-emerald-400' : c.pct >= 40 ? 'text-amber-400' : 'text-slate-500');
+            el.innerText = c.filled + ' / ' + c.total + ' filled (' + c.pct + '%)';
+        }
+        async function saveAsset(){
+            if(!CURRENT_KEY) return;
+            const asset = {};
+            ASSET_FIELDS.forEach(f => {
+                const el = document.getElementById('asset-f-'+f.k);
+                if(el && el.value !== '') asset[f.k] = el.value;
+            });
+            const st = document.getElementById('asset-status');
+            try {
+                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/asset',
+                    {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({asset})})).json();
+                st.className = 'text-xs text-emerald-400'; st.innerText = 'Saved ✓';
+                showAssetProgress(r.completeness);
+                setTimeout(()=>{ st.innerText=''; }, 2500);
+            } catch(e){ st.className = 'text-xs text-rose-400'; st.innerText = 'Save failed'; }
         }
 
         // ---- credentials ----

@@ -10,6 +10,7 @@ import ipaddress
 import os
 import re
 import time
+from urllib.parse import quote
 
 import requests
 from flask import (Flask, jsonify, redirect, request, send_file,
@@ -25,6 +26,7 @@ import proxycfg
 import sitehistory
 import tunnels
 import wgeasy
+import wifi_doctor
 from poller import poller
 
 
@@ -865,6 +867,71 @@ def api_site_pi_ssh(site_id):
         return jsonify({"ok": True, "tunneled": True, **res})
     return jsonify({"ok": True, "tunneled": False, "host": vpn_ip, "port": 22,
                     "ip": vpn_ip, "device_port": 22, "scheme": ""})
+
+
+@app.route("/api/hub/sites/<site_id>/wifi", methods=["GET"])
+def api_site_wifi(site_id):
+    """Live wireless telemetry from a site (its radiomon overview)."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    to = (poll["timeout_connect_s"], poll["timeout_read_s"])
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    try:
+        r = requests.get(f"{base}/api/radio/overview", timeout=to)
+        if r.status_code == 404:
+            return jsonify({"ok": False, "error": "This site's Netwatch is too old for "
+                            "radio telemetry — update it (docker compose pull)."}), 501
+        r.raise_for_status()
+        return jsonify(r.json())
+    except (requests.RequestException, ValueError) as e:
+        return jsonify({"ok": False, "error": f"Site unreachable: {e}"}), 502
+
+
+@app.route("/api/hub/sites/<site_id>/wifi-doctor", methods=["POST"])
+def api_site_wifi_doctor(site_id):
+    """Read the site's radio telemetry and have Gemini turn it into a work list."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    to = (poll["timeout_connect_s"], poll["timeout_read_s"])
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    try:
+        r = requests.get(f"{base}/api/radio/overview", timeout=to)
+        if r.status_code == 404:
+            return jsonify({"ok": False, "error": "This site's Netwatch is too old for "
+                            "radio telemetry — update it (docker compose pull)."}), 501
+        r.raise_for_status()
+        overview = r.json()
+    except (requests.RequestException, ValueError) as e:
+        return jsonify({"ok": False, "error": f"Site unreachable: {e}"}), 502
+    radios = overview.get("radios") or {}
+    if not radios:
+        return jsonify({"ok": False, "error": "No radio telemetry yet — the site polls "
+                        "its radios on the scan cadence, and only radios with a saved "
+                        "login are read."}), 409
+
+    histories = {}
+    for key in radios:
+        try:
+            h = requests.get(f"{base}/api/devices/{quote(key, safe='')}/radio-history",
+                             params={"hours": 168}, timeout=to)
+            h.raise_for_status()
+            histories[key] = h.json()
+        except (requests.RequestException, ValueError):
+            histories[key] = {}
+    devices = (poller.snapshot(site_id).get("devices") or {}).get("devices") or []
+    facts = wifi_doctor.gather_facts(_site_card(site).get("name") or site_id,
+                                     overview, histories, devices)
+    try:
+        result = wifi_doctor.diagnose(facts, hubconfig.load()["ai"])
+    except wifi_doctor.DoctorError as e:
+        return jsonify({"ok": False, "error": str(e)}), e.status
+    return jsonify({"ok": True, "analysis": result,
+                    "radio_count": len(radios),
+                    "finding_count": len(overview.get("problems") or [])})
 
 
 @app.route("/api/hub/sites/<site_id>/report", methods=["POST"])
