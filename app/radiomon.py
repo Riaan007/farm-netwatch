@@ -117,6 +117,7 @@ class RadioMonitor:
         self._last = {}             # key -> last result summary (for the API)
         self._problems = []         # current problems, rebuilt every poll round
         self._busy = False
+        self._warmed = False
         try:
             with open(STATE_PATH) as f:
                 self._state = json.load(f)
@@ -327,7 +328,40 @@ class RadioMonitor:
             pass
 
     # ---- api --------------------------------------------------------------
+    def warm_start(self):
+        """Re-populate the last-reading cache from the database.
+
+        The readings live in SQLite; only the in-memory copy dies with the
+        process. Without this, every container update blanked the Wireless tile
+        and the whole Wi-Fi history page until the next poll came round — which
+        is precisely when someone is most likely to be looking at them.
+        """
+        if self._warmed:
+            return
+        self._warmed = True
+        try:
+            for key, ts in history.radio_keys().items():
+                if key in self._last:
+                    continue
+                sample, links = history.radio_latest(key)
+                if not sample:
+                    continue
+                self._last[key] = {
+                    "ok": True, "ts": sample["ts"], "ip": sample.get("ip"),
+                    "name": sample.get("ip") or key,
+                    "mode": sample.get("mode"), "ssid": sample.get("ssid"),
+                    "sample": {k: sample.get(k) for k in
+                               ("ip", "mode", "ssid", "freq", "chanbw", "signal", "noise",
+                                "chain0", "chain1", "airtime", "cap_dl", "cap_ul",
+                                "tx_rate", "rx_rate", "links")},
+                    "links": links,
+                    "from_history": True,     # remembered, not freshly read
+                }
+        except Exception as e:  # noqa: BLE001 - a cold cache must never 500 the API
+            print("radiomon warm start:", e, flush=True)
+
     def snapshot(self):
+        self.warm_start()
         return {"radios": self._last, "problems": self._problems,
                 "busy": self._busy}
 

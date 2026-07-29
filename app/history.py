@@ -197,6 +197,28 @@ def radio_peers_seen(key, window_s=86400):
     return {r["peer"]: (r["name"], r["last_ts"]) for r in rows}
 
 
+def radio_keys(window_s=7 * 86400):
+    """{key: newest ts} for every radio with telemetry in the window."""
+    since = int(time.time()) - window_s
+    rows = _conn().execute(
+        "SELECT key, MAX(ts) AS ts FROM radio_samples WHERE ts>=? GROUP BY key",
+        (since,)).fetchall()
+    return {r["key"]: r["ts"] for r in rows}
+
+
+def radio_latest(key):
+    """The most recent stored reading for a radio: (sample, links). Used to warm
+    the in-memory cache after a restart so the dashboards aren't blank until the
+    next poll — the samples were never lost, only the process holding them."""
+    row = _conn().execute(
+        "SELECT * FROM radio_samples WHERE key=? ORDER BY ts DESC LIMIT 1", (key,)).fetchone()
+    if not row:
+        return None, []
+    links = _conn().execute(
+        "SELECT * FROM radio_links WHERE key=? AND ts=?", (key, row["ts"])).fetchall()
+    return dict(row), [dict(x) for x in links]
+
+
 def radio_prune(retention_days):
     cutoff = int(time.time()) - int(retention_days) * 86400
     c = _conn()
