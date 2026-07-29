@@ -75,6 +75,16 @@
         /* This block loads AFTER app.css, so a bare `display` here outranks
            Tailwind's .hidden and would pin the Kuma link and status pills open. */
         .tbtn.hidden, .chip.hidden, .tbar.hidden { display: none; }
+        /* Device-modal tabs. The modal grew a photo, an identity form, an
+           18-field asset register, logins, Kuma and six diagnostics tools —
+           one scroll made everything below the fold invisible. */
+        .mtab { padding: .45rem .8rem; border-radius: .5rem .5rem 0 0; white-space: nowrap;
+            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+            color: #64748b; border-bottom: 2px solid transparent; transition: all .15s ease; }
+        .mtab:hover { color: #cbd5e1; }
+        .mtab-on { color: #67e8f9; border-bottom-color: #22d3ee; background: rgba(34,211,238,.07); }
+        .mtab-dot::after { content: ""; display: inline-block; width: 5px; height: 5px;
+            margin-left: .3rem; border-radius: 50%; background: #fbbf24; vertical-align: middle; }
         .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; }
         .status-dot.bg-emerald-500 { box-shadow: 0 0 8px 1px rgba(16,185,129,.85); }
         .status-dot.bg-red-500 { box-shadow: 0 0 8px 1px rgba(239,68,68,.85); }
@@ -433,7 +443,7 @@
 
     <!-- Device Detail Modal -->
     <div id="modal" onclick="if(event.target===this) closeModal()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
-        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-lg w-full max-h-[92vh] sm:max-h-[88vh] flex flex-col overflow-hidden">
+        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-2xl w-full max-h-[92vh] sm:max-h-[88vh] flex flex-col overflow-hidden">
             <div id="modal-header" class="mhdr mhdr-ok">
                 <div class="flex justify-between items-start gap-3">
                     <div class="min-w-0">
@@ -445,8 +455,15 @@
                     <button onclick="closeModal()" aria-label="Close" class="shrink-0 w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white text-xl leading-none transition-colors">&times;</button>
                 </div>
             </div>
+            <div class="px-4 pt-2 shrink-0 flex gap-1 border-b border-white/10 overflow-x-auto">
+                <button class="mtab mtab-on" data-mtab="overview" onclick="modalTab('overview')">Overview</button>
+                <button class="mtab" data-mtab="details" onclick="modalTab('details')">Details</button>
+                <button class="mtab" data-mtab="access" onclick="modalTab('access')">Access</button>
+                <button class="mtab" data-mtab="tools" onclick="modalTab('tools')">Tools</button>
+            </div>
             <div class="overflow-y-auto p-6 grow">
                 <div class="space-y-4">
+                  <div id="mp-overview" class="mpane space-y-4">
                     <div class="flex items-center gap-3">
                         <img id="device-photo" class="w-20 h-20 rounded-lg object-cover border bg-white/10 hidden" alt="device photo">
                         <div id="photo-placeholder" class="w-20 h-20 rounded-lg border bg-white/5 flex items-center justify-center text-slate-600 text-3xl shrink-0">📷</div>
@@ -481,8 +498,10 @@
                         <label class="text-xs font-bold text-slate-400 uppercase block mb-1">Hardware Metadata</label>
                         <div id="modal-extended" class="text-slate-400 text-[11px] font-mono whitespace-pre-wrap leading-relaxed"></div>
                     </div>
+                  </div><!-- /overview -->
 
-                    <div class="pt-3 border-t border-white/10">
+                  <div id="mp-tools" class="mpane hidden space-y-4">
+                    <div>
                         <label class="text-xs font-bold text-slate-400 uppercase block mb-2">Diagnostics</label>
                         <div class="flex gap-2 flex-wrap">
                             <button onclick="connTest()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold">📶 Connection test</button>
@@ -533,9 +552,11 @@
                         <div id="quality-panel" class="hidden mt-3"></div>
                         <pre id="cmd-result" class="hidden mt-2 p-2 bg-[#050b16] border border-white/10 text-emerald-300/90 rounded-lg text-[11px] whitespace-pre-wrap leading-snug max-h-40 overflow-auto"></pre>
                     </div>
+                  </div><!-- /tools -->
 
-                    <div class="pt-3 border-t border-white/10">
-                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">Asset details</label>
+                  <div id="mp-details" class="mpane hidden space-y-4">
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">Identity &amp; tags</label>
                         <div class="flex gap-2 mb-2">
                             <input id="edit-serial" type="text" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Serial number">
                             <input id="edit-model" type="text" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Model">
@@ -576,7 +597,7 @@
 
                     <div id="asset-section" class="pt-3 border-t border-white/10">
                         <div class="flex items-center justify-between gap-2 mb-2">
-                            <label class="text-xs font-bold text-slate-400 uppercase">🗃️ Asset details</label>
+                            <label class="text-xs font-bold text-slate-400 uppercase">🗃️ Asset register</label>
                             <span id="asset-progress" class="text-[10px] text-slate-500"></span>
                         </div>
                         <div id="asset-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
@@ -586,8 +607,10 @@
                         </div>
                         <p class="text-[10px] text-slate-500 mt-1">Fields follow the device's category — set the category above and reopen to switch the form.</p>
                     </div>
+                  </div><!-- /details -->
 
-                    <div id="cred-section" class="pt-3 border-t border-white/10">
+                  <div id="mp-access" class="mpane hidden space-y-4">
+                    <div id="cred-section">
                         <label class="text-xs font-bold text-slate-400 uppercase block mb-2">🔑 Login credentials</label>
                         <div class="space-y-2">
                             <input id="cred-user" type="text" autocomplete="off" class="w-full p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Username">
@@ -635,6 +658,7 @@
                             </div>
                         </details>
                     </div>
+                  </div><!-- /access -->
                 </div>
             </div>
         </div>
@@ -1331,6 +1355,7 @@
         async function openModal(key, ip){
             CURRENT_KEY = key;
             MODAL_IP = (key && DEV_BY_KEY[key]) ? DEV_BY_KEY[key].ip : ip;
+            modalTab('overview');          // always open on the same tab
             document.getElementById('cmd-result').classList.add('hidden');
             document.getElementById('quality-panel').classList.add('hidden');
             const dev = key ? DEV_BY_KEY[key] : null;
@@ -1541,6 +1566,14 @@
             loadDevices();   // refresh the 🔔 indicator
         }
 
+        // ---- device modal tabs ----
+        function modalTab(name){
+            document.querySelectorAll('#modal .mpane').forEach(p =>
+                p.classList.toggle('hidden', p.id !== 'mp-' + name));
+            document.querySelectorAll('#modal .mtab').forEach(b =>
+                b.classList.toggle('mtab-on', b.dataset.mtab === name));
+        }
+
         // ---- asset register (category-driven fields) ----
         let ASSET_FIELDS = [];
         async function loadAsset(key){
@@ -1574,6 +1607,11 @@
                      + wifiEsc(f.label)+'</label>'+input+'</div>';
             }).join('');
             showAssetProgress(a.completeness);
+            markTab('details', (a.completeness || {}).pct < 40);
+        }
+        function markTab(name, on){
+            const b = document.querySelector('#modal .mtab[data-mtab="' + name + '"]');
+            if(b) b.classList.toggle('mtab-dot', !!on);
         }
         function showAssetProgress(c){
             const el = document.getElementById('asset-progress');
@@ -1614,6 +1652,10 @@
             try {
                 const c = await (await fetch('/api/devices/'+encodeURIComponent(key)+'/credentials')).json();
                 setCredFields(c.username, c.password, c.notes);
+                const dev = DEV_BY_KEY[key];
+                const wants = dev && (/ubiquiti|hikvision|hangzhou/i.test(dev.vendor||'')
+                                      || ['camera','nvr'].includes(dev.category));
+                markTab('access', wants && !c.username && !c.password);
             } catch(e){}
         }
         function toggleCredPass(){
