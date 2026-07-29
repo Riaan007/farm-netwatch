@@ -131,6 +131,7 @@
                 <a id="kuma-link" href="#" target="_blank" class="tbtn tbtn-ok hidden" title="Open Uptime Kuma">Kuma ↗&#xFE0E;</a>
                 <button id="select-btn" onclick="toggleSelectMode()" class="tbtn" title="Select several devices to act on at once">Select</button>
                 <button onclick="openHistory()" class="tbtn" title="Device &amp; IP event history">History</button>
+                <a href="/wifi" class="tbtn" title="Wireless link history, trends and troubleshooting">📡 Wi-Fi</a>
                 <button onclick="openBulkCreds()" class="tbtn" title="Set or copy logins across many devices">🔑 Logins</button>
                 <button onclick="openSetup()" class="tbtn tbtn-icon" aria-label="Settings" title="Settings">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
@@ -426,7 +427,7 @@
                     <label class="flex items-start gap-2 text-xs text-slate-400">
                         <input id="setup-airos-setip" type="checkbox" class="w-4 h-4 mt-0.5">
                         <span>Enable <b>Change IP for Ubiquiti airOS radios</b> (SSH) <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span><br>
-                        <span class="text-[10px] text-slate-400">Off by default. airOS has no clean API, so this edits the radio's config over SSH and reboots it — a wrong value can drop the link to a whole building. Test on a non-critical radio first. Needs the radio's SSH login saved on the device.</span></span>
+                        <span class="text-[10px] text-slate-400">On by default for every airOS radio. airOS has no clean API, so this edits the radio's config over SSH and <b>reboots it</b> — a wrong value can drop the link to a whole building. Needs the radio's SSH login saved on the device. Turn this off to hide the button on this site.</span></span>
                     </label>
                 </div>
                 <div class="pt-3 border-t border-white/10 grid grid-cols-2 gap-2">
@@ -2336,15 +2337,7 @@
         }
         // Jump to whatever the tile is reporting: the problem cards if there are
         // any, otherwise the radios themselves in the grid.
-        function jumpToWifi(){
-            const box = document.getElementById('conflict-monitor');
-            if(!box.classList.contains('hidden') && PROBLEMS.some(p => p.type === 'wifi_degraded')){
-                box.scrollIntoView({behavior:'smooth', block:'center'});
-                return;
-            }
-            const first = DATA.devices.find(d => /ubiquiti/i.test(d.vendor||''));
-            if(first) openModal(first.key, first.ip);
-        }
+        function jumpToWifi(){ location.href = '/wifi'; }
 
         function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); }
 

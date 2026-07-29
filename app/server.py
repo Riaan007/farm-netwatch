@@ -70,6 +70,11 @@ def setup_page():
     return send_from_directory(STATIC_DIR, "setup.html")
 
 
+@app.route("/wifi")
+def wifi_page():
+    return send_from_directory(STATIC_DIR, "wifi.html")
+
+
 @app.route("/app.css")
 def appcss():
     return send_from_directory(STATIC_DIR, "app.css")
@@ -306,6 +311,83 @@ def api_radio_poll():
         args=(cfg, devices, scanner_registry),
         kwargs={"force": True}, daemon=True).start()
     return jsonify({"ok": True, "started": True})
+
+
+@app.route("/api/radio/links")
+def api_radio_links():
+    """Everything the Wi-Fi history page needs in one call: each monitored radio,
+    each wireless link, their series over the window, and per-link stats.
+
+    Series come back as parallel column arrays rather than a list of objects —
+    a month of 15-minute samples across a pole of radios is a lot of repeated
+    JSON keys otherwise — and are bucketed down to at most MAX_POINTS so the
+    payload does not grow with the range.
+    """
+    MAX_POINTS = 300
+    hours = max(1, min(int(request.args.get("hours", 24) or 24), 24 * 90))
+    window = hours * 3600
+
+    def thin(rows):
+        step = max(1, len(rows) // MAX_POINTS)
+        return rows[::step] if step > 1 else rows
+
+    def cols(rows, fields):
+        out = {"ts": [r["ts"] for r in rows]}
+        for f in fields:
+            out[f] = [r.get(f) for r in rows]
+        return out
+
+    def stats(rows, field, key, peer=None):
+        vals = [r[field] for r in rows if r.get(field) is not None]
+        if not vals:
+            return None
+        base, n = history.radio_baseline(key, field, peer=peer)
+        return {"now": vals[-1], "min": min(vals), "max": max(vals),
+                "avg": round(sum(vals) / len(vals), 1),
+                "baseline": base, "baseline_n": n, "n": len(vals)}
+
+    snap = radiomon.monitor.snapshot()
+    devs = {d["key"]: d for d in scanner.get_devices() if d.get("key")}
+    radios = []
+    for key, last in (snap["radios"] or {}).items():
+        dev = devs.get(key, {})
+        srows = history.radio_series(key, window_s=window, limit=20000)
+        lrows = history.radio_link_series(key, window_s=window, limit=60000)
+        by_peer = {}
+        for r in lrows:
+            by_peer.setdefault(r["peer"], []).append(r)
+        links = []
+        for peer, rows in by_peer.items():
+            newest = rows[-1]
+            links.append({
+                "peer": peer,
+                "name": newest.get("name") or peer,
+                "model": newest.get("model") or "",
+                "ip": newest.get("ip") or "",
+                "distance": newest.get("distance"),
+                "last_ts": newest["ts"],
+                "series": cols(thin(rows), ["signal", "remote_signal", "score_dl",
+                                            "score_ul", "tx", "rx", "latency"]),
+                "stats": {f: stats(rows, f, key, peer=peer)
+                          for f in ("signal", "remote_signal", "score_dl", "score_ul")},
+            })
+        links.sort(key=lambda l: l["name"].lower())
+        radios.append({
+            "key": key, "ip": last.get("ip") or dev.get("ip"),
+            "name": dev.get("name") or last.get("name") or key,
+            "ok": bool(last.get("ok")), "error": last.get("error"),
+            "mode": last.get("mode"), "ssid": last.get("ssid"),
+            "model": dev.get("model") or "", "last_ts": last.get("ts"),
+            "current": last.get("sample") or {},
+            "series": cols(thin(srows), ["signal", "noise", "airtime", "cap_dl",
+                                         "cap_ul", "tx_rate", "rx_rate", "links"]),
+            "stats": {f: stats(srows, f, key) for f in ("noise", "airtime", "cap_dl")},
+            "links": links,
+        })
+    radios.sort(key=lambda r: (not r["ok"], r["name"].lower()))
+    return jsonify({"ok": True, "hours": hours, "radios": radios,
+                    "problems": snap["problems"],
+                    "enabled": bool((config.load().get("radio") or {}).get("enabled", True))})
 
 
 @app.route("/api/devices/<path:key>/radio-history")

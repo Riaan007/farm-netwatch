@@ -70,12 +70,18 @@ DEFAULTS = {
     "vpn": {
         "mode": "none",            # none | tailscale | wireguard
     },
-    # Experimental, opt-in features (off by default so they can be toggled for
-    # testing). airos_change_ip enables the SSH "Change IP" action on Ubiquiti
-    # airOS radios — risky on wireless backhaul, hence behind this flag.
+    # Feature switches. airos_change_ip exposes the SSH "Change IP" action on
+    # Ubiquiti airOS radios. It shipped off while the SSH path was unproven;
+    # verified against live LiteAP/PowerBeam gear at Tankwa (2026-07-29) it is
+    # now ON for every airOS radio, and stays a switch so a site that doesn't
+    # want a reboot-capable button on its backhaul can turn it back off.
     "features": {
-        "airos_change_ip": False,
+        "airos_change_ip": True,
     },
+    # Bumped when a default changes in a way an EXISTING config must adopt —
+    # _deep_merge only fills MISSING keys, so a stored False would otherwise
+    # pin the old default forever. See _migrate().
+    "config_rev": 1,
     # Wireless telemetry from Ubiquiti radios (radiomon.py). Read-only SSH, only
     # ever touches radios that have a saved login. It rides along with the scan
     # but keeps its own cadence — polling a radio every scan would be pointless
@@ -127,6 +133,30 @@ def _deep_merge(base, override):
     return out
 
 
+def _migrate(cfg, stored_rev):
+    """Adopt changed defaults on an existing install, once.
+
+    `stored_rev` MUST come from the config file as read, never from the merged
+    result.
+
+    A stored value always wins over DEFAULTS (that is the point of the merge),
+    so flipping a default is invisible to sites that already have the old one
+    written out. Each revision below is applied exactly once, then recorded.
+    """
+    if stored_rev >= DEFAULTS["config_rev"]:
+        return cfg, False
+    rev = stored_rev
+    if rev < 1:
+        # airOS Change IP: proven on real radios, so it is no longer opt-in.
+        # An operator who deliberately turned it off keeps that choice only if
+        # they turn it off again — there is no way to tell "never touched" from
+        # "explicitly off" in the stored config, and defaulting it on is the
+        # requested behaviour.
+        cfg.setdefault("features", {})["airos_change_ip"] = True
+    cfg["config_rev"] = DEFAULTS["config_rev"]
+    return cfg, True
+
+
 def load():
     with _lock:
         try:
@@ -134,7 +164,13 @@ def load():
                 raw = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             raw = {}
-        return _deep_merge(DEFAULTS, raw)
+        merged = _deep_merge(DEFAULTS, raw)
+        # raw, not merged: _deep_merge would have supplied the CURRENT rev from
+        # DEFAULTS, making an un-migrated config look up to date.
+        merged, changed = _migrate(merged, (raw or {}).get("config_rev", 0))
+    if changed:
+        save(merged)      # outside the lock — save() takes it itself
+    return merged
 
 
 def save(cfg):
