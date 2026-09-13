@@ -160,7 +160,7 @@
   });
   CC.filterDevices = (rows, f) => {
     const q = f.q.trim().toLowerCase();
-    const exactIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(q);    // a full address means that address, not .10–.199
+    const ipMatch = CC.ipMatcher(q);
     return rows.filter((d) => {
       if (f.site && d.__site.id !== f.site) return false;
       if (f.scope === "infra" && !CC.isInfra(d)) return false;
@@ -173,7 +173,7 @@
       if (f.state === "" && st === "quiet" && !q) return false;          // gone-quiet hidden unless asked
       if (f.cat && CC.cat(d).group !== f.cat) return false;
       if (f.watch && !d.watch) return false;
-      if (exactIp) return d.ip === q;
+      if (ipMatch) return ipMatch(d.ip);
       if (q && ![CC.devName(d), d.ip, d.mac, d.vendor, d.hostname, d.model, d.category, d.type, d.__site.name].join(" ").toLowerCase().includes(q)) return false;
       return true;
     });
@@ -199,7 +199,7 @@
       const st = { f, sort: p.get("sort") || "state", dir: 1, limit: 150, group: siteId ? "cat" : "site" };
       el.innerHTML = `
         <div class="tbar">
-          <label class="search">${icon("search")}<span class="sr">Search devices</span><input class="inp" id="dv-q" type="search" placeholder="Name, IP, MAC, vendor, model…" value="${esc(f.q)}"></label>
+          <label class="search">${icon("search")}<span class="sr">Search devices</span><input class="inp" id="dv-q" type="search" placeholder="Name, IP, MAC, vendor, model…" title="${esc(CC.IP_SEARCH_HELP)}" value="${esc(f.q)}"></label>
           ${siteId ? "" : `<select class="sel" id="dv-site" aria-label="Site"><option value="">All sites</option>${S.sites.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("")}</select>`}
           <select class="sel" id="dv-state" aria-label="State"><option value="">Seen this week</option><option value="online">Online</option><option value="offline">Offline (this week)</option><option value="quiet">Gone quiet (7+ days)</option><option value="all">Everything</option></select>
           <select class="sel" id="dv-cat" aria-label="Type"><option value="">All types</option>${CC.GROUPS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
@@ -229,7 +229,7 @@
       };
       $("#dv-q", el).oninput = CC.debounce(sync, 150);
       $$("select, input[type=checkbox]", el).forEach((x) => { if (x.id !== "dv-q") x.onchange = sync; });
-      $$("th button", el).forEach((b) => (b.onclick = () => { st.dir = st.sort === b.dataset.sort ? -st.dir : 1; st.sort = b.dataset.sort; this.draw(el, st, siteId); }));
+      $$("th button", el).forEach((b) => (b.onclick = () => { st.dir = st.sort === b.dataset.sort ? -st.dir : 1; st.sort = b.dataset.sort; st.userSorted = true; this.draw(el, st, siteId); }));
       $("#dv-more", el).onclick = () => { st.limit += 300; this.draw(el, st, siteId); };
       $("#dv-csv", el).onclick = () => CC.deviceCsv(this.rows(st, siteId), siteId ? `netwatch-${siteId}-devices` : "netwatch-devices");
       $("#dv-body", el).onclick = (e) => { const tr = e.target.closest("tr[data-key]"); if (tr) CC.openDevice(tr.dataset.site, tr.dataset.key); };
@@ -242,6 +242,8 @@
       const all = sites.flatMap((s) => (S.devices[s.id] || []).map((d) => Object.assign(d, { __site: s })));
       const rows = CC.filterDevices(all, st.f);
       const rank = { offline: 0, online: 1, quiet: 2 };
+      if (CC.ipMatcher(st.f.q) && st.sort === "state" && !st.userSorted)
+        return rows.sort((a, b) => CC.ipNum(a.ip) - CC.ipNum(b.ip) || (b.online - a.online) || (b.last_seen || 0) - (a.last_seen || 0));
       const key = {
         name: (d) => CC.devName(d).toLowerCase(), site: (d) => d.__site.name, ip: (d) => CC.ipNum(d.ip),
         cat: (d) => CC.cat(d).label, rtt: (d) => (d.rtt == null ? 1e9 : d.rtt), seen: (d) => (d.online ? 9e12 : -(d.last_seen || 0)),
@@ -258,11 +260,12 @@
       const rows = this.rows(st, siteId);
       const total = sites.reduce((a, s) => a + (S.devices[s.id] || []).length, 0);
       const quiet = sites.reduce((a, s) => a + (S.devices[s.id] || []).filter((d) => CC.devState(d) === "quiet").length, 0);
-      $("#dv-n", el).textContent = `${rows.length} of ${total}${quiet && st.f.state === "" ? ` · ${quiet} gone quiet hidden` : ""}`;
+      $("#dv-n", el).textContent = `${rows.length} of ${total}${quiet && st.f.state === "" && !st.f.q.trim() ? ` · ${quiet} gone quiet hidden` : ""}`;
       const shown = rows.slice(0, st.limit);
       const cols = siteId ? 6 : 7;
       let last = null, html = "";
-      const groupKey = st.sort === "state" || st.sort === "name" ? (siteId ? (d) => CC.cat(d).group : (d) => d.__site.id) : null;
+      const ipSearch = !!CC.ipMatcher(st.f.q) && !st.userSorted;
+      const groupKey = !ipSearch && (st.sort === "state" || st.sort === "name") ? (siteId ? (d) => CC.cat(d).group : (d) => d.__site.id) : null;
       const groupLabel = siteId ? (g) => (CC.GROUPS.find((x) => x[0] === g) || [0, g])[1] : (g) => CC.site(g).name;
       const rowsByGroup = groupKey ? shown.slice().sort((a, b) => {
         const ga = groupKey(a), gb = groupKey(b);
@@ -289,7 +292,12 @@
           <td class="num mono hide-m">${d.online && d.rtt != null ? d.rtt + " ms" : ""}</td>
           <td class="hide-m">${d.online ? `<span class="ok">now</span>` : CC.ago(d.last_seen)}</td></tr>`;
       }
-      body.innerHTML = html || `<tr><td colspan="${cols}"><div class="empty"><b>No devices match</b>Try “Everything” or clear the search.</div></td></tr>`;
+      const qq = st.f.q.trim();
+      const vpnSite = CC.isFullIp(qq) && S.sites.find((s) => s.vpn_ip === qq);
+      body.innerHTML = html || `<tr><td colspan="${cols}"><div class="empty"><b>No devices match</b>${vpnSite
+        ? `${esc(qq)} is <a href="#/site/${encodeURIComponent(vpnSite.id)}">${esc(vpnSite.name)}</a>'s VPN address — the site Pi itself, not a device on its network.`
+        : CC.isFullIp(qq) && st.f.state && st.f.state !== "all" ? `Nothing at ${esc(qq)} in this state — try “Everything”.`
+        : CC.ipMatcher(qq) ? `No device address matches ${esc(qq)}${siteId ? " at this site" : ""}.` : "Try “Everything” or clear the search."}</div></td></tr>`;
       const more = $("#dv-more", el);
       more.hidden = rows.length <= st.limit;
       more.textContent = `Show more (${rows.length - st.limit} left)`;

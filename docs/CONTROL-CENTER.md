@@ -35,6 +35,15 @@ Polling pauses while the tab is hidden and runs three sites at a time.
   (`Routerboard.com`) wasn't recognised, and "healthy" required data younger than
   10 minutes while devices refresh every 5 — sites flipped to Unknown.
 
+## IP search
+
+`CC.ipMatcher` (core.js) turns an address-shaped query into an octet-aware match,
+used by the device tables and the History tab: `192.168.0.1` exact · `.31` ends in ·
+`192.168.0.` subnet · `192.168.0.1*` widened prefix · `88.3` octet-aligned (last
+octet typed is a prefix). Anything else (e.g. `31`, `camera`) is plain text search.
+A full address in History asks the site for that address's whole history
+(`events?ip=`) rather than filtering the newest 500. Tests: `node tests/cc-ipsearch.cjs`.
+
 ## Still done elsewhere
 
 Editing device names, categories, watch flags and saved logins happens on the

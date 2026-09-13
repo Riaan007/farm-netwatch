@@ -342,13 +342,18 @@
   TABS_IMPL.history = {
     enter(s, el) {
       el.innerHTML = `<section class="panel"><div class="tbar">
-          <label class="search">${icon("search")}<span class="sr">Filter</span><input class="inp" id="sh-q" type="search" placeholder="IP, name, vendor, MAC"></label>
+          <label class="search">${icon("search")}<span class="sr">Filter</span><input class="inp" id="sh-q" type="search" placeholder="IP, name, vendor, MAC" title="${esc(CC.IP_SEARCH_HELP)}"></label>
           <select class="sel" id="sh-type" aria-label="Event type"><option value="">All events</option><option value="new">New devices</option><option value="offline">Went offline</option><option value="online">Came online</option><option value="ip_change">IP changes</option></select>
           <select class="sel" id="sh-mode" aria-label="View"><option value="events">Timeline</option><option value="ips">By IP address</option></select>
           <span class="note" id="sh-n" style="margin-left:auto"></span></div><div id="sh-list"><div class="pbd"><div class="skel" style="height:120px"></div></div></div></section>`;
       const p = CC.params();
       if (p.get("q")) $("#sh-q").value = p.get("q");
-      $("#sh-q").oninput = CC.debounce(() => this.draw(), 150);
+      // a full address is asked of the site (its whole history, not just the newest 500)
+      let lastIp = CC.isFullIp($("#sh-q").value) ? $("#sh-q").value.trim() : "";
+      $("#sh-q").oninput = CC.debounce(() => {
+        const v = $("#sh-q").value.trim(), ip = CC.isFullIp(v) ? v : "";
+        if (ip !== lastIp && $("#sh-mode").value === "events") { lastIp = ip; this.load(s); } else this.draw();
+      }, 250);
       $("#sh-type").onchange = () => this.load(s);
       $("#sh-mode").onchange = () => this.load(s);
       $("#sh-list").onclick = (e) => { const r = e.target.closest("[data-ip]"); if (r) { $("#sh-mode").value = "events"; $("#sh-q").value = r.dataset.ip; this.load(s); } };
@@ -356,24 +361,35 @@
     },
     async load(s) {
       const mode = $("#sh-mode").value;
+      const seq = (this.seq = (this.seq || 0) + 1);       // a slower older request must not overwrite a newer one
+      $("#sh-n").textContent = "Loading…";
       try {
         if (mode === "ips") this.ips = (await api(`/api/hub/sites/${s.id}/ip-history`)).ips || [];
-        else this.events = (await api(`/api/hub/sites/${s.id}/events?limit=500${$("#sh-type").value ? "&type=" + $("#sh-type").value : ""}`)).events || [];
+        else {
+          const v = $("#sh-q").value.trim();
+          const ip = CC.isFullIp(v) ? "&ip=" + encodeURIComponent(v) : "";
+          const ev = (await api(`/api/hub/sites/${s.id}/events?limit=500${$("#sh-type").value ? "&type=" + $("#sh-type").value : ""}${ip}`)).events || [];
+          if (seq !== this.seq) return;
+          this.events = ev;
+        }
       } catch (e) { $("#sh-list").innerHTML = `<div class="pbd bad">${esc(e.message)}</div>`; return; }
       this.draw();
     },
     draw() {
       if (!$("#sh-list")) return;
       const q = $("#sh-q").value.trim().toLowerCase();
-      const hit = (x) => !q || [x.ip, x.name, x.vendor, x.hostname, x.mac].join(" ").toLowerCase().includes(q);
+      const ipMatch = CC.ipMatcher(q);
+      const hit = (x) => !q || (ipMatch ? ipMatch(x.ip) : [x.ip, x.name, x.vendor, x.hostname, x.mac].join(" ").toLowerCase().includes(q));
       if ($("#sh-mode").value === "ips") {
-        const rows = (this.ips || []).filter(hit);
+        const rows = (this.ips || []).filter(hit).sort((a, b) => (ipMatch ? CC.ipNum(a.ip) - CC.ipNum(b.ip) : 0));
         $("#sh-n").textContent = CC.plural(rows.length, "address", "addresses");
         $("#sh-list").innerHTML = `<div class="twrap"><table class="t"><thead><tr><th>IP</th><th>Last device</th><th class="num">Devices</th><th class="num hide-m">Events</th><th>Last change</th></tr></thead><tbody>${rows.map((r) => `<tr data-ip="${esc(r.ip)}" tabindex="0"><td class="mono">${esc(r.ip)}</td><td>${esc(r.name || r.vendor || r.hostname || r.mac || "—")}</td><td class="num">${r.device_count}${r.device_count > 1 ? ` <span class="b warn nodot">shared</span>` : ""}</td><td class="num hide-m">${r.event_count}</td><td>${esc((EV[r.last_type] || [r.last_type])[0])} · ${CC.ago(r.last_ts)}</td></tr>`).join("")}</tbody></table></div>`;
       } else {
         const rows = (this.events || []).filter(hit);
         $("#sh-n").textContent = CC.plural(rows.length, "event");
-        $("#sh-list").innerHTML = eventsList(rows.slice(0, 300)) + (rows.length > 300 ? `<div class="pbd note">Showing the newest 300 — filter to narrow down.</div>` : "");
+        $("#sh-list").innerHTML = (!rows.length && q
+          ? `<div class="empty"><b>No events for ${esc($("#sh-q").value.trim())}</b>${ipMatch ? "Nothing has joined, left or changed on this address in the site's history — it has been stable." : "Nothing matches this search."}</div>`
+          : eventsList(rows.slice(0, 300))) + (rows.length > 300 ? `<div class="pbd note">Showing the newest 300 — filter to narrow down.</div>` : "");
       }
     },
   };

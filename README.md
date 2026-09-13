@@ -322,8 +322,10 @@ fleet:
 
 - **Overview** — fleet KPIs, a card per site (state, online counts, key equipment,
   24 h reachability, Kuma) and a *Needs attention* list worked out from live data.
-- **All devices** — every device across every site: search (a full IP matches that
-  address exactly), filter by site / state / type / MikroTik / watched, CSV export.
+- **All devices** — every device across every site: search, filter by site / state /
+  type / MikroTik / watched, CSV export. IP search: `192.168.0.1` = that address
+  only · `.31` = ends in .31 · `192.168.0.` = that subnet · `192.168.0.1*` = .1 and
+  .10–.199 · `88.3` = 192.168.88.3 and .30–.39. Results come in address order.
   Devices not seen for 7+ days are "gone quiet" and hidden unless you ask for them,
   so old discoveries don't bury the real picture.
 - **A site** — Overview, Devices, Problems (IP conflicts with *Clear & re-test*,

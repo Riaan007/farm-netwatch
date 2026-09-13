@@ -45,6 +45,25 @@
   CC.kb = (b) => (b == null ? "—" : b < 1024 ? b + " B" : b < 1048576 ? (b / 1024).toFixed(0) + " kB" : (b / 1048576).toFixed(1) + " MB");
   CC.ipNum = (ip) => (ip || "").split(".").reduce((a, o) => a * 256 + (+o || 0), 0);
   CC.plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + "s"}`;
+  /** An address-shaped search (digits and dots, at least one dot) becomes an
+   *  octet-aware matcher; anything else returns null and is searched as text.
+   *    192.168.0.1   exactly that address (not .10–.199)
+   *    .31  / .0.1   addresses ENDING in those octets
+   *    192.168.0.    that subnet (addresses starting with those octets)
+   *    88.3          octets starting "88.3" anywhere: 192.168.88.3, .30–.39
+   *    192.168.0.1*  trailing * widens a full address: .1 and .10–.199
+   */
+  CC.IP_SEARCH_HELP = "IP search: 192.168.0.1 = that address only · .31 = ends in .31 · 192.168.0. = that subnet · 192.168.0.1* = .1 and .10–.199";
+  CC.ipMatcher = (raw) => {
+    let q = String(raw || "").trim();
+    if (/^[\d.]+\*$/.test(q) && q.includes(".")) { const pre = q.slice(0, -1); return (ip) => !!ip && ip.startsWith(pre); }
+    if (!/^[\d.]+$/.test(q) || !q.includes(".") || q.includes("..")) return null;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(q)) return (ip) => ip === q;
+    if (q.startsWith(".")) return (ip) => !!ip && ip.endsWith(q);
+    if (q.endsWith(".")) return (ip) => !!ip && ip.startsWith(q);          // a subnet: from the first octet
+    return (ip) => !!ip && ("." + ip + ".").includes("." + q);
+  };
+  CC.isFullIp = (raw) => /^\d{1,3}(\.\d{1,3}){3}$/.test(String(raw || "").trim());
   CC.debounce = (fn, ms = 200) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
   // ---- icons (inline SVG, stroke = currentColor) ------------------------------
