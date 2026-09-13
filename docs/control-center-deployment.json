@@ -1,0 +1,10 @@
+{
+  "rollback_image": "farm-netwatch-hub:before-control-center-20260913T142411Z",
+  "previous_image_id": "sha256:8b2a104b598d1452b132d9ba320079db004ed4d92d3087bf9f9a4f8fcb8c112a",
+  "deployed_at_utc": "20260913T142411Z",
+  "image": "farm-netwatch-hub:local",
+  "route": "/control-center",
+  "url": "http://192.168.88.250:8091/control-center",
+  "status": "deployed-and-verified",
+  "current_image_id": "sha256:0ae87c1247f6a8b1682479f88f378aa6461d78b5f86340ed030d2ad708a924a0"
+}

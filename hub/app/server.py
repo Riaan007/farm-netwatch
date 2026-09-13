@@ -65,6 +65,12 @@ def index():
     return send_from_directory(STATIC_DIR, "index.html")
 
 
+@app.route("/control-center")
+def control_center():
+    """Lightweight operator view over the existing authenticated hub APIs."""
+    return send_from_directory(STATIC_DIR, "control-center.html")
+
+
 @app.route("/site/<site_id>")
 def site_page(site_id):
     return send_from_directory(STATIC_DIR, "site.html")

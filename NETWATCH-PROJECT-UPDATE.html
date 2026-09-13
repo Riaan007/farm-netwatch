@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Netwatch project review: secure client management, reliable monitoring and a phased monthly-service rollout."><title>Netwatch | Infrastructure evaluation & project update</title><style>
+:root{--ink:#18312e;--muted:#58716c;--green:#176c55;--paper:#fff;--line:#dce6e0;--bg:#f3f6f2}*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.7 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--green);text-underline-offset:3px}a:focus-visible,button:focus-visible,.table-wrap:focus-visible{outline:3px solid #d4a132;outline-offset:4px}.skip{position:absolute;top:-70px;left:16px;background:white;padding:10px;z-index:10}.skip:focus{top:10px}.hero{background:#123d33;color:#fff;padding:52px max(24px,calc((100vw - 1240px)/2)) 44px}.eyebrow{font-size:12px;font-weight:750;letter-spacing:2px;text-transform:uppercase;color:#b5d6bd}.hero h1{font-size:clamp(34px,5vw,58px);line-height:1.12;letter-spacing:-1.7px;margin:15px 0}.hero p{max-width:780px;color:#d6e5dc;margin:16px 0}.meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:25px}.pill{font-size:12px;border:1px solid #628476;border-radius:30px;padding:5px 12px}.print{margin-left:auto;background:#e6efcf;border:0;color:#163e32;border-radius:8px;padding:10px 16px;font:inherit;font-size:14px;cursor:pointer}.layout{max-width:1290px;margin:0 auto;padding:36px 24px 70px;display:grid;grid-template-columns:240px minmax(0,1fr);gap:36px}aside{position:sticky;top:24px;align-self:start;font-size:13px}aside strong{display:block;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:12px}nav a{display:block;text-decoration:none;border-left:2px solid var(--line);padding:7px 14px;line-height:1.45}nav a:hover{background:#e4ede4;border-color:var(--green)}.aside-note{font-size:12px;color:var(--muted);padding:14px}main{min-width:0}.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:26px}.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px}.card strong{display:block;font-size:18px}.card p{font-size:13px;line-height:1.5;margin:6px 0 0;color:var(--muted)}.card:first-child{border-top:4px solid #bb6b36}.card:nth-child(2){border-top:4px solid #2a8061}.card:nth-child(3){border-top:4px solid #62878b}article{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:clamp(22px,4vw,44px);box-shadow:0 5px 25px #163d3305}h2{font-size:27px;line-height:1.3;letter-spacing:-.5px;padding-top:30px;border-top:1px solid var(--line);margin:40px 0 18px}article>h2:first-of-type{margin-top:26px}p{margin:0 0 18px}li{margin:10px 0}li p{margin:0}ul,ol{padding-left:24px}.table-wrap{overflow-x:auto;margin:23px 0;border:1px solid var(--line);border-radius:9px}table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.55;min-width:550px}th{text-align:left;background:#edf3ec;color:#274a3e;font-size:12px;text-transform:uppercase;letter-spacing:.4px}td,th{padding:14px 16px;vertical-align:top;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}tbody tr:nth-child(even){background:#fafcf9}code{font-size:.86em;background:#f0f4ef;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}.architecture{background:#f3f7f0;padding:24px 18px;border:1px solid var(--line);border-radius:12px;margin:24px 0}.arch-row{display:flex;justify-content:center;gap:16px;align-items:center;flex-wrap:wrap}.arch-row span{background:white;border:1px solid #bad0be;border-radius:9px;padding:14px;text-align:center;flex:1;min-width:170px;font-size:15px;font-weight:650}.arch-row small{font-size:12px;color:var(--muted);font-weight:400}.arch-down{text-align:center;color:var(--green);font-size:24px}.architecture p{text-align:center;font-size:13px;color:var(--muted);margin:15px 0}.auxiliary span{background:#e7efdf;font-size:12px}.footer{color:var(--muted);font-size:12px;margin-top:22px}.footer a{margin-right:15px}@media(max-width:900px){.layout{grid-template-columns:1fr;gap:20px}aside{position:static}nav{display:flex;flex-wrap:wrap;gap:6px}nav a{border:1px solid var(--line);border-radius:6px;background:#fff;padding:7px 10px}.aside-note{display:none}}@media(max-width:570px){body{font-size:16px}.hero{padding:32px 22px}.layout{padding:22px 14px}.summary{grid-template-columns:1fr}.card{padding:13px 16px}.card strong{font-size:16px}.print{margin-left:0}article{padding:22px 18px}.arch-row{flex-direction:column}.arch-row span{width:100%}.arch-row b{transform:rotate(90deg)}}@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{@page{margin:16mm}body{background:white;font-size:10pt;color:#111}.hero{padding:0 0 16px;background:white;color:#111}.hero h1{font-size:28pt}.hero p,.eyebrow{color:#333}.pill{border-color:#bbb}.print,aside,.skip{display:none}.layout{display:block;padding:0}.summary{margin-top:18px}.card,article{box-shadow:none}article{border:0;padding:0}h2{font-size:17pt;break-after:avoid}.table-wrap{overflow:visible}table{min-width:0;font-size:9pt}tr,.card,.architecture{break-inside:avoid}a{color:#111}code{background:none}.footer{margin-top:15px}}
+h3{font-size:20px;line-height:1.4;margin:26px 0 14px}summary{cursor:pointer;font-weight:650;color:var(--green);padding:16px;background:#edf3ec;border-radius:8px}details[open]>summary{margin-bottom:24px}details h2{font-size:23px}</style></head>
+<body><a class="skip" href="#main">Skip to review</a><header class="hero"><div class="eyebrow">Farm Netwatch · Operations review</div><h1>Your next chapter<br>for client support.</h1><p>A practical plan to turn Netwatch Hub, Farm Netwatch, Uptime Kuma and WireGuard into a reliable monthly managed service.</p><div class="meta"><span class="pill">13 September 2026</span><span class="pill">1 GB client budget · Proposed roadmap</span><span class="pill">No live changes deployed</span><button class="print" onclick="window.print()">Print / Save as PDF</button></div></header>
+<div class="layout"><aside><strong>Inside this update</strong><nav aria-label="Review sections"><a href="#evaluation-managed-scope-and-mikrotik-ssh-integration">Managed scope and MikroTik SSH integration</a><a href="#evaluation-client-hardware-constraint-lean-site-appliance">Client hardware constraint: lean site appliance</a><a href="#evaluation-1-centralized-monitoring-amp-telemetry">1. Centralized Monitoring &amp; Telemetry</a><a href="#evaluation-2-proactive-alerting">2. Proactive Alerting</a><a href="#evaluation-3-remote-management-amp-automation">3. Remote Management &amp; Automation</a><a href="#evaluation-4-operational-resilience-amp-security">4. Operational Resilience &amp; Security</a><a href="#evaluation-5-quick-wins-vs-long-term-enhancements">5. Quick Wins vs. Long-Term Enhancements</a><a href="#original-review">Original review & diagram</a></nav><p class="aside-note">Based on source review and selected live checks. Proposed improvements are distinguished from observed behavior.</p></aside><main id="main"><section class="summary" aria-label="Main priorities"><div class="card"><strong>1. Secure access</strong><p>Protect credentials, separate clients and make every technician accountable.</p></div><div class="card"><strong>2. Trust the monitoring</strong><p>Show unknown periods, reduce duplicate alerts and track useful incidents.</p></div><div class="card"><strong>3. Pilot the service</strong><p>Test recovery and measure support effort before expanding paid coverage.</p></div></section><article>
+<p>Senior network administration perspective · 13 September 2026</p>
+<p><strong>Recommendation:</strong> keep Netwatch Hub as the operator workspace and Farm Netwatch as the site appliance. Keep WireGuard for restricted management connectivity. Assign one authoritative monitoring engine to each check, centralize incidents and make collection health visible. Prioritize customer isolation and authenticated site access before expanding remote automation.</p>
+<p>This evaluation builds on the earlier source and selected runtime review. It is a proposed design, not a new full deployment audit. Changes below have not been deployed. Client hardware constraint: a low-cost Pi 5 with a 1 GB RAM budget and SD card or USB flash storage. Site count and staffing remain unconfirmed; effort estimates are planning ranges, not commitments.</p>
+<h2 id="evaluation-managed-scope-and-mikrotik-ssh-integration">Managed scope and MikroTik SSH integration</h2>
+<p><strong>Current decision: defer Zabbix.</strong> It could help the service operator with reusable network metrics, trends and dependency alerts, but it is not required for MikroTik SSH management. For this project, prioritize the existing Netwatch stack and a focused MikroTik integration. Reconsider a central monitoring engine only when a measured requirement exceeds the existing solution. Earlier references to a Zabbix pilot are optional future alternatives, not the rollout baseline.</p>
+<h3>Monitor only the equipment under support</h3>
+<p>Use an explicit managed-asset list: cameras, NVRs, routers, switches, wireless bridges/APs and other network equipment included in the client service. Exclude unrelated phones, laptops, printers and household/office devices from routine checks, alerts, reports and billable counts. Keep minimal Pi/VPN self-health because failure of the monitoring path affects visibility.</p>
+<p>Discovery is an onboarding/manual tool limited to approved network ranges. Discovered assets enter an unapproved list and do not automatically become monitored. Record scope as managed, discovered/unapproved or excluded; authorize support actions only for managed targets. A DHCP/ARP table may be used on demand to diagnose a camera address issue without making every table entry a monitored client asset.</p>
+<h3>Add a MikroTik device panel to Netwatch Hub</h3>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable recommendations table"><table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Proposed behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Overview</td>
+<td>RouterOS version/model, uptime, CPU/memory, supported health sensors and last successful read.</td>
+</tr>
+<tr>
+<td>Interfaces</td>
+<td>Link state, negotiated speed, errors and counter-derived traffic rates on relevant ports.</td>
+</tr>
+<tr>
+<td>Camera network diagnosis</td>
+<td>On-demand DHCP leases, ARP, bridge host table and relevant VLAN/route information.</td>
+</tr>
+<tr>
+<td>Router-origin diagnostics</td>
+<td>Bounded ping/traceroute from the MikroTik to distinguish router-to-camera failures from Pi-to-camera failures.</td>
+</tr>
+<tr>
+<td>Backups</td>
+<td>Redacted text export for comparison; protected recovery backup with model/version metadata and verified transfer.</td>
+</tr>
+<tr>
+<td>Operator SSH</td>
+<td>An authorized interactive terminal session to the selected router, with expiry and session metadata.</td>
+</tr>
+<tr>
+<td>Reviewed changes</td>
+<td>Explicit actions for DHCP reservations, interface comments, selected interface/PoE controls where supported, and planned reboot/configuration changes.</td>
+</tr>
+<tr>
+<td>Advanced diagnostics</td>
+<td>Torch, bandwidth tests and wireless scans only on demand, with duration/output limits and model/version capability checks. Some diagnostics consume resources or interrupt service.</td>
+</tr>
+</tbody>
+</table></div>
+<p>RouterOS supports CLI management over SSH. Available commands and output differ by RouterOS version, installed packages and hardware, so discover capabilities and maintain version-aware parsers before enabling action buttons. Do not assume every router has PoE output, Wi-Fi or identical health sensors. <a href="https://help.mikrotik.com/docs/spaces/ROS/pages/328134/Command+Line+Interface">RouterOS CLI documentation</a>.</p>
+<h3>Keep work central and the Pi small</h3>
+<p>Preferred management path: technician → authenticated Hub → WireGuard → restricted site relay → MikroTik SSH. The central SSH client verifies the router host key and authenticates end-to-end; the Pi only relays permitted traffic. Do not expose relay ports to the general LAN, use unrestricted forwarding or enable SSH agent forwarding. The existing relay implementation needs its reviewed access-control fixes before reuse.</p>
+<p>Keep management credentials centrally protected; use separate per-device/site keys and a separate minimally privileged identity if the Pi needs autonomous read-only collection. Batch a small number of reads every 5–15 minutes, limit SSH concurrency and output size, and collect intensive diagnostics only on demand. The Pi does not need Zabbix or another monitoring daemon for this. Optional SNMPv3 can later provide routine counters if supported and authorized; SSH remains sufficient for the initial integration.</p>
+<h3>Separate observation from changes</h3>
+<p>Create a custom RouterOS monitoring group with the minimum tested policies, beginning with SSH and read. Diagnostic policies such as test and sniff grant broader capabilities and should be separate where practical. Do not assume the built-in read group is sufficiently restricted: MikroTik documents that it includes sensitive and reboot permissions. RouterOS policy grants are coarse; Hub action restrictions add workflow control but do not reduce the power of a compromised write-capable router credential. <a href="https://manual.mikrotik.com/docs/authentication-authorization-accounting/user/">RouterOS user policies</a>.</p>
+<p>Use distinct named technician access for interactive administration and a separate controlled change identity for automation. Log the operator, customer, device, action, redacted result and time. Do not offer raw write commands to ordinary monitoring users. Treat a terminal as privileged access, not as a read-only diagnostic button.</p>
+<p>For risky routing/firewall/address changes, capture pre-change configuration, show a reviewable change and require a working recovery path. RouterOS Safe Mode can help with supported interactive changes, but it is not a universal rollback guarantee for every automated command or firmware operation. Test actual failure behavior on the supported versions before depending on it.</p>
+<p>A text export is useful for diffs but is not a complete recovery copy: MikroTik documents exclusions such as passwords, certificates and SSH keys. Keep appropriate encrypted binary backups and separately cover excluded artifacts as required; validate restoration on the intended model/version. Do not restore a binary backup across arbitrary models or versions. <a href="https://manual.mikrotik.com/docs/getting-started/configuration-management/">Configuration management</a>.</p>
+<p><strong>Delivery order:</strong> managed-asset filtering; MikroTik read-only overview and bounded diagnostics; configuration export/backup; authorized terminal access; then a small set of reviewed change actions. Inventory models and RouterOS versions before implementation. These are proposed capabilities, not deployed functionality.</p>
+<h2 id="evaluation-client-hardware-constraint-lean-site-appliance">Client hardware constraint: lean site appliance</h2>
+<p><strong>This constraint supersedes the earlier recommendation for a Zabbix proxy at each site.</strong> Design for 1 GB RAM and flash storage. Keep central monitoring services off the client appliance. No additional client hardware is required by this proposal; supported device count must be measured on the actual hardware.</p>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable recommendations table"><table>
+<thead>
+<tr>
+<th>Runs at the client</th>
+<th>Runs centrally</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Minimal headless OS; one lean Netwatch service; WireGuard client</td>
+<td>Hub, Kuma, dashboards and incident processing; Zabbix deferred</td>
+</tr>
+<tr>
+<td>Lightweight scheduled probes, selected device API/SNMP reads</td>
+<td>Long-term metrics, searchable logs, reports and automation orchestration</td>
+</tr>
+<tr>
+<td>Small bounded telemetry queue and configuration</td>
+<td>Backup archives, audit retention, identity management and customer records</td>
+</tr>
+</tbody>
+</table></div>
+<p>Do not install a Zabbix proxy, Prometheus server, Grafana, Loki, local Kuma or wg-easy on the standard client image. WireGuard should have one owner, preferably the host service; the UI calls a restricted helper when changes are necessary. Retain Docker only if measured overhead fits the budget; it is not necessary to rewrite the deployment immediately. Avoid running both container and host VPN managers.</p>
+<p>Proposed initial limits, to validate rather than promise:</p>
+<ul>
+<li>Keep at least 200 MB of RAM available during normal polling and test peak discovery, reconnect and update workloads. Record memory pressure and out-of-memory events. Avoid a large swap file on flash; swap is not a substitute for a fitting workload.</li>
+<li>Send one compact batch of observations every 60 seconds. Poll critical availability every 60 seconds; slower metrics every 5–15 minutes. Use onboarding/manual discovery on approved ranges; do not repeatedly inventory unrelated devices. Keep deep scans disabled by default and run only one scan/task at a time. Tune for actual device count and link capacity.</li>
+<li>Bound the local telemetry queue to 32 MB and at most 24 hours, whichever is reached first. These caps do not guarantee 24-hour coverage: retention depends on sample volume. Prefer state changes over repetitive healthy samples when space is scarce; count drops and expose gaps centrally.</li>
+<li>Batch persistent writes, initially every 1–5 minutes, with immediate persistence reserved for critical configuration/security changes. A sudden power failure can lose the unflushed telemetry batch; make that tradeoff explicit. Use bounded transactions and power-loss-safe configuration replacement; test storage recovery after abrupt shutdown.</li>
+<li>Limit local diagnostic logs to approximately 20 MB and rotate them. Do not retain packet captures, video, photographs or long-term metric history locally by default. Disable continuous device Syslog ingestion on the standard image.</li>
+<li>Alert centrally on storage pressure, queue drops, last successful collection, clock errors and appliance restart loops. Bound queue/database journal growth and keep free-space headroom for updates.</li>
+</ul>
+<p>Receive telemetry through authenticated HTTPS over the VPN using a unique site identity. The agent reads local devices, so central services do not need broad access to every client subnet; this also avoids ambiguity when farms reuse LAN addresses. Integrate collected metrics with the central engine rather than adding another collector process to every Pi. This is a proposed adapter/queue change, not functionality already implemented.</p>
+<p>During WAN loss, the appliance continues lightweight checks and bounded buffering. The hub reports visibility lost. After reconnection it accepts deduplicated observations with their original timestamps and shows any dropped interval as unknown. Local operation does not guarantee remote notifications during a complete connectivity failure.</p>
+<p><strong>Acceptance gate:</strong> benchmark a representative client inventory for 72 hours on the exact 1 GB/flash setup, including a disconnected period, queue saturation, reconnect, scan, update and power-loss recovery. Check memory, free space, write volume, poll delays and data gaps before setting a supported device limit.</p>
+<h2 id="evaluation-1-centralized-monitoring-amp-telemetry">1. Centralized Monitoring &amp; Telemetry</h2>
+<h3>Give each component a clear job</h3>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable recommendations table"><table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Recommended responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Netwatch Hub</td>
+<td>Customer/site inventory, incident ownership, fleet health, remote task results and monthly service reports.</td>
+</tr>
+<tr>
+<td>Farm Netwatch</td>
+<td>Local discovery, farm-specific device diagnostics, safe management tasks and offline collection.</td>
+</tr>
+<tr>
+<td>Uptime Kuma, central only</td>
+<td>Selected availability checks; migrate existing local checks only after validating their central replacements and observation path.</td>
+</tr>
+<tr>
+<td>Zabbix, deferred</td>
+<td>Future option only if measured monitoring needs justify an additional central system.</td>
+</tr>
+<tr>
+<td>Syslog collector, central only</td>
+<td>Selected device/service events where an approved forwarding path exists; no dedicated local collector by default.</td>
+</tr>
+</tbody>
+</table></div>
+<p>For the constrained client, start with the existing Netwatch agent collecting lightweight observations and sending them centrally. Defer Zabbix; reconsider it only on central infrastructure if its templates and incident handling later justify the integration work. Its proxy capability is useful on larger hardware but is excluded from this client design. <a href="https://www.zabbix.com/documentation/current/en/manual/distributed_monitoring/proxies">Zabbix proxy documentation</a>.</p>
+<p>Do not introduce a Prometheus server at each site. If application metrics later justify Prometheus centrally, reuse a bounded agent/export path with explicit failure handling. Choose one authoritative engine per check and avoid duplicate collection.</p>
+<h3>Collect service health and collection health</h3>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable recommendations table"><table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Useful measurements</th>
+<th>Starting interval</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Network equipment</td>
+<td>SNMPv3 authPriv where supported: interface utilization, errors/discards, device uptime, temperature, PoE status and radio signal/noise/capacity</td>
+<td>1–5 minutes</td>
+</tr>
+<tr>
+<td>WAN</td>
+<td>Gateway reachability, loss/latency to independent upstreams, DNS and HTTPS checks</td>
+<td>60 seconds</td>
+</tr>
+<tr>
+<td>Cameras/NVRs</td>
+<td>Reachability, channel/recording faults, disk health and storage state through supported device APIs</td>
+<td>1–5 minutes</td>
+</tr>
+<tr>
+<td>Site appliance</td>
+<td>CPU, memory, free disk, clock offset, restart count, storage errors and local queue age</td>
+<td>1–5 minutes</td>
+</tr>
+<tr>
+<td>Netwatch services</td>
+<td>Last successful scan, heartbeat age, poll scheduling delay, task backlog, API errors and backup age</td>
+<td>60 seconds</td>
+</tr>
+<tr>
+<td>VPN</td>
+<td>Active probe, handshake age interpreted with keepalive, and traffic counters</td>
+<td>60 seconds</td>
+</tr>
+</tbody>
+</table></div>
+<p>Treat legacy SNMP as a restricted read-only service on the management network. Limit polling to approved inventory; do not continually deep-scan all ports. A camera replying to ping is not proof that footage is being recorded. Unsupported recording checks must show “unverified.”</p>
+<p>Make central Syslog optional for devices with a configured management route or a lightweight, rate-limited forwarding path. Do not add a dedicated site logging stack. Prefer selected fault/state events over debug streams. Where devices support only local UDP Syslog, collection may be omitted on this hardware profile; record that visibility limitation. UDP losses cannot be recovered downstream. Normalize customer/site/device identity and timestamps, synchronize clocks, redact credentials and enforce customer-specific access centrally.</p>
+<p>Start with three dashboard views:</p>
+<ul>
+<li><strong>Daily operations:</strong> unacknowledged incidents, lost visibility, overdue backups, failed tasks and expiring certificates.</li>
+<li><strong>Site investigation:</strong> topology, WAN/VPN/appliance states, affected devices, recent changes and correlated logs.</li>
+<li><strong>Monthly client report:</strong> service availability, monitoring coverage, unknown periods, incidents resolved and maintenance performed.</li>
+</ul>
+<p>Show healthy, degraded, down, unknown and maintenance separately. Replace received-sample averages with timestamped availability intervals and publish collection coverage alongside availability. On central storage only, begin with provisional retention of 30 days detailed metrics, 12 months aggregates and 30 days searchable operational logs; measure storage and support needs before extending. Give audit records their own retention policy.</p>
+<h2 id="evaluation-2-proactive-alerting">2. Proactive Alerting</h2>
+<h3>Alert on service impact, then attach diagnostic evidence</h3>
+<p>Model dependencies explicitly: gateway → backhaul radio → switch → cameras. If a radio fails, group the affected cameras into its incident. Preserve downstream observations and re-evaluate after recovery; suppression should reduce notifications, not erase evidence. Zabbix supports trigger dependencies; Prometheus Alertmanager supports grouping, inhibition, silences and routing. Choose one incident source for each service. <a href="https://www.zabbix.com/documentation/current/en/manual/config/triggers/dependencies">Zabbix dependencies</a>, <a href="https://prometheus.io/docs/alerting/latest/alertmanager/">Alertmanager</a>.</p>
+<p>These are initial tuning values, not universal limits:</p>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable recommendations table"><table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Starting rule</th>
+<th>Handling</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Site heartbeat missing</td>
+<td>Three missed 60-second observations</td>
+<td>“Visibility lost”; do not assert a complete client outage.</td>
+</tr>
+<tr>
+<td>WAN quality degraded</td>
+<td>Packet loss above 5% over 5 minutes with sufficient samples</td>
+<td>Investigate sustained service impact; baseline by link type.</td>
+</tr>
+<tr>
+<td>Appliance storage low</td>
+<td>Less than 15% free for 15 minutes; escalate below 5%</td>
+<td>Combine with write rate and estimated time to full.</td>
+</tr>
+<tr>
+<td>Configuration backup stale</td>
+<td>No successful daily backup for 26 hours</td>
+<td>Create a support task; escalate if recovery exposure persists.</td>
+</tr>
+<tr>
+<td>Recording failure</td>
+<td>Device API explicitly reports a fault, confirmed where safe</td>
+<td>High priority based on client coverage and affected channels.</td>
+</tr>
+<tr>
+<td>Flapping device</td>
+<td>Repeated transitions, e.g. five within 30 minutes</td>
+<td>One instability incident rather than repeated outage pages.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Require stable recovery, initially two successful checks. Use different recovery thresholds for noisy metrics. Schedule maintenance silences with an owner and expiry. Do not treat NVR circular storage utilization like an ordinary disk-full alarm.</p>
+<p>Every alert should include the client/site, affected service, first failure, last good observation, evidence, runbook link and assigned owner. Separate detection, acknowledgement, work started and restoration timestamps.</p>
+<p>Use a simple severity workflow: critical service impact goes to the staffed responder; persistent degradation enters the support queue; capacity and maintenance issues enter a daily digest. As a pilot, escalate an unacknowledged critical incident after 15 minutes <strong>during covered hours and only to an actually staffed backup contact</strong>. Notification delivery is not acknowledgement. Acknowledgement stops duplicate paging but does not close the incident.</p>
+<p>Review noisy rules weekly: count actionable incidents, false positives, repeats and unacknowledged time. Test notification delivery and run an independent external check of the hub and its alert pipeline. Prometheus recommends actionable symptoms and monitoring the monitoring system itself. <a href="https://prometheus.io/docs/practices/alerting/">Alerting guidance</a>.</p>
+<h2 id="evaluation-3-remote-management-amp-automation">3. Remote Management &amp; Automation</h2>
+<h3>Turn existing onboarding into controlled enrollment</h3>
+<p>The existing installer and VPN enrollment provide a useful starting point. Extend them with a short-lived, single-use token bound to one customer/site. Generate the appliance's private keys locally, validate server identity and enroll only into the assigned policy. Keep enrollment secrets out of shared scripts and persistent shell history. Reinstallation must not silently produce duplicate sites or monitors.</p>
+<p>Use versioned site templates for approved subnets, device roles, monitor intervals, alert policies and software versions. Keep desired inventory centrally and discovered inventory separately until approved. Automated provisioning begins after the appliance has basic power/network access; retain a documented local bootstrap path for sites without working DHCP or internet.</p>
+<h3>Expand backups beyond Netwatch settings</h3>
+<p>The existing daily site bundles help restore configuration, but do not cover the complete monitoring history or Kuma database. Add device configuration backups where vendor APIs/SSH support reliable exports. Track success, age, checksum and configuration differences. Encrypt secret-bearing backups, store an independent offsite copy and test restores onto spare equipment. Capture backups before and after important changes. Keep secrets out of ordinary Git repositories and diff displays.</p>
+<h3>Make bulk work bounded and reviewable</h3>
+<p>Begin automation with inventory checks, configuration export, backup validation and read-only diagnostics. Then add staged application updates. Use Ansible or an equivalent managed runner with tenant-scoped inventory, pinned automation content and restricted credentials. Ansible's <code>serial</code> execution supports batches rather than changing every host at once. <a href="https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_strategies.html">Execution strategies</a>.</p>
+<p>Each task needs a target list, preflight result, timeout, concurrency cap, unique job ID, operator, result and rollback instructions. Retry only operations known to be safe to repeat. Expire queued changes so that a device reconnecting next week cannot execute an obsolete repair.</p>
+<p>Roll out changes to one lab appliance, one pilot site, then a small batch before the remainder. Stop on failed health checks. Never update all upstream radios or VPN gateways together. Require explicit change review for addressing, routing, firewall, firmware and disruptive device actions; a dry run does not prove hardware changes are safe. Disable the current ntfy command listener by default and move actions into authenticated, audited workflows.</p>
+<h2 id="evaluation-4-operational-resilience-amp-security">4. Operational Resilience &amp; Security</h2>
+<h3>Close the known access gaps first</h3>
+<p>The earlier review found an unauthenticated site API exposing credential/configuration operations, a shared hub administrator identity, open relay listeners and permissive forwarding in the VPN container's FORWARD chain. That chain is not proof of end-to-end exposure, but it does not establish customer separation.</p>
+<ul>
+<li>Require authentication for site reads and writes, using separate scoped machine credentials for hub collection. Protect configuration exports as secrets.</li>
+<li>Add named users, MFA, administrator/technician/customer-viewer roles and server-side customer checks on every endpoint, report and job.</li>
+<li>Enforce default-deny cross-client forwarding. Permit only required hub/site services and technician access to assigned targets. Restrict IPv4 and IPv6 paths; WireGuard AllowedIPs is not a substitute for authorization.</li>
+<li>Separate management, cameras/IoT and user/guest networks with routed ACLs. A VLAN without filtering is insufficient. Restrict the probe to necessary device protocols.</li>
+<li>Place remote relays behind an authenticated management path; enforce expiry, per-target rules and revocation. Protect usage of a tunnel as well as its creation.</li>
+<li>Separate privileged network operations from the web process. Use production serving with one explicit owner for background scanners and pollers.</li>
+</ul>
+<h3>Recover reliably before adding complex failover</h3>
+<p>Use dedicated, maintained central infrastructure, UPS coverage at key sites, independent monitoring and encrypted offsite recovery copies. Separate VPN gateway lifecycle from Hub/proxy lifecycle so routine VPN maintenance does not unnecessarily recreate all management services.</p>
+<p>Test a spare-appliance restore and hub recovery. Record achieved recovery time and data loss. Consider dual WAN and redundant central services only where the service commitment justifies their cost. A second VPN endpoint needs a tested routing, identity and failover design; a second container on the same host is not failure-domain redundancy.</p>
+<p>Record who accessed which client, read/exported secrets, opened tunnels, changed configuration, restored backups and ran jobs. Include timestamp, reason, result and redacted before/after changes. Forward security audit records to a separate restricted store with tamper-resistant retention. Ordinary debug logs are not an audit trail. Test offboarding across user accounts, device keys, active sessions, job permissions and stored credentials.</p>
+<h2 id="evaluation-5-quick-wins-vs-long-term-enhancements">5. Quick Wins vs. Long-Term Enhancements</h2>
+<p>Effort refers to a focused engineering workstream, excluding procurement and fleet rollout. Access-control and firewall changes still need a tested recovery path and compatibility checks.</p>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable recommendations table"><table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Recommendation</th>
+<th>Indicative effort</th>
+<th>Administrative payoff / completion evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Quick win</td>
+<td>Standard customer/site/device naming, ownership and support hours</td>
+<td>Hours–2 days</td>
+<td>Faster triage; every managed asset maps to an owner and service.</td>
+</tr>
+<tr>
+<td>Quick win</td>
+<td>Disable ntfy remote commands; restrict existing management ports</td>
+<td>1–3 days</td>
+<td>Smaller exposure; authorized polling/support still works and untrusted access fails.</td>
+</tr>
+<tr>
+<td>Quick win</td>
+<td>Backup freshness alerts, external hub check and incident runbook links</td>
+<td>1–3 days</td>
+<td>Failures surface before a client call; injected failures create assigned incidents.</td>
+</tr>
+<tr>
+<td>Quick win</td>
+<td>Maintenance windows, persistence and stable recovery thresholds</td>
+<td>2–5 days</td>
+<td>Fewer repeat notifications; measure reduction against the pilot baseline.</td>
+</tr>
+<tr>
+<td>Near term</td>
+<td>Authenticated site API and scoped hub credentials</td>
+<td>1–2 weeks</td>
+<td>Protects secrets and changes; unauthorized operations fail without breaking collection.</td>
+</tr>
+<tr>
+<td>Near term</td>
+<td>Client isolation rules and restricted tunnel access</td>
+<td>1–2 weeks</td>
+<td>Client A cannot access client B; authorized technician paths and recovery remain functional.</td>
+</tr>
+<tr>
+<td>Near term</td>
+<td>Named accounts, MFA and customer permissions across APIs/jobs</td>
+<td>2–4 weeks</td>
+<td>Traceable support access; revoked and unassigned accounts fail access tests.</td>
+</tr>
+<tr>
+<td>Near term</td>
+<td>Central telemetry pilot, useful dashboards and dependency alerts</td>
+<td>1–3 weeks</td>
+<td>One incident per upstream fault; device evidence and logs available in one investigation flow.</td>
+</tr>
+<tr>
+<td>Near term</td>
+<td>Tested backups and staged Kuma/wg-easy migrations</td>
+<td>1–3 weeks</td>
+<td>Known recovery procedure and verified integration behavior on candidate releases.</td>
+</tr>
+<tr>
+<td>Longer term</td>
+<td>Durable telemetry replay, truthful coverage reporting and task queue</td>
+<td>3–6 weeks</td>
+<td>WAN interruptions preserve observations without executing stale changes.</td>
+</tr>
+<tr>
+<td>Longer term</td>
+<td>Secure enrollment, desired-state templates and staged fleet automation</td>
+<td>3–6 weeks</td>
+<td>Repeatable onboarding and bulk work with recorded per-site results.</td>
+</tr>
+<tr>
+<td>Conditional</td>
+<td>Redundant central services, alternate connectivity and failover</td>
+<td>4–8+ weeks</td>
+<td>Adopt only when demonstrated recovery limits conflict with contracted service needs.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Recommended order:</strong> immediate access containment and independent monitoring; authenticated site access and client isolation; incident quality and backup restoration; centralized telemetry pilot; controlled automation; then redundancy where justified. Do not let a quick-win label delay critical access controls.</p>
+<p>For the first 30-day pilot, track support minutes per site, actionable-alert ratio, monitoring coverage, overdue backups, median acknowledgement time and successful remote resolution rate. Use these measurements to decide whether the improvements actually simplify administration and support a profitable monthly service.</p>
+<h2 id="original-review">Original architecture review</h2><p><strong>Historical context:</strong> the 1 GB client constraint above supersedes earlier suggestions for site-side Zabbix proxies and local monitoring stacks.</p><details><summary>Expand the original findings, architecture diagram and acceptance checklist</summary>
+<p>Reviewed 13 September 2026. This is an architecture and operations proposal, not a deployment change.</p>
+<h2 id="recommendation">Recommendation</h2>
+<p>Keep Farm Netwatch as the farm discovery and diagnostic appliance, and Netwatch Hub as the operator workspace. Keep WireGuard for private connectivity. Upgrade and narrow Kuma's responsibility to service availability. Before expanding the paid service, implement authenticated site access, customer isolation, protected backups, trustworthy reporting, and an incident workflow.</p>
+<p>Pilot Zabbix as the monitoring engine for deeper infrastructure monitoring instead of building all metric collection, thresholds, dependencies and historical analysis into Netwatch. Introduce it only when pilot evidence justifies the additional operational burden. Do not run duplicate alerts for the same service from Netwatch, Kuma and Zabbix.</p>
+<p>Planning assumption: an owner-operated service, initially tens of farm sites, with intermittent connectivity. Site count, budget, support hours and included labour remain to be confirmed. Capacity and commercial figures below are design targets, not measured promises.</p>
+<h2 id="evidence-and-limits">Evidence and limits</h2>
+<p>Inspected local application source, Compose definitions, installers and running container metadata. The running <code>/app/server.py</code> files in both Netwatch containers match their respective checkout files by SHA-256. Other running modules were not individually compared. The site status endpoint returned 200 without authentication; the hub sites endpoint returned 401 without authentication. No credential export was requested and no client settings were changed.</p>
+<p>Running images include Kuma <code>1.23.17</code> and wg-easy <code>14</code>. The VPN container publishes hub, proxy, tunnel and administration ports on all IPv4/IPv6 host interfaces. This does not establish internet exposure: upstream firewall, NAT and IPv6 policy were not audited. Its live FORWARD chain has policy ACCEPT and accepts traffic entering/leaving wg0. Other filtering layers and end-to-end client reachability were not tested.</p>
+<p>No existing graphify graph or executable was found; findings below are based on direct source review, not graph-derived evidence. This is not a penetration test, load test, full UI review or restoration exercise.</p>
+<h2 id="findings-to-address-first">Findings to address first</h2>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable comparison table"><table>
+<thead>
+<tr>
+<th>Priority</th>
+<th>Observed evidence</th>
+<th>Impact and required change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Critical</td>
+<td><code>app/server.py:250</code> returns device credentials without an authentication guard. <code>:1148</code> exports settings, credential data, its key and the VPN configuration. The server binds all interfaces.</td>
+<td>A party able to access the site API can obtain management secrets. Require user authentication and scoped hub machine credentials; restrict ingress to management networks. Protect reads as well as writes.</td>
+</tr>
+<tr>
+<td>Critical</td>
+<td>Live VPN FORWARD chain accepts wg0 traffic; hub Compose explicitly enables forwarding and assigns clients the shared VPN subnet.</td>
+<td>Client separation is not enforced in this chain. Implement default-deny forwarding with explicit hub-to-site services and technician-to-assigned-site rules. Test from two actual client peers. AllowedIPs alone is not the customer authorization boundary.</td>
+</tr>
+<tr>
+<td>High</td>
+<td><code>hub/app/auth.py</code> uses one shared password; <code>hub/app/server.py:45</code> allows persistent 30-day sessions.</td>
+<td>Add named users, MFA, administrator/technician/customer-viewer roles, per-customer permissions, shorter sessions, login rate limits, CSRF protection and attributable audit events. A reverse-proxy login alone does not enforce tenant ownership inside APIs.</td>
+</tr>
+<tr>
+<td>High</td>
+<td><code>hub/app/tunnels.py</code> opens relays on <code>0.0.0.0</code>; the relay accepts TCP connections without operator authentication.</td>
+<td>Hub login protects creation, not use of an open relay. Restrict listeners to an authenticated management path, enforce assignment and expiry, log operator/target/reason, and revoke sessions on logout/offboarding as appropriate. Device authentication remains necessary.</td>
+</tr>
+<tr>
+<td>High</td>
+<td><code>app/listener.py</code> dispatches messages from the ntfy topic; <code>app/config.py:68</code> defaults commands on. No publisher identity check is performed in this listener.</td>
+<td>Default remote commands off. Authenticate notification publishers/subscribers. Run management actions through the authenticated hub with authorization and audit records. Actual topic ACLs were not inspected.</td>
+</tr>
+<tr>
+<td>High</td>
+<td><code>app/creds.py</code> implements custom reversible obfuscation; export includes its key. <code>hub/app/backups.py</code> stores 14 JSON bundles locally.</td>
+<td>Use established authenticated encryption and controlled key access. Encrypt complete backups before offsite storage with independent recovery keys. The existing bundles are sensitive recovery material, not encrypted backups.</td>
+</tr>
+<tr>
+<td>High</td>
+<td><code>app/history.py:241</code> and <code>hub/app/sitehistory.py:67</code> calculate averages of received samples.</td>
+<td>Missing periods and irregular sampling are not represented as elapsed-time coverage. Do not sell these figures as contractual service availability. Track unknown periods, collection coverage and maintenance explicitly.</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td><code>hub/app/poller.py</code> batches status, metrics and backup jobs through four workers; executor exit waits for jobs to complete.</td>
+<td>Slow clients can delay subsequent polling. Separate heartbeat work from backups/deep diagnostics; use bounded queues, per-site budgets, jitter, backoff and poll-lag metrics. Load-test outage scenarios.</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td>Both Flask entry points use <code>app.run</code>; site process also manages network changes and scanning.</td>
+<td>Move serving to a production WSGI server and separate background workers. Do not blindly add web workers: startup must not duplicate scanners, pollers or VPN ownership. Split privileged networking into a narrowly scoped helper.</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td>Shared wg-easy network namespace and fixed proxy range 8200–8231.</td>
+<td>VPN recreation couples hub/proxy availability. With two proxy ports per site, the default range accommodates only 16 fully proxied sites. Move web access to authenticated HTTPS hostnames and separate the VPN gateway lifecycle.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Existing strengths worth preserving: stable device identity, IP history, radio diagnostics, reachability checks, stale snapshots, local SQLite history, alert debounce, daily configuration backups, tunnel expiry and automatic rollback for certain network changes. Snapshot/history storage is useful but is not an acknowledged telemetry replay queue.</p>
+<h2 id="proposed-architecture">Proposed architecture</h2>
+<div class="architecture" role="img" aria-label="Technicians use the authenticated hub, which connects through an isolated WireGuard gateway to separate client appliances. Telemetry returns to the hub. Independent monitoring and encrypted backups protect central services.">
+<div class="arch-row"><span>Technician<br><small>Named account + MFA</small></span><b aria-hidden="true">→</b><span>Netwatch Hub<br><small>Permissions · incidents · reports</small></span></div>
+<div class="arch-down" aria-hidden="true">↓</div>
+<div class="arch-row"><span>WireGuard gateway<br><small>Explicit access rules · client isolation</small></span></div>
+<div class="arch-down" aria-hidden="true">↓</div>
+<div class="arch-row"><span>Client A appliance<br><small>Local devices + buffered telemetry</small></span><span>Client B appliance<br><small>Local devices + buffered telemetry</small></span></div>
+<p>Each client stays separate. Authenticated telemetry returns to the hub.</p>
+<div class="arch-row auxiliary"><span>Independent hub monitoring</span><span>Encrypted offsite backups</span></div>
+</div>
+<p>Deploy central services on a dedicated maintained host/VM with reliable power and connectivity. Prefer an offsite location if the office is itself a monitored site or suffers frequent outages. Host identity, application and VPN in separate service lifecycles; protect administrative interfaces from general LAN access. Begin with tested recovery and independent monitoring before investing in automatic failover.</p>
+<p>At each client, use a dedicated appliance on a management VLAN, wired Ethernet, reliable storage, UPS coverage and an outbound WireGuard connection. Keep existing Pi hardware where measurements show adequate headroom; do not assume every Pi can support additional monitoring workloads. Support overlapping client LANs using site-local probes and explicitly scoped relays rather than globally routing all client subnets.</p>
+<p>Each site gets a unique revocable identity. First harden the existing pull API; subsequently add a durable local telemetry outbox with timestamps, sequence IDs, acknowledgements, retry/backoff, duplicate protection and bounded retention. Sites must continue collecting while the hub is unavailable. Never replay expired repair commands after reconnection.</p>
+<p>Proposed hub records: Customer, Site, Asset, Monitor, Dependency, Incident, MaintenanceWindow, UserRole, RemoteSession, BackupRun and ChangeJob. Enforce customer ownership server-side on every access path, including exports, reports, proxies and background jobs. For the expanded central transactional model, plan PostgreSQL with migrations and backups; SQLite remains appropriate for small local queues/history.</p>
+<h2 id="monitoring-that-finds-useful-faults">Monitoring that finds useful faults</h2>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable comparison table"><table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Measurements and initial cadence</th>
+<th>Operational interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Monitoring platform</td>
+<td>External hub check and independent dead-man heartbeat every 60 seconds</td>
+<td>Detect hub failure even when its own notifier cannot run.</td>
+</tr>
+<tr>
+<td>Site appliance</td>
+<td>Application heartbeat every 60 seconds; disk, temperature, memory, clock and storage health every 5 minutes</td>
+<td>Separate a failed agent from a failed client network.</td>
+</tr>
+<tr>
+<td>Internet</td>
+<td>Gateway, multiple upstream targets, DNS resolution and HTTPS every 60 seconds</td>
+<td>One blocked ICMP endpoint does not prove an internet outage.</td>
+</tr>
+<tr>
+<td>VPN</td>
+<td>Handshake age, active application probe and transfer counters</td>
+<td>WireGuard inactivity alone does not prove a fault; interpret with keepalive and active probes.</td>
+</tr>
+<tr>
+<td>Network equipment</td>
+<td>SNMPv3 where supported: interface errors, loss, utilization, radio signal/noise and capacity every 1–5 minutes</td>
+<td>Establish device-specific baselines before setting thresholds. Protect legacy read-only protocols on management networks.</td>
+</tr>
+<tr>
+<td>CCTV/NVR</td>
+<td>Device reachability plus supported recording/storage/channel-health checks every 1–5 minutes</td>
+<td>A responding camera or open RTSP port does not prove recording. Validate actual recording where the model/API permits; otherwise mark recording health unverified.</td>
+</tr>
+<tr>
+<td>Power</td>
+<td>UPS battery, mains failure, runtime and PoE power state where supported</td>
+<td>Explain groups of disappearing devices and distinguish observed power failure from a hypothesis.</td>
+</tr>
+<tr>
+<td>Recovery</td>
+<td>Backup age, result and restore-drill evidence</td>
+<td>File creation alone does not establish recoverability.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Use five visible states: healthy, degraded, down, unknown and maintenance. Show last observation and last successful collection separately. Preserve stale data with its timestamp; never show it as current green status.</p>
+<p>Keep scans conservative: frequent lightweight probes for managed assets, slower inventory discovery, and scheduled/on-demand deep scans. Avoid continuously scanning all ports on fragile cameras and wireless equipment.</p>
+<p>Set initial alert policy to three consecutive 60-second failures and two successful recovery checks, then tune from field results. Existing polling has different thresholds; this is a proposed policy. Critical confirmed recording/storage faults can use different urgency. Model dependencies: router → backhaul radio → switch → cameras. One failed radio should create one primary incident with affected downstream devices attached. A lost site heartbeat means visibility lost, not proof every camera is broken.</p>
+<p>Every actionable incident needs an owner, severity, affected service, acknowledgement, timeline, maintenance context, next action and resolution. Deduplicate repeats and escalate unacknowledged incidents only within contracted coverage hours. Use a ticketing system already in use where possible; otherwise implement this minimum workflow before building billing features.</p>
+<h2 id="kuma-wireguard-and-zabbix-decisions">Kuma, WireGuard and Zabbix decisions</h2>
+<p><strong>Kuma:</strong> The repository comment claiming v2 removed Socket.IO is inaccurate: upstream still contains add/edit/delete monitor handlers. That does not prove this Python adapter is compatible. Upstream marks v1 Docker tags deprecated. Build a disposable migration environment from a protected backup, exercise login/create/tag/edit/delete/ping/DNS/status-page/push behavior actually used by Netwatch, verify history migration, then select an exact tested release/digest. Restore the old database with the old image for rollback; do not point an old image at a migrated database. See <a href="https://github.com/louislam/uptime-kuma/blob/master/SECURITY.md">security policy</a> and <a href="https://github.com/louislam/uptime-kuma/blob/master/server/server.js">server handlers</a>.</p>
+<p><strong>WireGuard:</strong> Keep the protocol. Stage wg-easy v14→v15 migration and validate the custom <code>hub/app/wgeasy.py</code> adapter, enrollment, revocation, addressing and firewall policy. Upstream migration requires a controlled import/setup process; changing the image tag is insufficient. See <a href="https://wg-easy.github.io/wg-easy/latest/advanced/migrate/from-14-to-15/">official migration guide</a>.</p>
+<p><strong>Zabbix:</strong> Pilot an active proxy at one representative site for infrastructure metrics and outage buffering. Its proxies collect and buffer locally; central-server trigger processing means buffering is not independent local alert evaluation. Dependency rules can suppress downstream incident noise. Retain Netwatch discovery/diagnostics and let Hub summarize the resulting incidents. If adopted, assign each monitor and notification to one authoritative engine and phase out duplicates. See <a href="https://www.zabbix.com/documentation/current/en/manual/distributed_monitoring/proxies">proxies</a> and <a href="https://www.zabbix.com/documentation/current/en/manual/config/triggers/dependencies">trigger dependencies</a>.</p>
+<p><strong>ntfy:</strong> Keep as a notification channel with authenticated access and topic ACLs, not as an anonymous management bus. See <a href="https://docs.ntfy.sh/config/#access-control">access control</a>.</p>
+<h2 id="monthly-service-design">Monthly service design</h2>
+<div class="table-wrap" tabindex="0" role="region" aria-label="Scrollable comparison table"><table>
+<thead>
+<tr>
+<th>Package</th>
+<th>Included deliverables</th>
+<th>Boundaries to state</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Monitor</td>
+<td>Agreed managed assets, automated alerts, business-hours incident triage, monthly health report</td>
+<td>Repairs and visits billed separately.</td>
+</tr>
+<tr>
+<td>Manage</td>
+<td>Monitor plus an explicit remote-support allowance, configuration backup and scheduled maintenance</td>
+<td>Define supported equipment, labour allowance, overage and maintenance windows.</td>
+</tr>
+<tr>
+<td>Priority</td>
+<td>Manage plus explicitly staffed faster response and agreed preventive visits/recovery options</td>
+<td>Offer after-hours response only when staffing exists; parts, travel and ISP charges must be explicit.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Price from actual service cost: monthly infrastructure allocation + notification/ticket tooling + appliance reserve + expected support labour + travel allowance where included, divided by (1 − chosen gross margin). Charge onboarding separately for the inventory, network baseline, credentials, installation and remediation. Meter support time during the pilot before fixing prices. Avoid unlimited support commitments.</p>
+<p>Sell response and maintenance obligations you control. Distinguish response time from restoration time, and monitored customer availability from your own platform uptime. A monthly report should include service downtime, unknown time, collection coverage, incidents resolved, response times, recurring faults, backup age and tested recovery, maintenance performed and recommended improvements.</p>
+<p>Calculate availability from timestamped intervals with a maximum sample-validity horizon. Publish known-up / (known-up + known-down), alongside known-time / eligible-time coverage and unknown duration. Show planned maintenance separately under an agreed reporting policy. Never infer availability for missing periods. The existing AI report can draft commentary from verified records; it must not invent causes or calculate contractual statistics. Minimize client information sent to external AI services and make this optional per customer.</p>
+<h2 id="delivery-sequence-and-acceptance-gates">Delivery sequence and acceptance gates</h2>
+<ol>
+<li><strong>Contain and secure:</strong> authenticated site API and hub machine credentials, management ingress restrictions, tenant firewall policy, protected backups, command channel disabled by default. Deploy compatibility changes together so hub polling/restoration still works. Retain an out-of-band recovery path while changing VPN/firewall controls.</li>
+<li><strong>Make monitoring trustworthy:</strong> freshness/unknown states, incident ownership and suppression, independent monitoring, queue isolation and reliable reporting. Add collection-health dashboards before adding more monitors.</li>
+<li><strong>Control lifecycle:</strong> exact image digests, dependency/security review, staged releases, migration/rollback runbooks, production WSGI with single background-worker ownership, named users/MFA/audit and tested restore procedures.</li>
+<li><strong>Pilot the paid service:</strong> three representative clients, including a weak internet site, for 30 days. Trial Zabbix on one site if deeper infrastructure monitoring is needed. Measure alert usefulness, support minutes, storage growth, missed collections and recovery effort. Set commercial terms from those measurements.</li>
+</ol>
+<p>Before wider rollout, demonstrate:</p>
+<ul>
+<li>An unauthenticated LAN user cannot read credentials/export/configuration or execute changes; machine identities have only necessary scope.</li>
+<li>Client A cannot access client B; one technician cannot access an unassigned client; revoked identities and tunnels stop working.</li>
+<li>WAN loss does not mark unobserved devices healthy or fabricate device outages. Buffered observations replay once with original timestamps.</li>
+<li>One upstream failure creates one primary incident; maintenance and recovery behave predictably.</li>
+<li>Killing the monitoring hub produces an alert from an independent system.</li>
+<li>A protected backup restores onto a spare appliance; hub state, identities, keys and required historical databases have separate recovery coverage. Existing site exports do not include full monitoring history or Kuma's database.</li>
+<li>Candidate Kuma/wg-easy releases pass integration checks and rollback using pre-migration data.</li>
+<li>Representative healthy and failing-site loads stay within chosen polling deadlines without backup jobs starving heartbeat work.</li>
+</ul>
+<p>Proposed initial recovery targets: no more than 24 hours of configuration loss, backup immediately after important changes, and hub recovery within four staffed hours. These become promises only after successful drills and staffing review.</p>
+<p>No running services, firewall rules, dependencies or client configurations were modified during this review.</p>
+</details></article><footer class="footer"><a href="INFRASTRUCTURE-EVALUATION-2026-09-13.md">Infrastructure evaluation (Markdown)</a><a href="OPERATIONS-REVIEW-2026-09-13.md">Original review (Markdown)</a>Standalone document · Works offline · External references require internet access.</footer></main></div></body></html>
