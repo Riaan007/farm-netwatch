@@ -92,6 +92,177 @@
         @keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
         .scanning { animation: pulse-soft 2s infinite; color: #22d3ee; }
         .offline-blink { animation: pulse-soft 1.6s infinite; }
+        /* ===== Site dashboard shell (2026-09 redesign) — plain CSS, no Tailwind
+           dependency, so JS-built markup never loses a class at build time. ===== */
+        [hidden] { display: none !important; }
+        .nw-top { position: sticky; top: 0; z-index: 50; background: rgba(6,10,19,.84);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid rgba(148,163,184,.14); }
+        .nw-top-in { max-width: 88rem; margin: 0 auto; padding: .7rem 1.5rem; display: flex; align-items: center; gap: 1rem; flex-wrap: nowrap; }
+        .nw-brand { display: flex; align-items: center; gap: .7rem; min-width: 0; text-decoration: none; color: inherit; }
+        .nw-brand svg { width: 38px; height: 38px; flex: none; }
+        .nw-id { min-width: 0; flex: 1 1 0; }
+        .nw-idrow { display: flex; align-items: center; gap: .6rem; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+        .nw-idrow .nw-status { flex-wrap: nowrap; min-width: 0; }
+        .nw-title { font-size: 1.25rem; line-height: 1.25; color: #f1f5f9; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 26rem; }
+        .nw-subt { display: block; font-size: 11.5px; color: #64748b; margin-top: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-live span.t { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
+        .nw-brand b { display: block; font-size: 1.2rem; line-height: 1.2; color: #f1f5f9; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32rem; }
+        .nw-brand small { display: block; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-status { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; min-width: 0; }
+        .nw-live { display: inline-flex; align-items: center; gap: .4rem; height: 22px; padding: 0 .6rem; border-radius: 999px; font-size: 11px; font-weight: 600; color: #94a3b8; background: rgba(148,163,184,.08); white-space: nowrap; }
+        .nw-live i { width: 7px; height: 7px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,.18); }
+        .nw-live.scan { color: #67e8f9; background: rgba(34,211,238,.12); }
+        .nw-live.scan i { background: #22d3ee; animation: pulse-soft 1.2s infinite; }
+        .nw-actions { margin-left: auto; display: flex; align-items: center; gap: .45rem; flex: none; }
+        @media (max-width: 1180px) { .nw-top .nw-ib .lbl { display: none; } .nw-live span.t { max-width: 12rem; } }
+        .nw-scan { display: flex; align-items: stretch; border: 1px solid rgba(103,232,249,.4); border-radius: .7rem; overflow: visible; position: relative; background: rgba(8,145,178,.12); }
+        .nw-scan select { height: 34px; background: transparent; border: 0; color: #cffafe; font-size: 12px; padding: 0 .5rem 0 .65rem; max-width: 13rem; border-right: 1px solid rgba(103,232,249,.25); }
+        .nw-scan select option { background: #0b1322; }
+        .nw-scan .go { height: 34px; padding: 0 .85rem; border: 0; background: #0891b2; color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: .35rem; }
+        .nw-scan .go:hover { background: #06b6d4; }
+        .nw-scan .more { width: 28px; border: 0; background: #0e7490; color: #e0f2fe; border-left: 1px solid rgba(255,255,255,.18); border-radius: 0 .65rem .65rem 0; }
+        .nw-scan .more:hover { background: #0891b2; }
+        .nw-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 250px; background: #0b1324; border: 1px solid rgba(148,163,184,.25); border-radius: .8rem; box-shadow: 0 18px 50px -12px rgba(0,0,0,.8); padding: .35rem; z-index: 70; }
+        .nw-menu button { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; padding: .5rem .65rem; border-radius: .55rem; color: #e2e8f0; font-size: 13px; font-weight: 600; }
+        .nw-menu button small { color: #64748b; font-weight: 400; font-size: 11.5px; }
+        .nw-menu button:hover { background: rgba(34,211,238,.1); }
+        .nw-ib { height: 34px; min-width: 34px; padding: 0 .6rem; display: inline-flex; align-items: center; justify-content: center; gap: .4rem; border-radius: .7rem; border: 1px solid rgba(148,163,184,.2); background: rgba(148,163,184,.08); color: #cbd5e1; font-size: 12px; font-weight: 600; white-space: nowrap; text-decoration: none; }
+        .nw-ib:hover { border-color: rgba(34,211,238,.5); color: #f1f5f9; background: rgba(148,163,184,.14); }
+        .nw-ib svg { width: 16px; height: 16px; flex: none; }
+        .nw-ib.on { color: #67e8f9; border-color: rgba(34,211,238,.5); background: rgba(34,211,238,.14); }
+        .nw-ib.ok { color: #6ee7b7; border-color: rgba(52,211,153,.35); background: rgba(16,185,129,.1); }
+        .nw-progress { height: 2px; overflow: hidden; background: rgba(34,211,238,.12); }
+        .nw-progress i { display: block; height: 100%; width: 35%; background: linear-gradient(90deg, transparent, #22d3ee, transparent); animation: nwslide 1.4s linear infinite; }
+        @keyframes nwslide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+        .nw-main { max-width: 88rem; margin: 0 auto; padding: 1.25rem 1.5rem 4rem; width: 100%; flex-grow: 1; }
+        .nw-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+        .nw-kpi { text-align: left; padding: .8rem .95rem; border-radius: .9rem; border: 1px solid rgba(148,163,184,.15); background: linear-gradient(180deg, rgba(148,163,184,.08), rgba(148,163,184,.025)); color: #e2e8f0; transition: border-color .15s, background .15s; min-width: 0; }
+        button.nw-kpi:hover, a.nw-kpi:hover { border-color: rgba(34,211,238,.45); }
+        .nw-kpi .k { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+        .nw-kpi .v { display: block; font-size: 1.65rem; font-weight: 750; line-height: 1.2; margin-top: .1rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+        .nw-kpi .v small { font-size: .85rem; color: #64748b; font-weight: 600; }
+        .nw-kpi .s { display: block; font-size: 11.5px; color: #64748b; margin-top: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-kpi.good .v { color: #34d399; } .nw-kpi.warn .v { color: #fbbf24; } .nw-kpi.bad .v { color: #fb7185; }
+        .nw-kpi.bad { border-color: rgba(251,113,133,.35); } .nw-kpi.warn { border-color: rgba(251,191,36,.3); }
+        .nw-kpi.active { border-color: #22d3ee; background: rgba(34,211,238,.1); box-shadow: 0 0 0 1px rgba(34,211,238,.35) inset; }
+        .nw-kpi.accent { background: linear-gradient(135deg, rgba(14,165,233,.16), rgba(34,211,238,.04)); border-color: rgba(34,211,238,.3); }
+        .nw-kpi .bar { display: block; height: 4px; border-radius: 99px; background: rgba(148,163,184,.15); margin-top: .45rem; overflow: hidden; }
+        .nw-kpi .bar i { display: block; height: 100%; background: linear-gradient(90deg, #34d399, #22d3ee); border-radius: inherit; }
+        .nw-health { margin-bottom: 1rem; }
+        .nw-panel { border: 1px solid rgba(148,163,184,.15); border-radius: 1rem; background: linear-gradient(180deg, rgba(148,163,184,.07), rgba(148,163,184,.02)); }
+        .nw-dhead { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; padding: .9rem 1.1rem .6rem; }
+        .nw-dhead h2 { margin: 0; font-size: 1rem; font-weight: 700; color: #f1f5f9; }
+        .nw-dhead p { margin: 0; font-size: 12px; color: #64748b; }
+        .nw-tools { margin-left: auto; display: flex; gap: .45rem; align-items: center; flex-wrap: wrap; }
+        .nw-search { position: relative; }
+        .nw-search svg { position: absolute; left: .6rem; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: #64748b; }
+        .nw-search input { height: 34px; width: 17rem; max-width: 60vw; padding: 0 .7rem 0 2rem; border-radius: .7rem; border: 1px solid rgba(148,163,184,.22); background: rgba(2,6,23,.55); font-size: 13px; }
+        .nw-sel { height: 34px; border-radius: .7rem; border: 1px solid rgba(148,163,184,.22); background: #0b1322; font-size: 12px; padding: 0 .5rem; }
+        .nw-seg { display: inline-flex; border: 1px solid rgba(148,163,184,.22); border-radius: .7rem; overflow: hidden; }
+        .nw-seg button { height: 32px; padding: 0 .65rem; display: inline-flex; align-items: center; gap: .35rem; font-size: 12px; font-weight: 600; color: #94a3b8; background: transparent; }
+        .nw-seg button + button { border-left: 1px solid rgba(148,163,184,.18); }
+        .nw-seg button svg { width: 15px; height: 15px; }
+        .nw-seg button.on { color: #cffafe; background: rgba(34,211,238,.16); }
+        .nw-chips { display: flex; gap: .4rem; flex-wrap: wrap; padding: 0 1.1rem .8rem; border-bottom: 1px solid rgba(148,163,184,.12); }
+        .nw-chip { height: 28px; padding: 0 .65rem; border-radius: 999px; border: 1px solid rgba(148,163,184,.18); background: rgba(148,163,184,.06); color: #94a3b8; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
+        .nw-chip:hover { color: #e2e8f0; border-color: rgba(148,163,184,.35); }
+        .nw-chip.on { color: #cffafe; border-color: rgba(34,211,238,.6); background: rgba(34,211,238,.14); }
+        .nw-chip .n { color: #64748b; font-variant-numeric: tabular-nums; }
+        .nw-chip .up { color: #34d399; } .nw-chip .dn { color: #fb7185; }
+        .nw-body { padding: 1rem 1.1rem 1.1rem; }
+        .nw-empty { padding: 2.5rem 1rem; text-align: center; color: #94a3b8; }
+        .nw-empty b { display: block; color: #e2e8f0; font-size: 15px; margin-bottom: .25rem; }
+        .nw-group { margin-top: 1.1rem; }
+        .nw-group:first-child { margin-top: 0; }
+        .nw-group > h3, .nw-group > summary { display: flex; align-items: center; gap: .5rem; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; margin: 0 0 .55rem; cursor: default; }
+        .nw-group > summary { cursor: pointer; list-style: none; }
+        .nw-group > summary::-webkit-details-marker { display: none; }
+        .nw-group > summary::before { content: "▸"; color: #64748b; }
+        .nw-group[open] > summary::before { content: "▾"; }
+        .nw-group .cnt { color: #64748b; letter-spacing: 0; font-weight: 600; text-transform: none; }
+        /* cards */
+        .nw-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .65rem; }
+        .nw-card { position: relative; text-align: left; display: flex; flex-direction: column; gap: .35rem; padding: .7rem .8rem .65rem .95rem; border-radius: .85rem; border: 1px solid rgba(148,163,184,.16); background: rgba(15,23,42,.55); color: #e2e8f0; cursor: pointer; min-width: 0; transition: border-color .15s, transform .15s, box-shadow .15s; }
+        .nw-card::before { content: ""; position: absolute; left: 0; top: .55rem; bottom: .55rem; width: 3px; border-radius: 0 3px 3px 0; background: var(--acc, #475569); }
+        .nw-card:hover { border-color: rgba(34,211,238,.45); transform: translateY(-1px); box-shadow: 0 8px 22px -12px rgba(34,211,238,.45); }
+        .nw-card.off { background: rgba(127,29,29,.18); border-color: rgba(251,113,133,.35); }
+        .nw-card.off.watch { border-color: #fb7185; box-shadow: 0 0 0 1px rgba(251,113,133,.35) inset; }
+        .nw-card.quiet { opacity: .62; }
+        .nw-card.myst { background: rgba(120,53,15,.16); border-color: rgba(251,191,36,.3); }
+        .nw-card.sel { box-shadow: 0 0 0 2px #22d3ee; border-color: #22d3ee; }
+        .nw-card .r1 { display: flex; align-items: center; gap: .45rem; min-width: 0; }
+        .nw-card .nm { font-weight: 650; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+        .nw-card .flags { display: flex; gap: .15rem; font-size: 11px; flex: none; }
+        .nw-card .ip { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.05rem; font-weight: 700; color: #f8fafc; letter-spacing: -.01em; }
+        .nw-card a.ip { color: #67e8f9; text-decoration: none; }
+        .nw-card a.ip:hover { text-decoration: underline; }
+        .nw-card .r2 { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+        .nw-card .rtt { font-size: 11px; color: #64748b; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+        .nw-card .vm { font-size: 11.5px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-card .r3 { display: flex; align-items: center; gap: .35rem; font-size: 11px; color: #64748b; margin-top: .1rem; }
+        .nw-card .r3 .sp { margin-left: auto; }
+        .nw-card img.ph { width: 34px; height: 34px; border-radius: .45rem; object-fit: cover; flex: none; }
+        .nw-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,.15); flex: none; }
+        .nw-dot.off { background: #fb7185; box-shadow: 0 0 0 3px rgba(251,113,133,.18); animation: pulse-soft 1.6s infinite; }
+        .nw-dot.quiet { background: #64748b; box-shadow: none; animation: none; }
+        .nw-tag { display: inline-flex; align-items: center; gap: .25rem; padding: 0 .4rem; height: 18px; border-radius: .35rem; font-size: 10.5px; font-weight: 650; background: rgba(148,163,184,.12); color: #cbd5e1; white-space: nowrap; }
+        .nw-feats { display: inline-flex; gap: 2px; }
+        .nw-feats .feature-badge { width: 15px; height: 15px; }
+        /* list */
+        .nw-tablewrap { overflow-x: auto; margin: -1rem -1.1rem -1.1rem; }
+        table.nw-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .nw-table th { position: sticky; top: 0; text-align: left; padding: .55rem .75rem; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: #64748b; background: #0a1220; border-bottom: 1px solid rgba(148,163,184,.16); white-space: nowrap; }
+        .nw-table th button { color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; }
+        .nw-table th button:hover { color: #e2e8f0; }
+        .nw-table td { padding: .5rem .75rem; border-bottom: 1px solid rgba(148,163,184,.07); vertical-align: middle; white-space: nowrap; }
+        .nw-table tbody tr { cursor: pointer; }
+        .nw-table tbody tr:hover td { background: rgba(34,211,238,.05); }
+        .nw-table tr.off td { background: rgba(127,29,29,.12); }
+        .nw-table tr.quiet td { opacity: .6; }
+        .nw-table tr.sel td { background: rgba(34,211,238,.12); }
+        .nw-table tr.grp td { background: rgba(148,163,184,.06); color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; cursor: default; }
+        .nw-table .nm { font-weight: 650; color: #f1f5f9; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; }
+        .nw-table .sub { font-size: 11.5px; color: #64748b; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; }
+        .nw-table .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+        .nw-table a.mono { color: #67e8f9; text-decoration: none; }
+        .nw-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+        /* IP map */
+        .nw-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: .4rem; }
+        .nw-cell { position: relative; height: 62px; border-radius: .6rem; border: 1px solid rgba(148,163,184,.1); background: rgba(148,163,184,.025); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; cursor: pointer; padding: 0 .3rem; color: #475569; text-align: center; }
+        .nw-cell b { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+        .nw-cell span { font-size: 9.5px; font-weight: 650; text-transform: uppercase; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .nw-cell.dev { border-color: var(--accb, rgba(148,163,184,.3)); background: var(--accbg, rgba(148,163,184,.08)); color: #e2e8f0; }
+        .nw-cell.dev b { color: #f8fafc; }
+        .nw-cell.off { border-color: rgba(251,113,133,.55); background: rgba(127,29,29,.25); color: #fecdd3; }
+        .nw-cell.quiet { border-color: rgba(148,163,184,.25); background: rgba(148,163,184,.06); color: #94a3b8; }
+        .nw-cell.myst { border-color: rgba(251,191,36,.45); background: rgba(120,53,15,.2); color: #fde68a; }
+        .nw-cell.sel { box-shadow: 0 0 0 2px #22d3ee; }
+        .nw-cell.conf::after { content: "⚠"; position: absolute; top: 2px; right: 5px; font-size: 10px; color: #fbbf24; }
+        .nw-cell:hover { border-color: rgba(34,211,238,.55); }
+        .nw-legend { display: flex; flex-wrap: wrap; gap: .9rem; font-size: 11.5px; color: #64748b; margin-bottom: .75rem; }
+        .nw-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: .35rem; vertical-align: -1px; border: 1px solid; }
+        @media (max-width: 760px) {
+            .nw-top-in { padding: .6rem .9rem; gap: .55rem; flex-wrap: wrap; }
+            .nw-id { flex: 1 1 calc(100% - 60px); }
+            .nw-idrow { flex-wrap: wrap; overflow: visible; }
+            .nw-idrow .nw-status { flex-wrap: wrap; }
+            .nw-title { font-size: 1.05rem; max-width: 62vw; }
+            .nw-live span.t { max-width: 58vw; }
+            .nw-actions { margin-left: 0; width: 100%; flex-wrap: wrap; }
+            .nw-ib .lbl { display: none; }
+            .nw-main { padding: 1rem .8rem 4rem; }
+            .nw-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+            .nw-dhead { padding: .8rem .8rem .5rem; }
+            .nw-tools { margin-left: 0; width: 100%; }
+            .nw-search { flex: 1; } .nw-search input { width: 100%; max-width: none; }
+            .nw-chips { padding: 0 .8rem .7rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+            .nw-body { padding: .8rem; }
+            .nw-tablewrap { margin: -.8rem; }
+            .nw-cards { grid-template-columns: 1fr; }
+            .nw-table .hide-m { display: none; }
+            .nw-map { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); }
+            .nw-scan .menu-anchor { position: static; }
+        }
         ::-webkit-scrollbar { width: 10px; height: 10px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(148,163,184,.2); border-radius: 8px; border: 2px solid #070b14; }
@@ -103,84 +274,75 @@
     <div class="bg-noc"></div>
     <div class="bg-grid"></div>
 
-    <header class="hdr sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center gap-3 sm:gap-4">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <svg viewBox="0 0 40 40" class="w-9 h-9 shrink-0">
-                    <defs><linearGradient id="lg-brand" x1="0" y1="0" x2="1" y2="1">
-                        <stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#34d399"/>
-                    </linearGradient></defs>
+    <header class="nw-top">
+        <div class="nw-top-in">
+            <a class="nw-brand" href="/" title="Farm Network Asset Identifier">
+                <svg viewBox="0 0 40 40" aria-hidden="true">
+                    <defs><linearGradient id="lg-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#34d399"/></linearGradient></defs>
                     <path d="M20 3 34 11v18L20 37 6 29V11z" fill="none" stroke="url(#lg-brand)" stroke-width="1.6" opacity=".9"/>
                     <circle cx="20" cy="20" r="9" fill="none" stroke="url(#lg-brand)" stroke-width="1.1" opacity=".5"/>
                     <circle cx="20" cy="20" r="4.5" fill="none" stroke="url(#lg-brand)" stroke-width="1.1" opacity=".75"/>
                     <circle cx="20" cy="20" r="1.8" fill="#22d3ee"/>
                     <path d="M20 20 31 13" stroke="#22d3ee" stroke-width="1.4" stroke-linecap="round" opacity=".9"/>
                 </svg>
-                <div class="min-w-0">
-                    <h1 class="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight truncate"><span class="brand-text">Farm Network Asset Identifier</span></h1>
-                    <div class="flex items-center gap-2 flex-wrap mt-0.5">
-                        <p id="system-status" class="text-slate-400 text-xs italic">Service Active</p>
-                        <span id="internet-badge" class="chip hidden"></span>
-                        <span id="pi-ip" class="chip hidden bg-white/10 !border-white/10 text-slate-400 font-mono" title="This Pi's own LAN IP — the address of the server running Netwatch"></span>
+            </a>
+            <div class="nw-id">
+              <div class="nw-idrow"><b id="site-title" class="nw-title">Netwatch</b>
+              <div class="nw-status">
+                <span id="system-status" class="nw-live"><i></i>Connecting…</span>
+                <span id="internet-badge" class="chip hidden"></span>
+                <span id="hub-badge" class="chip hidden"></span>
+                <span id="pi-ip" class="chip hidden bg-white/10 !border-white/10 text-slate-400 font-mono" title="This Pi's own LAN IP — the address of the server running Netwatch"></span>
+              </div></div>
+              <small id="site-sub" class="nw-subt">Farm Network Asset Identifier</small>
+            </div>
+            <div class="nw-actions">
+                <div class="nw-scan">
+                    <select id="target-select" onchange="onTargetChange()" aria-label="Network to show and scan"></select>
+                    <button class="go" onclick="quickScan()" title="Quick scan of the selected network now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5"/></svg>Scan</button>
+                    <button class="more" onclick="toggleScanMenu(event)" aria-label="More scan options" aria-haspopup="true">▾</button>
+                    <div id="scan-menu" class="nw-menu" hidden>
+                        <button onclick="closeScanMenu(); quickScan()">Quick scan<small>Find devices and check who is online — about a minute</small></button>
+                        <button onclick="closeScanMenu(); deepScan()">Deep scan<small>Every port, service and OS on the network — several minutes</small></button>
+                        <button onclick="closeScanMenu(); refresh()">Reload page data<small>Fetch the latest results without scanning</small></button>
                     </div>
                 </div>
-            </div>
-            <div class="tbar">
-                <select id="target-select" onchange="onTargetChange()" class="h-[34px] bg-[#0b1322] text-slate-200 text-xs rounded-lg px-2 border border-white/15 max-w-[11rem]"></select>
-                <button onclick="quickScan()" class="tbtn tbtn-primary" title="Scan the selected network now">Scan</button>
-                <a id="kuma-link" href="#" target="_blank" class="tbtn tbtn-ok hidden" title="Open Uptime Kuma">Kuma ↗&#xFE0E;</a>
-                <button id="select-btn" onclick="toggleSelectMode()" class="tbtn" title="Select several devices to act on at once">Select</button>
-                <button onclick="openHistory()" class="tbtn" title="Device &amp; IP event history">History</button>
-                <a href="/wifi" class="tbtn" title="Wireless link history, trends and troubleshooting">📡 Wi-Fi</a>
-                <button onclick="openBulkCreds()" class="tbtn" title="Set or copy logins across many devices">🔑 Logins</button>
-                <button onclick="openSetup()" class="tbtn tbtn-icon" aria-label="Settings" title="Settings">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                </button>
+                <button onclick="openHistory()" class="nw-ib" title="Device &amp; IP event history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></button>
+                <a href="/wifi" class="nw-ib" title="Wireless link history, trends and troubleshooting"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
+                <button onclick="openBulkCreds()" class="nw-ib" title="Set or copy logins across many devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0zm0 0h7v3m-3-3v3"/></svg><span class="lbl">Logins</span></button>
+                <a id="kuma-link" href="#" target="_blank" rel="noopener" class="nw-ib ok" title="Open Uptime Kuma" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="lbl">Kuma</span></a>
+                <button onclick="openSetup()" class="nw-ib" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg></button>
             </div>
         </div>
-        <div class="hdr-line"></div>
+        <div id="scan-progress" class="nw-progress" hidden><i></i></div>
     </header>
 
-    <main class="max-w-7xl mx-auto p-6 flex-grow w-full">
-        <div id="conflict-monitor" class="hidden mb-6"></div>
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-            <div onclick="filterGrid('identified')" class="stat-card panel p-4 cursor-pointer">
-                <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Identified</p>
-                <p id="stat-identified" class="text-3xl font-bold tabular-nums text-slate-100">0</p>
-            </div>
-            <div onclick="filterGrid('unidentified')" class="stat-card panel p-4 cursor-pointer">
-                <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Mystery Nodes</p>
-                <p id="stat-unidentified" class="text-3xl font-bold tabular-nums text-amber-400">0</p>
-            </div>
-            <div onclick="filterGrid('offline')" class="stat-card panel p-4 cursor-pointer">
-                <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Offline</p>
-                <p id="stat-offline" class="text-3xl font-bold tabular-nums text-rose-400">0</p>
-            </div>
-            <div id="stat-wifi-card" class="stat-card panel p-4 cursor-pointer hidden" onclick="jumpToWifi()"
-                 title="Wireless links read from your radios">
-                <p class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Wireless links</p>
-                <p class="flex items-baseline gap-2">
-                    <span id="stat-wifi" class="text-3xl font-bold tabular-nums text-slate-100">0</span>
-                    <span id="stat-wifi-note" class="text-[11px] font-bold"></span>
-                </p>
-            </div>
-            <div class="panel-accent p-4 text-cyan-100">
-                <p class="text-cyan-200/70 text-xs font-semibold uppercase tracking-wider">Last Scan</p>
-                <p id="stat-last-scan" class="text-lg font-bold mt-1 tracking-tighter truncate tabular-nums">--:--:--</p>
-            </div>
-        </div>
+    <main class="nw-main">
+        <section id="kpis" class="nw-kpis" aria-label="Site summary"></section>
+        <div id="pi-health" class="hidden panel nw-health px-4 py-2.5 flex flex-wrap gap-x-5 gap-y-1.5 items-center text-xs"></div>
+        <div id="conflict-monitor" class="hidden mb-4"></div>
 
-        <div id="pi-health" class="hidden panel px-4 py-2.5 -mt-4 mb-8 flex flex-wrap gap-x-5 gap-y-1.5 items-center text-xs"></div>
-
-        <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
-            <h2 id="current-view-title" class="text-lg font-bold text-slate-300 uppercase tracking-tight">All Subnet Addresses</h2>
-            <div class="flex gap-2 flex-wrap items-center">
-                <div id="filter-bar" class="flex gap-2 flex-wrap items-center"></div>
-                <button onclick="deepScan()" class="tbtn !text-indigo-200 !bg-indigo-500/20 !border-indigo-400/30 hover:!bg-indigo-500/30">Deep Scan</button>
+        <section class="nw-panel" id="devices-panel">
+            <div class="nw-dhead">
+                <div><h2 id="current-view-title">Devices</h2><p id="view-sub"></p></div>
+                <div class="nw-tools">
+                    <label class="nw-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm9 3-4.3-4.3"/></svg><span class="sr-only">Search devices</span>
+                        <input id="dev-q" type="search" placeholder="Search name, IP, MAC, vendor…  ( / )" autocomplete="off"
+                               title="IP search: 192.168.0.1 = that address · .31 = ends in .31 · 192.168.0. = subnet · 192.168.0.1* = .1 and .10–.199"></label>
+                    <select id="dev-sort" class="nw-sel" aria-label="Sort devices" title="Sort">
+                        <option value="ip">Sort: IP address</option><option value="name">Sort: name</option><option value="status">Sort: offline first</option><option value="type">Sort: type</option><option value="seen">Sort: last seen</option>
+                    </select>
+                    <div class="nw-seg" role="group" aria-label="View">
+                        <button data-view="cards" title="Cards"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Cards</span></button>
+                        <button data-view="list" title="List"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="lbl">List</span></button>
+                        <button data-view="map" title="IP map — every address on the subnet, including free ones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h4v4H3zM10 3h4v4h-4zM17 3h4v4h-4zM3 10h4v4H3zM10 10h4v4h-4zM17 10h4v4h-4zM3 17h4v4H3zM10 17h4v4h-4z"/></svg><span class="lbl">IP map</span></button>
+                    </div>
+                    <button id="select-btn" onclick="toggleSelectMode()" class="nw-ib" title="Select several devices to act on at once"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="lbl" id="select-lbl">Select</span></button>
+                </div>
             </div>
-        </div>
-
-        <div id="network-grid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3"></div>
+            <div id="filter-bar" class="nw-chips"></div>
+            <div id="network-grid" class="nw-body"></div>
+        </section>
     </main>
 
     <!-- Floating selection action bar -->
@@ -614,7 +776,11 @@
                   <div id="mp-access" class="mpane hidden space-y-4">
                     <div id="cred-section">
                         <label class="text-xs font-bold text-slate-400 uppercase block mb-2">🔑 Login credentials</label>
-                        <div class="space-y-2">
+                        <div id="cred-locked" hidden class="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm flex items-center gap-3 flex-wrap">
+                            <span id="cred-locked-msg" class="text-slate-400">Saved logins are locked.</span>
+                            <button onclick="unlockCreds()" class="ml-auto px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold">🔓 Unlock with Pi password</button>
+                        </div>
+                        <div id="cred-form" class="space-y-2">
                             <input id="cred-user" type="text" autocomplete="off" class="w-full p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Username">
                             <div class="flex gap-2">
                                 <input id="cred-pass" type="password" autocomplete="new-password" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Password">
@@ -849,16 +1015,29 @@
             const ackAll = driftN > 1
                 ? `<button onclick="ackAllDrift()" class="ml-auto px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold whitespace-nowrap">✓ Acknowledge all ${driftN} IP changes</button>`
                 : '';
+            // Collapsible: open by default only when something needs fixing, so a
+            // harmless "IP reuse" note doesn't push the devices below the fold.
+            const high = PROBLEMS.filter(p => p.severity === 'high').length;
+            const prev = box.querySelector('details');
+            const open = prev ? prev.open : high > 0;
+            const tone = high ? 'border-red-400/40 bg-red-500/[0.06]' : 'border-amber-400/30 bg-amber-500/[0.05]';
+            const summaryTxt = rows.slice(0, 3).map(p => (PROBLEM_META[p.type]||{label:p.type}).label + (p.ip ? ' ' + p.ip : '')).join(' · ') + (rows.length > 3 ? ` · +${rows.length-3} more` : '');
             box.innerHTML = `
-                <div class="bg-amber-500/[0.07] backdrop-blur border-2 border-amber-400/35 rounded-xl p-4">
-                    <div class="flex items-center gap-2 mb-3 flex-wrap">
-                        <span class="text-lg">⚠️</span>
-                        <h3 class="font-bold text-amber-300 uppercase text-sm tracking-tight">Problems (${PROBLEMS.length})</h3>
-                        <span class="text-xs text-amber-200/70">Netwatch found these — fix on the network; Uptime Kuma handles up/down.</span>
-                        ${ackAll}
+                <details class="border ${tone} rounded-xl" ${open ? 'open' : ''}>
+                    <summary class="flex items-center gap-2 px-4 py-3 cursor-pointer select-none flex-wrap" style="list-style:none">
+                        <span class="text-base">⚠️</span>
+                        <h3 class="font-bold ${high ? 'text-red-300' : 'text-amber-300'} text-sm">${PROBLEMS.length} network problem${PROBLEMS.length===1?'':'s'}</h3>
+                        <span class="text-xs text-slate-400 truncate" style="max-width:60ch">${summaryTxt}</span>
+                        <span class="ml-auto text-xs text-slate-500">Show / hide</span>
+                    </summary>
+                    <div class="px-4 pb-4">
+                        <div class="flex items-center gap-2 mb-3 flex-wrap">
+                            <span class="text-xs text-slate-400">Netwatch found these — fix them on the network. Up/down monitoring lives in Uptime Kuma.</span>
+                            ${ackAll}
+                        </div>
+                        <div class="space-y-2">${rows.map(rowHtml).join('')}</div>
                     </div>
-                    <div class="space-y-2">${rows.map(rowHtml).join('')}</div>
-                </div>`;
+                </details>`;
         }
 
         async function ackIp(key){
@@ -872,12 +1051,7 @@
             loadDevices();
         }
 
-        function tagProblemCards(){
-            document.querySelectorAll('#network-grid .ip-card').forEach(c => {
-                c.dataset.problem = PROBLEM_KEYS.has(c.dataset.key) ? '1' : '0';
-                if(FILTER==='problem') applyFilter(c);
-            });
-        }
+        function tagProblemCards(){ renderGrid(); }
 
         function buildTargetSelect(){
             const sel = document.getElementById('target-select');
@@ -886,145 +1060,295 @@
         }
         function onTargetChange(){ SELECTED = document.getElementById('target-select').value; renderGrid(); }
 
+        // ===== Device views: cards · list · IP map =====================================
+        // One filter + search + sort pipeline feeds all three views and the summary
+        // tiles, so a number on a tile always equals the devices it filters to.
+        const QUIET_AFTER = 7 * 86400;      // offline this long = "gone quiet" (old discoveries, visitors)
+        const NET_CATS = ['network','internet-ap','router'];
+        const CAM_CATS = ['camera','nvr'];
+        const catAccent = { camera:'#fb7185', nvr:'#fda4af', network:'#818cf8', 'internet-ap':'#c084fc', router:'#818cf8',
+            printer:'#22d3ee', nas:'#60a5fa', voip:'#4ade80', alarm:'#f87171', solar:'#facc15', media:'#fb923c',
+            iot:'#2dd4bf', pc:'#94a3b8', server:'#34d399', unknown:'#fbbf24' };
+        let VIEW = 'cards', SORT = 'ip', QUERY = '', STATUS = null, WIFI = null, QUIET_OPEN = false;
+        try { VIEW = localStorage.getItem('nw.view') || 'cards'; SORT = localStorage.getItem('nw.sort') || 'ip'; } catch(e){}
+        const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const nowS = () => Math.floor(Date.now()/1000);
+        function devState(d){ return d.online ? 'online' : (d.last_seen && nowS() - d.last_seen < QUIET_AFTER ? 'offline' : 'quiet'); }
+        function devTitle(d){ return d.name || d.model || (d.type && !/^unknown/i.test(d.type) ? d.type : '') || d.hostname || (d.vendor ? d.vendor.replace(/,?\s*(Co\.|Ltd|Inc|Corp|Technology|Digital).*$/i,'') : '') || 'Unknown device'; }
+        function vendorShort(v){ return (v||'').replace(/,?\s*(Co\.,?\s*Ltd\.?|Ltd\.?|Inc\.?|Corp\.?|Corporation)\s*$/i,'').replace(/\s+(Digital\s+)?Technolog(y|ies)(\s+Co.*)?$/i,'').replace(/^Hangzhou\s+/i,'').trim(); }
+        /* IP search, same rules as the hub Control Center:
+           192.168.0.1 exact · .31 ends in · 192.168.0. subnet · 192.168.0.1* prefix · 88.3 octet-aligned */
+        function ipMatcher(raw){
+            const q = String(raw||'').trim();
+            if(/^[\d.]+\*$/.test(q) && q.includes('.')){ const pre = q.slice(0,-1); return ip => !!ip && ip.startsWith(pre); }
+            if(!/^[\d.]+$/.test(q) || !q.includes('.') || q.includes('..')) return null;
+            if(/^\d{1,3}(\.\d{1,3}){3}$/.test(q)) return ip => ip === q;
+            if(q.startsWith('.')) return ip => !!ip && ip.endsWith(q);
+            if(q.endsWith('.')) return ip => !!ip && ip.startsWith(q);
+            return ip => !!ip && ('.'+ip+'.').includes('.'+q);
+        }
+        function matchesFilter(d, f){
+            switch(f){
+                case 'all': return true;
+                case 'online': return d.online;
+                case 'offline': return devState(d) === 'offline';
+                case 'quiet': return devState(d) === 'quiet';
+                case 'identified': return !!isIdentified(d);
+                case 'unidentified': return !isIdentified(d);
+                case 'camera': return CAM_CATS.includes(d.category);
+                case 'network': return NET_CATS.includes(d.category);
+                case 'problem': return PROBLEM_KEYS.has(d.key);
+                case 'watched': return !!d.watch;
+                default: return d.category === f;
+            }
+        }
+        function matchesQuery(d){
+            const q = QUERY.trim().toLowerCase();
+            if(!q) return true;
+            const m = ipMatcher(q);
+            if(m) return m(d.ip);
+            return [devTitle(d), d.name, d.type, d.ip, d.mac, d.vendor, d.model, d.hostname, catLabel[d.category], d.serial].join(' ').toLowerCase().includes(q);
+        }
+        function sortDevices(list){
+            const rank = { offline:0, online:1, quiet:2 };
+            const by = {
+                ip: (a,b) => ipSort(a.ip||'0', b.ip||'0'),
+                name: (a,b) => devTitle(a).localeCompare(devTitle(b)) || ipSort(a.ip,b.ip),
+                status: (a,b) => (rank[devState(a)]-rank[devState(b)]) || ((b.watch?1:0)-(a.watch?1:0)) || ipSort(a.ip,b.ip),
+                type: (a,b) => (catLabel[a.category]||'~').localeCompare(catLabel[b.category]||'~') || ipSort(a.ip,b.ip),
+                seen: (a,b) => (b.online - a.online) || ((b.last_seen||0) - (a.last_seen||0)),
+            }[SORT] || ((a,b)=>ipSort(a.ip,b.ip));
+            return list.slice().sort(by);
+        }
+        function featureBadges(d){ return (d.features||[]).filter(f => featureNames[f]).map(f=>`<span class="feature-badge ${featureColors[f]||'bg-slate-400'}" title="${featureNames[f]}">${f}</span>`).join(''); }
+        function flagIcons(d){
+            const risky = (d.ports||[]).some(p => RISKY_PORTS[p]);
+            return [
+                d.watch ? '<span title="Watched — alerts when it goes offline">🔔</span>' : '',
+                d.has_credentials ? '<span title="Login saved">🔑</span>' : '',
+                d.has_kuma ? '<span title="Monitored in Uptime Kuma">📈</span>' : '',
+                d.link ? '<span title="Linked to another device">🔗</span>' : '',
+                d.ip_conflict ? `<span title="IP conflict — another device also answers ${esc(d.ip)}">⚠️</span>` : (d.ip_rotated ? `<span title="Address recently held by a different MAC (rotating private Wi-Fi address or DHCP reuse)">🔁</span>` : ''),
+                risky ? '<span title="Risky exposed port (Telnet/FTP/…)">🔓</span>' : '',
+            ].join('');
+        }
+        function ipCell(d, cls){
+            const web = (d.features||[]).includes('W');
+            return web ? `<a class="${cls}" href="http://${esc(d.ip)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open the device's web page">${esc(d.ip)}</a>` : `<span class="${cls}">${esc(d.ip)}</span>`;
+        }
+        function seenText(d){ return d.online ? 'online now' : 'seen ' + devAge(d.last_seen); }
+
+        function cardHtml(d){
+            const st = devState(d);
+            const cls = ['nw-card', st === 'offline' ? 'off' : '', st === 'quiet' ? 'off quiet' : '', d.watch ? 'watch' : '',
+                (!isIdentified(d) && d.online) ? 'myst' : '', SELECTED_IPS.has(d.ip) ? 'sel' : ''].join(' ');
+            const acc = st === 'online' ? (catAccent[d.category] || '#64748b') : st === 'offline' ? '#fb7185' : '#475569';
+            const photo = d.has_photo ? `<img class="ph" src="/api/devices/${encodeURIComponent(d.key)}/photo" loading="lazy" alt="">` : '';
+            const vm = [d.model && d.model !== devTitle(d) ? d.model : '', vendorShort(d.vendor)].filter(Boolean).join(' · ') || (d.mac || '');
+            return `<div class="${cls}" style="--acc:${acc}" data-key="${esc(d.key)}" data-ip="${esc(d.ip)}" tabindex="0" role="button" aria-label="${esc(devTitle(d))} ${esc(d.ip)}">
+                <div class="r1">${photo}<span class="nw-dot ${st==='online'?'':st==='offline'?'off':'quiet'}" title="${st}"></span><span class="nm">${esc(devTitle(d))}</span><span class="flags">${flagIcons(d)}</span></div>
+                <div class="r2">${ipCell(d, 'ip')}<span class="rtt">${d.online && d.rtt != null ? d.rtt + ' ms' : ''}</span></div>
+                <div class="vm" title="${esc(d.vendor||'')}">${esc(vm)}</div>
+                <div class="r3"><span class="nw-tag">${catIcon[d.category]||'•'} ${esc(catLabel[d.category]||d.category||'Unknown')}</span><span class="nw-feats">${featureBadges(d)}</span><span class="sp ${st==='offline'?'text-rose-300':''}">${seenText(d)}</span></div>
+            </div>`;
+        }
+        function rowHtml(d){
+            const st = devState(d);
+            const cls = [st === 'offline' ? 'off' : '', st === 'quiet' ? 'quiet' : '', SELECTED_IPS.has(d.ip) ? 'sel' : ''].join(' ');
+            return `<tr class="${cls}" data-key="${esc(d.key)}" data-ip="${esc(d.ip)}" tabindex="0">
+                <td><span class="nw-dot ${st==='online'?'':st==='offline'?'off':'quiet'}" title="${st}"></span></td>
+                <td><div class="nm">${esc(devTitle(d))}</div><div class="sub">${esc([d.model && d.model !== devTitle(d) ? d.model : '', vendorShort(d.vendor)].filter(Boolean).join(' · '))}</div></td>
+                <td>${ipCell(d, 'mono')}</td>
+                <td class="mono hide-m" style="color:#94a3b8">${esc(d.mac||'')}</td>
+                <td class="hide-m">${catIcon[d.category]||'•'} ${esc(catLabel[d.category]||d.category||'')}</td>
+                <td class="hide-m"><span class="nw-feats">${featureBadges(d)}</span></td>
+                <td class="num mono hide-m">${d.online && d.rtt != null ? d.rtt + ' ms' : ''}</td>
+                <td class="${st==='offline'?'text-rose-300':''}">${d.online ? '<span class="text-emerald-400">now</span>' : devAge(d.last_seen)}</td>
+                <td style="font-size:12px">${flagIcons(d)}</td>
+            </tr>`;
+        }
+
         function renderGrid(){
             const grid = document.getElementById('network-grid');
-            grid.innerHTML = '';
+            const all = devicesInView();
             const base = targetBase(SELECTED);
-            let identCount=0, mysteryCount=0, offlineCount=0;
+            if(VIEW === 'map' && !base) VIEW = 'cards';
+            document.querySelectorAll('.nw-seg button').forEach(b => {
+                b.classList.toggle('on', b.dataset.view === VIEW);
+                if(b.dataset.view === 'map'){ b.disabled = !base; b.title = base ? 'IP map — every address on the subnet, including free ones' : 'IP map needs a /24 network'; }
+            });
+            document.getElementById('dev-sort').value = SORT;
+            document.getElementById('dev-sort').hidden = VIEW === 'map';
+            document.getElementById('current-view-title').innerText = base ? `Devices · ${base}.0/24` : `Devices · ${SELECTED || 'network'}`;
 
-            const makeCard = (ip, dev) => {
-                let statusClass = "bg-white/[0.03] border-white/10 text-slate-400 opacity-60";
-                let badge = ""; let type = "available"; let category = "none";
-                if(dev){
-                    const online = dev.online;
-                    if(!online){
-                        statusClass = "bg-red-500/15 border-red-500/50 text-red-200 border-2 offline-blink";
-                        badge = `<span class="block text-[9px] font-bold uppercase truncate text-red-300">⚠ ${dev.name||dev.type||'offline'}</span>`;
-                        offlineCount++; type="offline"; category=dev.category||'unknown';
-                    } else if(isIdentified(dev)){
-                        statusClass = catStyle[dev.category] || catStyle.unknown;
-                        const icon = catIcon[dev.category] || "•";
-                        badge = `<span class="block text-[9px] font-bold uppercase truncate px-1 rounded bg-black/30">${icon} ${dev.name||dev.type}</span>`;
-                        identCount++; type="identified"; category=dev.category;
-                    } else {
-                        statusClass = "bg-amber-500/15 border-amber-400/50 text-amber-200 border-2";
-                        badge = `<span class="block text-[9px] font-bold uppercase truncate text-amber-300">?? ${dev.vendor||'Mystery'}</span>`;
-                        mysteryCount++; type="unidentified"; category="unidentified";
-                    }
-                }
-                const hasWeb = dev && (dev.features||[]).includes('W');
-                const label = base ? '.'+ip.split('.').pop() : ip;
-                const ipDisplay = hasWeb
-                    ? `<a href="http://${ip}" target="_blank" class="text-cyan-300 underline decoration-cyan-500/40 hover:decoration-cyan-300" onclick="event.stopPropagation()">${label}</a>`
-                    : `<span>${label}</span>`;
-                const card = document.createElement('div');
-                const ring = SELECTED_IPS.has(ip) ? ' ring-4 ring-cyan-400' : '';
-                const conflict = !!(dev && dev.ip_conflict);
-                if(conflict) statusClass += " ring-2 ring-amber-400";
-                card.className = `ip-card p-2 rounded-xl border cursor-pointer flex flex-col items-center justify-between text-center h-28 ${statusClass}${ring}`;
-                card.dataset.type = type; card.dataset.category = category;
-                card.dataset.conflict = conflict ? '1' : '0';
-                card.dataset.key = dev ? dev.key : '';
-                card.dataset.problem = (dev && PROBLEM_KEYS.has(dev.key)) ? '1' : '0';
-                card.onclick = () => onCardClick(dev, ip, card);
-                const risky = !!(dev && (dev.ports||[]).some(p => RISKY_PORTS[p]));
-                const credKey = (dev && dev.has_credentials) ? '<span class="text-[10px]" title="Login saved">🔑</span>' : '';
-                const watchKey = (dev && dev.watch) ? '<span class="text-[10px]" title="Watched for offline/online">🔔</span>' : '';
-                const linkKey = (dev && dev.link) ? '<span class="text-[10px]" title="Linked to another device">🔗</span>' : '';
-                const kumaKey = (dev && dev.has_kuma) ? '<span class="text-[10px]" title="Monitored in Uptime Kuma">📈</span>' : '';
-                const conflictKey = conflict ? `<span class="text-[10px]" title="IP conflict — another device also answers ${ip}">⚠️</span>`
-                    : (dev && dev.ip_rotated ? `<span class="text-[10px]" title="Identity rotated / IP reuse — ${ip} was recently held by a different MAC (rotating private Wi-Fi address or DHCP reuse), not a live conflict">🔁</span>` : '');
-                const riskyKey = risky ? '<span class="text-[10px]" title="Risky exposed port (Telnet/FTP/…)">🔓</span>' : '';
-                const photoThumb = (dev && dev.has_photo) ? `<img src="/api/devices/${encodeURIComponent(dev.key)}/photo" class="w-7 h-7 rounded object-cover" loading="lazy" alt="">` : '';
-                card.innerHTML = `<div class="flex flex-wrap gap-1 w-full justify-center items-center">${photoThumb}${dev?getFeatureBadges(dev.features):''}${credKey}${watchKey}${linkKey}${kumaKey}${conflictKey}${riskyKey}</div>
-                    <span class="text-base font-mono font-bold leading-none">${ipDisplay}</span>${badge}`;
-                applyFilter(card);
-                grid.appendChild(card);
-            };
+            // Every filter except "Gone quiet" counts and shows devices seen this week —
+            // the same set its chip and tile count. A search looks at everything.
+            const shown = sortDevices(all.filter(d => matchesFilter(d, FILTER) && matchesQuery(d)
+                && (FILTER === 'all' || FILTER === 'quiet' || QUERY.trim() || devState(d) !== 'quiet')));
+            const filtering = FILTER !== 'all' || QUERY.trim();
+            const live = filtering ? shown : shown.filter(d => devState(d) !== 'quiet');
+            const quiet = filtering ? [] : shown.filter(d => devState(d) === 'quiet');
+            const nQuiet = all.filter(d => devState(d) === 'quiet').length;
+            document.getElementById('view-sub').textContent = filtering
+                ? `${shown.length} of ${all.length} devices match`
+                : `${live.length} seen this week${nQuiet ? ` · ${nQuiet} not seen for 7+ days` : ''}${base ? ` · ${254 - all.length} free addresses` : ''}`;
 
-            if(base){
-                for(let i=1;i<=254;i++){ const ip = base+'.'+i; makeCard(ip, DEV_BY_IP[ip]); }
-                document.getElementById('current-view-title').innerText = `Subnet ${base}.0/24`;
-            } else {
-                const devs = DATA.devices.filter(d=>d.target===SELECTED);
-                if(!devs.length){ grid.innerHTML = `<p class="col-span-full text-slate-400 text-sm">No devices discovered yet on ${SELECTED}.</p>`; }
-                devs.forEach(d=>makeCard(d.ip, d));
-                document.getElementById('current-view-title').innerText = SELECTED || 'Network';
+            const quietDet = grid.querySelector('details.nw-group');
+            if(quietDet) QUIET_OPEN = quietDet.open;
+            const scrollY = window.scrollY;
+            if(VIEW === 'map'){ grid.innerHTML = mapHtml(base, all); }
+            else if(!shown.length){
+                grid.innerHTML = `<div class="nw-empty"><b>${all.length ? 'No devices match' : 'No devices discovered yet'}</b>${all.length ? 'Clear the search or pick another filter.' : 'Run a scan to find what is on this network.'}${filtering ? '<div style="margin-top:.8rem"><button class="nw-ib" onclick="resetView()">Show all devices</button></div>' : ''}</div>`;
             }
-            document.getElementById('stat-identified').innerText = identCount;
-            document.getElementById('stat-unidentified').innerText = mysteryCount;
-            document.getElementById('stat-offline').innerText = offlineCount;
-            buildFilterChips(devicesInView());
+            else if(VIEW === 'list'){
+                const head = `<thead><tr><th></th><th><button onclick="setSort('name')">Device</button></th><th><button onclick="setSort('ip')">IP</button></th><th class="hide-m">MAC</th><th class="hide-m"><button onclick="setSort('type')">Type</button></th><th class="hide-m">Services</th><th class="num hide-m">Ping</th><th><button onclick="setSort('seen')">Seen</button></th><th></th></tr></thead>`;
+                const quietRows = quiet.length ? `<tr class="grp"><td colspan="9">Not seen for 7+ days · ${quiet.length}</td></tr>` + quiet.map(rowHtml).join('') : '';
+                grid.innerHTML = `<div class="nw-tablewrap"><table class="nw-table">${head}<tbody>${live.map(rowHtml).join('')}${quietRows}</tbody></table></div>`;
+            }
+            else {
+                grid.innerHTML = `<div class="nw-cards">${live.map(cardHtml).join('')}</div>`
+                    + (quiet.length ? `<details class="nw-group" style="margin-top:1.1rem" ${QUIET_OPEN ? 'open' : ''}><summary>Not seen for 7+ days <span class="cnt">${quiet.length} · old discoveries, visitors' phones</span></summary><div class="nw-cards">${quiet.map(cardHtml).join('')}</div></details>` : '');
+            }
+            buildFilterChips(all);
+            renderKpis();
+            if(Math.abs(window.scrollY - scrollY) > 2) window.scrollTo(0, scrollY);   // a live repaint must not jump the page
+        }
+        function mapHtml(base, all){
+            const byIp = {}; all.forEach(d => { byIp[d.ip] = d; });
+            const q = QUERY.trim();
+            let cells = '';
+            for(let i=1;i<=254;i++){
+                const ip = base+'.'+i, d = byIp[ip];
+                const match = d ? (matchesFilter(d, FILTER) && matchesQuery(d)) : (FILTER === 'all' && (!q || (ipMatcher(q) ? ipMatcher(q)(ip) : false)));
+                const dim = match ? '' : ' style="opacity:.18"';
+                if(!d){ cells += `<div class="nw-cell" data-ip="${ip}"${dim} title="${ip} — free"><b>.${i}</b></div>`; continue; }
+                const st = devState(d);
+                const cls = ['nw-cell dev', st==='offline'?'off':'', st==='quiet'?'quiet':'', (!isIdentified(d) && d.online)?'myst':'', d.ip_conflict?'conf':'', SELECTED_IPS.has(ip)?'sel':''].join(' ');
+                const acc = catAccent[d.category] || '#64748b';
+                cells += `<div class="${cls}" data-key="${esc(d.key)}" data-ip="${ip}" style="--accb:${acc}66;--accbg:${acc}1f${match?'':';opacity:.18'}" title="${esc(devTitle(d))} · ${ip} · ${st}"><b>.${i}</b><span>${catIcon[d.category]||''} ${esc(devTitle(d))}</span></div>`;
+            }
+            return `<div class="nw-legend"><span><i style="background:rgba(99,102,241,.2);border-color:#818cf8"></i>In use (colour = type)</span><span><i style="background:rgba(127,29,29,.3);border-color:#fb7185"></i>Offline this week</span><span><i style="background:rgba(148,163,184,.08);border-color:#64748b"></i>Not seen 7+ days</span><span><i style="background:rgba(120,53,15,.3);border-color:#fbbf24"></i>Unidentified</span><span><i style="background:transparent;border-color:rgba(148,163,184,.25)"></i>Free</span></div><div class="nw-map">${cells}</div>`;
         }
 
         function devicesInView(){
             const base = targetBase(SELECTED);
-            if(base) return DATA.devices.filter(d => d.ip.startsWith(base + '.'));
+            if(base) return DATA.devices.filter(d => (d.ip||'').startsWith(base + '.'));
             return DATA.devices.filter(d => d.target === SELECTED);
         }
 
         function buildFilterChips(devs){
             const bar = document.getElementById('filter-bar');
             if(!bar) return;
+            const chip = (f, inner, title) => `<button class="nw-chip ${FILTER===f?'on':''}" onclick="filterGrid('${f}')" ${title?`title="${esc(title)}"`:''}>${inner}</button>`;
+            const grp = (f, icon, label, cats) => {
+                const g = devs.filter(d => cats.includes(d.category) && devState(d) !== 'quiet');
+                if(!g.length) return '';
+                const up = g.filter(d => d.online).length;
+                return chip(f, `${icon} ${label} <span class="up">${up}</span>${g.length-up ? `<span class="dn">/${g.length-up}↓</span>` : ''}`, `${up} online, ${g.length-up} offline`);
+            };
             const catCount = {};
-            devs.forEach(d => { catCount[d.category] = (catCount[d.category]||0) + 1; });
-            const grouped = new Set([...GROUPS.camera.cats, ...GROUPS.network.cats]);
-            const offlineN = devs.filter(d => !d.online).length;
-
-            const chip = (filter, inner) => {
-                const active = FILTER === filter;
-                const cls = active ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400/60'
-                                   : 'bg-white/5 text-slate-600 border-white/10 hover:bg-white/10';
-                return `<button onclick="filterGrid('${filter}')" class="px-3 py-1.5 rounded-lg text-xs font-bold border ${cls}">${inner}</button>`;
-            };
-            const groupChip = (key) => {
-                const g = GROUPS[key]; let on=0, off=0;
-                devs.forEach(d => { if(g.cats.includes(d.category)){ d.online ? on++ : off++; } });
-                return chip(key, `${g.icon} ${g.label} `
-                    + `<span class="text-emerald-400" title="online">${on}↑</span>`
-                    + `<span class="text-rose-400 ml-1" title="offline">${off}↓</span>`);
-            };
-
-            let html = chip('all', `All <span class="opacity-50">${devs.length}</span>`);
-            html += groupChip('camera');
-            html += groupChip('network');
-            Object.keys(catCount)
-                .filter(c => !grouped.has(c) && c !== 'unknown')
-                .sort((a,b) => catCount[b]-catCount[a])
-                .forEach(c => { html += chip(c, `${catIcon[c]||'•'} ${catLabel[c]||c} <span class="opacity-50">${catCount[c]}</span>`); });
-            const mysteryN = devs.filter(d => !isIdentified(d)).length;
-            // problem count = devices in view that appear in any detected problem
+            const recentDevs = devs.filter(d => devState(d) !== 'quiet');
+            recentDevs.forEach(d => { if(![...CAM_CATS, ...NET_CATS, 'unknown'].includes(d.category)) catCount[d.category] = (catCount[d.category]||0) + 1; });
+            const offlineN = devs.filter(d => devState(d)==='offline').length;
+            const quietN = devs.filter(d => devState(d)==='quiet').length;
+            const mysteryN = recentDevs.filter(d => !isIdentified(d)).length;
+            const watchN = recentDevs.filter(d => d.watch).length;
             const inView = new Set(devs.map(d => d.key));
-            const problemN = [...PROBLEM_KEYS].filter(k => inView.has(k)).length;
-            if(mysteryN) html += chip('unidentified', `❓ Mystery <span class="opacity-50">${mysteryN}</span>`);
-            if(offlineN) html += chip('offline', `🔴 Offline <span class="opacity-50">${offlineN}</span>`);
-            if(problemN) html += chip('problem', `⚠️ Problems <span class="opacity-50">${problemN}</span>`);
+            const problemN = recentDevs.filter(d => PROBLEM_KEYS.has(d.key)).length;
+            let html = chip('all', `All <span class="n">${devs.length}</span>`);
+            html += grp('camera', '📷', 'Cameras', CAM_CATS) + grp('network', '📶', 'Network', NET_CATS);
+            Object.keys(catCount).sort((a,b) => catCount[b]-catCount[a]).forEach(c => { html += chip(c, `${catIcon[c]||'•'} ${esc(catLabel[c]||c)} <span class="n">${catCount[c]}</span>`); });
+            if(mysteryN) html += chip('unidentified', `❓ Mystery <span class="n">${mysteryN}</span>`, 'Devices Netwatch could not identify');
+            if(watchN) html += chip('watched', `🔔 Watched <span class="n">${watchN}</span>`);
+            if(offlineN) html += chip('offline', `🔴 Offline <span class="n">${offlineN}</span>`, 'Offline, seen within the last 7 days');
+            if(quietN) html += chip('quiet', `💤 Gone quiet <span class="n">${quietN}</span>`, 'Not seen for 7+ days');
+            if(problemN) html += chip('problem', `⚠️ In a problem <span class="n">${problemN}</span>`, 'Devices involved in a problem Netwatch found');
             bar.innerHTML = html;
         }
+        function filterGrid(f){ FILTER = (FILTER===f && f!=='all') ? 'all' : f; renderGrid(); }
+        function resetView(){ FILTER = 'all'; QUERY = ''; document.getElementById('dev-q').value = ''; renderGrid(); }
+        function setView(v){ VIEW = v; try { localStorage.setItem('nw.view', v); } catch(e){} renderGrid(); }
+        function setSort(v){ SORT = v; try { localStorage.setItem('nw.sort', v); } catch(e){} renderGrid(); }
+        function applyFilter(){ /* kept for older callers; views render from renderGrid() */ }
 
-        function applyFilter(card){
-            if(FILTER==='all'){ card.style.display=''; return; }
-            if(FILTER==='problem'){ card.style.display = card.dataset.problem==='1' ? '' : 'none'; return; }
-            const t = card.dataset.type, c = card.dataset.category;
-            let show = (t===FILTER) || (c===FILTER) || (FILTER==='camera' && (c==='camera'||c==='nvr')) || (FILTER==='network' && (c==='network'||c==='internet-ap'||c==='router'));
-            card.style.display = show ? '' : 'none';
+        function renderKpis(){
+            const box = document.getElementById('kpis');
+            if(!box) return;
+            const devs = devicesInView();
+            const recent = devs.filter(d => devState(d) !== 'quiet');
+            const on = recent.filter(d => d.online).length;
+            const off = recent.length - on;
+            const quiet = devs.length - recent.length;
+            const cams = recent.filter(d => CAM_CATS.includes(d.category)), camUp = cams.filter(d => d.online).length;
+            const nets = recent.filter(d => NET_CATS.includes(d.category)), netUp = nets.filter(d => d.online).length;
+            const myst = recent.filter(d => !isIdentified(d)).length;
+            const mystOn = recent.filter(d => d.online && !isIdentified(d)).length;
+            const watchDown = devs.filter(d => d.watch && !d.online).length;
+            const probs = PROBLEMS.length, highProbs = PROBLEMS.filter(p => p.severity === 'high').length;
+            const tile = (f, k, v, s, cls, extra='') => `<button class="nw-kpi ${cls} ${f && FILTER===f ? 'active' : ''}" ${f ? `onclick="filterGrid('${f}')"` : ''}>${`<span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span>`}${extra}</button>`;
+            const pct = recent.length ? Math.round(100*on/recent.length) : 0;
+            let html = tile('online', 'Online', `${on}<small>/${recent.length}</small>`, quiet ? `${quiet} not seen 7+ days` : 'seen this week', '', `<span class="bar"><i style="width:${pct}%"></i></span>`);
+            html += tile('offline', 'Offline', off, watchDown ? `${watchDown} watched device${watchDown===1?'':'s'} down` : off ? 'seen this week' : 'nothing down', watchDown ? 'bad' : off ? 'warn' : 'good');
+            if(cams.length) html += tile('camera', 'Cameras', `${camUp}<small>/${cams.length}</small>`, camUp === cams.length ? 'all recording devices up' : `${cams.length-camUp} offline`, camUp === cams.length ? 'good' : 'bad');
+            if(nets.length) html += tile('network', 'Network', `${netUp}<small>/${nets.length}</small>`, netUp === nets.length ? 'switches, APs, links up' : `${nets.length-netUp} offline`, netUp === nets.length ? 'good' : 'bad');
+            html += tile('unidentified', 'Mystery', myst, myst ? `not identified · ${mystOn} online` : 'everything identified', myst ? 'warn' : '');
+            html += `<button class="nw-kpi ${highProbs ? 'bad' : probs ? 'warn' : 'good'}" onclick="openProblems()"><span class="k">Problems</span><span class="v">${probs}</span><span class="s">${probs ? (highProbs ? `${highProbs} need fixing` : 'minor — worth a look') : 'no network problems'}</span></button>`;
+            if(WIFI && WIFI.radios) html += `<a class="nw-kpi ${WIFI.crit ? 'bad' : WIFI.warn ? 'warn' : ''}" href="/wifi" style="text-decoration:none"><span class="k">Wireless links</span><span class="v">${WIFI.links}</span><span class="s">${WIFI.crit ? WIFI.crit+' critical' : WIFI.warn ? WIFI.warn+' warning' : WIFI.unread ? WIFI.unread+' radios unread' : 'all healthy'}</span></a>`;
+            const st = STATUS || {};
+            let scanV = '—', scanS = 'no scan yet';
+            if(st.is_scanning){ scanV = '<span class="scanning" style="font-size:1.1rem">Scanning…</span>'; scanS = st.progress || 'looking for devices'; }
+            else if(st.last_scan_ts){
+                scanV = `<span style="font-size:1.15rem">${new Date(st.last_scan_ts*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>`;
+                const next = st.scan_interval_min ? st.last_scan_ts + st.scan_interval_min*60 - nowS() : null;
+                scanS = agoText(st.last_scan_ts) + (next != null ? (next > 30 ? ` · next in ${Math.ceil(next/60)} min` : ' · next any moment') : '');
+            }
+            html += `<div class="nw-kpi accent"><span class="k">Last scan</span><span class="v">${scanV}</span><span class="s">${esc(scanS)}</span></div>`;
+            box.innerHTML = html;
         }
-        function filterGrid(f){ FILTER = (FILTER===f && f!=='all') ? 'all' : f; document.querySelectorAll('#network-grid .ip-card').forEach(applyFilter); buildFilterChips(devicesInView()); }
+        function openProblems(){
+            const box = document.getElementById('conflict-monitor');
+            if(!PROBLEMS.length){ filterGrid('problem'); return; }
+            const det = box.querySelector('details'); if(det) det.open = true;
+            box.scrollIntoView({behavior:'smooth', block:'start'});
+        }
 
-        // ---- multi-select ----
-        function onCardClick(dev, ip, card){
+        // ---- scan menu ----
+        function toggleScanMenu(e){ e.stopPropagation(); const m = document.getElementById('scan-menu'); m.hidden = !m.hidden; }
+        function closeScanMenu(){ document.getElementById('scan-menu').hidden = true; }
+        document.addEventListener('click', (e) => { if(!e.target.closest('.nw-scan')) closeScanMenu(); });
+
+        // ---- device clicks, search, keyboard ----
+        function onDeviceActivate(el){
+            const ip = el.dataset.ip, key = el.dataset.key || null;
+            const dev = key ? DEV_BY_KEY[key] : DEV_BY_IP[ip];
             if(SELECT_MODE){
                 if(!dev) return;
-                if(SELECTED_IPS.has(ip)){ SELECTED_IPS.delete(ip); card.classList.remove('ring-4','ring-cyan-400'); }
-                else { SELECTED_IPS.add(ip); card.classList.add('ring-4','ring-cyan-400'); }
+                SELECTED_IPS.has(ip) ? SELECTED_IPS.delete(ip) : SELECTED_IPS.add(ip);
+                el.classList.toggle('sel', SELECTED_IPS.has(ip));
                 updateSelectBar();
-            } else { openModal(dev ? dev.key : null, ip); }
+            } else openModal(dev ? dev.key : null, ip);
         }
+        document.getElementById('network-grid').addEventListener('click', (e) => {
+            if(e.target.closest('a')) return;
+            const el = e.target.closest('[data-ip]'); if(el) onDeviceActivate(el);
+        });
+        document.getElementById('network-grid').addEventListener('keydown', (e) => {
+            if(e.key !== 'Enter' && e.key !== ' ') return;
+            const el = e.target.closest('[data-ip]'); if(el){ e.preventDefault(); onDeviceActivate(el); }
+        });
+        let _qTimer;
+        document.getElementById('dev-q').addEventListener('input', (e) => { clearTimeout(_qTimer); _qTimer = setTimeout(() => { QUERY = e.target.value; renderGrid(); }, 140); });
+        document.getElementById('dev-sort').addEventListener('change', (e) => setSort(e.target.value));
+        document.querySelectorAll('.nw-seg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+        document.addEventListener('keydown', (e) => {
+            if(e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement||{}).tagName||'')){ e.preventDefault(); document.getElementById('dev-q').focus(); }
+        });
+
+        // ---- multi-select ----
         function toggleSelectMode(){
             SELECT_MODE = !SELECT_MODE;
-            const b = document.getElementById('select-btn');
-            b.classList.toggle('tbtn-on', SELECT_MODE);
-            b.innerText = SELECT_MODE ? 'Selecting…' : 'Select';
+            document.getElementById('select-btn').classList.toggle('on', SELECT_MODE);
+            document.getElementById('select-lbl').innerText = SELECT_MODE ? 'Selecting…' : 'Select';
             if(!SELECT_MODE) clearSelection(); else updateSelectBar();
         }
         function clearSelection(){ SELECTED_IPS.clear(); renderGrid(); updateSelectBar(); }
@@ -1037,7 +1361,7 @@
             const hosts = [...SELECTED_IPS]; if(!hosts.length) return;
             await fetch('/api/trigger',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,hosts})});
             const label = mode==='deep' ? 'Deep' : 'Quick';
-            document.getElementById('system-status').innerText = label+' scanning '+hosts.length+' selected device(s)…';
+            setLive(true, label+' scanning '+hosts.length+' selected device(s)…');
             toggleSelectMode(); setTimeout(refresh, 2500);
         }
         function deepScanSelected(){ scanSelected('deep'); }
@@ -1652,6 +1976,22 @@
             setCredFields('', '', '');
             if(!key){ sec.style.display = 'none'; return; }   // no device at an empty address
             sec.style.display = '';
+            // Opening a device must not pop the Pi-password dialog: ask quietly
+            // whether this browser is logged in, and only then read the login.
+            const dev0 = DEV_BY_KEY[key];
+            let auth = null;
+            try { auth = window.nwAuth ? await window.nwAuth.state() : null; } catch(e){}
+            const locked = auth && !auth.logged_in;
+            document.getElementById('cred-locked').hidden = !locked;
+            document.getElementById('cred-form').hidden = !!locked;
+            if(locked){
+                document.getElementById('cred-locked-msg').textContent = dev0 && dev0.has_credentials
+                    ? 'A login is saved for this device — unlock to see or change it.'
+                    : 'No login saved yet. Unlock to add one.';
+                const wants0 = dev0 && (/ubiquiti|hikvision|hangzhou/i.test(dev0.vendor||'') || ['camera','nvr'].includes(dev0.category));
+                markTab('access', wants0 && !dev0.has_credentials);
+                return;
+            }
             try {
                 const c = await (await fetch('/api/devices/'+encodeURIComponent(key)+'/credentials')).json();
                 setCredFields(c.username, c.password, c.notes);
@@ -1660,6 +2000,9 @@
                                       || ['camera','nvr'].includes(dev.category));
                 markTab('access', wants && !c.username && !c.password);
             } catch(e){}
+        }
+        async function unlockCreds(){
+            if(window.nwAuth && await window.nwAuth.login()) loadCreds(CURRENT_KEY);
         }
         function toggleCredPass(){
             const f = document.getElementById('cred-pass');
@@ -2230,16 +2573,21 @@
             if(s < 86400) return Math.floor(s/3600) + 'h ago';
             return Math.floor(s/86400) + 'd ago';
         }
+        function setLive(scanning, text){
+            const ss = document.getElementById('system-status');
+            ss.className = 'nw-live' + (scanning ? ' scan' : '');
+            ss.innerHTML = '<i></i><span class="t">' + esc(text) + '</span>';
+            ss.title = text;
+            document.getElementById('scan-progress').hidden = !scanning;
+        }
         function applyStatus(data){
-            // Format in the BROWSER's timezone (the server runs in UTC) and show a
-            // relative "x ago" so it's clear the page is live.
-            const el = document.getElementById('stat-last-scan');
-            if(data.last_scan_ts){
-                const t = new Date(data.last_scan_ts*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-                el.innerHTML = t + ' <span class="text-cyan-200/80 text-xs font-normal">(' + agoText(data.last_scan_ts) + ')</span>';
-            } else {
-                el.innerText = data.last_scan || '--:--:--';
+            STATUS = data;
+            const site = data.site || {};
+            if(site.name){
+                document.getElementById('site-title').textContent = site.name;
+                document.title = site.name + ' · Netwatch';
             }
+            document.getElementById('site-sub').textContent = [site.location, 'Farm Network Asset Identifier'].filter(Boolean).join('  ·  ');
             // Don't overwrite these form fields while the user has Settings open
             // and may be editing them — the live poll would otherwise reset their
             // selection every few seconds (e.g. the scan interval reverting).
@@ -2247,17 +2595,20 @@
                 document.getElementById('setup-interval').value = data.scan_interval_min;
                 document.getElementById('setup-network').value = data.target_network;
             }
-            const ss = document.getElementById('system-status');
-            if(data.is_scanning){
-                ss.innerHTML = '<span class="scanning">⟳ '+(data.progress||"Scanning network…")+'</span>';
-                ss.className = "text-xs italic";
-            } else {
-                const site = (data.site && data.site.name) ? data.site.name+' · ' : '';
-                ss.innerHTML = '<span class="inline-block w-2 h-2 rounded-full bg-green-400 mr-1 align-middle animate-pulse"></span>'
-                    + site + 'Live · auto-updates every scan';
-                ss.className = "text-slate-400 text-xs italic";
-            }
+            if(data.is_scanning) setLive(true, 'Scanning · ' + (data.progress || 'network'));
+            else setLive(false, data.last_scan_ts ? 'Live · updated ' + agoText(data.last_scan_ts) : 'Live');
+            renderKpis();
         }
+
+        // ---- central hub VPN link chip ----
+        async function loadHubBadge(){
+            const b = document.getElementById('hub-badge');
+            let h; try { h = await (await fetch('/api/hub/status')).json(); } catch(e){ return; }
+            if(!h || !h.configured){ b.classList.add('hidden'); return; }
+            if(h.connected){ b.className = 'chip bg-cyan-500/15 text-cyan-300'; b.textContent = '🔗 Hub linked'; b.title = 'VPN link to the central hub is up' + (h.address ? ' · ' + h.address : ''); }
+            else { b.className = 'chip bg-amber-500/20 text-amber-300'; b.textContent = '🔗 Hub link down'; b.title = 'No recent handshake with the central hub' + (h.last_handshake_s != null ? ' (last ' + Math.round(h.last_handshake_s/60) + ' min ago)' : ''); }
+        }
+        setInterval(loadHubBadge, 60000);
 
         // Single poller: refreshes the device grid the moment a scan completes,
         // and polls faster while a scan is running.
@@ -2269,7 +2620,7 @@
                 if(data.server_ip){
                     PI_IP = data.server_ip;
                     const el = document.getElementById('pi-ip');
-                    el.textContent = '📍 Pi ' + PI_IP;
+                    el.textContent = 'Pi ' + PI_IP;
                     el.classList.remove('hidden');
                 }
                 applyStatus(data);
@@ -2320,35 +2671,25 @@
             else if(!document.getElementById('setup-modal').classList.contains('hidden')) closeSetup();
         });
 
-        // ---- wireless tile: only appears once radios are actually being read ----
+        // ---- wireless summary (tile only appears once radios are actually being read) ----
         async function loadWifiTile(){
-            const card = document.getElementById('stat-wifi-card');
             let o; try { o = await (await fetch('/api/radio/overview')).json(); } catch(e){ return; }
             const radios = Object.values(o.radios || {});
-            if(!radios.length){ card.classList.add('hidden'); return; }
+            if(!radios.length){ WIFI = null; renderKpis(); return; }
             // Both ends of a link report it, so count unique pairs — an AP with
             // four stations plus those stations is four links, not eight.
             const pairs = new Set();
             Object.entries(o.radios || {}).forEach(([key, r]) =>
                 (r.links || []).forEach(l => pairs.add(
                     [String(key).toUpperCase(), String(l.peer||'').toUpperCase()].sort().join('|'))));
-            const links = pairs.size;
-            const unread = radios.filter(r => !r.ok).length;
             const crit = (o.problems || []).filter(p => p.level === 'crit').length;
-            const warn = (o.problems || []).length - crit;
-            const note = document.getElementById('stat-wifi-note');
-            document.getElementById('stat-wifi').innerText = links;
-            if(crit){ note.className = 'text-[11px] font-bold text-rose-400'; note.innerText = crit + ' critical'; }
-            else if(warn){ note.className = 'text-[11px] font-bold text-amber-400'; note.innerText = warn + ' warning'; }
-            else if(unread){ note.className = 'text-[11px] font-bold text-slate-500'; note.innerText = unread + ' unread'; }
-            else { note.className = 'text-[11px] font-bold text-emerald-400'; note.innerText = 'all healthy'; }
-            card.classList.remove('hidden');
+            WIFI = { radios: radios.length, links: pairs.size, unread: radios.filter(r => !r.ok).length,
+                     crit, warn: (o.problems || []).length - crit };
+            renderKpis();
         }
-        // Jump to whatever the tile is reporting: the problem cards if there are
-        // any, otherwise the radios themselves in the grid.
         function jumpToWifi(){ location.href = '/wifi'; }
 
-        function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); }
+        function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge(); }
 
         // ---- Pi self-health strip ----
         function healthClass(v, warn, crit){
@@ -2465,9 +2806,9 @@
             const ku = (c.integrations&&c.integrations.kuma&&c.integrations.kuma.base_url)||'';
             const port = (ku.split(':')[2]||'3001').replace(/\D/g,'')||'3001';
             const link = document.getElementById('kuma-link');
-            if(ku){ link.href = location.protocol+'//'+location.hostname+':'+port; link.classList.remove('hidden'); }
+            if(ku){ link.href = location.protocol+'//'+location.hostname+':'+port; link.hidden = false; }
         }).catch(()=>{});
-        loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile();
+        renderKpis(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge();
         tick();
     </script>
 </body>
