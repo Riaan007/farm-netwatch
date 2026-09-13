@@ -819,12 +819,27 @@ def api_site_backup_download(site_id, name):
     site, err = _site_or_404(site_id)
     if err:
         return err
-    data, name = backups.read(site_id, name)
+    data, name = backups.read_raw(site_id, name)     # stays encrypted
     if data is None:
         return jsonify({"ok": False, "error": "no such backup"}), 404
     return send_file(io.BytesIO(data), mimetype="application/json",
                      as_attachment=True,
                      download_name=f"netwatch-backup-{site_id}-{name}")
+
+
+@app.route("/api/hub/backup-key", methods=["POST"])
+def api_backup_key():
+    """Reveal the backup encryption key — re-asks the hub password, because the
+    key plus any backup file gives every site's saved logins."""
+    pw = (request.get_json(silent=True) or {}).get("password", "")
+    if not auth.check(pw):
+        time.sleep(1)
+        return jsonify({"ok": False, "error": "Wrong password"}), 401
+    k = backups.key()
+    print("[backups] backup key revealed to a hub session "
+          f"from {request.remote_addr}", flush=True)
+    return jsonify({"ok": True, "key": base64.b64encode(k).decode(),
+                    "key_id": backups.key_id(k)})
 
 
 @app.route("/api/hub/sites/<site_id>/backups/<name>", methods=["DELETE"])
@@ -848,7 +863,10 @@ def api_site_restore(site_id):
     if err:
         return err
     name = (request.get_json(silent=True) or {}).get("name")
-    data, name = backups.read(site_id, name)
+    try:
+        data, name = backups.read(site_id, name)
+    except backups.BackupError as e:
+        return jsonify({"ok": False, "error": str(e)}), e.status
     if data is None:
         return jsonify({"ok": False, "error": "no backup stored for this site"}), 404
     base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
@@ -1049,6 +1067,7 @@ def main():
     print(f"[hub] site reverse-proxy port range {lo}-{hi} "
           "(must match the published range in docker-compose.yml)", flush=True)
     proxycfg.sync()                        # assign ports + write/reload the Caddyfile
+    backups.encrypt_existing()             # older plaintext backups -> encrypted
     tunnels.manager.start()                # device-tunnel relay manager
     vpnfw.start()                          # VPN client isolation (re-asserted every 60 s)
     poller.start()

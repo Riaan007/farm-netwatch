@@ -54,7 +54,7 @@ class NtfyListener:
             cfg = config.load()
             alerts = cfg["alerts"]
             topic = alerts.get("ntfy_topic", "").strip()
-            if not topic or not alerts.get("allow_commands", True):
+            if not topic or not alerts.get("allow_commands", False):
                 time.sleep(5)
                 continue
             server = (alerts.get("ntfy_server") or "https://ntfy.sh").rstrip("/")
@@ -67,7 +67,7 @@ class NtfyListener:
                         # react to a topic/server change within a keepalive cycle
                         cur = config.load()["alerts"]
                         if (cur.get("ntfy_topic", "").strip() != topic or
-                                not cur.get("allow_commands", True)):
+                                not cur.get("allow_commands", False)):
                             break
                         if not line:
                             continue

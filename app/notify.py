@@ -54,7 +54,7 @@ def notify_new_device(cfg_alerts, dev):
     ports = ",".join(str(p) for p in dev.get("ports", [])[:6]) or "none"
     ip = dev.get("ip", "?")
     actions = []
-    if cfg_alerts.get("allow_commands", True) and ip != "?":
+    if cfg_alerts.get("allow_commands", False) and ip != "?":
         actions = [_cmd_action("Deep scan", cfg_alerts, f"deepscan {ip}"),
                    _cmd_action("Ping", cfg_alerts, f"ping {ip}")]
     return push(
@@ -71,7 +71,7 @@ def notify_new_device(cfg_alerts, dev):
 def notify_offline(cfg_alerts, dev):
     ip = dev.get("ip", "?")
     actions = []
-    if cfg_alerts.get("allow_commands", True) and ip != "?":
+    if cfg_alerts.get("allow_commands", False) and ip != "?":
         actions = [_cmd_action("Ping", cfg_alerts, f"ping {ip}")]
     return push(
         cfg_alerts,
@@ -87,7 +87,7 @@ def notify_online(cfg_alerts, dev):
     """A device that was offline has come back."""
     ip = dev.get("ip", "?")
     actions = []
-    if cfg_alerts.get("allow_commands", True) and ip != "?":
+    if cfg_alerts.get("allow_commands", False) and ip != "?":
         actions = [_cmd_action("Ping", cfg_alerts, f"ping {ip}")]
     return push(
         cfg_alerts,

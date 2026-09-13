@@ -149,5 +149,21 @@ class SiteAuth(unittest.TestCase):
         self.assertEqual(r.status_code, 400)   # reached the handler (validation), not 401
 
 
+class CommandsOffByDefault(unittest.TestCase):
+    def test_new_config_has_commands_off(self):
+        self.assertFalse(config.DEFAULTS["alerts"]["allow_commands"])
+
+    def test_existing_config_is_migrated_off_once(self):
+        import json
+        cfg = config.load()
+        cfg["alerts"]["allow_commands"] = True
+        cfg["config_rev"] = 1                      # a site from before the change
+        with open(config.CONFIG_PATH, "w") as f:
+            json.dump(cfg, f)
+        self.assertFalse(config.load()["alerts"]["allow_commands"])
+        config.update({"alerts": {"allow_commands": True}})   # operator opts back in
+        self.assertTrue(config.load()["alerts"]["allow_commands"])
+
+
 if __name__ == "__main__":
     unittest.main()

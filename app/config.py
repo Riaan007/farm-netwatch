@@ -65,7 +65,9 @@ DEFAULTS = {
         # A category present here overrides the globals above for that category.
         "categories": {},
         "offline_after": 2,        # consecutive missed scans before "offline"
-        "allow_commands": True,    # listen on the topic for ping/scan/etc commands
+        # Listen on the topic for ping/scan/etc commands. OFF by default: anyone who
+        # knows the topic name (ntfy.sh topics are public) could run them.
+        "allow_commands": False,
     },
     "vpn": {
         "mode": "none",            # none | tailscale | wireguard
@@ -81,7 +83,7 @@ DEFAULTS = {
     # Bumped when a default changes in a way an EXISTING config must adopt —
     # _deep_merge only fills MISSING keys, so a stored False would otherwise
     # pin the old default forever. See _migrate().
-    "config_rev": 1,
+    "config_rev": 2,
     # Wireless telemetry from Ubiquiti radios (radiomon.py). Read-only SSH, only
     # ever touches radios that have a saved login. It rides along with the scan
     # but keeps its own cadence — polling a radio every scan would be pointless
@@ -153,6 +155,11 @@ def _migrate(cfg, stored_rev):
         # "explicitly off" in the stored config, and defaulting it on is the
         # requested behaviour.
         cfg.setdefault("features", {})["airos_change_ip"] = True
+    if rev < 2:
+        # ntfy remote commands: off everywhere. Every stored config has the old
+        # True written out, so the new default alone would change nothing. An
+        # operator who wants them back ticks the box in Settings once.
+        cfg.setdefault("alerts", {})["allow_commands"] = False
     cfg["config_rev"] = DEFAULTS["config_rev"]
     return cfg, True
 

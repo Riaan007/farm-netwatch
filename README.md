@@ -217,8 +217,10 @@ lives in the `./data` volume and survives image updates.
 ## Remote control via ntfy
 
 Set an ntfy topic in the wizard (or the gear menu) and hit **Test** to confirm your
-phone receives it. With "Allow remote commands" enabled, send any of these as a
-message to the topic and the result is posted back:
+phone receives it. Remote commands are **off by default** (and were switched off
+on existing sites by an automatic settings migration). Tick "Allow remote commands"
+in Settings to use them; then send any of these as a message to the topic and the
+result is posted back:
 
 | Command | Example | Does |
 |---|---|---|
@@ -230,13 +232,15 @@ message to the topic and the result is posted back:
 | `deepscan <ip\|cidr>` | `deepscan 192.168.88.5` | full deep scan |
 | `status` / `help` | `status` | summary / command list |
 
-New-device and offline alerts also carry tap-to-run action buttons (Deep scan, Ping).
+With commands on, new-device and offline alerts also carry tap-to-run action
+buttons (Deep scan, Ping); with them off, alerts arrive without buttons.
 
 > Security: ntfy topics are public by default — anyone who knows the topic name can
 > send these commands. They are **read-only probes** and are **restricted to IPs inside
 > your configured scan networks** (external IPs are refused), but use a hard-to-guess
-> topic name, or a self-hosted ntfy server with auth, and turn off "Allow remote
-> commands" if you only want alerts.
+> topic name, or a self-hosted ntfy server with auth, before turning "Allow remote
+> commands" on. Deep scans can upset fragile cameras and radios, and `status`
+> reveals the device inventory to whoever sends it.
 
 ## Who does what (KISS)
 
@@ -362,7 +366,7 @@ docker compose up -d --build
 
 **Moving a hub to a new machine:** run the installer on the new Pi, then
 `docker compose down`, copy the old hub's `data/` directory over
-`/opt/netwatch-hub/data` (WireGuard server keys + clients, site registry,
+`/opt/netwatch-hub/data` (WireGuard server keys + clients, site registry, site API keys, the backup key +
 backups), and `docker compose up -d`. Point your DDNS/port-forward at the new
 machine — sites reconnect without re-enrolling. Note: the copied `data/` keeps
 the **old** hub dashboard password (it lives in `data/hub/hub.json`; the new
@@ -556,9 +560,21 @@ A device you added straight in wg-easy's UI (not via the hub) is treated as a si
 **Saved credentials** are stored in `/data/credentials.json`, obfuscated at rest
 with a per-install key (`/data/secret.key`, mode 600) and kept out of the
 `/api/devices` feed. Obfuscation protects against casual reading of the file,
-not against someone holding the backup bundle (it carries the key) — treat hub
-backups as secrets. Both files live in the `./data` volume — exclude them from
-any public backup.
+not against someone holding a plain backup bundle (it carries the key). Both files
+live in the `./data` volume — exclude them from any public backup.
+
+**Hub backups are encrypted.** The hub's daily per-site backups
+(`data/hub/backups/<site>/`, newest 14 kept) are stored AES-256-GCM encrypted with
+the hub's backup key `data/hub/backup.key` (mode 600, created on first use; older
+plaintext backups were encrypted in place). **Download** gives the encrypted file;
+**Restore** decrypts on the hub and sends the bundle over the VPN. The key sits on
+the same disk as the backups, so it protects copies and downloads, not someone who
+has the whole hub volume. **Keep a copy of the key outside the hub** — site page →
+💾 Config backups → **🔑 Backup key** (asks the hub password again). Without it the
+backups cannot be restored on a replacement hub. Offline:
+`docker exec netwatch-hub python backups.py decrypt <file> <key>` prints the bundle,
+which the site's own Settings → Import accepts. (The site page's own Export button
+still downloads a plain bundle — it needs the site login.)
 
 ## Requirements
 

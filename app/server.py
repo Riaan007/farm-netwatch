@@ -219,7 +219,7 @@ def api_test_ntfy():
     if not topic:
         return jsonify({"ok": False, "error": "No ntfy topic set"}), 400
     alerts = {"ntfy_topic": topic, "ntfy_server": server,
-              "allow_commands": cfg["alerts"].get("allow_commands", True)}
+              "allow_commands": cfg["alerts"].get("allow_commands", False)}
     mid = notify.push(
         alerts, "Netwatch test",
         "Alerts are working. Reply 'help' for commands, or use the buttons below.",

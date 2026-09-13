@@ -320,7 +320,7 @@
                         <input id="setup-notify-hub" type="checkbox" class="w-4 h-4"> Alert when the <b>VPN link to the Central Hub</b> goes offline
                     </label>
                     <label class="flex items-center gap-2 mt-2 text-xs text-slate-400">
-                        <input id="setup-allow-commands" type="checkbox" class="w-4 h-4"> Allow remote commands from this topic (ping / scan / tracert)
+                        <input id="setup-allow-commands" type="checkbox" class="w-4 h-4"> Allow remote commands from this topic (ping / scan / tracert) — anyone who knows the topic can run them
                     </label>
                     <p class="text-[10px] text-slate-400 mt-1">Send <code>help</code> to the topic from your phone to list commands. Only IPs inside your scan networks are allowed.</p>
                 </div>
@@ -1828,7 +1828,7 @@
             try {
                 if(c.alerts){
                     document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic || '';
-                    document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands !== false;
+                    document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands === true;
                     document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline !== false;
                     renderCatAlerts(c.alerts.categories);
                 }
@@ -2461,7 +2461,7 @@
         }
         // preload ntfy settings + Kuma link (host the browser used, port from base_url)
         fetch('/api/config').then(r=>r.json()).then(c=>{
-            if(c.alerts && !c.redacted){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands!==false; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }
+            if(c.alerts && !c.redacted){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands===true; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }
             const ku = (c.integrations&&c.integrations.kuma&&c.integrations.kuma.base_url)||'';
             const port = (ku.split(':')[2]||'3001').replace(/\D/g,'')||'3001';
             const link = document.getElementById('kuma-link');

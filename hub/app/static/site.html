@@ -183,11 +183,12 @@
                 <h2 class="text-xs font-bold text-slate-400 uppercase tracking-[0.18em]">💾 Config backups</h2>
                 <div class="flex items-center gap-2">
                     <span id="backup-msg" class="text-xs"></span>
+                    <button onclick="openBackupKey()" class="btn btn-ghost btn-sm" title="The key that decrypts these backups — keep a copy outside the hub">🔑 Backup key</button>
                     <button onclick="backupNow()" id="backup-now-btn" class="btn btn-ghost btn-sm">Back up now</button>
                 </div>
             </div>
             <div id="backup-list" class="text-xs text-slate-500">Loading…</div>
-            <p class="text-[10px] text-slate-500 mt-2">The hub pulls a daily backup of this site's settings, device names/categories and saved logins. To rebuild on a fresh Pi: enroll it with the site's <b class="text-slate-300">Setup cmd</b> (overview → ⚙ Sites) so the VPN comes up, then click <b class="text-slate-300">Restore</b> here — the site gets its identity back.</p>
+            <p class="text-[10px] text-slate-500 mt-2">The hub pulls a daily backup of this site's settings, device names/categories and saved logins. To rebuild on a fresh Pi: enroll it with the site's <b class="text-slate-300">Setup cmd</b> (overview → ⚙ Sites) so the VPN comes up, then click <b class="text-slate-300">Restore</b> here — the site gets its identity back. Backups are <b class="text-slate-300">encrypted</b>: a downloaded file only opens with the hub's backup key, so keep a copy of that key in your password manager — without it they cannot be restored on a new hub.</p>
         </div>
 
         <div class="panel overflow-hidden">
@@ -238,6 +239,26 @@
         </div>
     </div>
 
+    <div id="bk-modal" onclick="if(event.target===this) closeBackupKey()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
+        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-md w-full flex flex-col overflow-hidden">
+            <div class="p-5 border-b border-white/10 flex justify-between items-center">
+                <div><h2 class="text-lg font-bold text-slate-100">Backup key</h2><p class="text-xs text-slate-500">Decrypts every site's backups on this hub</p></div>
+                <button type="button" onclick="closeBackupKey()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xl leading-none">&times;</button>
+            </div>
+            <form id="bk-ask" onsubmit="revealBackupKey(event)" class="p-5 space-y-3">
+                <p class="text-sm text-slate-400">This key plus any backup file opens every saved device login. Enter the hub password to show it.</p>
+                <input id="bk-pass" type="password" autocomplete="current-password" placeholder="Hub password" aria-label="Hub password" class="inp">
+                <p id="bk-msg" class="text-sm text-rose-300 min-h-[1.25rem]" aria-live="polite"></p>
+                <div class="flex justify-end gap-2"><button type="button" onclick="closeBackupKey()" class="btn btn-ghost">Cancel</button><button class="btn btn-success">Show key</button></div>
+            </form>
+            <div id="bk-out" class="hidden p-5 space-y-3">
+                <p class="text-sm text-slate-400">Store this in your password manager. You need it to restore these backups on a replacement hub, or to open a downloaded backup file (<code class="text-cyan-300">python backups.py decrypt FILE KEY</code>).</p>
+                <textarea id="bk-key" readonly rows="2" aria-label="Backup key" class="inp font-mono text-xs"></textarea>
+                <p class="text-xs text-slate-500">Key id <span id="bk-id" class="font-mono text-slate-300"></span> <span id="bk-copied" class="text-emerald-400 ml-2"></span></p>
+                <div class="flex justify-end gap-2"><button type="button" onclick="copyBackupKey()" class="btn btn-ghost">Copy</button><button type="button" onclick="closeBackupKey()" class="btn btn-success">Done</button></div>
+            </div>
+        </div>
+    </div>
     <div id="pw-modal" onclick="if(event.target===this) closePiPassword()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-50 flex items-end sm:items-center justify-center sm:p-4">
         <form onsubmit="savePiPassword(event)" class="modal-card rounded-t-2xl sm:rounded-2xl max-w-md w-full flex flex-col overflow-hidden">
             <div class="p-5 border-b border-white/10 flex justify-between items-center">
@@ -701,13 +722,45 @@
             if(!bs.length){ el.innerHTML = '<span class="text-slate-600">No backups yet — the hub takes one daily, or click "Back up now". (Sites need the latest Netwatch image.)</span>'; return; }
             el.innerHTML = bs.slice(0, 5).map((b, i) => `
                 <div class="flex items-center justify-between gap-2 py-1.5 ${i ? 'border-t border-white/5' : ''}">
-                    <span class="text-slate-300 tabular-nums">${new Date(b.ts*1000).toLocaleString()} <span class="text-slate-600">· ${(b.bytes/1024).toFixed(0)} kB${i===0 ? ' · latest' : ''}</span></span>
+                    <span class="text-slate-300 tabular-nums">${new Date(b.ts*1000).toLocaleString()} <span class="text-slate-600">· ${(b.bytes/1024).toFixed(0)} kB${b.encrypted ? ' · 🔒 encrypted' : ' · ⚠ not encrypted'}${i===0 ? ' · latest' : ''}</span></span>
                     <span class="flex gap-1.5">
                         <a href="/api/hub/sites/${siteId}/backups/${b.name}" class="btn btn-ghost btn-sm">Download</a>
                         <button onclick="restoreFromHub('${b.name}')" class="btn btn-success btn-sm">Restore</button>
                         <button onclick="deleteBackup('${b.name}')" class="btn btn-danger btn-sm" title="Delete this backup from the hub">🗑</button>
                     </span>
                 </div>`).join('');
+        }
+        function openBackupKey(){
+            document.getElementById('bk-pass').value = '';
+            document.getElementById('bk-msg').textContent = '';
+            document.getElementById('bk-out').classList.add('hidden');
+            document.getElementById('bk-ask').classList.remove('hidden');
+            document.getElementById('bk-modal').classList.remove('hidden');
+            document.getElementById('bk-pass').focus();
+        }
+        function closeBackupKey(){
+            document.getElementById('bk-key').value = '';
+            document.getElementById('bk-modal').classList.add('hidden');
+        }
+        async function revealBackupKey(ev){
+            ev.preventDefault();
+            const msg = document.getElementById('bk-msg');
+            msg.textContent = 'Checking…';
+            let j;
+            try { j = await (await fetch('/api/hub/backup-key', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password: document.getElementById('bk-pass').value})})).json(); }
+            catch(e){ j = {ok:false, error:'request failed'}; }
+            document.getElementById('bk-pass').value = '';
+            if(!j.ok){ msg.textContent = j.error || 'Could not read the key'; return; }
+            msg.textContent = '';
+            document.getElementById('bk-key').value = j.key;
+            document.getElementById('bk-id').textContent = j.key_id;
+            document.getElementById('bk-ask').classList.add('hidden');
+            document.getElementById('bk-out').classList.remove('hidden');
+        }
+        async function copyBackupKey(){
+            const k = document.getElementById('bk-key');
+            try { await navigator.clipboard.writeText(k.value); document.getElementById('bk-copied').textContent = 'Copied'; }
+            catch(e){ k.select(); document.execCommand('copy'); document.getElementById('bk-copied').textContent = 'Copied'; }
         }
         async function backupNow(){
             const btn = document.getElementById('backup-now-btn'), msg = document.getElementById('backup-msg');
