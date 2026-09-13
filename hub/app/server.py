@@ -26,6 +26,7 @@ import proxycfg
 import sitehistory
 import siteapi
 import tunnels
+import vpnfw
 import wgeasy
 import wifi_doctor
 from poller import poller
@@ -362,9 +363,15 @@ def api_remote():
                "address": client.get("address", ""), "created": int(time.time())}
         cfg.setdefault("remote_clients", []).append(rec)
         hubconfig.save(cfg)
+        vpnfw.apply()                       # let the new operator device through
         return jsonify({"ok": True, **rec, "allowed_ips": allowed,
                         "config": conf, "qr_svg": _qr_svg(conf)})
     return jsonify({"clients": cfg.get("remote_clients", []), "office_lan": _office_lan()})
+
+
+@app.route("/api/hub/vpn-isolation")
+def api_vpn_isolation():
+    return jsonify(vpnfw.status())
 
 
 @app.route("/api/hub/remote/<cid>", methods=["DELETE"])
@@ -372,6 +379,7 @@ def api_remote_delete(cid):
     cfg = hubconfig.load()
     cfg["remote_clients"] = [c for c in cfg.get("remote_clients", []) if c.get("id") != cid]
     hubconfig.save(cfg)
+    vpnfw.apply()                           # its address is no longer an operator
     removed = False
     try:
         wgeasy.delete_client(cid)
@@ -765,7 +773,8 @@ def api_site_tunnel(site_id):
         return err
     body = request.get_json(force=True, silent=True) or {}
     try:
-        res = tunnels.manager.open(site, body.get("ip", ""), body.get("port"), _lan_host())
+        res = tunnels.manager.open(site, body.get("ip", ""), body.get("port"), _lan_host(),
+                                   request.remote_addr)
     except tunnels.TunnelError as e:
         return jsonify({"ok": False, "error": str(e)}), e.status
     return jsonify({"ok": True, **res})
@@ -895,7 +904,7 @@ def api_site_pi_ssh(site_id):
     vpn_ip = site["vpn_ip"]
     if vpn_ip.startswith("10.8."):
         try:
-            res = tunnels.manager.open_direct(site, vpn_ip, 22, _lan_host())
+            res = tunnels.manager.open_direct(site, vpn_ip, 22, _lan_host(), request.remote_addr)
         except tunnels.TunnelError as e:
             return jsonify({"ok": False, "error": str(e)}), e.status
         return jsonify({"ok": True, "tunneled": True, **res})
@@ -1041,6 +1050,7 @@ def main():
           "(must match the published range in docker-compose.yml)", flush=True)
     proxycfg.sync()                        # assign ports + write/reload the Caddyfile
     tunnels.manager.start()                # device-tunnel relay manager
+    vpnfw.start()                          # VPN client isolation (re-asserted every 60 s)
     poller.start()
     port = int(os.environ.get("HUB_PORT", "8091"))
     app.run(host="0.0.0.0", port=port, threaded=True)

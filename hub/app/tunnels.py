@@ -8,6 +8,13 @@ re-exposes that on a LAN port the operator connects to (PuTTY / browser).
 Two-hop: operator -> hub LAN port (HUB_TCP_RANGE, published on wg-easy) --VPN-->
 site 10.8.0.x:<site listen port> -> device:port. Pure-Python threading relay (same
 primitive as the site), in-memory and on-demand, reaped when idle.
+
+Who may USE a relay: the hub login only guards CREATING one, and the port is
+published on every interface. So each tunnel remembers the source IP of the
+logged-in browser that asked for it (more are added when another operator
+re-opens the same direct tunnel) and drops connections from anywhere else.
+Operators behind one NAT share an address — this narrows use to "the machine
+that asked", it does not replace the device's own login.
 """
 import os
 import secrets
@@ -18,6 +25,7 @@ import time
 import requests
 
 import hubconfig
+import siteapi
 
 IDLE_TTL = 600
 MAX_TTL = 8 * 3600
@@ -47,8 +55,10 @@ def port_range():
 class Tunnel:
     """Listening socket relaying each accepted connection to dst_ip:dst_port."""
 
-    def __init__(self, listen_host, listen_port, dst_ip, dst_port):
+    def __init__(self, listen_host, listen_port, dst_ip, dst_port, allowed=()):
         self.id = secrets.token_hex(4)
+        self.allowed = {a for a in allowed if a}   # source IPs that may connect
+        self.refused = 0
         self.listen_host = listen_host
         self.listen_port = listen_port
         self.dst_ip = dst_ip
@@ -72,11 +82,18 @@ class Tunnel:
     def _accept_loop(self):
         while not self._stop:
             try:
-                client, _ = self._lsock.accept()
+                client, addr = self._lsock.accept()
             except socket.timeout:
                 continue
             except OSError:
                 break
+            if addr[0] not in self.allowed:
+                self.refused += 1
+                if self.refused <= 3 or self.refused % 50 == 0:
+                    print(f"[tunnels] {self.id}: refused {addr[0]} (not the operator "
+                          f"who opened it; refused {self.refused}x)", flush=True)
+                client.close()
+                continue
             threading.Thread(target=self._handle, args=(client,), daemon=True).start()
 
     def _handle(self, client):
@@ -164,14 +181,19 @@ class HubTunnelManager:
                 return p
         return None
 
+    @staticmethod
+    def _site_headers(vpn_ip):
+        site = next((s for s in hubconfig.load()["sites"] if s.get("vpn_ip") == vpn_ip), None)
+        return siteapi.headers(site) if site else {}
+
     def _close_site(self, vpn_ip, netwatch_port, site_tid):
         try:
             requests.delete(f"http://{vpn_ip}:{netwatch_port}/api/tunnel/{site_tid}",
-                            timeout=self._timeout())
+                            timeout=self._timeout(), headers=self._site_headers(vpn_ip))
         except requests.RequestException:
             pass   # site's own reaper will collect the orphan
 
-    def open(self, site, ip, port, host):
+    def open(self, site, ip, port, host, client_ip):
         try:
             port = int(port)
             if not (1 <= port <= 65535):
@@ -183,7 +205,8 @@ class HubTunnelManager:
         # Ask the site to open the device-side relay (it validates ip + binds wg0).
         try:
             r = requests.post(f"http://{vpn_ip}:{nport}/api/tunnel",
-                              json={"ip": ip, "port": port}, timeout=self._timeout())
+                              json={"ip": ip, "port": port}, timeout=self._timeout(),
+                              headers=siteapi.headers(site))
         except requests.RequestException as e:
             raise TunnelError(f"Site unreachable: {e}", 502)
         if r.status_code != 200:
@@ -199,7 +222,7 @@ class HubTunnelManager:
             if hp is None:
                 self._close_site(vpn_ip, nport, site_tid)
                 raise TunnelError("Too many active tunnels", 429)
-            t = Tunnel("0.0.0.0", hp, vpn_ip, site_lp)
+            t = Tunnel("0.0.0.0", hp, vpn_ip, site_lp, allowed=[client_ip])
             try:
                 t.start()
             except OSError as e:
@@ -208,12 +231,13 @@ class HubTunnelManager:
             self._tuns[t.id] = {"t": t, "hub_port": hp, "site_id": site["id"],
                                 "site_tid": site_tid, "vpn_ip": vpn_ip,
                                 "netwatch_port": nport, "ip": ip, "port": port}
-        print(f"[tunnels] open {t.id}: :{hp} -> {vpn_ip}:{site_lp} -> {ip}:{port}", flush=True)
+        print(f"[tunnels] open {t.id} for {client_ip}: :{hp} -> {vpn_ip}:{site_lp} -> {ip}:{port}",
+              flush=True)
         scheme = "https" if port == 443 else ("http" if port in WEB_PORTS else "")
         return {"id": t.id, "host": host, "port": hp, "scheme": scheme,
                 "ip": ip, "device_port": port}
 
-    def open_direct(self, site, ip, port, host):
+    def open_direct(self, site, ip, port, host, client_ip):
         """One-hop tunnel: hub LAN port -> ip:port straight over wg0, no site-side
         relay. Used for SSH to the site Pi itself (its sshd listens on the wg
         address), so it keeps working even while the site's Netwatch is down or
@@ -230,13 +254,14 @@ class HubTunnelManager:
                         and r["ip"] == ip and r["port"] == port:
                     t = r["t"]
                     t.last_active = time.time()
+                    t.allowed.add(client_ip)
                     scheme = "https" if port == 443 else ("http" if port in WEB_PORTS else "")
                     return {"id": t.id, "host": host, "port": r["hub_port"],
                             "scheme": scheme, "ip": ip, "device_port": port}
             hp = self._free_port()
             if hp is None:
                 raise TunnelError("Too many active tunnels", 429)
-            t = Tunnel("0.0.0.0", hp, ip, port)
+            t = Tunnel("0.0.0.0", hp, ip, port, allowed=[client_ip])
             try:
                 t.start()
             except OSError as e:
@@ -245,7 +270,7 @@ class HubTunnelManager:
                                 "site_tid": None, "vpn_ip": site["vpn_ip"],
                                 "netwatch_port": site.get("netwatch_port", 8090),
                                 "ip": ip, "port": port}
-        print(f"[tunnels] open-direct {t.id}: :{hp} -> {ip}:{port}", flush=True)
+        print(f"[tunnels] open-direct {t.id} for {client_ip}: :{hp} -> {ip}:{port}", flush=True)
         scheme = "https" if port == 443 else ("http" if port in WEB_PORTS else "")
         return {"id": t.id, "host": host, "port": hp, "scheme": scheme,
                 "ip": ip, "device_port": port}
@@ -253,6 +278,7 @@ class HubTunnelManager:
     def _info(self, tid, r):
         return {"id": tid, "hub_port": r["hub_port"], "site_id": r["site_id"],
                 "ip": r["ip"], "port": r["port"], "conns": r["t"].conns(),
+                "allowed": sorted(r["t"].allowed),
                 "created_at": int(r["t"].created_at),
                 "scheme": "https" if r["port"] == 443 else
                           ("http" if r["port"] in WEB_PORTS else "")}

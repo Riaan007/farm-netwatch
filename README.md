@@ -443,10 +443,12 @@ to the device, bound to its VPN address; the **hub** re-exposes it on a LAN port
 (`8300-8331`, set `HUB_TCP_RANGE`). Tunnels are **on-demand and auto-close** when
 idle; an *Active tunnels* panel lets you close them manually.
 
-- **Security:** creating a tunnel requires the hub login; the site only relays to
-  IPs it has actually scanned (no open relay to arbitrary hosts) and binds the relay
-  to its VPN address (only the hub reaches it); the device's own login still applies.
-  The `8300-8331` ports are **LAN-only — never forward them to the internet**.
+- **Security:** creating a tunnel requires the hub login, and **using** it is limited
+  to the IP address of the browser that opened it (another machine's connection is
+  dropped and logged; operators behind one NAT share an address). The site only
+  opens relays for the hub (hub key), only to IPs it has actually scanned, and binds
+  them to its VPN address; the device's own login still applies. The `8300-8331`
+  ports are **LAN-only — never forward them to the internet**.
 - Example: SSH → `ssh -p <hubport> user@<hub-ip>` (or PuTTY `<hub-ip>:<hubport>`);
   web UI → click the `http(s)://<hub-ip>:<hubport>` link.
 
@@ -531,6 +533,25 @@ fetch, airOS Wi-Fi/network read, Change IP). Two callers get in:
   `docker exec netwatch python siteauth.py reset-hub-key`.
 
 Login state lives in `/data/auth.json` and is not part of the backup bundle.
+
+**VPN client isolation (hub).** Every peer shares `10.8.0.0/24` and wg-easy forwards
+anything arriving on `wg0`, so without rules one client's Pi could reach another
+client's Pi, the office LAN and the hub's ports. The hub (`hub/app/vpnfw.py`, needs
+`cap_add: NET_ADMIN`) keeps two iptables chains in the wg-easy namespace, first in
+line for traffic from `wg0`:
+
+- **Operator devices** — the Remote access clients in the hub (laptop, phone) — may
+  reach everything: sites, the hub, the office LAN.
+- **Sites and unknown peers** may only answer the hub and ping `10.8.0.1`. They
+  cannot reach other sites, operator devices, the office LAN, the hub dashboard,
+  wg-easy's admin page, the site proxies or the relay ports. The hub pulls, so sites
+  never need to open a connection to it.
+
+New wizard sites are isolated from their first packet; a new Remote access client is
+let through as soon as it is created. The rules are re-checked every 60 s (a wg-easy
+restart re-runs its own PostUp). Check or switch off:
+`docker exec netwatch-hub python vpnfw.py status|off|on` (`GET /api/hub/vpn-isolation`).
+A device you added straight in wg-easy's UI (not via the hub) is treated as a site.
 
 **Saved credentials** are stored in `/data/credentials.json`, obfuscated at rest
 with a per-install key (`/data/secret.key`, mode 600) and kept out of the

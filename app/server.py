@@ -1177,11 +1177,12 @@ def api_hub_disconnect():
 
 
 @app.route("/api/tunnel", methods=["GET", "POST"])
+@guard
 def api_tunnel():
     """On-demand TCP relay to a device on this site's LAN. POST {ip, port} opens a
     relay bound to wg0 (VPN-only) and returns {listen_port}; the hub re-exposes it.
-    Only the hub (over the VPN) should reach this — the site has no auth of its own,
-    so relays bind to the wg0 address, not 0.0.0.0."""
+    Only the hub may call this (hub key, or a logged-in person); relays bind to
+    the wg0 address, not 0.0.0.0."""
     if request.method == "POST":
         body = request.get_json(force=True, silent=True) or {}
         try:
@@ -1193,6 +1194,7 @@ def api_tunnel():
 
 
 @app.route("/api/tunnel/<tid>", methods=["DELETE"])
+@guard
 def api_tunnel_close(tid):
     return jsonify({"ok": tunnels.manager.close(tid)})
 

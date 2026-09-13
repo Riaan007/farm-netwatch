@@ -44,6 +44,9 @@ PROTECTED = [
     ("get", "/api/devices/aa:bb/airos-wifi"),
     ("post", "/api/devices/aa:bb/airos-set-ip"),
     ("post", "/api/auth/password"),
+    ("get", "/api/tunnel"),
+    ("post", "/api/tunnel"),
+    ("delete", "/api/tunnel/abc"),
 ]
 
 

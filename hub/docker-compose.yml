@@ -81,6 +81,10 @@ services:
       - TZ=${TZ:-UTC}
     volumes:
       - ./data/hub:/data
+    # NET_ADMIN: the hub keeps the VPN client-isolation rules (vpnfw.py) in the
+    # netns it shares with wg-easy. Without it the hub runs but isolation is off.
+    cap_add:
+      - NET_ADMIN
     restart: unless-stopped
 
   # Caddy reverse proxy: serves each VPN site's Netwatch/Kuma on a LAN port so a
