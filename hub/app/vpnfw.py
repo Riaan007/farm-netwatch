@@ -169,11 +169,16 @@ def remove(locked=False):
 
 
 def status():
+    """Read from the live firewall, not this process's memory — the CLI runs in
+    a fresh process that never applied anything itself."""
     ipt = _backend()
-    return {**_state, "enabled": enabled(), "backend": ipt,
-            "live_fwd": _chain_rules(ipt, FWD), "live_in": _chain_rules(ipt, INP),
-            "jump_forward": _jump_first(ipt, "FORWARD", FWD),
-            "jump_input": _jump_first(ipt, "INPUT", INP)}
+    ops = operators()
+    fwd, inp = desired_rules(ops)
+    live_fwd, live_in = _chain_rules(ipt, FWD), _chain_rules(ipt, INP)
+    jf, ji = _jump_first(ipt, "FORWARD", FWD), _jump_first(ipt, "INPUT", INP)
+    return {**_state, "enabled": enabled(), "backend": ipt, "operators": ops,
+            "applied": bool(jf and ji and live_fwd == fwd and live_in == inp),
+            "live_fwd": live_fwd, "live_in": live_in, "jump_forward": jf, "jump_input": ji}
 
 
 def _loop():

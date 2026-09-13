@@ -86,11 +86,12 @@
     </div>
 
     <script>
+        function nextUrl(){ const n = new URLSearchParams(location.search).get('next') || '/'; return /^\/(?!\/)/.test(n) ? n : '/'; }
         let createMode = false;
 
         async function init(){
             const st = await fetch('/api/auth-state').then(r => r.json());
-            if (st.logged_in) { location.href = '/'; return; }
+            if (st.logged_in) { location.href = nextUrl(); return; }
             createMode = !st.password_set;
             if (createMode) {
                 document.getElementById('mode-hint').textContent =
@@ -110,7 +111,7 @@
                 body: JSON.stringify(body),
             });
             const res = await r.json();
-            if (res.ok) { location.href = '/'; return false; }
+            if (res.ok) { location.href = nextUrl(); return false; }
             const err = document.getElementById('login-error');
             err.textContent = res.error || 'Login failed';
             err.classList.remove('hidden');

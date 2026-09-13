@@ -1,42 +1,103 @@
-const { chromium }=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const fs=require('fs');
-const assert=require('node:assert/strict');
-const path=require('node:path');
-const root=path.resolve(__dirname,'..');
-const file=path.join(root,'hub/app/static/control-center.html');
-(async()=>{
- const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
- const page=await browser.newPage({viewport:{width:1512,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto('file://'+file);await page.getByText('Interactive preview',{exact:true}).waitFor();
- assert.equal(await page.locator('#metrics .metric strong').nth(1).textContent(),'12');
- await page.screenshot({path:path.join(root,'docs/control-center-desktop.png'),fullPage:true});
- await page.locator('.nav [data-view="mikrotik"]').click();assert.equal(await page.locator('#workspace tbody tr').count(),4);
- await page.locator('#workspace [data-asset]').first().click();assert(await page.locator('#drawer').isVisible());assert(await page.getByRole('button',{name:'SSH integration not connected'}).isDisabled());await page.keyboard.press('Escape');
- await page.locator('.nav [data-view="assets"]').click();await page.locator('#search').fill('Yard');assert.equal(await page.locator('#workspace tbody tr').count(),1);
- const downloadPromise=page.waitForEvent('download');await page.locator('#export').click();const download=await downloadPromise;assert(download.suggestedFilename().includes('example'));
- await page.locator('#search').fill('');await page.locator('#status-filter').selectOption('unknown');assert.equal(await page.locator('#workspace tbody tr').count(),2);await page.locator('#status-filter').selectOption('');
- await page.locator('.nav [data-view="backups"]').click();assert.equal(await page.locator('#workspace tbody tr').count(),4);
- await page.locator('.nav [data-view="overview"]').click();await page.setViewportSize({width:390,height:844});
- assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(root,'docs/control-center-mobile.png'),fullPage:true});
- // Live mode: API contract, managed scope, duplicate IPs, stale state and session failure.
- const live=await browser.newPage({viewport:{width:1440,height:1000}});live.on('pageerror',e=>errors.push(e.message));
- let fail=false,failAssets=false;const now=Math.floor(Date.now()/1000);const sites=[{id:'a',name:'Client A',reachable:true,fetched_at:now,pi_health:'ok'},{id:'b',name:'Client B',reachable:false,stale:true,fetched_at:now-900}];
- await live.route('http://netwatch.test/**',async route=>{
- const path=new URL(route.request().url()).pathname;
- assert.equal(route.request().method(),'GET','Control center must not mutate clients');
- if(path==='/control-center')return route.fulfill({contentType:'text/html',body:fs.readFileSync(file,'utf8')});
- if(fail)return route.fulfill({status:401,contentType:'application/json',body:'{}'});
- let body;
- if(path==='/api/hub/overview')body={sites};
- else if(path.endsWith('/devices')){const id=path.split('/')[4];if(failAssets&&id==='a')return route.fulfill({status:502,body:'{}'});body={card:sites.find(s=>s.id===id),devices:[{key:'router',name:'<img src=x onerror=alert(1)>',category:'network',watch:true,online:true,vendor:'MikroTik',ip:'192.168.88.1'},{key:'phone',name:'Private phone',category:'phone',watch:true,online:true},{key:'unapproved',name:'Unapproved camera',category:'camera',watch:false,online:true},{key:'printer',category:'printer',watch:true,online:true}],stale:id==='b'};}
- else if(path.endsWith('/backups'))body={backups:[]};else return route.fulfill({status:404,body:'{}'});
- return route.fulfill({contentType:'application/json',body:JSON.stringify(body)});
- });
- await live.goto('http://netwatch.test/control-center');await live.getByText('Hub snapshots',{exact:true}).waitFor();
- assert.equal(await live.locator('#metrics .metric strong').nth(1).textContent(),'2');assert.equal(await live.locator('#metrics .metric strong').nth(3).textContent(),'1');
- await live.locator('.nav [data-view="assets"]').click();assert.equal(await live.locator('#workspace tbody tr').count(),2);assert.equal(await live.locator('#workspace img').count(),0);assert.equal(await live.getByText('Private phone',{exact:true}).count(),0);
- await live.locator('#workspace [data-asset]').nth(2).click();assert((await live.locator('#drawer-body').textContent()).includes('Client B'));await live.keyboard.press('Escape');
- failAssets=true;await live.locator('#refresh').click();await live.getByText(/site inventories unavailable/).waitFor();assert.equal(await live.locator('#metrics .metric strong').nth(3).textContent(),'2');
- fail=true;await live.locator('#refresh').click();await live.getByText(/Session expired/).waitFor();assert.equal(await live.locator('#metrics .metric strong').nth(0).textContent(),'0 / 2');assert.equal(await live.locator('#metrics .metric strong').nth(3).textContent(),'2');
- assert.deepEqual(errors,[]);await browser.close();console.log('PASS: desktop/mobile, preview navigation, filtering, CSV, dialog, backups, managed scope, XSS escaping, overlapping addresses, stale data, partial failures, session expiry, GET-only behavior.');
-})().catch(e=>{console.error(e);process.exit(1)});
+/* Control Center check against a LIVE hub: every page renders without script
+ * errors or failed requests, and the figures on screen agree with the hub API.
+ *
+ *   HUB_URL=http://localhost:8091 HUB_PASSWORD=… CHROMIUM_PATH=/usr/bin/chromium \
+ *     node tests/control-center.cjs
+ *
+ * PLAYWRIGHT_MODULE may point at a playwright package outside normal resolution.
+ * Read-only: it never clicks anything that changes a site. */
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
+const HUB = process.env.HUB_URL || "http://localhost:8091";
+const QUIET = 7 * 86400;
+
+(async () => {
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const problems = [];
+  const fail = (msg) => { problems.push(msg); console.log("FAIL", msg); };
+  const ok = (msg) => console.log("ok  ", msg);
+  page.on("pageerror", (e) => fail("script error: " + e.message));
+  page.on("response", (r) => { if (r.status() >= 400 && !r.url().includes("/api/login")) fail(`HTTP ${r.status()} ${r.url()}`); });
+
+  await page.goto(HUB + "/login");
+  const login = await page.evaluate((pw) => fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) }).then((r) => r.status), process.env.HUB_PASSWORD);
+  if (login !== 200) { console.log("login failed", login); process.exit(2); }
+
+  const api = (p) => page.evaluate((p) => fetch(p).then((r) => r.json()), p);
+  const ov = await api("/api/hub/overview");
+  const devs = {};
+  for (const s of ov.sites) devs[s.id] = (await api(`/api/hub/sites/${s.id}/devices`)).devices || [];
+
+  await page.goto(HUB + "/#/");
+  await page.waitForFunction(() => window.CC && CC.state.loaded && CC.state.sites.every((s) => !s.enabled || CC.state.devices[s.id]), null, { timeout: 60000 });
+  await page.waitForTimeout(1500);
+
+  // sidebar lists every site
+  const side = await page.$$eval("#nav-sites a", (a) => a.length);
+  side === ov.sites.length ? ok(`sidebar lists ${side} sites`) : fail(`sidebar lists ${side} of ${ov.sites.length} sites`);
+
+  // KPI: sites online
+  const enabled = ov.sites.filter((s) => s.enabled);
+  const reach = enabled.filter((s) => s.reachable).length;
+  const kpi = async (label) => page.$$eval(".kpi", (ks, label) => { const k = ks.find((x) => x.querySelector(".k").textContent.trim().toLowerCase() === label); return k ? k.querySelector(".v").textContent.replace(/\s+/g, "") : null; }, label);
+  const sitesKpi = await kpi("sites online");
+  sitesKpi === `${reach}/${enabled.length}` ? ok(`sites online ${sitesKpi}`) : fail(`sites online shows ${sitesKpi}, API says ${reach}/${enabled.length}`);
+
+  // KPI: devices online
+  let total = 0, online = 0, watchedDown = 0;
+  enabled.forEach((s) => { total += devs[s.id].length; online += devs[s.id].filter((d) => d.online).length; watchedDown += devs[s.id].filter((d) => d.watch && !d.online).length; });
+  const devKpi = await kpi("devices online");
+  devKpi === `${online}/${total}` ? ok(`devices online ${devKpi}`) : fail(`devices online shows ${devKpi}, API says ${online}/${total} (devices may have refreshed between reads)`);
+  const wd = await kpi("watched down");
+  wd === String(watchedDown) ? ok(`watched down ${wd}`) : fail(`watched down shows ${wd}, API says ${watchedDown}`);
+
+  // attention count in nav == attention list length
+  const navCount = await page.$eval("#nav-att-count", (e) => (e.hidden ? 0 : +e.textContent));
+  await page.evaluate(() => (location.hash = "#/attention"));
+  await page.waitForTimeout(800);
+  const listCount = await page.$$eval("#at-list li", (l) => l.length);
+  navCount === listCount ? ok(`attention: ${listCount} items, nav agrees`) : fail(`attention nav says ${navCount}, list has ${listCount}`);
+  for (const s of enabled) {
+    if (!s.reachable) {
+      const has = await page.$$eval("#at-list li", (l, n) => l.some((x) => x.textContent.includes("Site offline") && x.textContent.includes(n)), s.name);
+      has ? ok(`${s.name} offline is listed`) : fail(`${s.name} is unreachable but not in Needs attention`);
+    }
+  }
+
+  // every page renders
+  const routes = ["#/devices", "#/backups", "#/vpn", "#/settings/sites", "#/settings/alerts"];
+  for (const s of ov.sites) for (const t of ["", "/devices", "/problems", "/health", "/history", "/backups", "/access"]) routes.push(`#/site/${s.id}${t}`);
+  for (const r of routes) {
+    await page.evaluate((h) => (location.hash = h), r);
+    await page.waitForTimeout(1800);
+    const txt = await page.$eval("#view", (v) => v.textContent.trim().length);
+    txt > 40 ? ok(`renders ${r}`) : fail(`blank page ${r}`);
+  }
+
+  // site header online count and device table totals
+  for (const s of enabled) {
+    await page.evaluate((h) => (location.hash = h), `#/site/${s.id}/devices`);
+    await page.waitForTimeout(1500);
+    const head = await page.$eval("#st-head", (e) => e.textContent);
+    const want = `${devs[s.id].filter((d) => d.online).length}/${devs[s.id].length} online`;
+    head.includes(want) ? ok(`${s.name} header ${want}`) : fail(`${s.name} header lacks "${want}"`);
+    const now = Math.floor(Date.now() / 1000);
+    const visible = devs[s.id].filter((d) => d.online || (d.last_seen && now - d.last_seen < QUIET)).length;
+    const n = await page.$eval("#dv-n", (e) => e.textContent);
+    n.startsWith(`${visible} of ${devs[s.id].length}`) ? ok(`${s.name} table ${n}`) : fail(`${s.name} table says "${n}", expected ${visible} of ${devs[s.id].length}`);
+  }
+
+  // mobile layout: no horizontal overflow
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const r of ["#/", `#/site/${ov.sites[0].id}/devices`]) {
+    await page.evaluate((h) => (location.hash = h), r);
+    await page.waitForTimeout(1200);
+    const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    over <= 1 ? ok(`mobile ${r} fits`) : fail(`mobile ${r} scrolls sideways by ${over}px`);
+  }
+
+  await page.evaluate(() => fetch("/api/logout", { method: "POST" }));
+  await browser.close();
+  console.log(problems.length ? `\n${problems.length} problem(s)` : "\nall checks passed");
+  process.exit(problems.length ? 1 : 0);
+})();

@@ -317,9 +317,32 @@ device's **health URL** into a Kuma *HTTP* monitor (200 = up, 503 = down).
 
 The `hub/` stack turns one machine (e.g. the Pi behind your DDNS name) into a
 **WireGuard hub + multi-site dashboard**: every farm site dials in over the VPN,
-and `http://<hub>:8091` shows one card per site — reachability, device counts,
-watched-device alarms, last scan, and that site's **Uptime Kuma** monitors —
-with deep links into each site's own Netwatch and Kuma UIs.
+and `http://<hub>:8091` opens the **Control Center** — one place for the whole
+fleet:
+
+- **Overview** — fleet KPIs, a card per site (state, online counts, key equipment,
+  24 h reachability, Kuma) and a *Needs attention* list worked out from live data.
+- **All devices** — every device across every site: search (a full IP matches that
+  address exactly), filter by site / state / type / MikroTik / watched, CSV export.
+  Devices not seen for 7+ days are "gone quiet" and hidden unless you ask for them,
+  so old discoveries don't bury the real picture.
+- **A site** — Overview, Devices, Problems (IP conflicts with *Clear & re-test*,
+  wireless link findings), Pi health, History (timeline with repeats folded, or by
+  IP), Backups (restore, download, delete, backup key) and Remote access (device
+  tunnels, SSH to the Pi) — plus SSH Pi, AI report, Wi-Fi Doctor and Pi password.
+- A **device drawer** — identity, 24 h/7 d/30 d uptime, ping chart, ping /
+  connection test / traceroute / deep scan from the site Pi, and one-click tunnels.
+- **Backups**, **VPN & remote** (your phone/laptop profiles with QR, client
+  isolation status, site tunnels) and **Settings** (new-site wizard, sites, hub
+  alerts, Gemini key).
+
+How a site's state is decided (the same rules drive every count on every page):
+*Offline* = the hub can't reach it; *Fault* = a watched device, Kuma monitor or the
+internet is down, or the Pi is critical; *Needs a look* = live IP conflict, Pi
+warning, Pi login/key problem, no backup in 26 h, stale device list or a degraded
+wireless link; otherwise *Healthy*. The previous card view stays at `/classic`
+(its site pages at `/site/<id>`). `tests/control-center.cjs` checks the page against
+a live hub — every figure against the API, every route, and the phone layout.
 
 ```
 farm sites (wg-client, dial out) ──UDP 51820──> hub (wg-easy 10.8.0.1)

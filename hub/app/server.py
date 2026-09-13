@@ -64,13 +64,27 @@ def _guard():
 # ---- pages -------------------------------------------------------------
 @app.route("/")
 def index():
+    """The Control Center (static/control-center.html + static/cc/). Asset URLs
+    carry the newest mtime of its files so a deploy is never masked by a
+    browser's cached copy."""
+    cc_dir = os.path.join(STATIC_DIR, "cc")
+    v = int(max([os.path.getmtime(os.path.join(cc_dir, f)) for f in os.listdir(cc_dir)]
+                + [os.path.getmtime(os.path.join(STATIC_DIR, "control-center.html"))]))
+    with open(os.path.join(STATIC_DIR, "control-center.html")) as f:
+        html = f.read().replace("__V__", str(v))
+    resp = app.response_class(html, mimetype="text/html")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/classic")
+def classic():
     return send_from_directory(STATIC_DIR, "index.html")
 
 
 @app.route("/control-center")
 def control_center():
-    """Lightweight operator view over the existing authenticated hub APIs."""
-    return send_from_directory(STATIC_DIR, "control-center.html")
+    return redirect("/")
 
 
 @app.route("/site/<site_id>")
