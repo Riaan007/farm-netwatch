@@ -28,6 +28,7 @@ import hubconfig
 import kuma_status
 import notify
 import sitehistory
+import siteapi
 
 SNAP_DIR = os.path.join(os.environ.get("HUB_DATA", "/data"), "snapshots")
 
@@ -197,7 +198,8 @@ class Poller:
         t0 = time.time()
         status, err = None, ""
         try:
-            r = requests.get(self._base_url(site) + "/api/status", timeout=timeout)
+            r = requests.get(self._base_url(site) + "/api/status", timeout=timeout,
+                             headers=siteapi.headers(site))
             r.raise_for_status()
             status = r.json()
         except requests.exceptions.RequestException as e:
@@ -205,6 +207,7 @@ class Poller:
         except ValueError:
             err = "bad-json"
         latency = round((time.time() - t0) * 1000, 1) if status else None
+        api_auth = siteapi.reconcile(site, status, timeout) if status else None
 
         with self._lock:
             snap = self._snap.setdefault(sid, {})
@@ -212,6 +215,8 @@ class Poller:
             snap["reachable"] = status is not None
             snap["status"] = status if status else snap.get("status")
             snap["status_error"] = err
+            if api_auth:
+                snap["api_auth"] = api_auth
             snap["latency_ms"] = latency
             snap["status_fetched"] = int(time.time())
             devices = (snap.get("devices") or {}).get("devices") or []

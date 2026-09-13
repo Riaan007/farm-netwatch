@@ -425,6 +425,13 @@
                 ? '<span class="chip bg-red-500/15 text-red-300 border border-red-400/30">🩺 Pi CRITICAL</span>'
                 : s.pi_health === 'warn'
                     ? '<span class="chip bg-amber-500/15 text-amber-300">🩺 Pi warn</span>' : '';
+            // Hub key vs the site's login (hub/app/siteapi.py). ok/claimed stay quiet.
+            const apiAuth = s.api_auth === 'mismatch'
+                ? '<span class="chip bg-red-500/15 text-red-300 border border-red-400/30" title="The Pi holds a different hub key, so backups and restores fail. On the Pi: docker exec netwatch python siteauth.py reset-hub-key">🔑 key mismatch</span>'
+                : s.api_auth === 'refused'
+                    ? '<span class="chip bg-amber-500/15 text-amber-300" title="The Pi would not accept the hub key (only 10.8.0.1 may claim). Set it by hand on the Pi: docker exec -i netwatch python siteauth.py set-hub-key">🔑 not claimed</span>'
+                    : s.api_auth === 'legacy'
+                        ? '<span class="chip bg-slate-500/15 text-slate-400 border border-slate-400/20" title="This Pi runs a Netwatch image without the login — saved passwords are readable by anyone on its network. Update: docker compose pull">🔓 no Pi login</span>' : '';
             let kuma = '';
             if (s.kuma) {
                 const down = s.kuma.down ? `<span class="text-rose-400 font-bold">↓${s.kuma.down}</span>` : '';
@@ -447,7 +454,7 @@
                         <div class="text-right shrink-0 flex flex-col items-end gap-1">${latency}<p class="text-[11px] text-slate-500">scan ${fmtAgo(s.last_scan_ts)}</p></div>
                     </div>
                     <div>
-                        <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${rotated} ${piHealth} ${stale}</div>
+                        <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${rotated} ${piHealth} ${apiAuth} ${stale}</div>
                         ${bar}
                     </div>
                     <div>${sparkBars(s.spark)}<p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Site reachability · last 24h ${s.reach_24h !== null ? '· ' + s.reach_24h + '%' : ''}</p></div>

@@ -12,7 +12,7 @@ import threading
 import time
 
 import urllib3
-from flask import Flask, jsonify, redirect, request, send_file, send_from_directory
+from flask import Flask, jsonify, redirect, request, send_file, send_from_directory, session
 
 import airos
 import assets
@@ -25,6 +25,7 @@ import hubvpn
 import identify
 import netcfg
 import radiomon
+import siteauth
 import sysmon
 import tunnels
 import kuma
@@ -38,6 +39,9 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 PHOTO_DIR = os.path.join(os.environ.get("NETWATCH_DATA", "/data"), "photos")
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024   # 8 MB photo cap
+siteauth.init_app(app)
+
+guard = siteauth.required            # a logged-in person or the hub key
 
 
 def _photo_path(key):
@@ -101,16 +105,69 @@ def api_status():
         "vpn": cfg["vpn"]["mode"],
         "features": cfg.get("features", {}),
         "server_ip": kuma.lan_ip(),   # this Pi's own LAN address, shown in the UI
+        "auth": siteauth.state(request, session),   # booleans; the hub claims on hub_key_set=false
     })
+
+
+# ---- login (see siteauth.py) -------------------------------------------------
+@app.route("/api/auth/state")
+def api_auth_state():
+    return jsonify(siteauth.state(request, session))
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    body = request.get_json(force=True, silent=True) or {}
+    code, res = siteauth.login(request, session, body.get("password", ""))
+    return jsonify(res), code
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_auth_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/password", methods=["POST"])
+@guard
+def api_auth_password():
+    """Set/change the site password (the hub, or a person already logged in)."""
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        siteauth.set_password(body.get("password", ""))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    if not siteauth.hub_ok(request):
+        # the person who changed it stays logged in under the new epoch
+        siteauth.login(request, session, body.get("password", ""))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/claim-hub", methods=["POST"])
+def api_auth_claim_hub():
+    body = request.get_json(force=True, silent=True) or {}
+    code, res = siteauth.claim_hub(request, body.get("key", ""))
+    return jsonify(res), code
 
 
 @app.route("/api/config", methods=["GET", "POST"])
 def api_config():
+    authed = siteauth.allowed(request, session)
     if request.method == "POST":
+        if not authed:
+            return siteauth._denied(request, session)
         # Merge over the CURRENT config (not defaults) so a partial update never
         # silently resets unrelated fields such as `configured`.
         return jsonify(config.update(request.get_json(force=True)))
+    if request.args.get("full") and not authed:
+        return siteauth._denied(request, session)
     cfg = config.load()
+    if not authed:
+        # The ntfy topic doubles as the remote-command channel: anyone who knows
+        # it can drive this Pi. Settings forms ask for ?full=1 (login first).
+        cfg["alerts"]["ntfy_topic_set"] = bool(cfg["alerts"].get("ntfy_topic"))
+        cfg["alerts"]["ntfy_topic"] = ""
+        cfg["redacted"] = True
     ki = cfg.get("integrations", {}).get("kuma")
     if ki is not None:
         # What the URL currently resolves to (== base_url when auto_url is off);
@@ -175,6 +232,7 @@ def api_test_ntfy():
 
 
 @app.route("/api/setup", methods=["POST"])
+@siteauth.required_if(lambda: config.load().get("configured"))
 def api_setup():
     """Original lightweight setup from the dashboard gear modal."""
     body = request.get_json(force=True)
@@ -248,6 +306,7 @@ def api_devices():
 
 
 @app.route("/api/devices/<path:key>/credentials", methods=["GET", "POST"])
+@guard
 def api_credentials(key):
     if request.method == "POST":
         body = request.get_json(force=True)
@@ -407,6 +466,7 @@ def api_radio_history(key):
 
 
 @app.route("/api/credentials/bulk", methods=["POST"])
+@guard
 def api_credentials_bulk():
     """Apply one login to many devices at once, or copy a device's saved login
     onto others. A farm site has whole families of identical gear (a pole of
@@ -531,6 +591,7 @@ def api_device_meta(key):
 
 
 @app.route("/api/devices/<path:key>/hikvision", methods=["POST"])
+@guard
 def api_hikvision(key):
     """Pull model/serial/firmware from a Hikvision camera/NVR using its saved login."""
     body = request.get_json(silent=True) or {}
@@ -563,6 +624,7 @@ def _hik_target(key):
 
 
 @app.route("/api/devices/<path:key>/network", methods=["GET"])
+@guard
 def api_device_network(key):
     """Read a Hikvision camera's current IPv4 settings (to pre-fill the change form)."""
     ip, user, pw = _hik_target(key)
@@ -574,6 +636,7 @@ def api_device_network(key):
 
 
 @app.route("/api/devices/<path:key>/set-ip", methods=["POST"])
+@guard
 def api_device_set_ip(key):
     """Change a Hikvision camera's IP via ISAPI. Validates the new address, uses
     the saved credentials, then (on success) baselines the new IP as 'home' so it
@@ -613,6 +676,7 @@ def _airos_enabled():
 
 
 @app.route("/api/devices/<path:key>/airos-network", methods=["GET"])
+@guard
 def api_airos_network(key):
     """Read a Ubiquiti airOS radio's current management IP over SSH (gated)."""
     if not _airos_enabled():
@@ -624,6 +688,7 @@ def api_airos_network(key):
 
 
 @app.route("/api/devices/<path:key>/airos-wifi", methods=["GET"])
+@guard
 def api_airos_wifi(key):
     """Read a Ubiquiti airOS radio's wireless status over SSH (read-only).
 
@@ -650,6 +715,7 @@ def api_airos_wifi(key):
 
 
 @app.route("/api/devices/<path:key>/airos-set-ip", methods=["POST"])
+@guard
 def api_airos_set_ip(key):
     """Change a Ubiquiti airOS radio's management IP over SSH (gated, EXPERIMENTAL).
     Edits /tmp/system.cfg, persists and reboots. High blast radius on backhaul."""
@@ -934,6 +1000,7 @@ def api_kuma_monitor_bulk():
 
 
 @app.route("/api/kuma/test", methods=["POST"])
+@guard
 def api_kuma_test():
     cfg = config.load()
     ki = cfg["integrations"]["kuma"]
@@ -1039,6 +1106,7 @@ def api_ip_history():
 
 # ---- first-run wizard --------------------------------------------------
 @app.route("/api/wizard", methods=["POST"])
+@siteauth.required_if(lambda: config.load().get("configured"))
 def api_wizard():
     body = request.get_json(force=True)
     # validate target CIDRs
@@ -1078,6 +1146,7 @@ def api_hub_status():
 
 
 @app.route("/api/hub/connect", methods=["POST"])
+@guard
 def api_hub_connect():
     """Save a pasted wg config and bring the tunnel up — no SSH, no open ports."""
     body = request.get_json(force=True, silent=True) or {}
@@ -1094,6 +1163,7 @@ def api_hub_connect():
 
 
 @app.route("/api/hub/disconnect", methods=["POST"])
+@guard
 def api_hub_disconnect():
     """Bring the tunnel down. Pass {"forget": true} to also delete the config."""
     body = request.get_json(force=True, silent=True) or {}
@@ -1146,6 +1216,7 @@ def _read_json_file(path):
 
 
 @app.route("/api/config/export")
+@guard
 def api_config_export():
     """Full settings bundle for disaster recovery / new-Pi deployment: config,
     device registry (names, categories, watch/kuma flags), obfuscated logins +
@@ -1176,6 +1247,7 @@ def api_config_export():
 
 
 @app.route("/api/config/import", methods=["POST"])
+@guard
 def api_config_import():
     """Restore a backup bundle (from the hub or an uploaded file). Applies
     settings + device registry + logins; the hub-VPN config is only applied
@@ -1227,6 +1299,7 @@ def api_network():
 
 
 @app.route("/api/network/address", methods=["POST"])
+@guard
 def api_network_address():
     """Add/remove a managed secondary IP (and an auto scan target if requested)."""
     body = request.get_json(force=True, silent=True) or {}
@@ -1258,6 +1331,7 @@ def api_network_address():
 
 
 @app.route("/api/network/static", methods=["POST"])
+@guard
 def api_network_static():
     """Apply DHCP->static on a connection, armed with the auto-revert watchdog."""
     if not netcfg.nm_available():
@@ -1289,12 +1363,14 @@ def api_network_static():
 
 
 @app.route("/api/network/static/confirm", methods=["POST"])
+@guard
 def api_network_confirm():
     netcfg.confirm_static()
     return jsonify({"ok": True})
 
 
 @app.route("/api/network/dhcp", methods=["POST"])
+@guard
 def api_network_dhcp():
     if not netcfg.nm_available():
         return jsonify({"ok": False, "error": "NetworkManager not available"}), 400

@@ -424,8 +424,8 @@ LAN browser — **no VPN client needed** on your computer.
   **hub password**. (If the buttons 401 with no prompt or the proxy seems off after
   upgrading, log into the hub once — that backfills the auth hash.)
 - The **home** site uses a LAN IP, so it's linked directly (not proxied).
-- **Security:** these ports expose the (login-less) site dashboards on your LAN
-  behind the hub password. Keep them LAN-only — **do not forward `8200-8231`** to
+- **Security:** these ports expose the site dashboards on your LAN behind the hub
+  password (saved logins and settings still need the site password). Keep them LAN-only — **do not forward `8200-8231`** to
   the internet.
 
 ### Connect to a device on a site's LAN (SSH / web / any port)
@@ -506,17 +506,38 @@ nmap scan ──> parse ──> identify (OUI + DNS + HTTP banner + ports) ─�
 
 ## Security
 
-This is a **LAN tool**: the dashboard has no auth, so keep it on a trusted
-network and reach it remotely via the VPN rather than exposing port 8090 to the
-internet. Scanning is read-only discovery — it never logs into devices.
+Keep it on a trusted network and reach it remotely via the VPN rather than
+exposing port 8090 to the internet. Scanning is read-only discovery — it never
+logs into devices.
+
+**Site login.** The dashboard, device list and scans stay open, but everything
+that reveals or uses a secret, or changes the Pi, needs a login: saved device
+logins (read, save, bulk), config export/import, settings writes (and the full
+settings incl. the ntfy topic), hub-VPN connect/disconnect, network changes,
+the Kuma login test, and the device actions that use a saved login (Hikvision
+fetch, airOS Wi-Fi/network read, Change IP). Two callers get in:
+
+- **People** log in with the **site password** (12 h session). A new Pi has none
+  and nobody on its LAN can set one: set it from the hub (site page → **Pi
+  password**) or on the Pi with
+  `docker exec -it netwatch python siteauth.py set-password`.
+- **The hub** sends its own per-site key (`X-Netwatch-Hub-Key`, kept in the hub's
+  `data/hub/site_keys.json`). A VPN site is claimed automatically on the first
+  poll — the Pi accepts that once, only from the hub's VPN address `10.8.0.1`.
+  A site the hub reaches by LAN IP (the home site) needs the key set by hand:
+  `docker exec netwatch-hub python -c "import json;print(json.load(open('/data/site_keys.json'))['home'])" | docker exec -i netwatch python siteauth.py set-hub-key`.
+  The hub card shows 🔑 **key mismatch** / **not claimed**, or 🔓 **no Pi login**
+  for sites still on an older image. To re-claim a rebuilt Pi:
+  `docker exec netwatch python siteauth.py reset-hub-key`.
+
+Login state lives in `/data/auth.json` and is not part of the backup bundle.
 
 **Saved credentials** are stored in `/data/credentials.json`, obfuscated at rest
 with a per-install key (`/data/secret.key`, mode 600) and kept out of the
-`/api/devices` feed. Be clear-eyed about the threat model: obfuscation protects
-against casual reading of the file or a backup, but anyone who can reach the
-(unauthenticated) dashboard can request a stored password via the API. Only use
-this on a trusted LAN / behind the VPN. Both files live in the `./data` volume —
-exclude them from any public backup.
+`/api/devices` feed. Obfuscation protects against casual reading of the file,
+not against someone holding the backup bundle (it carries the key) — treat hub
+backups as secrets. Both files live in the `./data` volume — exclude them from
+any public backup.
 
 ## Requirements
 

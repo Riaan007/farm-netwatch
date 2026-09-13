@@ -284,6 +284,7 @@
         <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden">
             <div class="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
                 <h2 class="text-xl font-bold">Settings</h2>
+                <button onclick="nwAuth.logout().then(closeSetup)" class="ml-auto mr-2 px-3 h-9 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold" title="Sign out of this Pi (saved logins and settings lock again)">&#128274; Lock</button>
                 <button onclick="closeSetup()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-xl leading-none">&times;</button>
             </div>
             <div class="p-6 space-y-5 overflow-y-auto grow">
@@ -665,6 +666,7 @@
         </div>
     </div>
 
+    <script src="/static/auth.js"></script>
     <script>
         let DATA = { targets: [], devices: [] };
         let DEV_BY_IP = {};
@@ -1814,9 +1816,16 @@
 
         // ---- settings / scan ----
         async function openSetup(){
+            // Full settings need the site login; cancelling it closes the form so a
+            // save can never write back the blanked (redacted) ntfy topic.
+            let c;
+            try {
+                const r = await fetch('/api/config?full=1');
+                if(!r.ok){ closeSetup(); return; }
+                c = await r.json();
+            } catch(e){ return; }
             document.getElementById('setup-modal').classList.remove('hidden');
             try {
-                const c = await (await fetch('/api/config')).json();
                 if(c.alerts){
                     document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic || '';
                     document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands !== false;
@@ -2452,7 +2461,7 @@
         }
         // preload ntfy settings + Kuma link (host the browser used, port from base_url)
         fetch('/api/config').then(r=>r.json()).then(c=>{
-            if(c.alerts){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands!==false; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }
+            if(c.alerts && !c.redacted){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands!==false; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }
             const ku = (c.integrations&&c.integrations.kuma&&c.integrations.kuma.base_url)||'';
             const port = (ku.split(':')[2]||'3001').replace(/\D/g,'')||'3001';
             const link = document.getElementById('kuma-link');

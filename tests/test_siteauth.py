@@ -1,0 +1,150 @@
+"""Site login (app/siteauth.py) against the real Flask app.
+
+Run inside the site image with a throwaway data dir:
+  docker run --rm -v "$PWD/app:/app" -v "$PWD/tests:/tests" -e NETWATCH_DATA=/tmp/nw \
+    --entrypoint python farm-netwatch:netcfg /tests/test_siteauth.py -v
+"""
+import os
+import sys
+import tempfile
+import unittest
+
+os.environ.setdefault("NETWATCH_DATA", tempfile.mkdtemp())
+sys.path.insert(0, os.environ.get("NETWATCH_APP", "/app"))
+
+import config      # noqa: E402
+import creds       # noqa: E402
+import server      # noqa: E402
+import siteauth    # noqa: E402
+
+HUB = {"REMOTE_ADDR": "10.8.0.1"}
+LAN = {"REMOTE_ADDR": "192.168.0.50"}
+KEY = "k" * 43
+PROTECTED = [
+    ("get", "/api/devices/aa:bb/credentials"),
+    ("post", "/api/devices/aa:bb/credentials"),
+    ("post", "/api/credentials/bulk"),
+    ("get", "/api/config/export"),
+    ("post", "/api/config/import"),
+    ("post", "/api/config"),
+    ("get", "/api/config?full=1"),
+    ("post", "/api/setup"),
+    ("post", "/api/wizard"),
+    ("post", "/api/hub/connect"),
+    ("post", "/api/hub/disconnect"),
+    ("post", "/api/kuma/test"),
+    ("post", "/api/network/address"),
+    ("post", "/api/network/static"),
+    ("post", "/api/network/static/confirm"),
+    ("post", "/api/network/dhcp"),
+    ("post", "/api/devices/aa:bb/hikvision"),
+    ("get", "/api/devices/aa:bb/network"),
+    ("post", "/api/devices/aa:bb/set-ip"),
+    ("get", "/api/devices/aa:bb/airos-network"),
+    ("get", "/api/devices/aa:bb/airos-wifi"),
+    ("post", "/api/devices/aa:bb/airos-set-ip"),
+    ("post", "/api/auth/password"),
+]
+
+
+class SiteAuth(unittest.TestCase):
+    def setUp(self):
+        for p in (siteauth.AUTH_PATH,):
+            if os.path.exists(p):
+                os.remove(p)
+        siteauth._fails.clear()
+        cfg = config.load()
+        cfg["configured"] = True
+        cfg["alerts"]["ntfy_topic"] = "secret-topic"
+        config.save(cfg)
+        creds.set_("aa:bb", "admin", "hunter22", "")
+        self.c = server.app.test_client()
+
+    def call(self, method, path, env=LAN, **kw):
+        return getattr(self.c, method)(path, environ_base=env, json=kw.pop("json", {}), **kw)
+
+    def test_everything_sensitive_is_locked_for_anonymous(self):
+        for method, path in PROTECTED:
+            r = self.call(method, path)
+            self.assertEqual(r.status_code, 401, f"{method} {path}")
+            self.assertEqual(r.get_json()["error"], "auth_required")
+        self.assertNotIn(b"hunter22", self.call("get", "/api/devices/aa:bb/credentials").data)
+
+    def test_open_endpoints_still_open(self):
+        for path in ("/api/status", "/api/devices", "/api/sysinfo", "/api/auth/state"):
+            self.assertEqual(self.call("get", path).status_code, 200, path)
+
+    def test_config_redacts_topic_for_anonymous(self):
+        j = self.call("get", "/api/config").get_json()
+        self.assertEqual(j["alerts"]["ntfy_topic"], "")
+        self.assertTrue(j["alerts"]["ntfy_topic_set"])
+        self.assertTrue(j["redacted"])
+
+    def test_claim_only_from_hub_ip_once(self):
+        self.assertEqual(self.call("post", "/api/auth/claim-hub", json={"key": KEY}).status_code, 403)
+        fwd = self.call("post", "/api/auth/claim-hub", env=HUB, json={"key": KEY},
+                        headers={"X-Forwarded-For": "192.168.88.10"})
+        self.assertEqual(fwd.status_code, 403, "proxied requests must not claim")
+        self.assertEqual(self.call("post", "/api/auth/claim-hub", env=HUB, json={"key": "short"}).status_code, 400)
+        self.assertEqual(self.call("post", "/api/auth/claim-hub", env=HUB, json={"key": KEY}).status_code, 200)
+        # second claim with another key is refused, even from the hub address
+        self.assertEqual(self.call("post", "/api/auth/claim-hub", env=HUB, json={"key": "z" * 43}).status_code, 409)
+        # rotating with the current key works
+        r = self.call("post", "/api/auth/claim-hub", env=HUB, json={"key": "n" * 43},
+                      headers={siteauth.HEADER: KEY})
+        self.assertEqual(r.status_code, 200)
+
+    def test_hub_key_unlocks_export_and_status_reports_it(self):
+        self.call("post", "/api/auth/claim-hub", env=HUB, json={"key": KEY})
+        h = {siteauth.HEADER: KEY}
+        exp = self.call("get", "/api/config/export", headers=h)
+        self.assertEqual(exp.status_code, 200)
+        self.assertEqual(exp.get_json()["kind"], "netwatch-backup")
+        self.assertNotIn("auth.json", exp.get_data(as_text=True))
+        self.assertTrue(self.call("get", "/api/status", headers=h).get_json()["auth"]["hub"])
+        bad = self.call("get", "/api/config/export", headers={siteauth.HEADER: "x" * 43})
+        self.assertEqual(bad.status_code, 401)
+
+    def test_no_password_means_nobody_on_lan_can_set_one(self):
+        self.assertEqual(self.call("post", "/api/auth/password", json={"password": "letmein99"}).status_code, 401)
+        self.assertEqual(self.call("post", "/api/auth/login", json={"password": "anything1"}).status_code, 403)
+
+    def test_hub_sets_password_then_person_logs_in(self):
+        self.call("post", "/api/auth/claim-hub", env=HUB, json={"key": KEY})
+        h = {siteauth.HEADER: KEY}
+        self.assertEqual(self.call("post", "/api/auth/password", headers=h, json={"password": "short"}).status_code, 400)
+        self.assertEqual(self.call("post", "/api/auth/password", headers=h, json={"password": "farm-pass-1"}).status_code, 200)
+        self.assertEqual(self.call("post", "/api/auth/login", json={"password": "wrong-pass"}).status_code, 401)
+        self.assertEqual(self.call("post", "/api/auth/login", json={"password": "farm-pass-1"}).status_code, 200)
+        r = self.call("get", "/api/devices/aa:bb/credentials")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["password"], "hunter22")
+        self.assertEqual(self.call("get", "/api/config?full=1").get_json()["alerts"]["ntfy_topic"], "secret-topic")
+        # a password change elsewhere signs this browser out
+        self.call("post", "/api/auth/password", headers=h, json={"password": "farm-pass-2"})
+        self.assertEqual(self.call("get", "/api/devices/aa:bb/credentials").status_code, 401)
+        # logout
+        self.call("post", "/api/auth/login", json={"password": "farm-pass-2"})
+        self.call("post", "/api/auth/logout")
+        self.assertEqual(self.call("get", "/api/devices/aa:bb/credentials").status_code, 401)
+
+    def test_login_throttle(self):
+        siteauth.set_password("farm-pass-1")
+        real_sleep = siteauth.time.sleep
+        siteauth.time.sleep = lambda s: None
+        self.addCleanup(setattr, siteauth.time, "sleep", real_sleep)
+        for _ in range(siteauth.FAIL_MAX):
+            self.call("post", "/api/auth/login", json={"password": "nope-nope"})
+        r = self.call("post", "/api/auth/login", json={"password": "farm-pass-1"})
+        self.assertEqual(r.status_code, 429)
+
+    def test_first_run_setup_stays_open_until_configured(self):
+        cfg = config.load()
+        cfg["configured"] = False
+        config.save(cfg)
+        r = self.call("post", "/api/wizard", json={"targets": []})
+        self.assertEqual(r.status_code, 400)   # reached the handler (validation), not 401
+
+
+if __name__ == "__main__":
+    unittest.main()

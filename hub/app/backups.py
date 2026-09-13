@@ -13,6 +13,8 @@ import time
 
 import requests
 
+import siteapi
+
 BACKUP_DIR = os.path.join(os.environ.get("HUB_DATA", "/data"), "backups")
 KEEP = 14
 _NAME_RE = re.compile(r"^[0-9]{8}-[0-9]{6}\.json$")
@@ -32,9 +34,13 @@ def store(site, timeout):
     """Pull the site's export bundle and persist it. Returns the list entry."""
     base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
     try:
-        r = requests.get(f"{base}/api/config/export", timeout=timeout)
+        r = requests.get(f"{base}/api/config/export", timeout=timeout,
+                         headers=siteapi.headers(site))
     except requests.RequestException as e:
         raise BackupError(f"site unreachable: {e.__class__.__name__}")
+    if r.status_code == 401:
+        raise BackupError("the site refused the hub's key — see the Pi login "
+                          "warning on the site card", 502)
     if r.status_code == 404:
         raise BackupError("this site's Netwatch is too old for backups — "
                           "update it (docker compose pull)", 501)

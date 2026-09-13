@@ -24,6 +24,7 @@ import hubconfig
 import notify
 import proxycfg
 import sitehistory
+import siteapi
 import tunnels
 import wgeasy
 import wifi_doctor
@@ -177,6 +178,7 @@ def _site_card(site):
         "spark": sitehistory.series(site["id"], 86400, 48),
         "reach_24h": sitehistory.reachability_pct(site["id"], 86400),
         "pi_health": _pi_health_level(snap),
+        "api_auth": snap.get("api_auth"),
     }
 
 
@@ -843,7 +845,7 @@ def api_site_restore(site_id):
     base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
     try:
         r = requests.post(f"{base}/api/config/import", data=data,
-                          headers={"Content-Type": "application/json"},
+                          headers=siteapi.headers(site, {"Content-Type": "application/json"}),
                           timeout=(5, 30))
         if r.status_code == 404:
             return jsonify({"ok": False, "error": "this site's Netwatch is too old "
@@ -853,6 +855,32 @@ def api_site_restore(site_id):
         return jsonify(body), r.status_code
     except (requests.RequestException, ValueError):
         return jsonify({"ok": False, "error": "site unreachable"}), 502
+
+
+@app.route("/api/hub/sites/<site_id>/pi-password", methods=["POST"])
+def api_site_pi_password(site_id):
+    """Set the password people use to log in on the site's own dashboard
+    (saved device logins, Pi settings). Sent with the hub's key."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    pw = (request.get_json(silent=True) or {}).get("password") or ""
+    try:
+        r = requests.post(siteapi.base_url(site) + "/api/auth/password",
+                          json={"password": pw}, headers=siteapi.headers(site),
+                          timeout=(5, 15))
+    except requests.RequestException:
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+    if r.status_code == 404:
+        return jsonify({"ok": False, "error": "this site's Netwatch is too old for a Pi "
+                        "password — update it (docker compose pull)"}), 501
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site doesn't accept this hub's key yet "
+                        "(see the warning on the site card)"}), 502
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
 
 
 @app.route("/api/hub/sites/<site_id>/pi-ssh", methods=["POST"])
