@@ -1090,12 +1090,29 @@ def api_events():
         limit = min(int(request.args.get("limit", 300)), 2000)
     except (TypeError, ValueError):
         limit = 300
+    try:
+        since = int(request.args.get("since")) if request.args.get("since") else None
+    except (TypeError, ValueError):
+        since = None
     return jsonify({"events": history.events(
         ip=request.args.get("ip") or None,
         key=request.args.get("key") or None,
         etype=request.args.get("type") or None,
+        since=since,
         limit=limit,
     )})
+
+
+@app.route("/api/events/summary")
+def api_events_summary():
+    """Counts per event type since ?since= (epoch; default all time) and the
+    addresses with the most events — the History page's tiles and 'busiest'
+    list, exact even when the timeline itself is capped."""
+    try:
+        since = int(request.args.get("since")) if request.args.get("since") else None
+    except (TypeError, ValueError):
+        since = None
+    return jsonify(history.event_summary(since=since))
 
 
 @app.route("/api/ip-history")

@@ -443,6 +443,24 @@ def events(ip=None, key=None, etype=None, since=None, limit=300):
     return out
 
 
+def event_summary(since=None, top=8):
+    """{"counts": {type: n}, "total": n, "busiest": [{ip, events, devices, types}]}"""
+    where, args = "", []
+    if since:
+        where, args = " WHERE ts >= ?", [int(since)]
+    c = _conn()
+    counts = {r["type"]: r["n"] for r in c.execute(
+        "SELECT type, COUNT(*) AS n FROM events" + where + " GROUP BY type", args)}
+    busy_where = (where + " AND" if where else " WHERE") + " ip IS NOT NULL AND ip <> ''"
+    busiest = []
+    for r in c.execute(
+            "SELECT ip, COUNT(*) AS n, COUNT(DISTINCT key) AS devs, GROUP_CONCAT(DISTINCT type) AS types "
+            "FROM events" + busy_where + " GROUP BY ip ORDER BY n DESC LIMIT ?", args + [int(top)]):
+        busiest.append({"ip": r["ip"], "events": r["n"], "devices": r["devs"],
+                        "types": sorted((r["types"] or "").split(","))})
+    return {"counts": counts, "total": sum(counts.values()), "busiest": busiest}
+
+
 def ip_history():
     """One row per IP ever seen: the most-recent device there, how many distinct
     devices have used it, the last event type/time, and current online guess."""

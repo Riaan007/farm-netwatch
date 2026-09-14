@@ -243,6 +243,106 @@
         .nw-cell:hover { border-color: rgba(34,211,238,.55); }
         .nw-legend { display: flex; flex-wrap: wrap; gap: .9rem; font-size: 11.5px; color: #64748b; margin-bottom: .75rem; }
         .nw-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: .35rem; vertical-align: -1px; border: 1px solid; }
+        /* ===== pages: devices · history · settings ===== */
+        .nw-pages { display: inline-flex; border: 1px solid rgba(148,163,184,.2); border-radius: .7rem; overflow: hidden; flex: none; }
+        .nw-pages a { height: 34px; padding: 0 .8rem; display: inline-flex; align-items: center; gap: .4rem; font-size: 12.5px; font-weight: 650; color: #94a3b8; text-decoration: none; }
+        .nw-pages a + a { border-left: 1px solid rgba(148,163,184,.16); }
+        .nw-pages a svg { width: 15px; height: 15px; }
+        .nw-pages a:hover { color: #e2e8f0; background: rgba(148,163,184,.08); }
+        .nw-pages a.on { color: #cffafe; background: rgba(34,211,238,.16); }
+        .nw-phead { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: .25rem 0 1rem; }
+        .nw-phead h1 { margin: 0; font-size: 1.5rem; font-weight: 750; color: #f1f5f9; letter-spacing: -.02em; }
+        .nw-phead p { margin: .2rem 0 0; color: #94a3b8; font-size: 13px; }
+        .nw-eyebrow { color: #67e8f9; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+        .nw-btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-height: 34px; padding: .3rem .85rem; border-radius: .65rem; border: 1px solid rgba(148,163,184,.25); background: rgba(148,163,184,.08); color: #e2e8f0; font-size: 12.5px; font-weight: 650; white-space: nowrap; text-decoration: none; cursor: pointer; }
+        .nw-btn:hover:not(:disabled) { border-color: rgba(34,211,238,.55); background: rgba(148,163,184,.14); }
+        .nw-btn:disabled { opacity: .5; cursor: not-allowed; }
+        .nw-btn.pri { background: #0891b2; border-color: #22d3ee; color: #fff; }
+        .nw-btn.pri:hover:not(:disabled) { background: #06b6d4; }
+        .nw-btn.ok { background: rgba(16,185,129,.16); border-color: rgba(52,211,153,.45); color: #a7f3d0; }
+        .nw-btn.warn { background: rgba(245,158,11,.14); border-color: rgba(251,191,36,.4); color: #fde68a; }
+        .nw-btn.danger { background: rgba(244,63,94,.12); border-color: rgba(251,113,133,.4); color: #fecdd3; }
+        .nw-btn.sm { min-height: 28px; padding: .15rem .6rem; font-size: 12px; border-radius: .55rem; }
+        .nw-inp { width: 100%; min-height: 36px; padding: .45rem .7rem; border-radius: .6rem; border: 1px solid rgba(148,163,184,.25); background: rgba(2,6,23,.6); color: #e2e8f0; font-size: 13.5px; }
+        textarea.nw-inp { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+        .nw-inp.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+        select.nw-inp { background: #0b1322; }
+        .nw-inp[readonly] { color: #94a3b8; }
+        /* history */
+        .nw-hgrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1rem; align-items: start; }
+        .nw-day { position: sticky; top: 64px; z-index: 5; display: flex; align-items: center; gap: .6rem; margin: 1rem 0 .4rem; padding: .35rem 0; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; background: linear-gradient(180deg, #0a1120 70%, transparent); }
+        .nw-day:first-child { margin-top: 0; }
+        .nw-day span { color: #475569; letter-spacing: 0; text-transform: none; font-weight: 600; }
+        .nw-ev { display: grid; grid-template-columns: 52px 128px minmax(0,1fr) auto; gap: .75rem; align-items: center; padding: .55rem .6rem; border-radius: .6rem; border: 1px solid transparent; }
+        .nw-ev:hover { background: rgba(148,163,184,.05); border-color: rgba(148,163,184,.1); }
+        .nw-ev .tm { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: #64748b; }
+        .nw-ev .bd { display: inline-flex; justify-content: center; align-items: center; gap: .3rem; height: 22px; padding: 0 .5rem; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+        .nw-ev .who { min-width: 0; }
+        .nw-ev .who b { color: #f1f5f9; font-weight: 650; }
+        .nw-ev .who button.dev { color: #f1f5f9; font-weight: 650; text-align: left; }
+        .nw-ev .who button.dev:hover { color: #67e8f9; text-decoration: underline; }
+        .nw-ev .who .ipb { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: #67e8f9; margin-left: .35rem; }
+        .nw-ev .who .ipb:hover { text-decoration: underline; }
+        .nw-ev .who .det { display: block; font-size: 11.5px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-ev .rep { font-size: 11px; font-weight: 700; color: #fbbf24; background: rgba(245,158,11,.12); border-radius: 999px; padding: .05rem .45rem; white-space: nowrap; }
+        .nw-busy { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .15rem .6rem; align-items: center; padding: .55rem 1.1rem; border-top: 1px solid rgba(148,163,184,.08); cursor: pointer; }
+        .nw-busy:hover { background: rgba(34,211,238,.05); }
+        .nw-busy .ip { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: #67e8f9; }
+        .nw-busy .n { font-weight: 700; font-variant-numeric: tabular-nums; }
+        .nw-busy .d { grid-column: 1 / -1; font-size: 11.5px; color: #64748b; }
+        .nw-busy .bar { grid-column: 1 / -1; height: 3px; border-radius: 99px; background: rgba(148,163,184,.12); overflow: hidden; }
+        .nw-busy .bar i { display: block; height: 100%; background: #fbbf24; }
+        /* settings */
+        .nw-sgrid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+        .nw-snav { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px; }
+        .nw-snav a { display: flex; align-items: center; gap: .55rem; padding: .5rem .7rem; border-radius: .6rem; color: #cbd5e1; text-decoration: none; font-size: 13px; font-weight: 550; border: 1px solid transparent; }
+        .nw-snav a:hover { background: rgba(148,163,184,.07); }
+        .nw-snav a.on { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #cffafe; }
+        .nw-snav a .st { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: transparent; }
+        .nw-snav a .st.ok { background: #34d399; } .nw-snav a .st.warn { background: #fbbf24; } .nw-snav a .st.bad { background: #fb7185; }
+        .nw-sec { border: 1px solid rgba(148,163,184,.15); border-radius: 1rem; background: linear-gradient(180deg, rgba(148,163,184,.07), rgba(148,163,184,.02)); scroll-margin-top: 80px; margin-bottom: 1rem; }
+        .nw-sec > header { display: flex; align-items: flex-start; gap: .75rem; padding: 1rem 1.2rem .8rem; border-bottom: 1px solid rgba(148,163,184,.1); }
+        .nw-sec > header .ico { width: 34px; height: 34px; border-radius: .6rem; display: grid; place-items: center; font-size: 17px; background: rgba(34,211,238,.1); flex: none; }
+        .nw-sec > header h2 { margin: 0; font-size: 15px; font-weight: 700; color: #f1f5f9; }
+        .nw-sec > header p { margin: .1rem 0 0; font-size: 12.5px; color: #94a3b8; }
+        .nw-sec > header .aside { margin-left: auto; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+        .nw-sbody { padding: 1rem 1.2rem 1.1rem; display: grid; gap: 1rem; }
+        .nw-f2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: .9rem 1rem; }
+        .nw-f3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: .9rem 1rem; }
+        .nw-lbl { display: grid; gap: .3rem; font-size: 12px; font-weight: 650; color: #cbd5e1; }
+        .nw-lbl small { font-weight: 400; color: #64748b; }
+        .nw-help { font-size: 12px; color: #64748b; line-height: 1.5; margin: 0; }
+        .nw-help code { color: #a5f3fc; background: rgba(2,6,23,.6); padding: 0 .25rem; border-radius: .25rem; }
+        .nw-tgl { display: grid; grid-template-columns: auto minmax(0,1fr); gap: .15rem .7rem; align-items: start; padding: .7rem .8rem; border-radius: .7rem; border: 1px solid rgba(148,163,184,.14); background: rgba(2,6,23,.3); cursor: pointer; }
+        .nw-tgl:hover { border-color: rgba(34,211,238,.35); }
+        .nw-tgl input { width: 18px; height: 18px; margin-top: 1px; accent-color: #22d3ee; grid-row: span 2; }
+        .nw-tgl b { font-size: 13px; color: #e2e8f0; font-weight: 650; }
+        .nw-tgl span { font-size: 12px; color: #64748b; line-height: 1.45; }
+        .nw-subh { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; margin: .2rem 0 -.3rem; }
+        .nw-catgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .45rem; }
+        .nw-catgrid > div { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .35rem .5rem .35rem .7rem; border-radius: .6rem; background: rgba(2,6,23,.35); border: 1px solid rgba(148,163,184,.1); }
+        .nw-savebar { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 45; display: flex; align-items: center; gap: .75rem; padding: .6rem .7rem .6rem 1.1rem; border-radius: 999px; background: rgba(11,19,36,.96); border: 1px solid rgba(34,211,238,.45); box-shadow: 0 16px 50px -10px rgba(0,0,0,.8); font-size: 13px; color: #e2e8f0; }
+        .nw-savebar b { color: #67e8f9; }
+        .nw-locked { max-width: 34rem; margin: 3rem auto; text-align: center; padding: 2rem; }
+        .nw-locked h2 { color: #f1f5f9; font-size: 1.2rem; margin: .5rem 0; }
+        .nw-toasts { position: fixed; right: 1rem; bottom: 1rem; z-index: 90; display: grid; gap: .5rem; max-width: min(26rem, calc(100vw - 2rem)); }
+        .nw-toast { padding: .65rem .9rem; border-radius: .8rem; background: #0f1a2e; border: 1px solid rgba(148,163,184,.3); font-size: 13px; color: #e2e8f0; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+        .nw-toast.ok { border-color: rgba(52,211,153,.55); } .nw-toast.bad { border-color: rgba(251,113,133,.6); }
+        @media (max-width: 1000px) {
+            .nw-hgrid, .nw-sgrid { grid-template-columns: 1fr; }
+            .nw-snav { position: static; flex-direction: row; overflow-x: auto; scrollbar-width: none; padding-bottom: .2rem; }
+            .nw-snav a { white-space: nowrap; }
+        }
+        @media (max-width: 760px) {
+            .nw-f2, .nw-f3 { grid-template-columns: 1fr; }
+            .nw-ev { grid-template-columns: 44px minmax(0,1fr) auto; }
+            .nw-ev .bd { grid-column: 2; justify-self: start; }
+            .nw-ev .who { grid-column: 2 / -1; }
+            .nw-pages a .lbl { display: none; }
+            .nw-scan select { max-width: 8.5rem; }
+            .nw-actions { gap: .35rem; }
+            .nw-day { top: 0; }
+        }
         @media (max-width: 760px) {
             .nw-top-in { padding: .6rem .9rem; gap: .55rem; flex-wrap: wrap; }
             .nw-id { flex: 1 1 calc(100% - 60px); }
@@ -299,6 +399,11 @@
               <small id="site-sub" class="nw-subt">Farm Network Asset Identifier</small>
             </div>
             <div class="nw-actions">
+                <nav class="nw-pages" aria-label="Pages">
+                    <a href="#/" data-page="devices" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
+                    <a href="#/history" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></a>
+                    <a href="#/settings" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg><span class="lbl">Settings</span></a>
+                </nav>
                 <div class="nw-scan">
                     <select id="target-select" onchange="onTargetChange()" aria-label="Network to show and scan"></select>
                     <button class="go" onclick="quickScan()" title="Quick scan of the selected network now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5"/></svg>Scan</button>
@@ -309,17 +414,18 @@
                         <button onclick="closeScanMenu(); refresh()">Reload page data<small>Fetch the latest results without scanning</small></button>
                     </div>
                 </div>
-                <button onclick="openHistory()" class="nw-ib" title="Device &amp; IP event history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></button>
+                <button hidden onclick="openHistory()" class="nw-ib" title="Device &amp; IP event history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></button>
                 <a href="/wifi" class="nw-ib" title="Wireless link history, trends and troubleshooting"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
                 <button onclick="openBulkCreds()" class="nw-ib" title="Set or copy logins across many devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0zm0 0h7v3m-3-3v3"/></svg><span class="lbl">Logins</span></button>
                 <a id="kuma-link" href="#" target="_blank" rel="noopener" class="nw-ib ok" title="Open Uptime Kuma" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="lbl">Kuma</span></a>
-                <button onclick="openSetup()" class="nw-ib" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg></button>
+
             </div>
         </div>
         <div id="scan-progress" class="nw-progress" hidden><i></i></div>
     </header>
 
     <main class="nw-main">
+      <div id="page-devices">
         <section id="kpis" class="nw-kpis" aria-label="Site summary"></section>
         <div id="pi-health" class="hidden panel nw-health px-4 py-2.5 flex flex-wrap gap-x-5 gap-y-1.5 items-center text-xs"></div>
         <div id="conflict-monitor" class="hidden mb-4"></div>
@@ -345,7 +451,245 @@
             <div id="filter-bar" class="nw-chips"></div>
             <div id="network-grid" class="nw-body"></div>
         </section>
+      </div>
+      <div id="page-history" hidden>
+        <div class="nw-phead">
+            <div><div class="nw-eyebrow">History</div><h1>What changed on this network</h1><p>Every device that joined, dropped off, came back or took over an address — kept even after a device is forgotten.</p></div>
+            <div class="nw-tools">
+                <select id="hist-range" class="nw-sel" aria-label="Time range"><option value="86400">Last 24 hours</option><option value="604800" selected>Last 7 days</option><option value="2592000">Last 30 days</option><option value="0">All time</option></select>
+                <button class="nw-ib" onclick="histExportCsv()" title="Download the events shown as a spreadsheet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m0 0-5-5m5 5 5-5M4 20h16"/></svg><span class="lbl">CSV</span></button>
+            </div>
+        </div>
+        <section id="hist-kpis" class="nw-kpis" aria-label="Events in range"></section>
+        <div class="nw-hgrid">
+            <section class="nw-panel">
+                <div class="nw-dhead">
+                    <label class="nw-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm9 3-4.3-4.3"/></svg><span class="sr-only">Filter history</span>
+                        <input id="hist-filter" type="search" placeholder="IP, name, vendor, MAC…" autocomplete="off" title="192.168.0.1 = that address · .31 = ends in · 192.168.0. = subnet · 192.168.0.1* = .1 and .10–.199"></label>
+                    <select id="hist-type" class="nw-sel" aria-label="Event type"><option value="">All events</option><option value="new">New devices</option><option value="offline">Went offline</option><option value="online">Came back online</option><option value="ip_change">IP reassigned</option><option value="replaced">Address taken over</option></select>
+                    <div class="nw-tools">
+                        <label class="nw-ib" style="cursor:pointer" title="Fold the same device repeating the same event into one row"><input id="hist-fold" type="checkbox" checked style="accent-color:#22d3ee"> <span class="lbl">Fold repeats</span></label>
+                        <div class="nw-seg" role="group" aria-label="History view">
+                            <button id="hist-tab-timeline" onclick="histTab('timeline')" class="on">Timeline</button>
+                            <button id="hist-tab-byip" onclick="histTab('byip')">By IP address</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="hist-note" class="nw-chips" style="border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:.6rem"></div>
+                <div id="hist-body" class="nw-body">Loading…</div>
+            </section>
+            <aside class="nw-panel">
+                <div class="nw-dhead"><div><h2>Busiest addresses</h2><p>Most events in this range — usually phones with private Wi-Fi addresses, or a flaky link.</p></div></div>
+                <div id="hist-busy"></div>
+            </aside>
+        </div>
+      </div>
+
+      <div id="page-settings" hidden>
+        <div class="nw-phead">
+            <div><div class="nw-eyebrow">Settings</div><h1>Site settings</h1><p id="set-sub">How this Pi scans, alerts, connects and protects the site.</p></div>
+        </div>
+        <div id="settings-locked" class="nw-panel nw-locked" hidden>
+            <div style="font-size:2rem">🔒</div><h2>Settings are locked</h2>
+            <p class="nw-help" id="settings-locked-msg">Log in with this Pi's password to see and change its settings.</p>
+            <div style="margin-top:1rem"><button class="nw-btn pri" onclick="unlockSettings()">Unlock with Pi password</button></div>
+        </div>
+        <div id="settings-body" class="nw-sgrid" hidden>
+            <nav class="nw-snav" aria-label="Settings sections">
+                <a href="#/settings/site" data-sec="site"><span>🏠</span>Site & scanning<i class="st" id="snav-st-site"></i></a>
+                <a href="#/settings/alerts" data-sec="alerts"><span>🔔</span>Alerts<i class="st" id="snav-st-alerts"></i></a>
+                <a href="#/settings/kuma" data-sec="kuma"><span>📈</span>Uptime Kuma<i class="st" id="snav-st-kuma"></i></a>
+                <a href="#/settings/hub" data-sec="hub"><span>🔗</span>Central hub<i class="st" id="snav-st-hub"></i></a>
+                <a href="#/settings/network" data-sec="network"><span>🌐</span>Network<i class="st" id="snav-st-network"></i></a>
+                <a href="#/settings/bridges" data-sec="bridges"><span>🌉</span>Wireless bridges<i class="st" id="snav-st-bridges"></i></a>
+                <a href="#/settings/backup" data-sec="backup"><span>💾</span>Backup & restore<i class="st" id="snav-st-backup"></i></a>
+                <a href="#/settings/maintenance" data-sec="maintenance"><span>🧹</span>Maintenance<i class="st" id="snav-st-maintenance"></i></a>
+                <a href="#/settings/security" data-sec="security"><span>🔒</span>Security<i class="st" id="snav-st-security"></i></a>
+                <a href="#/settings/advanced" data-sec="advanced"><span>🧪</span>Advanced<i class="st" id="snav-st-advanced"></i></a>
+            </nav>
+            <div>
+            <section class="nw-sec" id="set-site">
+                <header><span class="ico">🏠</span><div><h2>Site &amp; scanning</h2><p>Name, networks and how often this Pi looks for devices.</p></div></header>
+                <div class="nw-sbody">
+                    <div class="nw-f2">
+                        <label class="nw-lbl">Site name <small>shown on this page and on the hub</small><input id="set-site-name" class="nw-inp" data-track maxlength="60"></label>
+                        <label class="nw-lbl">Location <small>farm, address or area</small><input id="set-site-loc" class="nw-inp" data-track maxlength="80"></label>
+                    </div>
+                    <div class="nw-f2">
+                        <label class="nw-lbl">Scan every
+                            <select id="setup-interval" class="nw-inp" data-track><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">60 minutes</option></select></label>
+                        <label class="nw-lbl">Main network <small>the first network scanned</small><input id="setup-network" type="text" class="nw-inp mono" data-track value="192.168.88.0/24"></label>
+                    </div>
+                    <div id="set-targets" class="nw-help"></div>
+                    <div class="nw-f2">
+                        <label class="nw-tgl"><input id="setup-discovery" type="checkbox" data-track><b>Local discovery</b><span>mDNS / SSDP / NetBIOS — finds devices that ignore ping and pulls their names.</span></label>
+                        <label class="nw-tgl"><input id="setup-deep-on-new" type="checkbox" data-track><b>Deep-scan new devices</b><span>The first time a device appears, check all its ports and services for a better identification.</span></label>
+                    </div>
+                    <div class="nw-row" style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="nw-btn pri" onclick="quickScan()">🚀 Quick scan now</button><button class="nw-btn" onclick="deepScan()">🔬 Deep scan now</button><a class="nw-btn" href="/setup">Re-run the setup wizard</a></div>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-alerts">
+                <header><span class="ico">🔔</span><div><h2>Alerts</h2><p>Push notifications to your phone through ntfy.</p></div></header>
+                <div class="nw-sbody">
+                    <label class="nw-lbl">ntfy topic <small>blank = no push alerts · pick a hard-to-guess name</small>
+                        <span style="display:flex;gap:.5rem"><input id="setup-ntfy" type="text" class="nw-inp mono" data-track placeholder="farm-netwatch-xyz"><button class="nw-btn ok" onclick="testNtfy()">Send test</button></span></label>
+                    <p id="ntfy-test-result" class="nw-help"></p>
+                    <p class="nw-help">Device <b>up/down</b> monitoring is Uptime Kuma's job. This topic carries new-device, IP-problem and hub-link alerts.</p>
+                    <div class="nw-f2">
+                        <label class="nw-tgl"><input id="setup-notify-hub" type="checkbox" data-track><b>Alert when the hub link drops</b><span>Push a message when the VPN link to the central hub goes offline.</span></label>
+                        <label class="nw-tgl"><input id="setup-allow-commands" type="checkbox" data-track><b>Allow remote commands</b><span>ping / scan / tracert by messaging the topic. <b style="color:#fda4af">Anyone who knows the topic can run them.</b> Send <code>help</code> for the list.</span></label>
+                    </div>
+                    <div class="nw-subh">Alerts per device type</div>
+                    <p class="nw-help">"Default" follows the settings above. A 🔔 watched device always alerts both ways.</p>
+                    <div id="cat-alerts" class="nw-catgrid" data-track></div>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-kuma">
+                <header><span class="ico">📈</span><div><h2>Uptime Kuma</h2><p>Up/down monitoring and uptime graphs for the devices you pick.</p></div></header>
+                <div class="nw-sbody">
+                    <div id="kuma-legacy">
+                    <div class="flex gap-2">
+                        <input id="setup-kuma-url" type="text" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm font-mono" placeholder="http://localhost:3001">
+                        <a id="kuma-open" href="#" target="_blank" class="px-3 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-xs font-bold whitespace-nowrap self-center">Open Kuma ↗</a>
+                    </div>
+                    <label class="flex items-center gap-2 mt-2 text-xs text-slate-400">
+                        <input id="setup-kuma-auto" type="checkbox" class="w-4 h-4" onchange="kumaAutoToggle()"> Auto — use this Pi's IP <span id="kuma-auto-ip" class="font-mono font-bold text-slate-200"></span> (updates itself if DHCP moves the Pi)
+                    </label>
+                    <div class="flex gap-2 mt-2">
+                        <input id="setup-kuma-user" type="text" autocomplete="off" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Kuma admin username">
+                        <input id="setup-kuma-pass" type="password" autocomplete="new-password" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Kuma admin password">
+                        <button onclick="testKuma()" class="px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold whitespace-nowrap">Test</button>
+                    </div>
+                    <p id="kuma-test-result" class="text-xs mt-1"></p>
+                    <p class="text-[10px] text-slate-400 mt-1">Run it with <code>docker compose --profile kuma up -d</code>, create the Kuma admin account, and enter it above. Then open a device and tick <b>"Monitor in Uptime Kuma"</b> — Netwatch builds that monitor (tagged with its category) and pushes its status each scan. Only devices you tick are added.</p>
+                    <div class="mt-2 flex flex-wrap gap-2 items-center">
+                        <button onclick="monitorBulk('category','camera')" class="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 rounded-lg text-xs font-bold">📈 Monitor all cameras</button>
+                        <button onclick="monitorBulk('identified')" class="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 rounded-lg text-xs font-bold">📈 Monitor all identified</button>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Bulk-create Kuma ping monitors (tagged by category). Each monitor auto-follows its device's IP, so it keeps working when DHCP moves the device. Already-monitored devices are skipped.</p>
+                    <div class="mt-2 flex flex-wrap gap-2 items-center">
+                        <button onclick="repairKuma()" class="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 rounded-lg text-xs font-bold">🛠️ Fix monitors → ping (60s)</button>
+                        <button onclick="syncKumaTags()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">🏷️ Tag by category</button>
+                    </div>
+                    <span id="kuma-bulk-result" class="text-xs"></span>
+                    <span id="kuma-repair-result" class="text-xs"></span>
+                    <span id="kuma-tag-result" class="text-xs ml-2"></span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-hub">
+                <header><span class="ico">🔗</span><div><h2>Central hub</h2><p>The WireGuard link that lets the hub watch, back up and support this site.</p></div><div class="aside"><button class="nw-btn sm" onclick="refreshHubStatus()">Refresh</button></div></header>
+                <div class="nw-sbody">
+                    <div id="hub-legacy">
+                    <div id="hub-status" class="text-sm mb-2 flex items-center gap-2 flex-wrap">
+                        <span class="text-slate-400">Checking…</span>
+                    </div>
+                    <textarea id="hub-conf" rows="7" class="w-full p-2 bg-[#050b16] border rounded-lg text-xs font-mono" placeholder="From the hub's Add Site, paste EITHER the WireGuard config OR the install command — both work. Then Connect.&#10;[Interface]&#10;PrivateKey = …&#10;Address = 10.8.0.x/24&#10;[Peer] …"></textarea>
+                    <div class="mt-2 flex flex-wrap gap-2 items-center">
+                        <button onclick="hubConnect()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Connect</button>
+                        <button onclick="hubDisconnect(false)" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">Disconnect</button>
+                        <button onclick="hubDisconnect(true)" class="px-3 py-2 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded-lg text-xs font-bold">Forget link</button>
+                        <span id="hub-result" class="text-xs"></span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Joins this site to the central hub over WireGuard — Netwatch brings the tunnel up itself. The site dials <b>out</b>, so <b>no ports are opened here</b>. On the hub: <b>Add Site</b> → copy this site's config → paste above. Don't also run the <code>wg-client</code> compose profile (one owner of <code>wg0</code> only).</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-network">
+                <header><span class="ico">🌐</span><div><h2>Network</h2><p>Extra IP addresses for other subnets, and DHCP or a fixed IP for this Pi.</p></div></header>
+                <div class="nw-sbody">
+                    <div id="net-legacy">
+                    <div id="net-ifaces" class="text-[11px] text-slate-500 mb-2"></div>
+                    <p class="text-[10px] font-bold text-slate-500 uppercase mb-1">Managed extra IPs (multi-subnet)</p>
+                    <div id="net-addrs" class="space-y-1 mb-2"></div>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <select id="net-iface" class="p-1.5 bg-[#050b16] border rounded-lg text-xs"></select>
+                        <input id="net-cidr" type="text" placeholder="10.5.2.50/24" class="w-32 p-1.5 bg-[#050b16] border rounded-lg text-sm font-mono">
+                        <label class="text-[11px] text-slate-400 flex items-center gap-1"><input id="net-target" type="checkbox" class="w-3.5 h-3.5" checked> also scan</label>
+                        <button onclick="netAddAddress()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Add IP</button>
+                        <span id="net-result" class="text-xs"></span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mt-1">Adds a second IP so the Pi sits on another LAN and ARP-scans it. <b>Additive</b> — never touches your main connection. Re-applied on reboot.</p>
+
+                    <div id="net-static-wrap" class="hidden mt-3 pt-3 border-t border-white/10">
+                        <p class="text-[10px] font-bold text-slate-500 uppercase mb-1">DHCP ↔ Fixed IP</p>
+                        <div id="net-cons" class="space-y-2"></div>
+                        <p class="text-[10px] text-red-400 mt-1">⚠️ A wrong fixed IP/gateway can cut this Pi off. Changes auto-revert to DHCP unless you confirm — on a remote site, confirm only after you've checked the dashboard still loads.</p>
+                    </div>
+                    <p id="net-static-na" class="hidden text-[10px] text-slate-400 mt-2">Fixed-IP control needs the NetworkManager image (<code>docker-compose.netcfg.yml</code>) — not enabled on this host.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-bridges">
+                <header><span class="ico">🌉</span><div><h2>Wireless bridges</h2><p>Radios that answer for the devices behind them (proxy-ARP).</p></div></header>
+                <div class="nw-sbody">
+                    <div id="bridge-list" class="space-y-1.5"></div>
+                    <p class="nw-help">Devices behind these MACs are tracked by IP so each one shows separately. Once you fix the bridge itself (e.g. turn off proxy-ARP), remove its MAC here to go back to normal tracking — the devices re-merge on the next scan. Add one from a "Same MAC, multiple IPs" problem on the Devices page.</p>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-backup">
+                <header><span class="ico">💾</span><div><h2>Backup &amp; restore</h2><p>Move this site to a new Pi, or undo a bad change.</p></div></header>
+                <div class="nw-sbody">
+                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+                        <button onclick="downloadBackup()" class="nw-btn pri">⬇ Download backup</button>
+                        <label class="nw-btn" style="cursor:pointer">⬆ Restore from file<input id="restore-file" type="file" accept=".json,application/json" class="hidden" onchange="restoreBackup()"></label>
+                        <span id="backup-result" class="text-xs"></span>
+                    </div>
+                    <p class="nw-help">Everything needed to rebuild this site on a new Pi: settings, device names and categories, saved logins and the hub-VPN link. The central hub also takes an encrypted backup every day. <b>Treat a downloaded file like a password</b> — it is not encrypted.</p>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-maintenance">
+                <header><span class="ico">🧹</span><div><h2>Maintenance</h2><p>Keep the device list tidy.</p></div></header>
+                <div class="nw-sbody">
+                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+                        <span class="text-sm text-slate-300">Forget offline devices not seen for</span>
+                        <input id="prune-days" type="number" min="0" value="30" class="nw-inp" style="width:5rem;text-align:center">
+                        <span class="text-sm text-slate-300">days</span>
+                        <button onclick="pruneDevices()" class="nw-btn warn">Prune now</button>
+                        <span id="prune-result" class="text-xs"></span>
+                    </div>
+                    <p id="prune-preview" class="nw-help"></p>
+                    <p class="nw-help">Removes stale devices (visitors' phones, kit from another network, retired gear) from the list, registry and uptime history. <b>0 days</b> removes every device that is offline right now. Anything still on the network comes back on the next scan. Event history is kept.</p>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-security">
+                <header><span class="ico">🔒</span><div><h2>Security</h2><p>Who can see saved logins and change settings.</p></div></header>
+                <div class="nw-sbody">
+                    <div id="sec-state" class="nw-help">Checking…</div>
+                    <div class="nw-subh">Change the Pi password</div>
+                    <p class="nw-help">People need it for saved device logins and settings on this page. Changing it signs everyone else out. The central hub can also set it (site page → Pi password).</p>
+                    <div class="nw-f3">
+                        <label class="nw-lbl">New password<input id="sec-pw1" type="password" class="nw-inp" minlength="8" autocomplete="new-password"></label>
+                        <label class="nw-lbl">Type it again<input id="sec-pw2" type="password" class="nw-inp" minlength="8" autocomplete="new-password"></label>
+                        <div style="display:flex;align-items:flex-end;gap:.5rem"><button class="nw-btn pri" onclick="changePiPassword()">Set password</button></div>
+                    </div>
+                    <p id="sec-result" class="nw-help"></p>
+                    <div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="nw-btn" onclick="lockPi()">🔒 Lock this browser now</button></div>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-advanced">
+                <header><span class="ico">🧪</span><div><h2>Advanced</h2><p>Switches that can reboot hardware — change with care.</p></div></header>
+                <div class="nw-sbody">
+                    <label class="nw-tgl"><input id="setup-watchdog" type="checkbox" data-track><b>Hardware watchdog</b><span>Reboot this Pi automatically if it hard-hangs: Netwatch feeds /dev/watchdog every 5 s and the chip reboots after ~15 s of silence. Needs the health add-on (<code>docker-compose.health.yml</code>). A clean stop disarms it safely.</span></label>
+                    <label class="nw-tgl"><input id="setup-airos-setip" type="checkbox" data-track><b>Change IP for Ubiquiti airOS radios <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Edits the radio's config over SSH and <b>reboots it</b> — a wrong value can drop the link to a whole building. Needs the radio's SSH login saved. Turn off to hide the button on this site.</span></label>
+                </div>
+            </section>
+
+            </div>
+        </div>
+        <div id="save-bar" class="nw-savebar" hidden role="status"><span><b>Unsaved changes</b> · <span id="save-bar-what"></span></span><button class="nw-btn sm" onclick="discardSettings()">Discard</button><button class="nw-btn sm pri" id="save-btn" onclick="saveSetup()">Save changes</button></div>
+      </div>
     </main>
+    <div id="nw-toasts" class="nw-toasts" aria-live="polite"></div>
 
     <!-- Floating selection action bar -->
     <div id="select-bar" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden z-40 bg-[#0b1322]/95 backdrop-blur border border-white/15 text-slate-100 rounded-full shadow-2xl px-5 py-3 flex items-center gap-4">
@@ -353,34 +697,6 @@
         <button onclick="deepScanSelected()" class="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-full text-xs font-bold uppercase">🔬 Deep scan</button>
         <button onclick="quickScanSelected()" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-full text-xs font-bold uppercase">⚡ Quick</button>
         <button onclick="clearSelection()" class="text-slate-400 hover:text-white text-xs">Clear</button>
-    </div>
-
-    <!-- History / Event Log Modal -->
-    <div id="history-modal" onclick="if(event.target===this) closeHistory()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
-        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden">
-            <div class="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
-                <div>
-                    <h2 class="text-xl font-bold">Device &amp; IP History</h2>
-                    <p class="text-xs text-slate-600">Every device that's joined, gone offline, returned, or taken over an IP — kept even after a device is forgotten.</p>
-                </div>
-                <button onclick="closeHistory()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-xl leading-none">&times;</button>
-            </div>
-            <div class="px-5 pt-3 shrink-0 flex flex-wrap gap-2 items-center border-b border-white/10 pb-3">
-                <div class="flex bg-white/5 rounded-lg p-0.5 text-xs font-bold">
-                    <button id="hist-tab-timeline" onclick="histTab('timeline')" class="px-3 py-1.5 rounded-md bg-cyan-500/20 text-cyan-200 shadow">Timeline</button>
-                    <button id="hist-tab-byip" onclick="histTab('byip')" class="px-3 py-1.5 rounded-md text-slate-500">By IP</button>
-                </div>
-                <input id="hist-filter" oninput="renderHistory()" type="text" placeholder="Filter by IP, name or vendor…" class="flex-grow min-w-[160px] p-2 bg-[#050b16] border rounded-lg text-sm">
-                <select id="hist-type" onchange="loadEvents()" class="p-2 bg-[#050b16] border rounded-lg text-sm">
-                    <option value="">All events</option>
-                    <option value="new">New device</option>
-                    <option value="offline">Went offline</option>
-                    <option value="online">Came back online</option>
-                    <option value="ip_change">IP reassigned</option>
-                </select>
-            </div>
-            <div id="hist-body" class="p-5 overflow-y-auto text-sm">Loading…</div>
-        </div>
     </div>
 
     <!-- Bulk credentials: one login onto many devices, or copy from one device -->
@@ -439,170 +755,6 @@
                     <button onclick="applyBulkCreds(true)" class="px-3 py-2 bg-rose-700/80 hover:bg-rose-700 text-white rounded-lg text-xs font-bold" title="Remove the saved login from the selected devices">Clear logins</button>
                     <span id="bulk-status" class="text-xs"></span>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Setup / Settings Modal -->
-    <div id="setup-modal" onclick="if(event.target===this) closeSetup()" class="fixed inset-0 bg-black/70 hidden backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center sm:p-4">
-        <div class="modal-card rounded-t-2xl sm:rounded-2xl max-w-md w-full max-h-[92vh] flex flex-col overflow-hidden">
-            <div class="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
-                <h2 class="text-xl font-bold">Settings</h2>
-                <button onclick="nwAuth.logout().then(closeSetup)" class="ml-auto mr-2 px-3 h-9 rounded-full bg-white/10 hover:bg-white/20 text-xs font-semibold" title="Sign out of this Pi (saved logins and settings lock again)">&#128274; Lock</button>
-                <button onclick="closeSetup()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-xl leading-none">&times;</button>
-            </div>
-            <div class="p-6 space-y-5 overflow-y-auto grow">
-                <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Scan Frequency</label>
-                    <select id="setup-interval" class="w-full p-3 bg-[#050b16] border rounded-lg font-medium">
-                        <option value="5">Every 5 Minutes</option>
-                        <option value="10">Every 10 Minutes</option>
-                        <option value="15">Every 15 Minutes</option>
-                        <option value="30">Every 30 Minutes</option>
-                        <option value="60">Every 60 Minutes</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Primary Network Range</label>
-                    <input id="setup-network" type="text" class="w-full p-3 bg-[#050b16] border rounded-lg font-mono text-sm" value="192.168.88.0/24">
-                    <label class="flex items-center gap-2 mt-3 text-xs text-slate-400">
-                        <input id="setup-deep-on-new" type="checkbox" class="w-4 h-4"> Auto deep-scan a device the first time it's seen (better identification)
-                    </label>
-                    <label class="flex items-center gap-2 mt-2 text-xs text-slate-400">
-                        <input id="setup-discovery" type="checkbox" class="w-4 h-4"> Local discovery (mDNS / SSDP / NetBIOS) — finds devices that ignore ping &amp; pulls names
-                    </label>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">ntfy Alert Topic <span class="text-slate-600 normal-case">(blank = off)</span></label>
-                    <div class="flex gap-2">
-                        <input id="setup-ntfy" type="text" class="flex-grow p-3 bg-[#050b16] border rounded-lg font-mono text-sm" placeholder="farm-netwatch-xyz">
-                        <button onclick="testNtfy()" class="px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs uppercase whitespace-nowrap">Test</button>
-                    </div>
-                    <p id="ntfy-test-result" class="text-xs mt-2"></p>
-                    <p class="text-[10px] text-slate-400 mt-3">Device <b>up/down</b> alerts are handled by <b>Uptime Kuma</b> now. This topic is for new-device discovery, IP-problem and hub-link alerts.</p>
-                    <label class="flex items-center gap-2 mt-2 text-xs text-slate-400">
-                        <input id="setup-notify-hub" type="checkbox" class="w-4 h-4"> Alert when the <b>VPN link to the Central Hub</b> goes offline
-                    </label>
-                    <label class="flex items-center gap-2 mt-2 text-xs text-slate-400">
-                        <input id="setup-allow-commands" type="checkbox" class="w-4 h-4"> Allow remote commands from this topic (ping / scan / tracert) — anyone who knows the topic can run them
-                    </label>
-                    <p class="text-[10px] text-slate-400 mt-1">Send <code>help</code> to the topic from your phone to list commands. Only IPs inside your scan networks are allowed.</p>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Alerts per category</label>
-                    <div id="cat-alerts" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
-                    <p class="text-[10px] text-slate-400 mt-1">"Default" follows the global toggles above. A 🔔 watched device always alerts both ways regardless.</p>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Integrations · Uptime Kuma</label>
-                    <div class="flex gap-2">
-                        <input id="setup-kuma-url" type="text" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm font-mono" placeholder="http://localhost:3001">
-                        <a id="kuma-open" href="#" target="_blank" class="px-3 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-xs font-bold whitespace-nowrap self-center">Open Kuma ↗</a>
-                    </div>
-                    <label class="flex items-center gap-2 mt-2 text-xs text-slate-400">
-                        <input id="setup-kuma-auto" type="checkbox" class="w-4 h-4" onchange="kumaAutoToggle()"> Auto — use this Pi's IP <span id="kuma-auto-ip" class="font-mono font-bold text-slate-200"></span> (updates itself if DHCP moves the Pi)
-                    </label>
-                    <div class="flex gap-2 mt-2">
-                        <input id="setup-kuma-user" type="text" autocomplete="off" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Kuma admin username">
-                        <input id="setup-kuma-pass" type="password" autocomplete="new-password" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Kuma admin password">
-                        <button onclick="testKuma()" class="px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold whitespace-nowrap">Test</button>
-                    </div>
-                    <p id="kuma-test-result" class="text-xs mt-1"></p>
-                    <p class="text-[10px] text-slate-400 mt-1">Run it with <code>docker compose --profile kuma up -d</code>, create the Kuma admin account, and enter it above. Then open a device and tick <b>"Monitor in Uptime Kuma"</b> — Netwatch builds that monitor (tagged with its category) and pushes its status each scan. Only devices you tick are added.</p>
-                    <div class="mt-2 flex flex-wrap gap-2 items-center">
-                        <button onclick="monitorBulk('category','camera')" class="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 rounded-lg text-xs font-bold">📈 Monitor all cameras</button>
-                        <button onclick="monitorBulk('identified')" class="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 rounded-lg text-xs font-bold">📈 Monitor all identified</button>
-                    </div>
-                    <p class="text-[10px] text-slate-400 mt-1">Bulk-create Kuma ping monitors (tagged by category). Each monitor auto-follows its device's IP, so it keeps working when DHCP moves the device. Already-monitored devices are skipped.</p>
-                    <div class="mt-2 flex flex-wrap gap-2 items-center">
-                        <button onclick="repairKuma()" class="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 rounded-lg text-xs font-bold">🛠️ Fix monitors → ping (60s)</button>
-                        <button onclick="syncKumaTags()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">🏷️ Tag by category</button>
-                    </div>
-                    <span id="kuma-bulk-result" class="text-xs"></span>
-                    <span id="kuma-repair-result" class="text-xs"></span>
-                    <span id="kuma-tag-result" class="text-xs ml-2"></span>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🌉 Wireless bridges (proxy-ARP)</label>
-                    <div id="bridge-list" class="space-y-1.5"></div>
-                    <p class="text-[10px] text-slate-400 mt-1">Devices behind these MACs are tracked by IP so each one shows separately. Once you fix the bridge/WiFi device itself (e.g. disable proxy-ARP), remove its MAC here to go back to normal MAC tracking — the devices re-merge (or appear under their real MACs) on the next scan.</p>
-                </div>
-                <div class="pt-3 border-t border-white/10">
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🔗 Central Hub VPN</label>
-                    <div id="hub-status" class="text-sm mb-2 flex items-center gap-2 flex-wrap">
-                        <span class="text-slate-400">Checking…</span>
-                    </div>
-                    <textarea id="hub-conf" rows="7" class="w-full p-2 bg-[#050b16] border rounded-lg text-xs font-mono" placeholder="From the hub's Add Site, paste EITHER the WireGuard config OR the install command — both work. Then Connect.&#10;[Interface]&#10;PrivateKey = …&#10;Address = 10.8.0.x/24&#10;[Peer] …"></textarea>
-                    <div class="mt-2 flex flex-wrap gap-2 items-center">
-                        <button onclick="hubConnect()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Connect</button>
-                        <button onclick="hubDisconnect(false)" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">Disconnect</button>
-                        <button onclick="hubDisconnect(true)" class="px-3 py-2 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded-lg text-xs font-bold">Forget link</button>
-                        <span id="hub-result" class="text-xs"></span>
-                    </div>
-                    <p class="text-[10px] text-slate-400 mt-1">Joins this site to the central hub over WireGuard — Netwatch brings the tunnel up itself. The site dials <b>out</b>, so <b>no ports are opened here</b>. On the hub: <b>Add Site</b> → copy this site's config → paste above. Don't also run the <code>wg-client</code> compose profile (one owner of <code>wg0</code> only).</p>
-                </div>
-                <div class="pt-3 border-t border-white/10">
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🌐 Network · extra IPs &amp; fixed IP</label>
-                    <div id="net-ifaces" class="text-[11px] text-slate-500 mb-2"></div>
-                    <p class="text-[10px] font-bold text-slate-500 uppercase mb-1">Managed extra IPs (multi-subnet)</p>
-                    <div id="net-addrs" class="space-y-1 mb-2"></div>
-                    <div class="flex flex-wrap gap-2 items-center">
-                        <select id="net-iface" class="p-1.5 bg-[#050b16] border rounded-lg text-xs"></select>
-                        <input id="net-cidr" type="text" placeholder="10.5.2.50/24" class="w-32 p-1.5 bg-[#050b16] border rounded-lg text-sm font-mono">
-                        <label class="text-[11px] text-slate-400 flex items-center gap-1"><input id="net-target" type="checkbox" class="w-3.5 h-3.5" checked> also scan</label>
-                        <button onclick="netAddAddress()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Add IP</button>
-                        <span id="net-result" class="text-xs"></span>
-                    </div>
-                    <p class="text-[10px] text-slate-400 mt-1">Adds a second IP so the Pi sits on another LAN and ARP-scans it. <b>Additive</b> — never touches your main connection. Re-applied on reboot.</p>
-
-                    <div id="net-static-wrap" class="hidden mt-3 pt-3 border-t border-white/10">
-                        <p class="text-[10px] font-bold text-slate-500 uppercase mb-1">DHCP ↔ Fixed IP</p>
-                        <div id="net-cons" class="space-y-2"></div>
-                        <p class="text-[10px] text-red-400 mt-1">⚠️ A wrong fixed IP/gateway can cut this Pi off. Changes auto-revert to DHCP unless you confirm — on a remote site, confirm only after you've checked the dashboard still loads.</p>
-                    </div>
-                    <p id="net-static-na" class="hidden text-[10px] text-slate-400 mt-2">Fixed-IP control needs the NetworkManager image (<code>docker-compose.netcfg.yml</code>) — not enabled on this host.</p>
-                </div>
-                <div class="pt-3 border-t border-white/10">
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">💾 Backup &amp; restore</label>
-                    <div class="flex flex-wrap gap-2 items-center">
-                        <button onclick="downloadBackup()" class="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 rounded-lg text-xs font-bold">⬇ Download backup</button>
-                        <label class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold cursor-pointer">⬆ Restore from file<input id="restore-file" type="file" accept=".json,application/json" class="hidden" onchange="restoreBackup()"></label>
-                        <span id="backup-result" class="text-xs"></span>
-                    </div>
-                    <p class="text-[10px] text-slate-400 mt-1">Everything needed to rebuild this site on a new Pi: settings, device names/categories, saved logins and the hub-VPN link. The hub also backs this up automatically every day. <b>Treat the file like a password.</b></p>
-                </div>
-                <div class="pt-3 border-t border-white/10">
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">🧹 Maintenance · prune devices</label>
-                    <div class="flex flex-wrap gap-2 items-center">
-                        <span class="text-xs text-slate-400">Remove offline devices not seen in</span>
-                        <input id="prune-days" type="number" min="0" value="7" class="w-16 p-1.5 bg-[#050b16] border rounded-lg text-sm text-center">
-                        <span class="text-xs text-slate-400">days</span>
-                        <button onclick="pruneDevices()" class="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 rounded-lg text-xs font-bold">Prune now</button>
-                        <span id="prune-result" class="text-xs"></span>
-                    </div>
-                    <p class="text-[10px] text-slate-400 mt-1">Forgets stale/offline devices (gear from another network, or kit you've retired) from the list, registry and uptime history. Use <b>0 days</b> to remove <b>all</b> currently-offline devices. Anything still live reappears on the next scan.</p>
-                </div>
-                <div>
-                    <label class="block text-xs font-bold text-slate-400 uppercase mb-2">Experimental</label>
-                    <label class="flex items-start gap-2 text-xs text-slate-400 mb-2">
-                        <input id="setup-watchdog" type="checkbox" class="w-4 h-4 mt-0.5 accent-cyan-400">
-                        <span>Enable the <b>hardware watchdog</b> — auto-reboot this Pi if it hard-hangs<br>
-                        <span class="text-[10px] text-slate-400">Netwatch feeds /dev/watchdog every 5s; if the Pi (or Netwatch) freezes, the chip reboots it after ~15s. Needs the health add-on (<code>docker-compose.health.yml</code>). A clean container stop disarms it safely.</span></span>
-                    </label>
-                    <label class="flex items-start gap-2 text-xs text-slate-400">
-                        <input id="setup-airos-setip" type="checkbox" class="w-4 h-4 mt-0.5">
-                        <span>Enable <b>Change IP for Ubiquiti airOS radios</b> (SSH) <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span><br>
-                        <span class="text-[10px] text-slate-400">On by default for every airOS radio. airOS has no clean API, so this edits the radio's config over SSH and <b>reboots it</b> — a wrong value can drop the link to a whole building. Needs the radio's SSH login saved on the device. Turn this off to hide the button on this site.</span></span>
-                    </label>
-                </div>
-                <div class="pt-3 border-t border-white/10 grid grid-cols-2 gap-2">
-                    <button onclick="quickScan(); closeSetup();" class="py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🚀</span> Quick Scan</button>
-                    <button onclick="deepScan(); closeSetup();" class="py-3 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-xl font-bold shadow flex items-center justify-center gap-2"><span>🔬</span> Deep Scan</button>
-                </div>
-                <a href="/setup" class="block text-center text-slate-500 text-xs underline">Re-run full deployment wizard</a>
-            </div>
-            <div class="p-4 bg-white/5 text-center shrink-0 border-t border-white/10">
-                <button onclick="saveSetup()" class="text-cyan-300 font-bold text-sm">Apply &amp; Close</button>
             </div>
         </div>
     </div>
@@ -2159,44 +2311,170 @@
             flashCred('Cleared'); loadDevices();
         }
 
-        // ---- settings / scan ----
-        async function openSetup(){
-            // Full settings need the site login; cancelling it closes the form so a
-            // save can never write back the blanked (redacted) ntfy topic.
-            let c;
-            try {
-                const r = await fetch('/api/config?full=1');
-                if(!r.ok){ closeSetup(); return; }
-                c = await r.json();
-            } catch(e){ return; }
-            document.getElementById('setup-modal').classList.remove('hidden');
-            try {
-                if(c.alerts){
-                    document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic || '';
-                    document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands === true;
-                    document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline !== false;
-                    renderCatAlerts(c.alerts.categories);
-                }
-                if(c.scan){ document.getElementById('setup-deep-on-new').checked = !!c.scan.deep_on_new; document.getElementById('setup-discovery').checked = c.scan.discovery !== false; }
-                document.getElementById('setup-airos-setip').checked = !!(c.features && c.features.airos_change_ip);
-                document.getElementById('setup-watchdog').checked = !!(c.sysmon && c.sysmon.watchdog);
-                document.getElementById('kuma-auto-ip').textContent = PI_IP;
-                if(c.integrations && c.integrations.kuma){
-                    const k = c.integrations.kuma;
-                    KUMA_RESOLVED = k.resolved_url || k.base_url || '';
-                    document.getElementById('setup-kuma-auto').checked = !!k.auto_url;
-                    document.getElementById('setup-kuma-url').value = k.auto_url ? KUMA_RESOLVED : (k.base_url || '');
-                    kumaAutoToggle();
-                    document.getElementById('kuma-open').href = KUMA_RESOLVED || '#';
-                    document.getElementById('setup-kuma-user').value = k.username || '';
-                    document.getElementById('setup-kuma-pass').placeholder = k.username ? 'password saved — leave blank to keep' : 'Kuma admin password';
-                }
-            } catch(e){}
-            refreshHubStatus();
-            loadNetwork();
-            loadBridges();
+        // ===== Pages: devices · history · settings (hash routes) =====================
+        let PAGE = 'devices';
+        function nwToast(msg, kind=''){
+            const t = document.createElement('div');
+            t.className = 'nw-toast ' + kind; t.textContent = msg;
+            t.setAttribute('role', kind === 'bad' ? 'alert' : 'status');
+            document.getElementById('nw-toasts').appendChild(t);
+            setTimeout(() => t.remove(), kind === 'bad' ? 7000 : 3500);
         }
-        function closeSetup(){ document.getElementById('setup-modal').classList.add('hidden'); }
+        function route(){
+            const h = (location.hash || '').replace(/^#\/?/, '');
+            const [path, query] = h.split('?');
+            const [page, sub] = (path || '').split('/');
+            const next = ['history','settings'].includes(page) ? page : 'devices';
+            if(PAGE === 'settings' && next !== 'settings' && SETTINGS_DIRTY.size && !confirm('Leave settings without saving your changes?')){
+                history.replaceState(null, '', '#/settings'); return;
+            }
+            const changed = next !== PAGE;
+            PAGE = next;
+            ['devices','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            document.querySelectorAll('.nw-pages a').forEach(a => a.classList.toggle('on', a.dataset.page === PAGE));
+            const siteName = (STATUS && STATUS.site && STATUS.site.name) || 'Netwatch';
+            document.title = (PAGE === 'devices' ? '' : (PAGE === 'history' ? 'History · ' : 'Settings · ')) + siteName + ' · Netwatch';
+            if(PAGE === 'history'){
+                const ip = new URLSearchParams(query || '').get('ip');
+                if(ip) document.getElementById('hist-filter').value = ip;
+                loadHistoryPage();
+            }
+            if(PAGE === 'settings'){
+                if(changed || !SETTINGS_LOADED) loadSettings();
+                if(sub) setTimeout(() => { const el = document.getElementById('set-'+sub); if(el) el.scrollIntoView({behavior: changed ? 'auto' : 'smooth', block:'start'}); markSettingsNav(sub); }, changed ? 250 : 0);
+            }
+            if(changed) window.scrollTo(0, 0);
+        }
+        window.addEventListener('hashchange', route);
+        window.addEventListener('beforeunload', (e) => { if(SETTINGS_DIRTY.size){ e.preventDefault(); e.returnValue = ''; } });
+        function openSetup(){ location.hash = '#/settings'; }
+        function closeSetup(){ location.hash = '#/'; }
+        function openHistory(){ location.hash = '#/history'; }
+        function closeHistory(){ location.hash = '#/'; }
+
+        // ---- settings page ----
+        let SETTINGS_LOADED = false, SETTINGS_CFG = null, ORIG_NETWORK = '';
+        const SETTINGS_DIRTY = new Set();
+        async function loadSettings(){
+            // Full settings need the site login; if it's cancelled the page shows a
+            // locked state, so a save can never write back the blanked ntfy topic.
+            let r;
+            try { r = await fetch('/api/config?full=1'); } catch(e){ return; }
+            const locked = !r.ok;
+            document.getElementById('settings-locked').hidden = !locked;
+            document.getElementById('settings-body').hidden = locked;
+            if(locked){ SETTINGS_LOADED = false; return; }
+            const c = await r.json();
+            SETTINGS_CFG = c; SETTINGS_LOADED = true;
+            fillSettings(c);
+            refreshHubStatus(); loadNetwork(); loadBridges(); loadSecurity(); updatePrunePreview();
+            SETTINGS_DIRTY.clear(); updateSaveBar();
+        }
+        async function unlockSettings(){ if(window.nwAuth && await window.nwAuth.login()) loadSettings(); }
+        function fillSettings(c){
+            const site = c.site || {};
+            document.getElementById('set-site-name').value = site.name || '';
+            document.getElementById('set-site-loc').value = site.location || '';
+            document.getElementById('set-sub').textContent = (site.name ? site.name + ' — ' : '') + 'how this Pi scans, alerts, connects and protects the site.';
+            document.getElementById('setup-interval').value = String((c.scan||{}).interval_min || 5);
+            const primary = ((c.targets||[])[0]||{}).cidr || '';
+            ORIG_NETWORK = primary;
+            document.getElementById('setup-network').value = primary;
+            const extra = (c.targets||[]).slice(1);
+            document.getElementById('set-targets').innerHTML = extra.length
+                ? 'Also scanning: ' + extra.map(t => `<code>${esc(t.cidr)}</code>${t.label ? ' (' + esc(t.label) + ')' : ''}`).join(', ') + ' — managed under <a href="#/settings/network" class="text-cyan-300">Network</a>.'
+                : '';
+            if(c.alerts){
+                document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic || '';
+                document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands === true;
+                document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline !== false;
+                renderCatAlerts(c.alerts.categories);
+            }
+            if(c.scan){ document.getElementById('setup-deep-on-new').checked = !!c.scan.deep_on_new; document.getElementById('setup-discovery').checked = c.scan.discovery !== false; }
+            document.getElementById('setup-airos-setip').checked = !!(c.features && c.features.airos_change_ip);
+            document.getElementById('setup-watchdog').checked = !!(c.sysmon && c.sysmon.watchdog);
+            document.getElementById('kuma-auto-ip').textContent = PI_IP;
+            const k = (c.integrations && c.integrations.kuma) || {};
+            KUMA_RESOLVED = k.resolved_url || k.base_url || '';
+            document.getElementById('setup-kuma-auto').checked = !!k.auto_url;
+            document.getElementById('setup-kuma-url').value = k.auto_url ? KUMA_RESOLVED : (k.base_url || '');
+            kumaAutoToggle();
+            document.getElementById('kuma-open').href = KUMA_RESOLVED || '#';
+            document.getElementById('setup-kuma-user').value = k.username || '';
+            document.getElementById('setup-kuma-pass').value = '';
+            document.getElementById('setup-kuma-pass').placeholder = k.username ? 'password saved — leave blank to keep' : 'Kuma admin password';
+            setNavState('kuma', k.enabled && k.username ? 'ok' : '');
+            setNavState('alerts', c.alerts && c.alerts.ntfy_topic ? (c.alerts.allow_commands ? 'warn' : 'ok') : '');
+            // the Kuma block's inputs are part of the save form
+            ['setup-kuma-url','setup-kuma-auto','setup-kuma-user','setup-kuma-pass'].forEach(id => document.getElementById(id).setAttribute('data-track',''));
+        }
+        function setNavState(sec, st){ const el = document.getElementById('snav-st-'+sec); if(el) el.className = 'st ' + (st||''); }
+        function discardSettings(){ if(SETTINGS_CFG){ fillSettings(SETTINGS_CFG); SETTINGS_DIRTY.clear(); updateSaveBar(); nwToast('Changes discarded'); } }
+        function updateSaveBar(){
+            const bar = document.getElementById('save-bar');
+            bar.hidden = !SETTINGS_DIRTY.size;
+            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','cat-alerts':'alerts per type','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP'};
+            const what = new Set([...SETTINGS_DIRTY].map(id => Object.entries(names).find(([k]) => id.startsWith(k)) ).filter(Boolean).map(x => x[1]));
+            document.getElementById('save-bar-what').textContent = [...what].join(', ');
+        }
+        function onSettingsEdit(e){
+            const el = e.target.closest('[data-track]');
+            if(!el || !SETTINGS_LOADED) return;
+            const id = el.id || (el.closest('#cat-alerts') ? 'cat-alerts' : '');
+            if(id){ SETTINGS_DIRTY.add(e.target.closest('#cat-alerts') ? 'cat-alerts' : id); updateSaveBar(); }
+        }
+        document.getElementById('page-settings').addEventListener('input', onSettingsEdit);
+        document.getElementById('page-settings').addEventListener('change', onSettingsEdit);
+        function markSettingsNav(sec){ document.querySelectorAll('.nw-snav a').forEach(a => a.classList.toggle('on', a.dataset.sec === sec)); }
+        const secObserver = ('IntersectionObserver' in window) ? new IntersectionObserver((entries) => {
+            const vis = entries.filter(x => x.isIntersecting).sort((a,b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+            if(vis && PAGE === 'settings') markSettingsNav(vis.target.id.replace('set-',''));
+        }, { rootMargin: '-80px 0px -60% 0px' }) : null;
+        document.querySelectorAll('#page-settings .nw-sec').forEach(sec => secObserver && secObserver.observe(sec));
+        document.querySelectorAll('.nw-snav a').forEach(a => a.addEventListener('click', (e) => {
+            e.preventDefault(); history.replaceState(null, '', a.getAttribute('href'));
+            document.getElementById('set-'+a.dataset.sec).scrollIntoView({behavior:'smooth', block:'start'}); markSettingsNav(a.dataset.sec);
+        }));
+
+        // ---- security section ----
+        async function loadSecurity(){
+            const el = document.getElementById('sec-state');
+            let st = null; try { st = window.nwAuth ? await window.nwAuth.state() : null; } catch(e){}
+            let hub = null; try { hub = await (await fetch('/api/hub/status')).json(); } catch(e){}
+            if(!st){ el.textContent = ''; return; }
+            el.innerHTML = [
+                st.password_set ? '<span class="text-emerald-400">✓ Pi password set</span>' : '<span class="text-amber-400">⚠ No Pi password yet — set one below</span>',
+                st.logged_in ? 'this browser is logged in (12 h)' : 'this browser is not logged in',
+                st.hub_key_set ? '<span class="text-emerald-400">✓ claimed by the central hub</span>' : (hub && hub.configured ? '<span class="text-amber-400">not yet claimed by the hub</span>' : 'no central hub'),
+            ].join(' · ');
+            setNavState('security', st.password_set ? 'ok' : 'warn');
+        }
+        async function changePiPassword(){
+            const a = document.getElementById('sec-pw1').value, b = document.getElementById('sec-pw2').value;
+            const out = document.getElementById('sec-result');
+            if(a.length < 8){ out.innerHTML = '<span class="text-rose-300">Use at least 8 characters.</span>'; return; }
+            if(a !== b){ out.innerHTML = '<span class="text-rose-300">The two entries differ.</span>'; return; }
+            try {
+                const r = await fetch('/api/auth/password', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password: a})});
+                const j = await r.json().catch(() => ({}));
+                if(r.ok && j.ok){ out.innerHTML = '<span class="text-emerald-400">✓ Password changed. Other browsers were signed out.</span>'; document.getElementById('sec-pw1').value = ''; document.getElementById('sec-pw2').value = ''; loadSecurity(); }
+                else out.innerHTML = '<span class="text-rose-300">' + esc(j.error || j.message || 'Could not change the password') + '</span>';
+            } catch(e){ out.innerHTML = '<span class="text-rose-300">Request failed.</span>'; }
+        }
+        async function lockPi(){
+            if(window.nwAuth) await window.nwAuth.logout();
+            SETTINGS_DIRTY.clear(); updateSaveBar();
+            nwToast('Locked — saved logins and settings need the Pi password again', 'ok');
+            loadSettings();
+        }
+        function updatePrunePreview(){
+            const v = document.getElementById('prune-days').value;
+            const days = v === '' ? null : parseInt(v, 10);
+            const now = Date.now()/1000;
+            const n = DATA.devices.filter(d => !d.online && (!days || !d.last_seen || now - d.last_seen >= days*86400)).length;
+            document.getElementById('prune-preview').textContent = `${n} device${n===1?'':'s'} would be removed right now.`;
+        }
+        document.getElementById('prune-days').addEventListener('input', updatePrunePreview);
 
         // ---- Network: extra IPs + DHCP/static ----
         let NET_CONNS = [];
@@ -2326,38 +2604,52 @@
             loadNetwork();
         }
 
-        // ---- Device & IP history ----
-        let HIST_TAB='timeline', HIST_EVENTS=[], HIST_IPS=[];
+        // ---- History page ----
+        let HIST_TAB='timeline', HIST_EVENTS=[], HIST_IPS=[], HIST_SUMMARY=null, HIST_LIMIT=2000;
         const EV_META={
-            'new':      {icon:'🟦', label:'New device',   cls:'text-sky-300 bg-sky-500/15'},
-            'offline':  {icon:'🔴', label:'Went offline',  cls:'text-rose-300 bg-rose-500/15'},
-            'online':   {icon:'🟢', label:'Back online',   cls:'text-emerald-300 bg-emerald-500/15'},
-            'ip_change':{icon:'🔄', label:'IP reassigned', cls:'text-amber-300 bg-amber-500/15'},
+            'new':      {icon:'🟦', label:'New device',        cls:'text-sky-300 bg-sky-500/15'},
+            'offline':  {icon:'🔴', label:'Went offline',      cls:'text-rose-300 bg-rose-500/15'},
+            'online':   {icon:'🟢', label:'Back online',       cls:'text-emerald-300 bg-emerald-500/15'},
+            'ip_change':{icon:'🔄', label:'IP reassigned',     cls:'text-amber-300 bg-amber-500/15'},
+            'replaced': {icon:'🔁', label:'Address taken over', cls:'text-orange-300 bg-orange-500/15'},
         };
         function tsFull(ts){ return ts ? new Date(ts*1000).toLocaleString() : '—'; }
         function tsAgo(ts){ if(!ts) return ''; const s=Math.floor(Date.now()/1000-ts); if(s<60) return s+'s ago'; if(s<3600) return Math.floor(s/60)+'m ago'; if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
-        function openHistory(){ document.getElementById('history-modal').classList.remove('hidden'); histTab(HIST_TAB); }
-        function closeHistory(){ document.getElementById('history-modal').classList.add('hidden'); }
+        function histSince(){ const r = +document.getElementById('hist-range').value; return r ? Math.floor(Date.now()/1000) - r : 0; }
         function histTab(t){
             HIST_TAB=t;
-            document.getElementById('hist-tab-timeline').className = 'px-3 py-1.5 rounded-md '+(t==='timeline'?'bg-cyan-500/20 text-cyan-200 shadow':'text-slate-500');
-            document.getElementById('hist-tab-byip').className = 'px-3 py-1.5 rounded-md '+(t==='byip'?'bg-cyan-500/20 text-cyan-200 shadow':'text-slate-500');
-            document.getElementById('hist-type').style.display = (t==='timeline')?'':'none';
+            document.getElementById('hist-tab-timeline').classList.toggle('on', t==='timeline');
+            document.getElementById('hist-tab-byip').classList.toggle('on', t==='byip');
+            document.getElementById('hist-type').hidden = t !== 'timeline';
+            document.getElementById('hist-fold').closest('label').hidden = t !== 'timeline';
             if(t==='timeline') loadEvents(); else loadIpHistory();
         }
+        let HIST_SEQ = 0;
+        async function loadHistoryPage(){ loadSummary(); HIST_TAB === 'timeline' ? loadEvents() : loadIpHistory(); }
+        async function loadSummary(){
+            const since = histSince();
+            try { HIST_SUMMARY = await (await fetch('/api/events/summary' + (since ? '?since='+since : ''))).json(); } catch(e){ HIST_SUMMARY = null; }
+            renderHistKpis(); renderBusy();
+        }
         async function loadEvents(ip){
-            const type=document.getElementById('hist-type').value;
-            let url='/api/events?limit=500'; if(type) url+='&type='+type; if(ip) url+='&ip='+encodeURIComponent(ip);
-            document.getElementById('hist-body').innerHTML='Loading…';
-            try { HIST_EVENTS=(await (await fetch(url)).json()).events||[]; } catch(e){ HIST_EVENTS=[]; }
-            HIST_TAB='timeline';
-            document.getElementById('hist-tab-timeline').className='px-3 py-1.5 rounded-md bg-cyan-500/20 text-cyan-200 shadow';
-            document.getElementById('hist-tab-byip').className='px-3 py-1.5 rounded-md text-slate-500';
-            document.getElementById('hist-type').style.display='';
-            renderHistory();
+            if(ip) document.getElementById('hist-filter').value = ip;
+            const type = document.getElementById('hist-type').value;
+            const q = document.getElementById('hist-filter').value.trim();
+            const since = histSince();
+            let url = '/api/events?limit=' + HIST_LIMIT;
+            if(type) url += '&type=' + type;
+            if(since) url += '&since=' + since;
+            if(/^\d{1,3}(\.\d{1,3}){3}$/.test(q)) url += '&ip=' + encodeURIComponent(q);   // a full address: ask for its whole history
+            const seq = ++HIST_SEQ;
+            document.getElementById('hist-body').innerHTML = '<div class="nw-empty">Loading…</div>';
+            let evs = [];
+            try { evs = (await (await fetch(url)).json()).events || []; } catch(e){}
+            if(seq !== HIST_SEQ) return;
+            HIST_EVENTS = evs;
+            if(HIST_TAB !== 'timeline') histTab('timeline'); else renderHistory();
         }
         async function loadIpHistory(){
-            document.getElementById('hist-body').innerHTML='Loading…';
+            document.getElementById('hist-body').innerHTML = '<div class="nw-empty">Loading…</div>';
             try { HIST_IPS=(await (await fetch('/api/ip-history')).json()).ips||[]; } catch(e){ HIST_IPS=[]; }
             renderHistory();
         }
@@ -2368,57 +2660,141 @@
             if(d.type_label) bits.push(d.type_label);
             if(d.model) bits.push('model '+d.model);
             if(d.serial) bits.push('s/n '+d.serial);
-            if(d.ports && d.ports.length) bits.push('ports '+d.ports.join(','));
-            if(e.type==='ip_change' && d.prev_name!==undefined) bits.push('replaced: '+((d.prev_name||d.prev_vendor||d.prev_mac||'unknown')));
+            if(d.ports && d.ports.length) bits.push('ports '+(Array.isArray(d.ports) ? d.ports.join(',') : d.ports));
+            if((e.type==='ip_change' || e.type==='replaced') && (d.prev_name!==undefined || d.prev_mac)) bits.push('replaced: '+((d.prev_name||d.prev_vendor||d.prev_mac||'unknown')));
             return bits.join(' · ');
         }
+        function histMatch(x, q){
+            if(!q) return true;
+            const m = ipMatcher(q);
+            if(m) return m(x.ip);
+            return [x.ip,x.name,x.vendor,x.hostname,x.mac].some(v=>(v||'').toLowerCase().includes(q.toLowerCase()));
+        }
+        function renderHistKpis(){
+            const box = document.getElementById('hist-kpis');
+            const c = (HIST_SUMMARY && HIST_SUMMARY.counts) || {};
+            const type = document.getElementById('hist-type').value;
+            const rng = document.getElementById('hist-range');
+            const label = rng.options[rng.selectedIndex].text.toLowerCase();
+            const tile = (t, k, cls, sub) => `<button class="nw-kpi ${cls} ${type===t?'active':''}" onclick="histSetType('${t}')"><span class="k">${k}</span><span class="v">${c[t]||0}</span><span class="s">${sub}</span></button>`;
+            box.innerHTML = `<div class="nw-kpi accent"><span class="k">Events</span><span class="v">${(HIST_SUMMARY && HIST_SUMMARY.total) || 0}</span><span class="s">${esc(label)}</span></div>`
+                + tile('new', '🟦 New devices', c.new ? 'warn' : '', 'joined the network')
+                + tile('offline', '🔴 Went offline', c.offline ? 'bad' : '', 'dropped off')
+                + tile('online', '🟢 Back online', c.online ? 'good' : '', 'came back')
+                + tile('ip_change', '🔄 IP reassigned', c.ip_change ? 'warn' : '', 'DHCP moved a device')
+                + tile('replaced', '🔁 Taken over', c.replaced ? 'warn' : '', 'another device on its address');
+        }
+        function histSetType(t){ const sel = document.getElementById('hist-type'); sel.value = sel.value === t ? '' : t; if(HIST_TAB !== 'timeline') HIST_TAB = 'timeline'; renderHistKpis(); histTab('timeline'); }
+        function renderBusy(){
+            const box = document.getElementById('hist-busy');
+            const list = (HIST_SUMMARY && HIST_SUMMARY.busiest) || [];
+            if(!list.length){ box.innerHTML = '<div class="nw-empty" style="padding:1.5rem">Nothing in this range.</div>'; return; }
+            const max = Math.max(...list.map(x => x.events));
+            box.innerHTML = list.map(x => {
+                const d = DEV_BY_IP[x.ip];
+                const who = d ? devTitle(d) : 'not on the network now';
+                const types = x.types.map(t => (EV_META[t]||{icon:'•'}).icon).join(' ');
+                return `<div class="nw-busy" onclick="histShowIp('${esc(x.ip)}')" title="Show this address's events">
+                    <span class="ip">${esc(x.ip)}</span><span class="n">${x.events}</span>
+                    <span class="bar"><i style="width:${Math.round(100*x.events/max)}%"></i></span>
+                    <span class="d">${esc(who)} · ${x.devices} device${x.devices===1?'':'s'} · ${types}</span></div>`;
+            }).join('') + '<p class="nw-help" style="padding:.75rem 1.1rem 1rem">An address with several devices and many "taken over" events is usually a phone using a private (random) Wi-Fi address. Turn that off for your own network on the phone, or give it a reserved IP.</p>';
+        }
+        function dayLabel(ts){
+            const d = new Date(ts*1000), t = new Date(); t.setHours(0,0,0,0);
+            const diff = Math.round((t - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+            return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString([], {weekday:'long', day:'numeric', month:'long'});
+        }
         function renderHistory(){
-            const body=document.getElementById('hist-body');
-            const q=(document.getElementById('hist-filter').value||'').toLowerCase();
+            const body = document.getElementById('hist-body');
+            const q = (document.getElementById('hist-filter').value||'').trim();
+            const note = document.getElementById('hist-note');
             if(HIST_TAB==='byip'){
-                let ips=HIST_IPS.filter(r=>!q || (r.ip||'').toLowerCase().includes(q) || (r.name||'').toLowerCase().includes(q) || (r.vendor||'').toLowerCase().includes(q));
-                if(!ips.length){ body.innerHTML='<p class="text-slate-400">No history yet.</p>'; return; }
-                body.innerHTML = ips.map(r=>{
-                    const m=EV_META[r.last_type]||{icon:'•',label:r.last_type||''};
-                    const who=r.name||r.vendor||r.hostname||r.mac||'unknown';
-                    return `<button onclick="histShowIp('${r.ip}')" class="w-full text-left p-3 mb-2 border rounded-lg hover:bg-white/5 flex items-center justify-between gap-3">
-                        <div><span class="font-mono font-bold">${r.ip}</span> <span class="text-slate-500">— ${who}</span>
-                        <div class="text-[11px] text-slate-400">${r.device_count} device(s) · ${r.event_count} event(s) seen here</div></div>
-                        <div class="text-right shrink-0"><div class="text-xs">${m.icon} ${m.label}</div><div class="text-[11px] text-slate-400">${tsAgo(r.last_ts)}</div></div>
-                    </button>`;
-                }).join('');
+                const ipm = ipMatcher(q);
+                let ips = HIST_IPS.filter(r => histMatch(r, q));
+                if(ipm) ips.sort((a,b) => ipSort(a.ip, b.ip));
+                note.innerHTML = `<span class="nw-help">${ips.length} address${ips.length===1?'':'es'} ever seen · click one to see its timeline</span>`;
+                if(!ips.length){ body.innerHTML='<div class="nw-empty"><b>No addresses match</b>Try another search.</div>'; return; }
+                body.innerHTML = `<div class="nw-tablewrap"><table class="nw-table"><thead><tr><th>IP</th><th>Last device</th><th class="num">Devices</th><th class="num hide-m">Events</th><th>Last change</th><th class="hide-m">Now</th></tr></thead><tbody>${ips.map(r => {
+                    const m = EV_META[r.last_type]||{icon:'•',label:r.last_type||''};
+                    const now = DEV_BY_IP[r.ip];
+                    return `<tr onclick="histShowIp('${esc(r.ip)}')"><td class="mono" style="color:#67e8f9">${esc(r.ip)}</td><td><div class="nm">${esc(r.name||r.vendor||r.hostname||r.mac||'unknown')}</div><div class="sub">${esc(r.mac||'')}</div></td>
+                        <td class="num">${r.device_count}${r.device_count>1?' <span class="nw-tag" title="Different devices have used this address">shared</span>':''}</td><td class="num hide-m">${r.event_count}</td>
+                        <td>${m.icon} ${esc(m.label)} <span class="text-slate-500">· ${tsAgo(r.last_ts)}</span></td>
+                        <td class="hide-m">${now ? (now.online ? '<span class="text-emerald-400">online</span>' : '<span class="text-rose-300">offline</span>') : '<span class="text-slate-500">—</span>'}</td></tr>`;
+                }).join('')}</tbody></table></div>`;
                 return;
             }
-            let evs=HIST_EVENTS.filter(e=>{
-                if(!q) return true;
-                return [e.ip,e.name,e.vendor,e.hostname,e.mac].some(x=>(x||'').toLowerCase().includes(q));
-            });
-            if(!evs.length){ body.innerHTML='<p class="text-slate-400">No matching events yet. They appear as devices join, go offline, return, or change IP.</p>'; return; }
-            body.innerHTML = evs.map(e=>{
-                const m=EV_META[e.type]||{icon:'•',label:e.type,cls:''};
-                const who=e.name||e.vendor||e.hostname||e.mac||'Unknown device';
-                const det=evDetail(e);
-                return `<div class="p-3 mb-2 border rounded-lg">
-                    <div class="flex items-center justify-between gap-3">
-                        <div class="flex items-center gap-2 min-w-0">
-                            <span class="text-xs font-bold px-2 py-0.5 rounded-full ${m.cls}">${m.icon} ${m.label}</span>
-                            <span class="font-semibold truncate">${who}</span>
-                            <button onclick="loadEvents('${e.ip}')" class="font-mono text-xs text-cyan-300 hover:underline shrink-0">${e.ip||''}</button>
-                        </div>
-                        <span class="text-[11px] text-slate-400 shrink-0" title="${tsFull(e.ts)}">${tsAgo(e.ts)}</span>
-                    </div>
-                    ${det?`<div class="text-[11px] text-slate-500 mt-1">${det}</div>`:''}
+            const fold = document.getElementById('hist-fold').checked;
+            let evs = HIST_EVENTS.filter(e => histMatch(e, q));
+            const capped = HIST_EVENTS.length >= HIST_LIMIT;
+            note.innerHTML = `<span class="nw-help">${evs.length} event${evs.length===1?'':'s'}${q ? ' match' : ''}${capped ? ` · showing the newest ${HIST_LIMIT} — narrow the range or search an address for older ones` : ''}</span>`
+                + (q ? `<button class="nw-chip on" onclick="histShowIp('')">Filter: ${esc(q)} ✕</button>` : '');
+            if(!evs.length){ body.innerHTML = `<div class="nw-empty"><b>No events${q ? ' for ' + esc(q) : ''}</b>${ipMatcher(q) ? 'Nothing joined, left or changed on this address in this range — it has been stable.' : 'Events appear as devices join, go offline, come back or change address.'}</div>`; return; }
+            // Fold the same device repeating the same thing on the same address (a phone
+            // rotating its Wi-Fi MAC every scan) into its newest row, per day.
+            const rows = [];
+            if(fold){
+                const seen = new Map();
+                for(const e of evs){
+                    const k = [dayLabel(e.ts), e.type, e.ip, e.key].join('|');
+                    const first = seen.get(k);
+                    if(first){ first.__n = (first.__n||1) + 1; first.__first = e.ts; continue; }
+                    const row = {...e}; seen.set(k, row); rows.push(row);
+                }
+            } else rows.push(...evs);
+            let html = '', lastDay = null, dayCount = {};
+            rows.forEach(e => { const d = dayLabel(e.ts); dayCount[d] = (dayCount[d]||0) + (e.__n||1); });
+            for(const e of rows.slice(0, 600)){
+                const day = dayLabel(e.ts);
+                if(day !== lastDay){ html += `<div class="nw-day">${esc(day)} <span>${dayCount[day]} event${dayCount[day]===1?'':'s'}</span></div>`; lastDay = day; }
+                const m = EV_META[e.type]||{icon:'•',label:e.type,cls:''};
+                const dev = e.key && DEV_BY_KEY[e.key];
+                const who = e.name || (dev && devTitle(dev)) || e.vendor || e.hostname || e.mac || 'Unknown device';
+                const det = evDetail(e);
+                html += `<div class="nw-ev">
+                    <span class="tm" title="${esc(tsFull(e.ts))}">${new Date(e.ts*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                    <span class="bd ${m.cls}">${m.icon} ${esc(m.label)}</span>
+                    <span class="who">${dev ? `<button class="dev" onclick="openModal('${esc(e.key)}','${esc(dev.ip)}')" title="Open this device">${esc(who)}</button>` : `<b>${esc(who)}</b>`}${e.ip ? `<button class="ipb" onclick="histShowIp('${esc(e.ip)}')" title="Only this address">${esc(e.ip)}</button>` : ''}${det ? `<span class="det" title="${esc(det)}">${esc(det)}</span>` : ''}</span>
+                    ${e.__n ? `<span class="rep" title="Repeated ${e.__n}× on ${esc(day)}, first at ${esc(new Date(e.__first*1000).toLocaleTimeString())}">×${e.__n}</span>` : '<span></span>'}
                 </div>`;
-            }).join('');
+            }
+            if(rows.length > 600) html += `<div class="nw-empty">Showing the newest 600 rows — search or pick an event type to narrow down.</div>`;
+            body.innerHTML = html;
         }
-        function histShowIp(ip){ document.getElementById('hist-filter').value=ip; loadEvents(ip); }
+        function histShowIp(ip){
+            document.getElementById('hist-filter').value = ip;
+            history.replaceState(null, '', ip ? '#/history?ip=' + encodeURIComponent(ip) : '#/history');
+            if(HIST_TAB !== 'timeline'){ HIST_TAB = 'timeline'; histTab('timeline'); } else loadEvents();
+        }
         function openDeviceHistory(){
             if(!MODAL_IP) return;
             closeModal();
-            document.getElementById('history-modal').classList.remove('hidden');
-            document.getElementById('hist-filter').value = MODAL_IP;
-            loadEvents(MODAL_IP);
+            location.hash = '#/history?ip=' + encodeURIComponent(MODAL_IP);
         }
+        function histExportCsv(){
+            const q = (document.getElementById('hist-filter').value||'').trim();
+            const rows = HIST_EVENTS.filter(e => histMatch(e, q));
+            const cell = v => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; };
+            const lines = ['time,event,ip,name,vendor,mac,hostname,detail'].concat(rows.map(e => [new Date(e.ts*1000).toISOString(), (EV_META[e.type]||{label:e.type}).label, e.ip, e.name, e.vendor, e.mac, e.hostname, evDetail(e)].map(cell).join(',')));
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv'}));
+            a.download = 'netwatch-history-' + new Date().toISOString().slice(0,10) + '.csv';
+            document.body.appendChild(a); a.click(); a.remove();
+        }
+        let _hTimer;
+        document.getElementById('hist-filter').addEventListener('input', () => {
+            clearTimeout(_hTimer);
+            _hTimer = setTimeout(() => {
+                const v = document.getElementById('hist-filter').value.trim();
+                if(HIST_TAB === 'timeline' && (/^\d{1,3}(\.\d{1,3}){3}$/.test(v) || HIST_LAST_FULLIP)){ HIST_LAST_FULLIP = /^\d{1,3}(\.\d{1,3}){3}$/.test(v); loadEvents(); }
+                else renderHistory();
+            }, 250);
+        });
+        let HIST_LAST_FULLIP = false;
+        document.getElementById('hist-type').addEventListener('change', () => { renderHistKpis(); loadEvents(); });
+        document.getElementById('hist-range').addEventListener('change', () => loadHistoryPage());
+        document.getElementById('hist-fold').addEventListener('change', () => renderHistory());
 
         // ---- Central Hub VPN ----
         function fmtAge(s){ if(s==null) return '—'; if(s<60) return s+'s ago'; if(s<3600) return Math.floor(s/60)+'m ago'; return Math.floor(s/3600)+'h ago'; }
@@ -2587,16 +2963,9 @@
             const site = data.site || {};
             if(site.name){
                 document.getElementById('site-title').textContent = site.name;
-                document.title = site.name + ' · Netwatch';
+                document.title = (PAGE === 'devices' ? '' : PAGE === 'history' ? 'History · ' : 'Settings · ') + site.name + ' · Netwatch';
             }
             document.getElementById('site-sub').textContent = [site.location, 'Farm Network Asset Identifier'].filter(Boolean).join('  ·  ');
-            // Don't overwrite these form fields while the user has Settings open
-            // and may be editing them — the live poll would otherwise reset their
-            // selection every few seconds (e.g. the scan interval reverting).
-            if(document.getElementById('setup-modal').classList.contains('hidden')){
-                document.getElementById('setup-interval').value = data.scan_interval_min;
-                document.getElementById('setup-network').value = data.target_network;
-            }
             if(data.is_scanning) setLive(true, 'Scanning · ' + (data.progress || 'network'));
             else setLive(false, data.last_scan_ts ? 'Live · updated ' + agoText(data.last_scan_ts) : 'Live');
             renderKpis();
@@ -2645,9 +3014,10 @@
         async function deepScan(){ if(!confirm('Deep scan all ports + service/version on '+SELECTED+'? This can take several minutes.')) return; await fetch('/api/trigger',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'deep',target:SELECTED})}); setTimeout(refresh, 2000); }
 
         async function saveSetup(){
-            await fetch('/api/setup',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+            const btn = document.getElementById('save-btn');
+            btn.disabled = true; btn.textContent = 'Saving…';
+            const body = {
                 interval: document.getElementById('setup-interval').value,
-                network: document.getElementById('setup-network').value,
                 ntfy_topic: document.getElementById('setup-ntfy').value,
                 allow_commands: document.getElementById('setup-allow-commands').checked,
                 notify_hub_offline: document.getElementById('setup-notify-hub').checked,
@@ -2660,8 +3030,26 @@
                 kuma_auto_url: document.getElementById('setup-kuma-auto').checked,
                 kuma_username: document.getElementById('setup-kuma-user').value,
                 kuma_password: document.getElementById('setup-kuma-pass').value
-            })});
-            closeSetup(); refresh();
+            };
+            // Only send the main network when it was actually changed: /api/setup
+            // replaces the whole scan-target list with it, which would drop any
+            // extra networks added under Network.
+            const net = document.getElementById('setup-network').value.trim();
+            if(net && net !== ORIG_NETWORK) body.network = net;
+            try {
+                const r1 = await fetch('/api/setup', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+                if(!r1.ok) throw new Error('settings were not saved (' + r1.status + ')');
+                const name = document.getElementById('set-site-name').value.trim(), loc = document.getElementById('set-site-loc').value.trim();
+                const site = (SETTINGS_CFG && SETTINGS_CFG.site) || {};
+                if(name !== (site.name||'') || loc !== (site.location||'')){
+                    const r2 = await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({site: {...site, name, location: loc}})});
+                    if(!r2.ok) throw new Error('site name was not saved (' + r2.status + ')');
+                }
+                nwToast('Settings saved', 'ok');
+                SETTINGS_DIRTY.clear(); updateSaveBar();
+                await loadSettings(); refresh();
+            } catch(e){ nwToast('Save failed: ' + e.message, 'bad'); }
+            btn.disabled = false; btn.textContent = 'Save changes';
         }
 
         // Esc closes whichever modal is open
@@ -2670,7 +3058,6 @@
             // Bulk logins sits above the device modal (z-70) — close it first.
             if(!document.getElementById('bulkcred-modal').classList.contains('hidden')) closeBulkCreds();
             else if(!document.getElementById('modal').classList.contains('hidden')) closeModal();
-            else if(!document.getElementById('setup-modal').classList.contains('hidden')) closeSetup();
         });
 
         // ---- wireless summary (tile only appears once radios are actually being read) ----
@@ -2811,6 +3198,7 @@
             if(ku){ link.href = location.protocol+'//'+location.hostname+':'+port; link.hidden = false; }
         }).catch(()=>{});
         renderKpis(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge();
+        route();
         tick();
     </script>
 </body>
