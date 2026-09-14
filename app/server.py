@@ -28,6 +28,7 @@ import radiomon
 import siteauth
 import sysmon
 import tunnels
+import wifidiag
 import kuma
 import notify
 from listener import listener
@@ -76,7 +77,7 @@ def setup_page():
 
 @app.route("/wifi")
 def wifi_page():
-    return send_from_directory(STATIC_DIR, "wifi.html")
+    return redirect("/#/wifi")
 
 
 @app.route("/app.css")
@@ -438,6 +439,7 @@ def api_radio_links():
 
     snap = radiomon.monitor.snapshot()
     devs = {d["key"]: d for d in scanner.get_devices() if d.get("key")}
+    rcfg = config.load().get("radio") or {}
     radios = []
     for key, last in (snap["radios"] or {}).items():
         dev = devs.get(key, {})
@@ -446,38 +448,24 @@ def api_radio_links():
         by_peer = {}
         for r in lrows:
             by_peer.setdefault(r["peer"], []).append(r)
-        links = []
-        for peer, rows in by_peer.items():
-            newest = rows[-1]
-            links.append({
-                "peer": peer,
-                "name": newest.get("name") or peer,
-                "model": newest.get("model") or "",
-                "ip": newest.get("ip") or "",
-                "distance": newest.get("distance"),
-                "last_ts": newest["ts"],
-                "series": cols(thin(rows), ["signal", "remote_signal", "score_dl",
-                                            "score_ul", "tx", "rx", "latency"]),
-                "stats": {f: stats(rows, f, key, peer=peer)
-                          for f in ("signal", "remote_signal", "score_dl", "score_ul")},
-            })
-        links.sort(key=lambda l: l["name"].lower())
         radios.append({
             "key": key, "ip": last.get("ip") or dev.get("ip"),
-            "name": dev.get("name") or last.get("name") or key,
+            "name": dev.get("name") or dev.get("device_name") or last.get("name") or key,
             "ok": bool(last.get("ok")), "error": last.get("error"),
             "mode": last.get("mode"), "ssid": last.get("ssid"),
-            "model": dev.get("model") or "", "last_ts": last.get("ts"),
+            "model": dev.get("model") or last.get("model") or "", "last_ts": last.get("ts"),
             "current": last.get("sample") or {},
-            "series": cols(thin(srows), ["signal", "noise", "airtime", "cap_dl",
-                                         "cap_ul", "tx_rate", "rx_rate", "links"]),
+            "rows": srows,
+            "series": cols(thin(srows), ["noise", "airtime", "cap_dl", "cap_ul", "links"]),
             "stats": {f: stats(srows, f, key) for f in ("noise", "airtime", "cap_dl")},
-            "links": links,
+            "links": [{"peer": peer, "name": rows[-1].get("name") or peer,
+                       "model": rows[-1].get("model") or "", "ip": rows[-1].get("ip") or "",
+                       "rows": rows} for peer, rows in by_peer.items()],
         })
-    radios.sort(key=lambda r: (not r["ok"], r["name"].lower()))
-    return jsonify({"ok": True, "hours": hours, "radios": radios,
-                    "problems": snap["problems"],
-                    "enabled": bool((config.load().get("radio") or {}).get("enabled", True))})
+    diag = wifidiag.build(radios, poll_gap_s=max(1, int(rcfg.get("poll_min", 15))) * 60)
+    return jsonify({"ok": True, "hours": hours, "problems": snap["problems"], "polling": snap["busy"],
+                    "enabled": bool(rcfg.get("enabled", True)),
+                    "poll_min": int(rcfg.get("poll_min", 15)), **diag})
 
 
 @app.route("/api/devices/<path:key>/radio-history")

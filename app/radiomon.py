@@ -187,6 +187,7 @@ class RadioMonitor:
             print("radiomon: could not store sample:", e, flush=True)
         self._last[key] = {"ok": True, "ts": int(time.time()), "ip": dev.get("ip"),
                            "name": dev.get("name") or dev.get("ip"),
+                           "model": res.get("platform") or "",
                            "mode": res.get("mode_label"), "ssid": res.get("ssid"),
                            "sample": sample, "links": links}
         return self._evaluate(key, dev, sample, links)

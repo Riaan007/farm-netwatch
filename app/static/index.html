@@ -330,6 +330,113 @@
         .nw-busy .d { grid-column: 1 / -1; font-size: 11.5px; color: #64748b; }
         .nw-busy .bar { grid-column: 1 / -1; height: 3px; border-radius: 99px; background: rgba(148,163,184,.12); overflow: hidden; }
         .nw-busy .bar i { display: block; height: 100%; background: #fbbf24; }
+        /* wi-fi */
+        .nw-wgrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1rem; align-items: start; }
+        .nw-wcol { display: grid; gap: 1rem; align-content: start; min-width: 0; }
+        .nw-wfix { padding: 0 .6rem .6rem; }
+        .nw-wfix .it { display: grid; grid-template-columns: 10px minmax(0,1fr) auto; gap: .15rem .7rem; align-items: start; width: 100%; text-align: left; padding: .6rem .6rem; border-radius: .65rem; border-top: 1px solid rgba(148,163,184,.08); }
+        .nw-wfix .it:first-child { border-top: 0; }
+        .nw-wfix .it:hover { background: rgba(34,211,238,.05); }
+        .nw-wfix .it .lv { width: 9px; height: 9px; border-radius: 50%; margin-top: .35rem; }
+        .nw-wfix .it b { color: #f1f5f9; font-size: 13.5px; font-weight: 650; }
+        .nw-wfix .it .tg { color: #94a3b8; font-size: 12px; }
+        .nw-wfix .it p { grid-column: 2 / -1; margin: 0; font-size: 12.5px; color: #94a3b8; line-height: 1.5; }
+        .nw-wfix .more { display: block; margin: .3rem .6rem 0; font-size: 12px; color: #67e8f9; }
+        .lv.crit { background: #fb7185; box-shadow: 0 0 0 3px rgba(251,113,133,.18); } .lv.warn { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251,191,36,.16); } .lv.info { background: #60a5fa; }
+        .nw-where { display: inline-flex; align-items: center; gap: .3rem; height: 21px; padding: 0 .5rem; border-radius: 999px; font-size: 11px; font-weight: 650; white-space: nowrap; }
+        .nw-where.remote { color: #a5f3fc; background: rgba(34,211,238,.12); }
+        .nw-where.site { color: #fde68a; background: rgba(245,158,11,.14); }
+        .nw-grade { display: inline-flex; align-items: center; height: 22px; padding: 0 .55rem; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+        .nw-grade.good { color: #6ee7b7; background: rgba(16,185,129,.14); } .nw-grade.watch { color: #bfdbfe; background: rgba(96,165,250,.14); }
+        .nw-grade.warn { color: #fde68a; background: rgba(245,158,11,.16); } .nw-grade.crit { color: #fecdd3; background: rgba(244,63,94,.18); }
+        .nw-wap + .nw-wap { margin-top: 1.4rem; }
+        .nw-waph { display: flex; align-items: center; gap: .35rem .7rem; flex-wrap: wrap; padding: 0 .1rem .2rem; }
+        .nw-waph .ico { width: 30px; height: 30px; border-radius: .55rem; display: grid; place-items: center; background: rgba(34,211,238,.1); color: #67e8f9; flex: none; }
+        .nw-waph .ico svg { width: 17px; height: 17px; }
+        .nw-waph b { font-size: 14.5px; color: #f1f5f9; }
+        .nw-waph .meta { font-size: 12px; color: #64748b; }
+        .nw-waph a.mono, .nw-wfacts a { color: #67e8f9; text-decoration: none; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+        .nw-waph a.mono:hover, .nw-wfacts a:hover { text-decoration: underline; }
+        .nw-wapnote { margin: .45rem 0 0; }
+        .nw-wlink { position: relative; margin-top: .5rem; border: 1px solid rgba(148,163,184,.14); border-radius: .85rem; background: rgba(2,6,23,.32); }
+        .nw-wlink::before { content: ""; position: absolute; left: 0; top: .6rem; bottom: .6rem; width: 3px; border-radius: 0 3px 3px 0; background: var(--g, #475569); }
+        .nw-wlink.good { --g: #34d399; } .nw-wlink.watch { --g: #60a5fa; } .nw-wlink.warn { --g: #fbbf24; } .nw-wlink.crit { --g: #fb7185; border-color: rgba(251,113,133,.35); }
+        .nw-wlink.open { border-color: rgba(34,211,238,.35); }
+        .nw-wrow { display: grid; grid-template-columns: minmax(0,1.35fr) minmax(0,1.25fr) 116px 88px 16px; gap: .9rem; align-items: center; width: 100%; text-align: left; padding: .7rem .9rem .7rem 1.1rem; border-radius: .85rem; cursor: pointer; }
+        .nw-wrow:hover { background: rgba(34,211,238,.04); }
+        .nw-wrow .nm { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+        .nw-wrow .nm b { color: #f1f5f9; font-size: 14px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-wrow .sub { display: block; font-size: 11.5px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: .1rem; }
+        .nw-wrow .chev { color: #64748b; transition: transform .15s; }
+        .nw-wlink.open .nw-wrow .chev { transform: rotate(90deg); color: #67e8f9; }
+        .nw-sig { display: grid; grid-template-columns: minmax(0,1fr) 62px; gap: .1rem .5rem; align-items: center; font-size: 11.5px; color: #94a3b8; }
+        .nw-sig span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-sig i { grid-column: 1 / -1; display: block; height: 4px; border-radius: 99px; background: rgba(148,163,184,.14); overflow: hidden; margin-bottom: .25rem; }
+        .nw-sig i s { display: block; height: 100%; border-radius: inherit; }
+        .nw-sig em { font-style: normal; font-family: ui-monospace, Menlo, Consolas, monospace; text-align: right; font-weight: 650; }
+        .nw-q { display: grid; gap: .1rem; }
+        .nw-q .v { font-size: 1.2rem; font-weight: 750; font-variant-numeric: tabular-nums; line-height: 1.1; }
+        .nw-q .v small { font-size: 11px; color: #64748b; font-weight: 600; }
+        .nw-q .d { font-size: 11px; color: #64748b; white-space: nowrap; }
+        .nw-wcap { font-size: 12px; color: #94a3b8; text-align: right; line-height: 1.35; }
+        .nw-wcap b { display: block; color: #e2e8f0; font-size: 13px; }
+        .t-good { color: #34d399; } .t-ok { color: #a5f3fc; } .t-warn { color: #fbbf24; } .t-bad { color: #fb7185; } .t-dim { color: #64748b; }
+        .nw-wdet { border-top: 1px solid rgba(148,163,184,.1); padding: .9rem 1.1rem 1.1rem; display: grid; gap: 1rem; }
+        .nw-find { border: 1px solid rgba(148,163,184,.14); border-left: 3px solid var(--fc, #60a5fa); border-radius: .7rem; padding: .75rem .9rem; background: rgba(15,23,42,.45); }
+        .nw-find.crit { --fc: #fb7185; background: rgba(127,29,29,.14); } .nw-find.warn { --fc: #fbbf24; background: rgba(120,53,15,.12); } .nw-find.info { --fc: #60a5fa; }
+        .nw-find h4 { margin: 0; display: flex; align-items: center; gap: .5rem; font-size: 14px; font-weight: 700; color: #f1f5f9; }
+        .nw-find .ev { margin: .4rem 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: 12px; color: #94a3b8; }
+        .nw-find .ev li::before { content: "•"; color: #475569; margin-right: .35rem; }
+        .nw-find .cols { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.25fr); gap: .5rem 1.2rem; margin-top: .65rem; }
+        .nw-find h5 { margin: 0 0 .3rem; font-size: 10.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #64748b; }
+        .nw-find ol { margin: 0; padding-left: 1.1rem; display: grid; gap: .35rem; font-size: 12.5px; color: #cbd5e1; line-height: 1.45; }
+        .nw-find ol.steps { list-style: none; padding: 0; counter-reset: st; }
+        .nw-find ol.steps li { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: .1rem .45rem; counter-increment: st; }
+        .nw-find ol.steps li::before { content: counter(st); width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: #0b1322; background: #94a3b8; margin-top: .1rem; }
+        .nw-find ol.steps li .nw-where { grid-column: 2; justify-self: start; height: 18px; font-size: 10.5px; }
+        .nw-find .good { margin: .6rem 0 0; font-size: 12px; color: #6ee7b7; }
+        .nw-wok { display: flex; gap: .6rem; align-items: center; padding: .7rem .9rem; border-radius: .7rem; background: rgba(16,185,129,.08); border: 1px solid rgba(52,211,153,.25); color: #a7f3d0; font-size: 13px; }
+        .nw-wcharts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem 1.1rem; }
+        .nw-wchart h5 { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: 0 0 .3rem; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #94a3b8; }
+        .nw-wchart h5 .lg { display: inline-flex; align-items: center; gap: .3rem; letter-spacing: 0; text-transform: none; font-weight: 600; color: #64748b; }
+        .nw-wchart h5 .lg i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+        .nw-wchart .plot { position: relative; }
+        .nw-wchart svg { display: block; width: 100%; }
+        .nw-wchart .ax { display: flex; justify-content: space-between; font-size: 10px; color: #475569; margin-top: .15rem; font-variant-numeric: tabular-nums; }
+        .nw-wchart .hov { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(226,232,240,.35); pointer-events: none; }
+        .nw-wchart .tip { position: absolute; top: -2px; transform: translate(-50%, -100%); padding: .25rem .5rem; border-radius: .45rem; background: #0b1324; border: 1px solid rgba(148,163,184,.3); font-size: 11px; color: #e2e8f0; white-space: nowrap; pointer-events: none; z-index: 3; }
+        .nw-wchart .none { font-size: 12px; color: #475569; padding: 1.4rem 0; text-align: center; border: 1px dashed rgba(148,163,184,.15); border-radius: .6rem; }
+        .guide { stroke: rgba(251,191,36,.4); stroke-dasharray: 3 3; } .guide-bad { stroke: rgba(244,63,94,.45); stroke-dasharray: 3 3; }
+        .nw-hours { display: grid; grid-template-columns: 70px repeat(24, minmax(0,1fr)); gap: 2px; align-items: center; font-size: 10.5px; color: #64748b; }
+        .nw-hours b { height: 18px; border-radius: 3px; background: rgba(148,163,184,.08); }
+        .nw-hours .lab { white-space: nowrap; }
+        .nw-hours .hx { text-align: center; font-size: 9.5px; color: #475569; }
+        .nw-wfacts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .5rem; margin: 0; }
+        .nw-wfacts div { padding: .5rem .65rem; border-radius: .6rem; background: rgba(2,6,23,.4); border: 1px solid rgba(148,163,184,.1); min-width: 0; }
+        .nw-wfacts dt { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #64748b; }
+        .nw-wfacts dd { margin: .1rem 0 0; font-size: 13px; color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; }
+        .nw-wfacts dd small { display: block; font-size: 11px; color: #64748b; white-space: normal; }
+        .nw-wradio { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: .1rem .6rem; padding: .6rem 1.1rem; border-top: 1px solid rgba(148,163,184,.08); width: 100%; text-align: left; }
+        .nw-wradio:hover { background: rgba(34,211,238,.05); }
+        .nw-wradio b { color: #f1f5f9; font-size: 13px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-wradio .r { font-size: 11.5px; color: #64748b; text-align: right; white-space: nowrap; }
+        .nw-wradio .d { grid-column: 1 / -1; font-size: 11.5px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-wradio.bad .d { color: #fda4af; white-space: normal; }
+        .nw-wguide dl { margin: 0; padding: 0 1.1rem 1rem; display: grid; gap: .55rem; }
+        .nw-wguide dt { font-size: 12.5px; font-weight: 700; color: #e2e8f0; }
+        .nw-wguide dd { margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5; }
+        .nw-wguide b.g { color: #6ee7b7; } .nw-wguide b.a { color: #fcd34d; } .nw-wguide b.r { color: #fda4af; }
+        @media (max-width: 1100px) { .nw-wgrid { grid-template-columns: 1fr; } }
+        @media (max-width: 760px) {
+            .nw-wrow { grid-template-columns: minmax(0,1fr) auto 16px; gap: .4rem .7rem; }
+            .nw-wrow .nw-sig { grid-column: 1 / -1; grid-row: 2; }
+            .nw-wrow .nw-wcap { display: none; }
+            .nw-wcharts, .nw-find .cols { grid-template-columns: 1fr; }
+            .nw-hours { grid-template-columns: 56px repeat(24, minmax(0,1fr)); }
+            .nw-wfacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .nw-wfix .it { grid-template-columns: 10px minmax(0,1fr); }
+            .nw-wfix .it .nw-where { grid-column: 2; justify-self: start; }
+        }
         /* settings */
         .nw-sgrid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1.25rem; align-items: start; }
         .nw-snav { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px; }
@@ -440,6 +547,7 @@
                 <nav class="nw-pages" aria-label="Pages">
                     <a href="#/" data-page="devices" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
                     <a href="#/map" data-page="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg><span class="lbl">Map</span></a>
+                    <a href="#/wifi" data-page="wifi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
                     <a href="#/history" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></a>
                     <a href="#/settings" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg><span class="lbl">Settings</span></a>
                 </nav>
@@ -454,7 +562,6 @@
                     </div>
                 </div>
                 <button hidden onclick="openHistory()" class="nw-ib" title="Device &amp; IP event history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></button>
-                <a href="/wifi" class="nw-ib" title="Wireless link history, trends and troubleshooting"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
                 <button onclick="openBulkCreds()" class="nw-ib" title="Set or copy logins across many devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0zm0 0h7v3m-3-3v3"/></svg><span class="lbl">Logins</span></button>
                 <a id="kuma-link" href="#" target="_blank" rel="noopener" class="nw-ib ok" title="Open Uptime Kuma" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span class="lbl">Kuma</span></a>
 
@@ -517,6 +624,59 @@
                 </div>
                 <p id="map-hint" class="nw-help" style="padding:0 1rem .7rem"></p>
                 <div id="map-list" class="nw-mlist"></div>
+            </aside>
+        </div>
+      </div>
+
+      <div id="page-wifi" hidden>
+        <div class="nw-phead">
+            <div><div class="nw-eyebrow">Wi-Fi</div><h1>Wireless links</h1><p id="wifi-sub">Every radio link on this site: how healthy it is, why, and what to do about it.</p></div>
+            <div class="nw-tools">
+                <div class="nw-seg" role="group" aria-label="Time range" id="wifi-range">
+                    <button data-hours="24">24 h</button><button data-hours="168" class="on">7 days</button><button data-hours="720">30 days</button>
+                </div>
+                <button class="nw-ib" id="wifi-poll" onclick="wifiPoll()" title="Read every radio now instead of waiting for the next poll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5"/></svg><span class="lbl">Read radios now</span></button>
+            </div>
+        </div>
+        <section id="wifi-kpis" class="nw-kpis" aria-label="Wireless summary"></section>
+        <div class="nw-wgrid">
+            <div class="nw-wcol">
+                <section class="nw-panel" id="wifi-fix-panel">
+                    <div class="nw-dhead">
+                        <div><h2>What to do</h2><p>Worst first, and what can be done from the office before anyone drives out.</p></div>
+                        <div class="nw-tools">
+                            <div class="nw-seg" role="group" aria-label="Where" id="wifi-where">
+                                <button data-where="" class="on">All</button><button data-where="remote">From the office</button><button data-where="site">On site</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="wifi-fix" class="nw-wfix"></div>
+                </section>
+                <section class="nw-panel">
+                    <div class="nw-dhead">
+                        <div><h2>Links</h2><p id="wifi-links-sub">Grouped by access point. Open a link for its diagnosis and charts.</p></div>
+                        <div class="nw-tools"><button class="nw-btn sm" onclick="wifiExpandAll()" id="wifi-expand">Open all</button></div>
+                    </div>
+                    <div id="wifi-links" class="nw-body">Loading…</div>
+                </section>
+            </div>
+            <aside class="nw-wcol">
+                <section class="nw-panel">
+                    <div class="nw-dhead"><div><h2>Radios</h2><p>Every radio Netwatch reads over SSH.</p></div></div>
+                    <div id="wifi-radios"></div>
+                </section>
+                <section class="nw-panel nw-wguide">
+                    <div class="nw-dhead"><div><h2>Reading the numbers</h2><p>The same limits the alerts use.</p></div></div>
+                    <dl>
+                        <dt>Signal</dt><dd>How loud the other radio arrives. <b class="g">−65 dBm or better</b> is good, <b class="a">−75</b> is weak, <b class="r">−82</b> is poor. A drop of 6 dB from a link's own normal matters more than the number itself.</dd>
+                        <dt>Link score</dt><dd>airMAX's 0–100 rating of the data rate actually achieved. <b class="g">80+</b> good, <b class="a">below 50</b> poor, <b class="r">below 35</b> bad. Strong signal with a low score means interference or a partly blocked path, not aim.</dd>
+                        <dt>Download / upload</dt><dd>Download = access point to station, upload = station to access point. The weak direction points at the end that hears interference.</dd>
+                        <dt>Air time</dt><dd>How much of the channel is in use. Above <b class="a">80 %</b> the link is congested — usually camera streams.</dd>
+                        <dt>Noise floor</dt><dd>Background radio noise. Around −90 dBm is quiet; a rise of 8 dB means something new is transmitting nearby.</dd>
+                        <dt>Antenna chains</dt><dd>A dish receives on two polarisations. They should be within 3–4 dB; <b class="a">8 dB</b> apart means a mis-seated radio, a twisted dish or water in the feed.</dd>
+                        <dt>Fresnel zone</dt><dd>The oval around the line between two radios that must stay clear. Trees inside it keep the signal strong but ruin the link score.</dd>
+                    </dl>
+                </section>
             </aside>
         </div>
       </div>
@@ -1417,7 +1577,7 @@
             const all = devicesInView();
             const base = targetBase(SELECTED);
             if(VIEW === 'map' && !base) VIEW = 'cards';
-            document.querySelectorAll('.nw-seg button').forEach(b => {
+            document.querySelectorAll('.nw-seg button[data-view]').forEach(b => {
                 b.classList.toggle('on', b.dataset.view === VIEW);
                 if(b.dataset.view === 'map'){ b.disabled = !base; b.title = base ? 'IP map — every address on the subnet, including free ones' : 'IP map needs a /24 network'; }
             });
@@ -1537,7 +1697,7 @@
             if(nets.length) html += tile('network', 'Network', `${netUp}<small>/${nets.length}</small>`, netUp === nets.length ? 'switches, APs, links up' : `${nets.length-netUp} offline`, netUp === nets.length ? 'good' : 'bad');
             html += tile('unidentified', 'Mystery', myst, myst ? `not identified · ${mystOn} online` : 'everything identified', myst ? 'warn' : '');
             html += `<button class="nw-kpi ${highProbs ? 'bad' : probs ? 'warn' : 'good'}" onclick="openProblems()"><span class="k">Problems</span><span class="v">${probs}</span><span class="s">${probs ? (highProbs ? `${highProbs} need fixing` : 'minor — worth a look') : 'no network problems'}</span></button>`;
-            if(WIFI && WIFI.radios) html += `<a class="nw-kpi ${WIFI.crit ? 'bad' : WIFI.warn ? 'warn' : ''}" href="/wifi" style="text-decoration:none"><span class="k">Wireless links</span><span class="v">${WIFI.links}</span><span class="s">${WIFI.crit ? WIFI.crit+' critical' : WIFI.warn ? WIFI.warn+' warning' : WIFI.unread ? WIFI.unread+' radios unread' : 'all healthy'}</span></a>`;
+            if(WIFI && WIFI.radios) html += `<a class="nw-kpi ${WIFI.crit ? 'bad' : WIFI.warn ? 'warn' : ''}" href="#/wifi" style="text-decoration:none"><span class="k">Wireless links</span><span class="v">${WIFI.links}</span><span class="s">${WIFI.crit ? WIFI.crit+' critical' : WIFI.warn ? WIFI.warn+' warning' : WIFI.unread ? WIFI.unread+' radios unread' : 'all healthy'}</span></a>`;
             const st = STATUS || {};
             let scanV = '—', scanS = 'no scan yet';
             if(st.is_scanning){ scanV = '<span class="scanning" style="font-size:1.1rem">Scanning…</span>'; scanS = st.progress || 'looking for devices'; }
@@ -1583,7 +1743,7 @@
         let _qTimer;
         document.getElementById('dev-q').addEventListener('input', (e) => { clearTimeout(_qTimer); _qTimer = setTimeout(() => { QUERY = e.target.value; renderGrid(); }, 140); });
         document.getElementById('dev-sort').addEventListener('change', (e) => setSort(e.target.value));
-        document.querySelectorAll('.nw-seg button').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+        document.querySelectorAll('.nw-seg button[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
         document.addEventListener('keydown', (e) => {
             if(e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement||{}).tagName||'')){ e.preventDefault(); document.getElementById('dev-q').focus(); }
         });
@@ -2416,20 +2576,25 @@
             const h = (location.hash || '').replace(/^#\/?/, '');
             const [path, query] = h.split('?');
             const [page, sub] = (path || '').split('/');
-            const next = ['history','settings','map'].includes(page) ? page : 'devices';
+            const next = ['history','settings','map','wifi'].includes(page) ? page : 'devices';
             if(PAGE === 'settings' && next !== 'settings' && SETTINGS_DIRTY.size && !confirm('Leave settings without saving your changes?')){
                 history.replaceState(null, '', '#/settings'); return;
             }
             const changed = next !== PAGE;
             PAGE = next;
-            ['devices','map','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            ['devices','map','wifi','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
             if(PAGE !== 'map') mapCancelPlace(true);
             document.querySelectorAll('.nw-pages a').forEach(a => a.classList.toggle('on', a.dataset.page === PAGE));
             const siteName = (STATUS && STATUS.site && STATUS.site.name) || 'Netwatch';
-            document.title = ({devices:'', map:'Map · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
+            document.title = ({devices:'', map:'Map · ', wifi:'Wi-Fi · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
             if(PAGE === 'map'){
                 const qp = new URLSearchParams(query || '');
                 showMapPage(qp.get('focus'), qp.get('place'));
+            }
+            if(PAGE === 'wifi'){
+                const link = new URLSearchParams(query || '').get('link');
+                if(link) WF.open.add(link);
+                loadWifiPage(link);
             }
             if(PAGE === 'history'){
                 const ip = new URLSearchParams(query || '').get('ip');
@@ -3453,7 +3618,375 @@
                      crit, warn: (o.problems || []).length - crit };
             renderKpis();
         }
-        function jumpToWifi(){ location.href = '/wifi'; }
+        function jumpToWifi(){ location.hash = '#/wifi'; }
+
+        // ---- Wi-Fi page: links, diagnosis, fix list (data + rules: /api/radio/links → wifidiag.py) ----
+        const WF = { hours: 168, where: '', data: null, open: new Set(), charts: {}, showInfo: false, loading: false };
+        try { const h = parseInt(localStorage.getItem('nw.wifi.hours'), 10); if([24,168,720].includes(h)) WF.hours = h; } catch(e){}
+        const WF_GRADE = { good: 'Healthy', watch: 'Watch', warn: 'Needs attention', crit: 'Poor' };
+        const WF_WHERE = { remote: 'From the office', site: 'On site' };
+        const wfNum = (v, dp=0) => v == null || isNaN(v) ? '—' : Number(v).toFixed(dp);
+        const wfSigCls = (v) => v == null ? 't-dim' : v <= -82 ? 't-bad' : v <= -75 ? 't-warn' : v >= -65 ? 't-good' : 't-ok';
+        const wfScoreCls = (v) => v == null ? 't-dim' : v < 35 ? 't-bad' : v < 50 ? 't-warn' : v >= 80 ? 't-good' : 't-ok';
+        const wfPoorBg = (v) => v == null ? 'rgba(148,163,184,.08)' : v >= 50 ? '#e11d48' : v >= 35 ? '#f97316' : v >= 20 ? '#f59e0b' : v >= 8 ? '#eab308aa' : '#10b981';
+        function wfAgo(ts){
+            if(!ts) return 'never';
+            const s = Math.floor(Date.now()/1000) - ts;
+            return s < 90 ? 'just now' : s < 5400 ? Math.round(s/60)+' min ago' : s < 172800 ? Math.round(s/3600)+' h ago' : Math.round(s/86400)+' days ago';
+        }
+        function wfKm(m){ return m == null ? '—' : m >= 1000 ? (m/1000).toFixed(1)+' km' : Math.round(m)+' m'; }
+        const WF_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 13v8M8.5 9.5a5 5 0 0 1 7 0M5.5 6.5a9 9 0 0 1 13 0"/><circle cx="12" cy="12.5" r="1"/></svg>';
+
+        document.querySelectorAll('#wifi-range button').forEach(b => {
+            b.classList.toggle('on', +b.dataset.hours === WF.hours);
+            b.addEventListener('click', () => {
+                WF.hours = +b.dataset.hours;
+                try { localStorage.setItem('nw.wifi.hours', WF.hours); } catch(e){}
+                document.querySelectorAll('#wifi-range button').forEach(x => x.classList.toggle('on', x === b));
+                loadWifiPage();
+            });
+        });
+        document.querySelectorAll('#wifi-where button').forEach(b => b.addEventListener('click', () => {
+            WF.where = b.dataset.where;
+            document.querySelectorAll('#wifi-where button').forEach(x => x.classList.toggle('on', x === b));
+            renderWifiFixes();
+        }));
+
+        async function loadWifiPage(focus){
+            if(WF.loading) return;
+            WF.loading = true;
+            if(!WF.data) document.getElementById('wifi-links').innerHTML = '<div class="nw-empty">Reading link history…</div>';
+            let d;
+            try { d = await (await fetch('/api/radio/links?hours=' + WF.hours)).json(); }
+            catch(e){ d = { ok: false, error: String(e) }; }
+            WF.loading = false;
+            if(!d.ok){
+                document.getElementById('wifi-links').innerHTML = `<div class="nw-empty"><b>Could not load the wireless data</b>${esc(d.error || '')}</div>`;
+                return;
+            }
+            WF.data = d;
+            renderWifiPage();
+            if(focus) setTimeout(() => wifiFocus(focus), 60);
+        }
+
+        function renderWifiPage(){
+            const d = WF.data; if(!d) return;
+            const sm = d.summary || {}, links = d.links || [], radios = d.radios || [];
+            const range = WF.hours >= 48 ? (WF.hours/24) + ' days' : WF.hours + ' hours';
+            const newest = Math.max(0, ...radios.map(r => r.last_ts || 0));
+            document.getElementById('wifi-sub').textContent = radios.length
+                ? `${sm.links} link${sm.links===1?'':'s'} on ${sm.radios_read} radio${sm.radios_read===1?'':'s'} · last ${range} · read ${wfAgo(newest)}${d.enabled ? ' · every ' + (d.poll_min || 15) + ' min' : ' · radio monitoring is OFF in Settings'}`
+                : 'Every radio link on this site: how healthy it is, why, and what to do about it.';
+
+            // KPI tiles
+            const attn = (sm.warn||0) + (sm.crit||0);
+            const graded = links.filter(l => l.quality != null);
+            const worst = graded.length ? graded.reduce((a, b) => b.quality < a.quality ? b : a) : null;
+            const unread = (sm.radios||0) - (sm.radios_read||0);
+            const tiles = [
+                ['Links', sm.links || 0, `${sm.good || 0} healthy`, '', ''],
+                ['Need attention', attn, sm.crit ? sm.crit + ' poor' : attn ? 'none critical' : 'nothing to fix', sm.crit ? 'bad' : attn ? 'warn' : 'good', ''],
+                ['Weakest link', worst ? worst.quality + '<small>/100</small>' : '—', worst ? worst.name : 'no link scores yet', worst ? (worst.quality < 50 ? 'warn' : '') : '', worst ? worst.id : ''],
+                ['From the office', sm.remote_fixes || 0, 'fixes without a trip', sm.remote_fixes ? 'accent' : '', ''],
+                ['Site visits', sm.site_fixes || 0, 'need someone on site', '', ''],
+                ['Radios read', `${sm.radios_read||0}<small>/${sm.radios||0}</small>`, unread ? unread + " can't be read" : 'all readable', unread ? 'warn' : '', ''],
+            ];
+            document.getElementById('wifi-kpis').innerHTML = tiles.map(([k, v, sub, cls, link]) =>
+                `<${link ? `button onclick="wifiFocus('${esc(link)}')"` : 'div'} class="nw-kpi ${cls}"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${esc(sub)}</span></${link ? 'button' : 'div'}>`).join('');
+
+            renderWifiFixes();
+            renderWifiLinks();
+            renderWifiRadios();
+        }
+
+        function renderWifiFixes(){
+            const d = WF.data; if(!d) return;
+            const box = document.getElementById('wifi-fix');
+            const all = (d.fixes || []).filter(f => !WF.where || f.where === WF.where);
+            const real = all.filter(f => f.level !== 'info'), info = all.filter(f => f.level === 'info');
+            const show = WF.showInfo ? all : real;
+            if(!(d.links || []).length && !(d.radios || []).length){ document.getElementById('wifi-fix-panel').hidden = true; return; }
+            document.getElementById('wifi-fix-panel').hidden = false;
+            box.innerHTML = (show.length ? show.map(f => {
+                const target = f.link ? `wifiFocus('${esc(f.link)}')` : `wifiFocusRadio('${esc(f.radio || '')}')`;
+                return `<button class="it" onclick="${target}"><span class="lv ${f.level}"></span>
+                    <span><b>${esc(f.title)}</b> <span class="tg">· ${esc(f.target)}</span></span>
+                    <span class="nw-where ${f.where}">${WF_WHERE[f.where] || ''}</span>
+                    <p>${esc(f.first)}</p></button>`;
+            }).join('') : `<div class="nw-wok" style="margin:.2rem .6rem .3rem">✓ ${WF.where ? 'Nothing to do ' + (WF.where === 'site' ? 'on site' : 'from the office') : 'Nothing needs fixing'} right now.</div>`)
+              + (info.length ? `<button class="more" onclick="WF.showInfo=!WF.showInfo; renderWifiFixes()">${WF.showInfo ? 'Hide' : 'Show'} ${info.length} suggestion${info.length===1?'':'s'} to watch</button>` : '');
+        }
+
+        function renderWifiLinks(){
+            const d = WF.data, box = document.getElementById('wifi-links');
+            const links = d.links || [], radios = d.radios || [];
+            if(!links.length){
+                box.innerHTML = radios.length
+                    ? `<div class="nw-empty"><b>No links recorded in this period</b>The radios answered, but none had a connected station. Try a longer range.</div>`
+                    : `<div class="nw-empty"><b>No radios are being read yet</b>Netwatch reads Ubiquiti airOS radios that have a saved SSH login. Add the logins and the next poll starts collecting link history.<br><br><button class="nw-btn pri" onclick="openBulkCreds()">Add radio logins</button></div>`;
+                document.getElementById('wifi-expand').hidden = true;
+                return;
+            }
+            document.getElementById('wifi-expand').hidden = false;
+            document.getElementById('wifi-expand').textContent = WF.open.size >= links.length ? 'Close all' : 'Open all';
+            const byAp = new Map();
+            links.forEach(l => { const k = l.ap.mac; if(!byAp.has(k)) byAp.set(k, []); byAp.get(k).push(l); });
+            const radioByMac = Object.fromEntries(radios.map(r => [String(r.key).toUpperCase(), r]));
+            const rank = { crit: 0, warn: 1, watch: 2, good: 3 };
+            const groups = [...byAp.entries()].sort((a, b) =>
+                Math.min(...a[1].map(l => rank[l.grade])) - Math.min(...b[1].map(l => rank[l.grade])) || a[1][0].ap.name.localeCompare(b[1][0].ap.name));
+            box.innerHTML = groups.map(([mac, ls]) => {
+                const ap = ls[0].ap, r = radioByMac[mac], m = ls[0].metrics;
+                const cur = (r && r.current) || {}, st = (r && r.stats) || {};
+                const air = st.airtime || {};
+                const meta = [ap.model, m.freq_label, m.width ? m.width + ' MHz' : '', r && r.ssid ? 'SSID ' + r.ssid : ''].filter(Boolean).map(esc).join(' · ');
+                const chips = [
+                    m.ap_mixed ? `<span class="nw-grade warn" title="airMAX Mixed mode">Mixed mode</span>` : '',
+                    air.now != null ? `<span class="nw-tag" title="Share of the channel in use now; peak over the period">Air time ${wfNum(air.now)}%${air.max != null ? ' · peak ' + wfNum(air.max) + '%' : ''}</span>` : '',
+                    (st.noise || {}).now != null ? `<span class="nw-tag">Noise ${wfNum(st.noise.now)} dBm</span>` : '',
+                    `<span class="nw-tag">${ls.length} link${ls.length===1?'':'s'}</span>`,
+                ].join('');
+                const notes = (r ? r.findings || [] : []).map(f => wfFinding(f)).join('');
+                return `<div class="nw-wap" id="wf-ap-${esc(mac.replace(/:/g,''))}">
+                    <div class="nw-waph"><span class="ico">${WF_ICON}</span><b>${esc(ap.name)}</b>
+                        ${ap.ip ? `<a class="mono" href="http://${esc(ap.ip)}" target="_blank" rel="noopener" title="Open this radio's airOS page">${esc(ap.ip)}</a>` : ''}
+                        <span class="meta">${meta}</span>${chips}</div>
+                    ${notes ? `<div class="nw-wapnote">${notes}</div>` : ''}
+                    ${ls.map(wfLinkHtml).join('')}
+                </div>`;
+            }).join('');
+            box.querySelectorAll('.nw-wlink.open').forEach(el => wfDrawCharts(el.dataset.link));
+        }
+
+        function wfSigBar(label, v){
+            const pct = v == null ? 0 : Math.max(4, Math.min(100, (v + 92) / 50 * 100));
+            const col = v == null ? '#475569' : v <= -82 ? '#fb7185' : v <= -75 ? '#fbbf24' : v >= -65 ? '#34d399' : '#22d3ee';
+            return `<span>${esc(label)}</span><em class="${wfSigCls(v)}">${v == null ? '—' : wfNum(v)}</em><i><s style="width:${pct}%;background:${col}"></s></i>`;
+        }
+
+        function wfLinkHtml(l){
+            const m = l.metrics, open = WF.open.has(l.id);
+            const dl = (m.score_dl || {}).avg, ul = (m.score_ul || {}).avg;
+            const cap = (m.capacity || {}).now;
+            const drops = (m.drops || {}).count || 0;
+            const sub = [l.sta.model, l.sta.ip, wfKm(m.distance_m)].filter(x => x && x !== '—').join(' · ');
+            const top = (l.findings || []).find(f => f.level !== 'info') || (l.findings || [])[0];
+            return `<div class="nw-wlink ${l.grade}${open ? ' open' : ''}" id="wf-${esc(l.id)}" data-link="${esc(l.id)}">
+                <div class="nw-wrow" role="button" tabindex="0" aria-expanded="${open}" onclick="wifiToggle('${esc(l.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();wifiToggle('${esc(l.id)}')}">
+                    <div style="min-width:0"><div class="nm"><span class="nw-grade ${l.grade}">${WF_GRADE[l.grade]}</span><b>${esc(l.sta.name)}</b></div>
+                        <span class="sub">${esc(top ? top.title : sub)}${top ? ' · ' + esc(sub) : ''}</span></div>
+                    <div class="nw-sig" title="How loud each radio hears the other (dBm)">${wfSigBar('AP hears', (m.signal_ap||{}).now)}${wfSigBar(l.sta.name + ' hears', (m.signal_sta||{}).now)}</div>
+                    <div class="nw-q" title="airMAX link score, average over the period"><span class="v ${wfScoreCls(l.quality)}">${l.quality == null ? '—' : l.quality}<small> /100</small></span><span class="d">↓ ${wfNum(dl)} · ↑ ${wfNum(ul)}</span></div>
+                    <div class="nw-wcap">${cap ? `<b>${Math.round(cap/1000)} Mbps</b>` : '<b>—</b>'}<span class="${drops ? 't-warn' : ''}">${drops ? drops + ' drop' + (drops===1?'':'s') : 'no drops'}</span></div>
+                    <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                </div>
+                ${open ? wfDetailHtml(l) : ''}
+            </div>`;
+        }
+
+        function wfFinding(f){
+            const steps = (f.steps || []).map(s => `<li><span>${esc(s.text)}</span><span class="nw-where ${s.where}">${WF_WHERE[s.where]}</span></li>`).join('');
+            return `<div class="nw-find ${f.level}">
+                <h4><span class="lv ${f.level}"></span>${esc(f.title)}</h4>
+                ${(f.evidence||[]).length ? `<ul class="ev">${f.evidence.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+                <div class="cols">
+                    <div><h5>Likely causes</h5><ol>${(f.causes||[]).map(c => `<li>${esc(c)}</li>`).join('')}</ol></div>
+                    <div><h5>What to do</h5><ol class="steps">${steps}</ol></div>
+                </div>
+                ${f.good ? `<p class="good">✓ Good result: ${esc(f.good)}</p>` : ''}
+            </div>`;
+        }
+
+        function wfDetailHtml(l){
+            const m = l.metrics, fz = l.fresnel, ch = m.chains || {};
+            const fnd = l.findings || [];
+            const facts = [
+                ['Access point', `${esc(l.ap.name)}`, [l.ap.model, l.ap.ip].filter(Boolean).map(esc).join(' · ')],
+                ['Station', `${esc(l.sta.name)}${l.sta.ip ? ` <a href="http://${esc(l.sta.ip)}" target="_blank" rel="noopener" title="Open airOS">${esc(l.sta.ip)}</a>` : ''}`, [l.sta.model, l.sta.monitored ? 'login saved' : 'no login saved'].filter(Boolean).map(esc).join(' · ')],
+                ['Channel', `${esc(m.freq_label || '—')}${m.width ? ' · ' + esc(m.width) + ' MHz' : ''}`, m.ap_mode ? 'AP mode ' + esc(m.ap_mode) : ''],
+                ['Distance', wfKm(m.distance_m), m.distance_range && m.distance_range[0] !== m.distance_range[1] ? `the radios estimate ${wfKm(m.distance_range[0])} – ${wfKm(m.distance_range[1])}` : ''],
+                ['Keep clear', fz ? `${fz.clear_m} m` : '—', fz ? `around the line at mid-path (Fresnel zone ${fz.radius_m} m)` : ''],
+                ['Signal', `<span class="${wfSigCls((m.signal_ap||{}).now)}">${wfNum((m.signal_ap||{}).now)}</span> / <span class="${wfSigCls((m.signal_sta||{}).now)}">${wfNum((m.signal_sta||{}).now)}</span> dBm`, `AP / station now · normally ${wfNum((m.signal_ap||{}).baseline)} / ${wfNum((m.signal_sta||{}).baseline)}`],
+                ['Link score', `<span class="${wfScoreCls((m.score_dl||{}).now)}">${wfNum((m.score_dl||{}).now)}</span> ↓ · <span class="${wfScoreCls((m.score_ul||{}).now)}">${wfNum((m.score_ul||{}).now)}</span> ↑`, `now · lowest ${wfNum((m.score_dl||{}).min)} ↓ / ${wfNum((m.score_ul||{}).min)} ↑`],
+                ['Below 50', `${wfNum((m.pct_below_50||{}).score_dl)}% ↓ · ${wfNum((m.pct_below_50||{}).score_ul)}% ↑`, 'share of readings with a poor score'],
+                ['Data rate', `${wfNum((m.tx||{}).now,0)} / ${wfNum((m.rx||{}).now,0)} Mbps`, 'transmit / receive now'],
+                ['Capacity', (m.capacity||{}).now ? Math.round(m.capacity.now/1000) + ' Mbps' : '—', (m.capacity||{}).baseline ? 'normally ' + Math.round(m.capacity.baseline/1000) + ' Mbps' : (l.sta.monitored ? '' : 'needs the station login')],
+                ['Latency', (m.latency||{}).avg != null ? wfNum(m.latency.avg) + ' ms' : '—', (m.latency||{}).max != null ? 'worst ' + wfNum(m.latency.max) + ' ms' : ''],
+                ['Antenna chains', ch.c0 != null ? `${wfNum(ch.c0)} / ${wfNum(ch.c1)} dBm` : '—', ch.gap_avg != null ? `at ${esc(ch.radio)} · average gap ${ch.gap_avg} dB` : ''],
+                ['Noise floor', `${wfNum((m.noise_ap||{}).now)} / ${wfNum((m.noise_sta||{}).now)} dBm`, 'AP / station'],
+                ['Disconnections', String((m.drops||{}).count || 0), (m.drops||{}).count ? 'longest ' + Math.max(...m.drops.episodes.map(e => e.minutes)) + ' min' : 'in this period'],
+                ['Last reading', wfAgo(m.last_ts), ''],
+            ];
+            const hrs = (label, poor, avg) => `<span class="lab">${label}</span>` + (poor || []).map((v, h) =>
+                `<b style="background:${wfPoorBg(v)}" title="${String(h).padStart(2,'0')}:00–${String((h+1)%24).padStart(2,'0')}:00 · ${v == null ? 'no data' : v + '% of readings poor'}${(avg||[])[h] != null ? ' · average score ' + avg[h] : ''}"></b>`).join('');
+            return `<div class="nw-wdet">
+                ${fnd.length ? fnd.map(wfFinding).join('') : `<div class="nw-wok">✓ Nothing to fix — this link is healthy in both directions.</div>`}
+                <div class="nw-wcharts">
+                    <div class="nw-wchart" id="wfc-sig-${esc(l.id)}"></div>
+                    <div class="nw-wchart" id="wfc-score-${esc(l.id)}"></div>
+                    <div class="nw-wchart" id="wfc-cap-${esc(l.id)}"></div>
+                    <div class="nw-wchart" id="wfc-air-${esc(l.id)}"></div>
+                    <div class="nw-wchart" style="grid-column:1/-1"><h5>Poor readings by hour of day${m.worst_hours ? ` <span class="lg t-warn">worst ${esc(m.worst_hours.label)}</span>` : ''}
+                        <span class="lg"><i style="background:#10b981"></i>rarely</span><span class="lg"><i style="background:#f59e0b"></i>1 in 5</span><span class="lg"><i style="background:#e11d48"></i>half or more</span></h5>
+                        <div class="nw-hours">${hrs('↓ download', m.hourly_poor_dl, m.hourly_score_dl)}${hrs('↑ upload', m.hourly_poor_ul, m.hourly_score_ul)}
+                        <span></span>${Array.from({length:24}, (_, h) => `<span class="hx">${h % 3 === 0 ? String(h).padStart(2,'0') : ''}</span>`).join('')}</div>
+                        <p class="nw-help" style="margin-top:.4rem">Share of readings with a link score under 50, in the site's local time. Dips by day point at wind or daytime traffic; dips at night at busy neighbours or recordings being copied.</p></div>
+                </div>
+                <dl class="nw-wfacts">${facts.map(([k, v, sub]) => `<div><dt>${k}</dt><dd>${v}${sub ? `<small>${sub}</small>` : ''}</dd></div>`).join('')}</dl>
+                <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+                    <button class="nw-btn sm" onclick="wifiCsv('${esc(l.id)}')">Download readings (CSV)</button>
+                    ${l.sta.ip ? `<a class="nw-btn sm" href="http://${esc(l.sta.ip)}" target="_blank" rel="noopener">Open ${esc(l.sta.name)} airOS</a>` : ''}
+                    ${l.ap.ip ? `<a class="nw-btn sm" href="http://${esc(l.ap.ip)}" target="_blank" rel="noopener">Open ${esc(l.ap.name)} airOS</a>` : ''}
+                </div>
+            </div>`;
+        }
+
+        // Inline SVG line charts with a hover readout — no library: this page has to work with the farm's internet down.
+        function wfChart(id, title, ts, lines, opts){
+            const el = document.getElementById(id); if(!el) return;
+            opts = opts || {};
+            const legend = lines.map(ln => `<span class="lg"><i style="background:${ln.color}"></i>${esc(ln.label)}</span>`).join('');
+            const all = [];
+            lines.forEach(ln => (ln.data || []).forEach(v => { if(v != null) all.push(v); }));
+            if((ts || []).length < 2 || all.length < 2){ el.innerHTML = `<h5>${title} ${legend}</h5><div class="none">${opts.empty || 'Not enough readings yet'}</div>`; return; }
+            const W = 600, H = opts.height || 110, P = 3;
+            let lo = Math.min(...all), hi = Math.max(...all);
+            (opts.guides || []).forEach(g => { if(g.v >= lo - (opts.span||10) && g.v <= hi + (opts.span||10)){ lo = Math.min(lo, g.v); hi = Math.max(hi, g.v); } });
+            if(hi - lo < (opts.span || 10)){ const mid = (hi + lo) / 2; lo = mid - (opts.span||10)/2; hi = mid + (opts.span||10)/2; }
+            const pad = (hi - lo) * .08; lo -= pad; hi += pad;
+            const x0 = ts[0], x1 = ts[ts.length - 1];
+            const X = t => P + (t - x0) * (W - 2*P) / ((x1 - x0) || 1);
+            const Y = v => P + (hi - v) * (H - 2*P) / ((hi - lo) || 1);
+            const trace = (data) => {
+                let d = '', pen = false;
+                ts.forEach((t, i) => { const v = data[i]; if(v == null){ pen = false; return; } d += (pen ? 'L' : 'M') + X(t).toFixed(1) + ',' + Y(v).toFixed(1); pen = true; });
+                return d;
+            };
+            // opts.smooth: draw the raw readings faintly and a rolling average on top, so a
+            // week of 15-minute scores reads as a trend instead of a solid block of noise.
+            const roll = (data, n) => data.map((v, i) => {
+                const w = data.slice(Math.max(0, i - n + 1), i + 1).filter(x => x != null);
+                return v == null || !w.length ? null : w.reduce((a, b) => a + b, 0) / w.length;
+            });
+            const paths = lines.map((ln, li) => {
+                const data = ln.data || [];
+                if(!opts.smooth) return `<path d="${trace(data)}" fill="none" stroke="${ln.color}" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke" opacity="${li ? .9 : 1}"/>`;
+                return `<path d="${trace(data)}" fill="none" stroke="${ln.color}" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".22"/>`
+                     + `<path d="${trace(roll(data, opts.smooth))}" fill="none" stroke="${ln.color}" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+            }).join('');
+            const guides = (opts.guides || []).filter(g => g.v > lo && g.v < hi).map(g =>
+                `<line x1="0" x2="${W}" y1="${Y(g.v).toFixed(1)}" y2="${Y(g.v).toFixed(1)}" class="${g.bad ? 'guide-bad' : 'guide'}" vector-effect="non-scaling-stroke"/>`).join('');
+            const fmtT = t => { const dt = new Date(t * 1000); return WF.hours > 48 ? dt.toLocaleDateString([], {weekday:'short', day:'numeric', month:'short'}) : dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); };
+            el.innerHTML = `<h5>${title} ${legend}</h5>
+                <div class="plot"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px">${guides}${paths}</svg><div class="hov" hidden></div><div class="tip" hidden></div></div>
+                <div class="ax"><span>${fmtT(x0)}</span><span>${wfNum(lo + pad)} – ${wfNum(hi - pad)}${opts.unit ? ' ' + opts.unit : ''}</span><span>${fmtT(x1)}</span></div>`;
+            const plot = el.querySelector('.plot'), hov = el.querySelector('.hov'), tip = el.querySelector('.tip');
+            plot.addEventListener('mousemove', (e) => {
+                const rect = plot.getBoundingClientRect();
+                const t = x0 + (e.clientX - rect.left) / rect.width * (x1 - x0);
+                let i = 0, best = Infinity;
+                ts.forEach((v, k) => { const dd = Math.abs(v - t); if(dd < best){ best = dd; i = k; } });
+                const px = (ts[i] - x0) / ((x1 - x0) || 1) * rect.width;
+                hov.hidden = tip.hidden = false;
+                hov.style.left = px + 'px';
+                tip.style.left = Math.max(70, Math.min(rect.width - 70, px)) + 'px';
+                tip.innerHTML = new Date(ts[i]*1000).toLocaleString([], {weekday:'short', hour:'2-digit', minute:'2-digit'}) + ' · ' +
+                    lines.map(ln => `<span style="color:${ln.color}">${(ln.data||[])[i] == null ? '—' : wfNum(ln.data[i], opts.dp || 0)}</span>`).join(' / ') + (opts.unit ? ' ' + opts.unit : '');
+            });
+            plot.addEventListener('mouseleave', () => { hov.hidden = tip.hidden = true; });
+        }
+
+        function wfDrawCharts(id){
+            const l = (WF.data.links || []).find(x => x.id === id); if(!l) return;
+            const s = l.series || {};
+            wfChart('wfc-sig-' + id, 'Signal', s.ts, [
+                { label: l.ap.name + ' hears', data: s.sig_ap, color: '#22d3ee' },
+                { label: l.sta.name + ' hears', data: s.sig_sta, color: '#a78bfa' }],
+                { unit: 'dBm', span: 12, guides: [{ v: -75 }, { v: -82, bad: true }] });
+            const smooth = Math.max(2, Math.round((s.ts || []).length / 40));
+            wfChart('wfc-score-' + id, 'Link score', s.ts, [
+                { label: '↓ download', data: s.score_dl, color: '#34d399' },
+                { label: '↑ upload', data: s.score_ul, color: '#fbbf24' }],
+                { span: 25, smooth, guides: [{ v: 50 }, { v: 35, bad: true }] });
+            const capMbps = (s.cap_dl || []).map(v => v == null ? null : Math.round(v / 1000));
+            if(capMbps.some(v => v != null)){
+                wfChart('wfc-cap-' + id, 'Capacity', s.ts, [{ label: l.sta.name + ' · Mbps', data: capMbps, color: '#38bdf8' }], { span: 20, unit: 'Mbps' });
+                wfChart('wfc-air-' + id, 'Air time', s.ts, [{ label: l.sta.name + ' · % of the channel', data: s.airtime, color: '#f472b6' }],
+                    { span: 10, unit: '%', smooth, guides: [{ v: 80 }] });
+            } else {
+                wfChart('wfc-cap-' + id, 'Data rate', s.ts, [
+                    { label: 'transmit', data: s.tx, color: '#38bdf8' },
+                    { label: 'receive', data: s.rx, color: '#f472b6' }], { span: 20, unit: 'Mbps' });
+                wfChart('wfc-air-' + id, 'Air time', [], [], { empty: `Save ${l.sta.name}'s SSH login to chart its air time and capacity` });
+            }
+        }
+
+        function wifiToggle(id){
+            WF.open.has(id) ? WF.open.delete(id) : WF.open.add(id);
+            const el = document.getElementById('wf-' + id);
+            const l = (WF.data.links || []).find(x => x.id === id);
+            if(el && l){ el.outerHTML = wfLinkHtml(l); if(WF.open.has(id)) wfDrawCharts(id); }
+            document.getElementById('wifi-expand').textContent = WF.open.size >= (WF.data.links || []).length ? 'Close all' : 'Open all';
+            const url = '#/wifi' + (WF.open.has(id) ? '?link=' + id : '');
+            if(location.hash !== url) history.replaceState(null, '', url);
+        }
+        function wifiExpandAll(){
+            const ids = (WF.data.links || []).map(l => l.id);
+            if(WF.open.size >= ids.length) WF.open.clear(); else ids.forEach(i => WF.open.add(i));
+            renderWifiLinks();
+        }
+        function wifiFocus(id){
+            if(!WF.open.has(id)){ WF.open.add(id); renderWifiLinks(); }
+            const el = document.getElementById('wf-' + id);
+            if(el){ el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('open'); }
+        }
+        function wifiFocusRadio(key){
+            const el = document.getElementById('wf-ap-' + String(key).toUpperCase().replace(/:/g, '')) || document.getElementById('wifi-radios');
+            if(el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function renderWifiRadios(){
+            const radios = (WF.data.radios || []).slice().sort((a, b) => (a.ok - b.ok) || (b.is_ap - a.is_ap) || String(a.name).localeCompare(String(b.name)));
+            document.getElementById('wifi-radios').innerHTML = radios.length ? radios.map(r => {
+                const c = r.current || {};
+                if(!r.ok){
+                    const f = (r.findings || [])[0];
+                    return `<div class="nw-wradio bad"><b>${esc(r.name)}</b><span class="r">${esc(r.ip || '')}</span>
+                        <span class="d">${esc(f ? f.causes[0] : r.error || "can't be read")}${f && f.steps[0] ? ' — ' + esc(f.steps[0].text) : ''}</span></div>`;
+                }
+                const bits = [r.is_ap ? 'Access point' : 'Station', r.model, r.is_ap ? r.stations + ' station' + (r.stations===1?'':'s') : '',
+                              c.airtime != null ? 'air ' + wfNum(c.airtime) + '%' : '', c.noise != null ? 'noise ' + wfNum(c.noise) : ''].filter(Boolean);
+                return `<button class="nw-wradio" onclick="wifiFocusRadio('${esc(r.key)}')"><b>${esc(r.name)}</b><span class="r">${esc(r.ip || '')}</span>
+                    <span class="d">${bits.map(esc).join(' · ')} · read ${wfAgo(r.last_ts)}</span></button>`;
+            }).join('') : '<p class="nw-help" style="padding:0 1.1rem 1rem">No radios yet.</p>';
+        }
+
+        async function wifiPoll(){
+            const b = document.getElementById('wifi-poll');
+            b.disabled = true; b.querySelector('.lbl').textContent = 'Reading…';
+            try { await fetch('/api/radio/poll', { method: 'POST' }); } catch(e){}
+            // The poll runs over SSH in the background; wait until it reports done (max ~90 s).
+            for(let i = 0; i < 30; i++){
+                await new Promise(r => setTimeout(r, 3000));
+                try { const o = await (await fetch('/api/radio/overview')).json(); if(i > 1 && !o.polling) break; } catch(e){ break; }
+            }
+            await loadWifiPage();
+            b.disabled = false; b.querySelector('.lbl').textContent = 'Read radios now';
+            nwToast('Radios read', 'ok');
+        }
+
+        function wifiCsv(id){
+            const l = (WF.data.links || []).find(x => x.id === id); if(!l) return;
+            const s = l.series || {}, cols = ['sig_ap','sig_sta','score_dl','score_ul','tx','rx','latency','cap_dl','airtime','chain_gap'];
+            const head = ['time', l.ap.name + ' hears (dBm)', l.sta.name + ' hears (dBm)', 'score download', 'score upload', 'tx Mbps', 'rx Mbps', 'latency ms', 'capacity kbps', 'station air time %', 'chain gap dB'];
+            const rows = [head.map(h => '"' + h.replace(/"/g, '""') + '"').join(',')];
+            (s.ts || []).forEach((t, i) => rows.push([new Date(t*1000).toISOString(), ...cols.map(c => (s[c] || [])[i] ?? '')].join(',')));
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob(['﻿' + rows.join('\n')], { type: 'text/csv;charset=utf-8' }));
+            a.download = 'wifi-' + l.name.replace(/[^A-Za-z0-9_-]+/g, '-') + '-' + WF.hours + 'h.csv';
+            a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        }
+        setInterval(() => { if(PAGE === 'wifi' && !document.hidden) loadWifiPage(); }, 120000);
 
         function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge(); }
 
