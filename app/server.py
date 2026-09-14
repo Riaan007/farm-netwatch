@@ -298,6 +298,7 @@ def api_devices():
         d["has_photo"] = os.path.exists(_photo_path(d.get("key", "")))
         _kreg = scanner.registry.get(d.get("key", ""), {})
         d["has_kuma"] = bool(_kreg.get("kuma_monitor_id") or _kreg.get("kuma_token"))
+        d["geo"] = _kreg.get("geo") or None         # {lat, lon, note, ts} — set by hand
     return jsonify({
         "targets": cfg["targets"],
         "devices": devices,
@@ -343,6 +344,36 @@ def api_device_asset(key):
     return jsonify({"ok": True, "category": category, "asset": values,
                     **assets.schema(category),
                     "completeness": assets.completeness(category, values)})
+
+
+def _coord(v, limit):
+    try:
+        f = round(float(str(v).strip().replace(",", ".")), 6)
+    except (TypeError, ValueError):
+        return None
+    return f if -limit <= f <= limit and f == f else None
+
+
+@app.route("/api/devices/<path:key>/location", methods=["POST"])
+def api_device_location(key):
+    """Pin a device to a GPS position (decimal degrees) for the map, or clear it.
+    Body: {lat, lon, note?} or {clear: true}. Stored in the registry under
+    `geo`, so it survives rescans and rides along in backups and to the hub."""
+    body = request.get_json(force=True, silent=True) or {}
+    if key not in scanner.registry and not any(d.get("key") == key for d in scanner.get_devices()):
+        return jsonify({"ok": False, "error": "unknown device"}), 404
+    reg = scanner.registry.setdefault(key, {})
+    if body.get("clear"):
+        reg.pop("geo", None)
+        scanner.save_registry()
+        return jsonify({"ok": True, "geo": None})
+    lat, lon = _coord(body.get("lat"), 90), _coord(body.get("lon"), 180)
+    if lat is None or lon is None or (lat == 0 and lon == 0):
+        return jsonify({"ok": False, "error": "Enter a latitude between -90 and 90 and a longitude between -180 and 180"}), 400
+    reg["geo"] = {"lat": lat, "lon": lon, "note": str(body.get("note") or "").strip()[:120],
+                  "ts": int(time.time())}
+    scanner.save_registry()
+    return jsonify({"ok": True, "geo": reg["geo"]})
 
 
 @app.route("/api/radio/overview")

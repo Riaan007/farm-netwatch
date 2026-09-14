@@ -6,7 +6,7 @@
   const view = () => $("#view");
   const enc = encodeURIComponent;
   const TABS = [
-    ["overview", "Overview"], ["devices", "Devices"], ["problems", "Problems"], ["health", "Pi health"],
+    ["overview", "Overview"], ["devices", "Devices"], ["map", "Map"], ["problems", "Problems"], ["health", "Pi health"],
     ["history", "History"], ["backups", "Backups"], ["access", "Remote access"],
   ];
 
@@ -258,6 +258,12 @@
     update(s) { const el = $("#sd-panel"); if (el && el.__st) CC.deviceTable.draw(el, el.__st, s.id); },
   };
 
+  TABS_IMPL.map = {
+    enter(s, el) { el.innerHTML = `<div id="sm-host"></div>`; CC.mapView.mount($("#sm-host"), { siteId: s.id }); },
+    update() { CC.mapView.softDraw(); },
+    leave() { CC.mapView.destroy(); },
+  };
+
   TABS_IMPL.problems = {
     enter(s, el) {
       el.innerHTML = `<section class="panel"><div class="phd"><h2>IP address conflicts</h2><small class="note" id="sp-src"></small></div><div id="sp-conf"><div class="pbd"><div class="skel" style="height:60px"></div></div></div></section>
@@ -486,11 +492,30 @@
         </dl></div>
         <div class="sect"><h3>Availability</h3><div id="dd-up" class="note">Loading…</div>
           <div class="row" style="margin:10px 0 6px;gap:4px" id="dd-range">${["30m", "1h", "12h", "24h"].map((r) => `<button class="btn sm ${r === "1h" ? "pri" : ""}" data-r="${r}">${r}</button>`).join("")}</div><div id="dd-chart"></div></div>
+        <div class="sect"><h3>Location</h3><div id="dd-loc"></div></div>
         ${d.ip ? `<div class="sect"><h3>Diagnostics <span class="dim" style="text-transform:none;letter-spacing:0;font-weight:400">run from the site Pi</span></h3><div class="row"><button class="btn sm" data-dx="ping">Ping</button><button class="btn sm" data-dx="quality">Connection test</button><button class="btn sm" data-dx="tracert">Traceroute</button><button class="btn sm" data-dx="deep">Deep scan</button></div><div id="dd-out" style="margin-top:10px"></div></div>
         <div class="sect"><h3>Remote access</h3><div class="chips" id="dd-ports"></div><p class="note" style="margin:8px 0 0">Opens a tunnel through the site Pi — only this computer can use it.</p></div>` : ""}
       </div>
       <div class="dft">${s.links && s.links.netwatch ? `<a class="btn" href="${esc(s.links.netwatch)}" target="_blank" rel="noopener">Edit on site Netwatch ${icon("ext")}</a>` : ""}<a class="btn" href="#/site/${enc(s.id)}/history?q=${enc(d.ip || d.mac || "")}" data-close>${icon("history")} History</a><button class="btn pri" data-close>Close</button></div>`, { cls: "drawer" });
 
+    const drawLoc = () => {
+      const g = d.geo;
+      $("#dd-loc", dlg).innerHTML = `${g ? `<p style="margin:0 0 8px"><span class="b ok nodot">📍 On the map</span> <span class="mono">${CC.fmtLatLon(g)}</span>${g.note ? ` · ${esc(g.note)}` : ""} <span class="note">set ${CC.ago(g.ts)}</span></p>` : `<p class="note" style="margin:0 0 8px">Not on the map yet.</p>`}
+        <div class="row" style="flex-wrap:nowrap"><input class="inp mono" id="dd-loc-in" placeholder="-33.924868, 18.424055 or a Google Maps link" value="${g ? CC.fmtLatLon(g) : ""}"><button class="btn" id="dd-loc-save">Save</button></div>
+        <input class="inp" id="dd-loc-note" style="margin-top:6px" maxlength="120" placeholder="Where exactly (optional) — e.g. 6 m pole at the pump house" value="${esc((g && g.note) || "")}">
+        <div class="row" style="margin-top:8px"><a class="btn sm" href="#/site/${enc(siteId)}/map?place=${enc(key)}" data-close>🗺️ Pick on the map</a>
+          ${g ? `<a class="btn sm" href="#/site/${enc(siteId)}/map?focus=${enc(key)}" data-close>Show on map</a><a class="btn sm" href="${CC.directions(g)}" target="_blank" rel="noopener">Directions ${icon("ext")}</a><button class="btn sm danger" id="dd-loc-clear">Remove</button>` : ""}
+          <span class="note" id="dd-loc-msg"></span></div>`;
+      const msg = (t, bad) => { const m = $("#dd-loc-msg", dlg); m.textContent = t; m.className = "note " + (bad ? "bad" : "ok"); };
+      $("#dd-loc-save", dlg).onclick = (e) => CC.busy(e.currentTarget, async () => {
+        const pos = CC.parseLatLon($("#dd-loc-in", dlg).value);
+        if (!pos) return msg("Not a position — use e.g. -33.924868, 18.424055 or a Google Maps link.", true);
+        try { await CC.setLocation(siteId, key, { ...pos, note: $("#dd-loc-note", dlg).value }); drawLoc(); msg("✓ Saved"); } catch (err) { msg(err.message, true); }
+      });
+      const clr = $("#dd-loc-clear", dlg);
+      if (clr) clr.onclick = async () => { if (!(await CC.confirm("Remove from the map?", `${CC.devName(d)} will no longer show on the map.`, { ok: "Remove", danger: true }))) return; try { await CC.setLocation(siteId, key, { clear: true }); drawLoc(); msg("✓ Removed"); } catch (err) { msg(err.message, true); } };
+    };
+    drawLoc();
     const retry = (fn) => fn().catch(() => new Promise((r) => setTimeout(r, 2500)).then(fn));
     retry(() => api(`/api/hub/sites/${siteId}/history/${enc(key)}`)).then((h) => {
       const u = h.summary || {};

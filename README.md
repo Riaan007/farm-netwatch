@@ -338,6 +338,18 @@ fleet:
   isolation status, site tunnels) and **Settings** (new-site wizard, sites, hub
   alerts, Gemini key).
 
+**Device map.** Give any device a GPS position — paste coordinates or a Google Maps link
+in the device window (Details → GPS location on the site page, Location in the hub's
+device drawer), click "Place" and then the spot on the map, or drag a pin with "Move pins"
+on. Only devices with a position appear. The site page has a **Map** page; the hub has a
+fleet **Map** and a Map tab per site, with Directions links for technicians. Positions
+live in each site's device registry (`geo`), so they survive rescans, ride along in
+backups and reach the hub with the device list. Satellite imagery is **Esri World
+Imagery** (free, no API key, attribution shown; Leaflet 1.9.4 is bundled, no CDN); a
+street map (OpenStreetMap) and a roads/place-names overlay are in the layer switcher.
+The browser needs internet for map tiles. For heavy commercial use Esri asks for a free
+ArcGIS Location Platform account.
+
 How a site's state is decided (the same rules drive every count on every page):
 *Offline* = the hub can't reach it; *Fault* = a watched device, Kuma monitor or the
 internet is down, or the Pi is critical; *Needs a look* = live IP conflict, Pi

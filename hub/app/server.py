@@ -898,6 +898,31 @@ def api_site_restore(site_id):
         return jsonify({"ok": False, "error": "site unreachable"}), 502
 
 
+@app.route("/api/hub/sites/<site_id>/devices/<path:key>/location", methods=["POST"])
+def api_site_device_location(site_id, key):
+    """Set or clear a device's GPS position on its site (body as the site's
+    /api/devices/<key>/location), then patch the hub's cached copy."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    try:
+        r = requests.post(f"{siteapi.base_url(site)}/api/devices/{quote(key, safe='')}/location",
+                          json=request.get_json(silent=True) or {}, headers=siteapi.headers(site),
+                          timeout=(5, 15))
+    except requests.RequestException:
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+    if r.status_code == 404 and "unknown device" not in r.text:
+        return jsonify({"ok": False, "error": "this site's Netwatch is too old for GPS positions — "
+                        "update it (docker compose pull)"}), 501
+    try:
+        body = r.json()
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+    if r.ok and body.get("ok"):
+        poller.update_device(site_id, key, geo=body.get("geo"))
+    return jsonify(body), r.status_code
+
+
 @app.route("/api/hub/sites/<site_id>/pi-password", methods=["POST"])
 def api_site_pi_password(site_id):
     """Set the password people use to log in on the site's own dashboard

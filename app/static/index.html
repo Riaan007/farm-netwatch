@@ -8,6 +8,7 @@
     <title>Farm Network Asset Identifier</title>
     <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><path d="M20 3 34 11v18L20 37 6 29V11z" fill="none" stroke="%2322d3ee" stroke-width="3"/><circle cx="20" cy="20" r="5" fill="%2334d399"/></svg>'>
     <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
     <style>
         :root { color-scheme: dark; }
         body { background-color: #070b14; }
@@ -243,6 +244,37 @@
         .nw-cell:hover { border-color: rgba(34,211,238,.55); }
         .nw-legend { display: flex; flex-wrap: wrap; gap: .9rem; font-size: 11.5px; color: #64748b; margin-bottom: .75rem; }
         .nw-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: .35rem; vertical-align: -1px; border: 1px solid; }
+        /* ===== map ===== */
+        .nw-mgrid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 1rem; align-items: start; }
+        .nw-mapwrap { position: relative; overflow: hidden; padding: 0; }
+        /* isolation: Leaflet's panes use z-index 400-1000; without a stacking context
+           they paint over the device window and the header */
+        #nw-map { height: calc(100vh - 235px); min-height: 460px; border-radius: 1rem; background: #0b1322; position: relative; z-index: 0; isolation: isolate; }
+        .nw-mapbanner { position: absolute; z-index: 800; left: 50%; top: 12px; transform: translateX(-50%); display: flex; gap: .6rem; align-items: center; padding: .5rem .6rem .5rem .9rem; border-radius: 999px; background: rgba(8,145,178,.95); color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.5); white-space: nowrap; }
+        .nw-mapbanner button { background: rgba(255,255,255,.2); border-radius: 999px; padding: .15rem .6rem; font-size: 12px; }
+        .nw-placing #nw-map, .nw-placing #nw-map .leaflet-interactive { cursor: crosshair !important; }
+        .nw-pin { width: 34px; height: 34px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: grid; place-items: center; border: 2px solid #fff; box-shadow: 0 4px 12px rgba(0,0,0,.55); background: #059669; }
+        .nw-pin span { transform: rotate(45deg); font-size: 15px; line-height: 1; }
+        .nw-pin.off { background: #e11d48; } .nw-pin.quiet { background: #475569; } .nw-pin.myst { background: #d97706; }
+        .nw-pin.sel { box-shadow: 0 0 0 4px #22d3ee, 0 4px 12px rgba(0,0,0,.55); }
+        .leaflet-tooltip.nw-tip { background: rgba(6,10,19,.9); color: #f1f5f9; border: 1px solid rgba(148,163,184,.35); border-radius: .4rem; font-size: 11.5px; font-weight: 600; padding: .1rem .4rem; box-shadow: none; }
+        .leaflet-tooltip.nw-tip::before { display: none; }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #0b1324; color: #e2e8f0; border: 1px solid rgba(148,163,184,.3); }
+        .leaflet-popup-content { margin: .75rem .9rem; font-size: 13px; line-height: 1.45; min-width: 210px; }
+        .leaflet-popup-content b { color: #f8fafc; }
+        .leaflet-popup-content a { color: #67e8f9; }
+        .leaflet-container a.leaflet-popup-close-button { color: #94a3b8; }
+        .leaflet-control-layers, .leaflet-bar a { background: #0b1324 !important; color: #e2e8f0 !important; border-color: rgba(148,163,184,.3) !important; }
+        .leaflet-control-layers-expanded { color: #e2e8f0; }
+        .leaflet-control-attribution { background: rgba(6,10,19,.75) !important; color: #94a3b8 !important; font-size: 10px; }
+        .leaflet-control-attribution a { color: #cbd5e1 !important; }
+        .nw-mlist { max-height: calc(100vh - 330px); min-height: 200px; overflow-y: auto; }
+        .nw-mitem { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: .2rem .6rem; align-items: center; padding: .55rem 1rem; border-top: 1px solid rgba(148,163,184,.08); cursor: pointer; }
+        .nw-mitem:hover { background: rgba(34,211,238,.05); }
+        .nw-mitem .nm { font-weight: 650; font-size: 13px; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-mitem .sub { grid-column: 2 / 3; font-size: 11.5px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        @media (max-width: 1000px) { .nw-mgrid { grid-template-columns: 1fr; } #nw-map { height: 62vh; min-height: 340px; } .nw-mlist { max-height: none; } }
+
         /* ===== pages: devices · history · settings ===== */
         .nw-pages { display: inline-flex; border: 1px solid rgba(148,163,184,.2); border-radius: .7rem; overflow: hidden; flex: none; }
         .nw-pages a { height: 34px; padding: 0 .8rem; display: inline-flex; align-items: center; gap: .4rem; font-size: 12.5px; font-weight: 650; color: #94a3b8; text-decoration: none; }
@@ -401,6 +433,7 @@
             <div class="nw-actions">
                 <nav class="nw-pages" aria-label="Pages">
                     <a href="#/" data-page="devices" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
+                    <a href="#/map" data-page="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg><span class="lbl">Map</span></a>
                     <a href="#/history" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></a>
                     <a href="#/settings" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg><span class="lbl">Settings</span></a>
                 </nav>
@@ -452,6 +485,35 @@
             <div id="network-grid" class="nw-body"></div>
         </section>
       </div>
+      <div id="page-map" hidden>
+        <div class="nw-phead">
+            <div><div class="nw-eyebrow">Map</div><h1>Where the equipment is</h1><p id="map-sub">Devices you have given a GPS position. Satellite imagery © Esri.</p></div>
+            <div class="nw-tools">
+                <label class="nw-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm9 3-4.3-4.3"/></svg><span class="sr-only">Find a device</span><input id="map-q" type="search" placeholder="Find a device…" autocomplete="off"></label>
+                <select id="map-show" class="nw-sel" aria-label="Show"><option value="">All placed devices</option><option value="online">Online</option><option value="offline">Offline</option><option value="camera">Cameras &amp; NVRs</option><option value="network">Network</option></select>
+                <label class="nw-ib" style="cursor:pointer"><input id="map-labels" type="checkbox" style="accent-color:#22d3ee"> <span class="lbl">Names</span></label>
+                <button class="nw-ib" id="map-edit" title="Unlock the pins so you can drag them"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11h12v10H6zM9 11V8a3 3 0 0 1 6 0"/></svg><span class="lbl" id="map-edit-lbl">Move pins</span></button>
+                <button class="nw-ib" onclick="mapFit(true)" title="Zoom to all pins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span class="lbl">Fit</span></button>
+            </div>
+        </div>
+        <div class="nw-mgrid">
+            <section class="nw-panel nw-mapwrap">
+                <div id="map-banner" class="nw-mapbanner" hidden><span id="map-banner-txt"></span><button onclick="mapCancelPlace()">Cancel</button></div>
+                <div id="nw-map" role="application" aria-label="Device map"></div>
+            </section>
+            <aside class="nw-panel">
+                <div class="nw-dhead" style="padding-bottom:.7rem">
+                    <div class="nw-seg" role="group" aria-label="Device lists">
+                        <button id="map-tab-on" class="on" onclick="mapTab('on')">On the map <span id="map-n-on" class="text-slate-400"></span></button>
+                        <button id="map-tab-off" onclick="mapTab('off')">Not placed <span id="map-n-off" class="text-slate-400"></span></button>
+                    </div>
+                </div>
+                <p id="map-hint" class="nw-help" style="padding:0 1rem .7rem"></p>
+                <div id="map-list" class="nw-mlist"></div>
+            </aside>
+        </div>
+      </div>
+
       <div id="page-history" hidden>
         <div class="nw-phead">
             <div><div class="nw-eyebrow">History</div><h1>What changed on this network</h1><p>Every device that joined, dropped off, came back or took over an address — kept even after a device is forgotten.</p></div>
@@ -515,6 +577,7 @@
                         <label class="nw-lbl">Site name <small>shown on this page and on the hub</small><input id="set-site-name" class="nw-inp" data-track maxlength="60"></label>
                         <label class="nw-lbl">Location <small>farm, address or area</small><input id="set-site-loc" class="nw-inp" data-track maxlength="80"></label>
                     </div>
+                    <label class="nw-lbl">Site GPS position <small>centre of the map before any device is placed — decimal degrees or a Google Maps link</small><input id="set-site-geo" class="nw-inp mono" data-track placeholder="-33.924868, 18.424055"></label>
                     <div class="nw-f2">
                         <label class="nw-lbl">Scan every
                             <select id="setup-interval" class="nw-inp" data-track><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">60 minutes</option></select></label>
@@ -873,6 +936,23 @@
                   </div><!-- /tools -->
 
                   <div id="mp-details" class="mpane hidden space-y-4">
+                    <div id="loc-section">
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">📍 GPS location</label>
+                        <p id="loc-current" class="text-sm mb-2 text-slate-400">Not on the map yet.</p>
+                        <div class="flex gap-2 mb-2">
+                            <input id="loc-input" type="text" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm font-mono" placeholder="-33.924868, 18.424055  or paste a Google Maps link">
+                            <button onclick="saveLocation()" class="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm font-bold whitespace-nowrap">Save</button>
+                        </div>
+                        <input id="loc-note" type="text" maxlength="120" class="w-full p-2 bg-[#050b16] border rounded-lg text-sm mb-2" placeholder="Where exactly (optional) — e.g. 6 m pole at the pump house">
+                        <div class="flex gap-2 flex-wrap items-center">
+                            <button onclick="pickLocationOnMap()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">🗺️ Pick on the map</button>
+                            <button id="loc-here" onclick="useMyLocation()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold" hidden>📱 Use my phone's position</button>
+                            <a id="loc-view" href="#" onclick="showOnMap(event)" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold" hidden>Show on map</a>
+                            <a id="loc-nav" href="#" target="_blank" rel="noopener" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold" hidden>Directions ↗</a>
+                            <button id="loc-clear" onclick="clearLocation()" class="px-3 py-1.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded-lg text-xs font-bold" hidden>Remove from map</button>
+                            <span id="loc-result" class="text-xs"></span>
+                        </div>
+                    </div>
                     <div>
                         <label class="text-xs font-bold text-slate-400 uppercase block mb-2">Identity &amp; tags</label>
                         <div class="flex gap-2 mb-2">
@@ -987,6 +1067,7 @@
     </div>
 
     <script src="/static/auth.js"></script>
+    <script src="/static/vendor/leaflet/leaflet.js"></script>
     <script>
         let DATA = { targets: [], devices: [] };
         let DEV_BY_IP = {};
@@ -1067,6 +1148,7 @@
             if(!SELECTED && DATA.targets.length) SELECTED = DATA.targets[0].cidr;
             renderGrid();
             renderProblems();
+            if(PAGE === 'map') renderMap();
         }
 
         const ipSort = (a,b) => {
@@ -1279,6 +1361,7 @@
             const risky = (d.ports||[]).some(p => RISKY_PORTS[p]);
             return [
                 d.watch ? '<span title="Watched — alerts when it goes offline">🔔</span>' : '',
+                d.geo ? '<span title="On the map">📍</span>' : '',
                 d.has_credentials ? '<span title="Login saved">🔑</span>' : '',
                 d.has_kuma ? '<span title="Monitored in Uptime Kuma">📈</span>' : '',
                 d.link ? '<span title="Linked to another device">🔗</span>' : '',
@@ -1887,6 +1970,7 @@
             loadPhoto(key, dev);
             loadKuma(key, dev);
             loadAsset(key);
+            renderModalLocation(dev);
             const hikBtn = document.getElementById('hik-btn');
             const isHik = dev && (['camera','nvr'].includes(dev.category) || /hikvision|hangzhou/i.test(dev.vendor||''));
             hikBtn.classList.toggle('hidden', !isHik);
@@ -2324,16 +2408,21 @@
             const h = (location.hash || '').replace(/^#\/?/, '');
             const [path, query] = h.split('?');
             const [page, sub] = (path || '').split('/');
-            const next = ['history','settings'].includes(page) ? page : 'devices';
+            const next = ['history','settings','map'].includes(page) ? page : 'devices';
             if(PAGE === 'settings' && next !== 'settings' && SETTINGS_DIRTY.size && !confirm('Leave settings without saving your changes?')){
                 history.replaceState(null, '', '#/settings'); return;
             }
             const changed = next !== PAGE;
             PAGE = next;
-            ['devices','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            ['devices','map','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            if(PAGE !== 'map') mapCancelPlace(true);
             document.querySelectorAll('.nw-pages a').forEach(a => a.classList.toggle('on', a.dataset.page === PAGE));
             const siteName = (STATUS && STATUS.site && STATUS.site.name) || 'Netwatch';
-            document.title = (PAGE === 'devices' ? '' : (PAGE === 'history' ? 'History · ' : 'Settings · ')) + siteName + ' · Netwatch';
+            document.title = ({devices:'', map:'Map · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
+            if(PAGE === 'map'){
+                const qp = new URLSearchParams(query || '');
+                showMapPage(qp.get('focus'), qp.get('place'));
+            }
             if(PAGE === 'history'){
                 const ip = new URLSearchParams(query || '').get('ip');
                 if(ip) document.getElementById('hist-filter').value = ip;
@@ -2375,6 +2464,7 @@
             const site = c.site || {};
             document.getElementById('set-site-name').value = site.name || '';
             document.getElementById('set-site-loc').value = site.location || '';
+            document.getElementById('set-site-geo').value = (site.lat != null && site.lon != null) ? `${site.lat}, ${site.lon}` : '';
             document.getElementById('set-sub').textContent = (site.name ? site.name + ' — ' : '') + 'how this Pi scans, alerts, connects and protects the site.';
             document.getElementById('setup-interval').value = String((c.scan||{}).interval_min || 5);
             const primary = ((c.targets||[])[0]||{}).cidr || '';
@@ -2602,6 +2692,219 @@
             if(!confirm('Switch '+con+' back to DHCP (obtain an IP automatically)?\n\nThe router may hand out a different address — reopen the dashboard on the new IP if this page stops responding.')) return;
             await fetch('/api/network/dhcp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({connection:con})});
             loadNetwork();
+        }
+
+        // ===== Map: GPS positions set by hand ========================================
+        /* Coordinates from what people actually paste: "-33.92, 18.42", "-33.92 18.42",
+           Google Maps links (@lat,lon / q=lat,lon / !3dlat!4dlon), or DMS such as
+           33°55'29.5"S 18°25'26.6"E. Returns {lat, lon} or null. */
+        function parseLatLon(raw){
+            let t = String(raw || '').trim();
+            if(!t) return null;
+            const ok = (a, b) => (isFinite(a) && isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180 && !(a === 0 && b === 0)) ? {lat: +(+a).toFixed(6), lon: +(+b).toFixed(6)} : null;
+            let m = t.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/) || t.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) || t.match(/[?&](?:q|query|ll|destination)=(-?\d+(?:\.\d+)?)(?:,|%2C)\s*(-?\d+(?:\.\d+)?)/i);
+            if(m) return ok(+m[1], +m[2]);
+            const dms = [...t.matchAll(/(\d+(?:\.\d+)?)\s*°\s*(?:(\d+(?:\.\d+)?)\s*['′]\s*)?(?:(\d+(?:\.\d+)?)\s*["″]\s*)?([NSEW])/gi)];
+            if(dms.length === 2){
+                const val = x => { let v = +x[1] + (+x[2]||0)/60 + (+x[3]||0)/3600; return /[SW]/i.test(x[4]) ? -v : v; };
+                const a = dms.find(x => /[NS]/i.test(x[4])), b = dms.find(x => /[EW]/i.test(x[4]));
+                return a && b ? ok(val(a), val(b)) : null;
+            }
+            t = t.replace(/[−–]/g, '-');
+            m = t.match(/^(-?\d+(?:[.,]\d+)?)\s*[,; ]\s*(-?\d+(?:[.,]\d+)?)$/) || t.match(/^(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)$/);
+            if(m) return ok(+m[1].replace(',', '.'), +m[2].replace(',', '.'));
+            return null;
+        }
+        function fmtLatLon(g){ return g ? `${(+g.lat).toFixed(6)}, ${(+g.lon).toFixed(6)}` : ''; }
+
+        let MAP = null, MAP_LAYER = null, MAP_PLACING = null, MAP_EDIT = false, MAP_TAB = 'on', MAP_FITTED = false, MAP_FOCUS = null;
+        function initMap(){
+            if(MAP || !window.L) return;
+            const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 21, maxNativeZoom: 19, attribution: 'Imagery © Esri, Maxar, Earthstar Geographics, GIS User Community' });
+            const labels = L.layerGroup([
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {maxZoom: 21, maxNativeZoom: 19, opacity: .85}),
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {maxZoom: 21, maxNativeZoom: 19}),
+            ]);
+            const street = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '© OpenStreetMap contributors' });
+            MAP = L.map('nw-map', { layers: [sat], zoomControl: true, worldCopyJump: true });
+            L.control.layers({ 'Satellite': sat, 'Street map': street }, { 'Roads & place names': labels }, { position: 'topright' }).addTo(MAP);
+            L.control.scale({ imperial: false }).addTo(MAP);
+            MAP_LAYER = L.layerGroup().addTo(MAP);
+            const site = (STATUS && STATUS.site) || {};
+            if(site.lat != null && site.lon != null) MAP.setView([site.lat, site.lon], 16);
+            else MAP.setView([-29.0, 24.5], 5);            // South Africa until something is placed
+            MAP.on('click', (e) => { if(MAP_PLACING) placeDeviceAt(MAP_PLACING, e.latlng.lat, e.latlng.lng); });
+            document.getElementById('map-q').addEventListener('input', () => renderMap());
+            document.getElementById('map-show').addEventListener('change', () => { MAP_FITTED = false; renderMap(); });
+            document.getElementById('map-labels').addEventListener('change', () => renderMap());
+            document.getElementById('map-edit').addEventListener('click', () => {
+                MAP_EDIT = !MAP_EDIT;
+                document.getElementById('map-edit').classList.toggle('on', MAP_EDIT);
+                document.getElementById('map-edit-lbl').textContent = MAP_EDIT ? 'Pins unlocked' : 'Move pins';
+                renderMap();
+            });
+        }
+        function showMapPage(focusKey, placeKey){
+            initMap();
+            if(!MAP){ document.getElementById('nw-map').innerHTML = '<div class="nw-empty"><b>Map library did not load</b>Reload the page.</div>'; return; }
+            setTimeout(() => {
+                MAP.invalidateSize();
+                if(placeKey) mapStartPlace(placeKey);
+                MAP_FOCUS = focusKey || null;
+                renderMap();
+            }, 60);
+        }
+        function mapDevices(){
+            const q = document.getElementById('map-q').value.trim();
+            const show = document.getElementById('map-show').value;
+            return DATA.devices.filter(d => (!q || matchesQueryText(d, q)) && (!show || matchesFilter(d, show)));
+        }
+        function matchesQueryText(d, q){ const m = ipMatcher(q); return m ? m(d.ip) : [devTitle(d), d.ip, d.mac, d.vendor, d.model, d.hostname, (d.geo||{}).note].join(' ').toLowerCase().includes(q.toLowerCase()); }
+        function pinClass(d){ const st = devState(d); return st === 'online' ? (isIdentified(d) ? '' : 'myst') : st === 'offline' ? 'off' : 'quiet'; }
+        function renderMap(){
+            if(!MAP) return;
+            const all = mapDevices();
+            const placed = all.filter(d => d.geo), unplaced = all.filter(d => !d.geo);
+            const labels = document.getElementById('map-labels').checked;
+            MAP_LAYER.clearLayers();
+            const bounds = [];
+            placed.forEach(d => {
+                const icon = L.divIcon({ className: '', html: `<div class="nw-pin ${pinClass(d)} ${MAP_FOCUS === d.key ? 'sel' : ''}"><span>${catIcon[d.category] || '•'}</span></div>`, iconSize: [34, 34], iconAnchor: [17, 34], popupAnchor: [0, -32], tooltipAnchor: [0, -30] });
+                const mk = L.marker([d.geo.lat, d.geo.lon], { icon, draggable: MAP_EDIT, keyboard: true, title: devTitle(d) + ' ' + d.ip });
+                mk.bindTooltip(esc(devTitle(d)), { className: 'nw-tip', direction: 'top', permanent: labels, offset: [0, 0] });
+                mk.bindPopup(() => pinPopup(d), { maxWidth: 280 });
+                mk.on('dragend', (e) => { const ll = e.target.getLatLng(); placeDeviceAt(d.key, ll.lat, ll.lng, true); });
+                mk.addTo(MAP_LAYER);
+                bounds.push([d.geo.lat, d.geo.lon]);
+                if(MAP_FOCUS === d.key){ setTimeout(() => { MAP.setView([d.geo.lat, d.geo.lon], Math.max(MAP.getZoom(), 18)); mk.openPopup(); }, 50); }
+            });
+            if(!MAP_FITTED && !MAP_FOCUS && bounds.length){ mapFit(false, bounds); MAP_FITTED = true; }
+            const nPlaced = DATA.devices.filter(d => d.geo).length;
+            document.getElementById('map-sub').textContent = nPlaced
+                ? `${nPlaced} of ${DATA.devices.length} devices placed · only devices with a GPS position appear on the map · imagery © Esri`
+                : 'No device has a GPS position yet — pick one under "Not placed" and click where it is on the map.';
+            document.getElementById('map-n-on').textContent = placed.length;
+            document.getElementById('map-n-off').textContent = unplaced.filter(d => devState(d) !== 'quiet').length;
+            renderMapList(placed, unplaced);
+        }
+        function pinPopup(d){
+            const st = devState(d);
+            const g = d.geo;
+            return `<div><b style="font-size:14px">${esc(devTitle(d))}</b><br>
+                <span style="font-family:ui-monospace,monospace">${(d.features||[]).includes('W') ? `<a href="http://${esc(d.ip)}" target="_blank" rel="noopener">${esc(d.ip)}</a>` : esc(d.ip)}</span> · ${catIcon[d.category]||''} ${esc(catLabel[d.category]||d.category||'')}<br>
+                <span style="color:${st==='online'?'#34d399':st==='offline'?'#fb7185':'#94a3b8'}">● ${st === 'online' ? 'Online' : st === 'offline' ? 'Offline · seen ' + devAge(d.last_seen) : 'Not seen for 7+ days'}</span><br>
+                ${g.note ? `<span style="color:#94a3b8">${esc(g.note)}</span><br>` : ''}
+                <span style="color:#64748b;font-size:11.5px;font-family:ui-monospace,monospace">${fmtLatLon(g)}</span>
+                <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.55rem">
+                    <button class="nw-btn sm pri" onclick="openModal('${esc(d.key)}','${esc(d.ip)}')">Open device</button>
+                    <button class="nw-btn sm" onclick="MAP.closePopup(); mapStartPlace('${esc(d.key)}')">Move</button>
+                    <a class="nw-btn sm" href="https://www.google.com/maps/dir/?api=1&destination=${g.lat},${g.lon}" target="_blank" rel="noopener">Directions ↗</a>
+                </div></div>`;
+        }
+        function renderMapList(placed, unplaced){
+            const box = document.getElementById('map-list');
+            const hint = document.getElementById('map-hint');
+            if(MAP_TAB === 'on'){
+                hint.textContent = placed.length ? 'Click a device to fly to it.' : 'Nothing placed yet.';
+                box.innerHTML = sortDevices(placed).map(d => `<div class="nw-mitem" onclick="mapFocus('${esc(d.key)}')">
+                    <span class="nw-dot ${devState(d)==='online'?'':devState(d)==='offline'?'off':'quiet'}"></span><span class="nm">${catIcon[d.category]||''} ${esc(devTitle(d))}</span><span class="text-xs font-mono text-cyan-300">${esc(d.ip)}</span>
+                    <span class="sub">${esc((d.geo && d.geo.note) || [vendorShort(d.vendor), d.model].filter(Boolean).join(' · '))}</span></div>`).join('') || '<div class="nw-empty">No devices on the map match.</div>';
+            } else {
+                const list = sortDevices(unplaced.filter(d => devState(d) !== 'quiet'));
+                hint.textContent = 'Click "Place", then click where the device is on the map.';
+                box.innerHTML = list.map(d => `<div class="nw-mitem" style="cursor:default">
+                    <span class="nw-dot ${devState(d)==='online'?'':'off'}"></span><span class="nm">${catIcon[d.category]||''} ${esc(devTitle(d))}</span><button class="nw-btn sm ${MAP_PLACING===d.key?'pri':''}" onclick="mapStartPlace('${esc(d.key)}')">${MAP_PLACING===d.key?'Placing…':'Place'}</button>
+                    <span class="sub"><span class="font-mono">${esc(d.ip)}</span> · ${esc(catLabel[d.category]||'')}</span></div>`).join('') || '<div class="nw-empty"><b>Everything is placed</b>Every device seen this week has a position.</div>';
+            }
+        }
+        function mapTab(t){ MAP_TAB = t; document.getElementById('map-tab-on').classList.toggle('on', t==='on'); document.getElementById('map-tab-off').classList.toggle('on', t==='off'); renderMap(); }
+        function mapFit(animate, bounds){
+            if(!MAP) return;
+            bounds = bounds || mapDevices().filter(d => d.geo).map(d => [d.geo.lat, d.geo.lon]);
+            if(!bounds.length) return;
+            if(bounds.length === 1) MAP.setView(bounds[0], 18, {animate: !!animate});
+            else MAP.fitBounds(bounds, { padding: [50, 50], maxZoom: 19, animate: !!animate });
+        }
+        function mapFocus(key){ MAP_FOCUS = key; renderMap(); }
+        function mapStartPlace(key){
+            const d = DEV_BY_KEY[key]; if(!d) return;
+            MAP_PLACING = key;
+            document.body.classList.add('nw-placing');
+            document.getElementById('map-banner-txt').textContent = `Click where ${devTitle(d)} (${d.ip}) is`;
+            document.getElementById('map-banner').hidden = false;
+            if(MAP_TAB === 'off') renderMap();
+        }
+        function mapCancelPlace(silent){
+            MAP_PLACING = null;
+            document.body.classList.remove('nw-placing');
+            const b = document.getElementById('map-banner'); if(b) b.hidden = true;
+            if(!silent && MAP) renderMap();
+        }
+        async function placeDeviceAt(key, lat, lon, moved){
+            const d = DEV_BY_KEY[key];
+            const note = (d && d.geo && d.geo.note) || '';
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(key) + '/location', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lat, lon, note})});
+                const j = await r.json();
+                if(!r.ok || !j.ok) throw new Error(j.error || 'not saved');
+                if(d) d.geo = j.geo;
+                nwToast(`${d ? devTitle(d) : 'Device'} ${moved ? 'moved' : 'placed'} on the map`, 'ok');
+                mapCancelPlace(true);
+                MAP_FOCUS = key;
+                renderMap(); renderGrid();
+            } catch(e){ nwToast('Could not save the position: ' + e.message, 'bad'); if(moved) renderMap(); }
+        }
+        document.addEventListener('keydown', (e) => { if(e.key === 'Escape' && MAP_PLACING) mapCancelPlace(); });
+
+        // ---- device modal: location section ----
+        function renderModalLocation(dev){
+            const sec = document.getElementById('loc-section');
+            sec.hidden = !dev;
+            if(!dev) return;
+            const g = dev.geo;
+            document.getElementById('loc-current').innerHTML = g
+                ? `<span class="text-emerald-400">On the map</span> · <span class="font-mono text-slate-200">${fmtLatLon(g)}</span>${g.note ? ' · ' + esc(g.note) : ''} <span class="text-slate-500">(set ${tsAgo(g.ts)})</span>`
+                : 'Not on the map yet — paste a position, pick it on the map, or stand at the device with your phone.';
+            document.getElementById('loc-input').value = g ? fmtLatLon(g) : '';
+            document.getElementById('loc-note').value = g ? (g.note || '') : '';
+            document.getElementById('loc-result').textContent = '';
+            document.getElementById('loc-clear').hidden = !g;
+            document.getElementById('loc-view').hidden = !g;
+            const nav = document.getElementById('loc-nav');
+            nav.hidden = !g;
+            if(g) nav.href = `https://www.google.com/maps/dir/?api=1&destination=${g.lat},${g.lon}`;
+            // Browsers only hand out GPS on https or localhost.
+            document.getElementById('loc-here').hidden = !(window.isSecureContext && navigator.geolocation);
+        }
+        async function postLocation(body){
+            const out = document.getElementById('loc-result');
+            try {
+                const r = await fetch('/api/devices/' + encodeURIComponent(CURRENT_KEY) + '/location', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+                const j = await r.json();
+                if(!r.ok || !j.ok) throw new Error(j.error || 'not saved');
+                const d = DEV_BY_KEY[CURRENT_KEY]; if(d) d.geo = j.geo;
+                renderModalLocation(d);
+                out.className = 'text-xs text-emerald-400'; out.textContent = j.geo ? '✓ Saved' : '✓ Removed from the map';
+                renderGrid(); if(PAGE === 'map') renderMap();
+            } catch(e){ out.className = 'text-xs text-rose-300'; out.textContent = e.message; }
+        }
+        function saveLocation(){
+            const g = parseLatLon(document.getElementById('loc-input').value);
+            const out = document.getElementById('loc-result');
+            if(!g){ out.className = 'text-xs text-rose-300'; out.textContent = 'Not a position — use e.g. -33.924868, 18.424055 or a Google Maps link.'; return; }
+            postLocation({ lat: g.lat, lon: g.lon, note: document.getElementById('loc-note').value });
+        }
+        function clearLocation(){ if(confirm('Remove this device from the map?')) postLocation({ clear: true }); }
+        function pickLocationOnMap(){ const k = CURRENT_KEY; closeModal(); location.hash = '#/map?place=' + encodeURIComponent(k); }
+        function showOnMap(e){ e.preventDefault(); const k = CURRENT_KEY; closeModal(); location.hash = '#/map?focus=' + encodeURIComponent(k); }
+        function useMyLocation(){
+            const out = document.getElementById('loc-result');
+            out.className = 'text-xs text-slate-400'; out.textContent = 'Getting your position…';
+            navigator.geolocation.getCurrentPosition(
+                (p) => { document.getElementById('loc-input').value = `${p.coords.latitude.toFixed(6)}, ${p.coords.longitude.toFixed(6)}`; out.textContent = `Accuracy about ${Math.round(p.coords.accuracy)} m — press Save.`; },
+                (err) => { out.className = 'text-xs text-rose-300'; out.textContent = 'Could not get a position: ' + err.message; },
+                { enableHighAccuracy: true, timeout: 20000 });
         }
 
         // ---- History page ----
@@ -2963,7 +3266,7 @@
             const site = data.site || {};
             if(site.name){
                 document.getElementById('site-title').textContent = site.name;
-                document.title = (PAGE === 'devices' ? '' : PAGE === 'history' ? 'History · ' : 'Settings · ') + site.name + ' · Netwatch';
+                document.title = ({devices:'', map:'Map · ', history:'History · ', settings:'Settings · '}[PAGE]) + site.name + ' · Netwatch';
             }
             document.getElementById('site-sub').textContent = [site.location, 'Farm Network Asset Identifier'].filter(Boolean).join('  ·  ');
             if(data.is_scanning) setLive(true, 'Scanning · ' + (data.progress || 'network'));
@@ -3041,8 +3344,12 @@
                 if(!r1.ok) throw new Error('settings were not saved (' + r1.status + ')');
                 const name = document.getElementById('set-site-name').value.trim(), loc = document.getElementById('set-site-loc').value.trim();
                 const site = (SETTINGS_CFG && SETTINGS_CFG.site) || {};
-                if(name !== (site.name||'') || loc !== (site.location||'')){
-                    const r2 = await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({site: {...site, name, location: loc}})});
+                const geoTxt = document.getElementById('set-site-geo').value.trim();
+                const geo = geoTxt ? parseLatLon(geoTxt) : null;
+                if(geoTxt && !geo) throw new Error('the site GPS position is not a valid coordinate');
+                const newSite = {...site, name, location: loc, lat: geo ? geo.lat : null, lon: geo ? geo.lon : null};
+                if(name !== (site.name||'') || loc !== (site.location||'') || newSite.lat !== (site.lat ?? null) || newSite.lon !== (site.lon ?? null)){
+                    const r2 = await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({site: newSite})});
                     if(!r2.ok) throw new Error('site name was not saved (' + r2.status + ')');
                 }
                 nwToast('Settings saved', 'ok');

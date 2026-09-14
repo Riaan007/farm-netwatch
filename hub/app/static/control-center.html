@@ -7,6 +7,7 @@
 <meta name="color-scheme" content="dark">
 <title>Netwatch Control Center</title>
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><path d="M20 3 34 11v18L20 37 6 29V11z" fill="none" stroke="%2322d3ee" stroke-width="3"/><circle cx="20" cy="20" r="5" fill="%2334d399"/></svg>'>
+<link rel="stylesheet" href="/static/cc/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/static/cc/cc.css?v=__V__">
 </head>
 <body>
@@ -21,6 +22,7 @@
       <a href="#/" data-nav="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>Overview</a>
       <a href="#/attention" data-nav="/attention"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3zm0 6v5m0 3h.01"/></svg>Needs attention<span class="count" id="nav-att-count" hidden></span></a>
       <a href="#/devices" data-nav="/devices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>All devices</a>
+      <a href="#/map" data-nav="/map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg>Map</a>
       <a href="#/backups" data-nav="/backups"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15H5zM8 3v5h8V3M8 14h8v7H8z"/></svg>Backups</a>
       <a href="#/vpn" data-nav="/vpn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3z"/></svg>VPN &amp; remote</a>
       <a href="#/settings" data-nav="/settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8M14 4v6M8 14v6"/></svg>Settings</a>
@@ -45,9 +47,11 @@
   </div>
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/static/cc/vendor/leaflet/leaflet.js"></script>
 <script src="/static/cc/core.js?v=__V__"></script>
 <script src="/static/cc/fleet.js?v=__V__"></script>
 <script src="/static/cc/site.js?v=__V__"></script>
+<script src="/static/cc/map.js?v=__V__"></script>
 <script>CC.start();</script>
 </body>
 </html>

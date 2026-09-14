@@ -57,6 +57,17 @@ class Poller:
         self._last_prune = 0
 
     # ---- public API used by the web layer --------------------------------
+    def update_device(self, site_id, key, **fields):
+        """Patch one device in the cached snapshot (e.g. a location just set from
+        the hub) so it shows before the next device poll."""
+        with self._lock:
+            payload = (self._snap.get(site_id) or {}).get("devices") or {}
+            for d in payload.get("devices") or []:
+                if d.get("key") == key:
+                    d.update(fields)
+                    return True
+        return False
+
     def snapshot(self, site_id):
         with self._lock:
             return dict(self._snap.get(site_id) or {})

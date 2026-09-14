@@ -149,6 +149,25 @@ class SiteAuth(unittest.TestCase):
         self.assertEqual(r.status_code, 400)   # reached the handler (validation), not 401
 
 
+class DeviceLocation(unittest.TestCase):
+    def setUp(self):
+        server.scanner.registry["aa:bb:cc:dd:ee:01"] = {"name": "Gate cam"}
+        self.c = server.app.test_client()
+
+    def post(self, body):
+        return self.c.post("/api/devices/aa:bb:cc:dd:ee:01/location", json=body)
+
+    def test_set_validate_and_clear(self):
+        r = self.post({"lat": "-33.924868", "lon": "18,424055", "note": "pole at gate"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(server.scanner.registry["aa:bb:cc:dd:ee:01"]["geo"]["lon"], 18.424055)
+        for bad in ({"lat": 91, "lon": 18}, {"lat": -33, "lon": 181}, {"lat": "x", "lon": 1}, {"lat": 0, "lon": 0}):
+            self.assertEqual(self.post(bad).status_code, 400, bad)
+        self.assertEqual(self.c.post("/api/devices/nope/location", json={"lat": 1, "lon": 1}).status_code, 404)
+        self.assertEqual(self.post({"clear": True}).status_code, 200)
+        self.assertNotIn("geo", server.scanner.registry["aa:bb:cc:dd:ee:01"])
+
+
 class CommandsOffByDefault(unittest.TestCase):
     def test_new_config_has_commands_off(self):
         self.assertFalse(config.DEFAULTS["alerts"]["allow_commands"])
