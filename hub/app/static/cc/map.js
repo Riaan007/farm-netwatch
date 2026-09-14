@@ -1,15 +1,26 @@
-/* Netwatch Control Center — device map (fleet and per site).
- * Only devices a site has given a GPS position appear; imagery is Esri World
- * Imagery (free, no key, attribution shown). Positions are set on the site
- * (stored in its device registry) — from here through the hub's proxy route. */
+/* Netwatch Control Center — maps.
+ *
+ * One component (FleetMap) behind three places: the fleet Map page, the small map
+ * on the Overview, and a site's Map tab.
+ *
+ *   All sites  one marker per site (its state colour, name, device count). A site
+ *              without its own GPS position but with placed devices sits at their
+ *              centre, marked "approximate".
+ *   One site   click a site marker (or open a site's Map tab): the map zooms to it
+ *              and shows that site's device pins; the list becomes its devices.
+ *
+ * Only devices with a GPS position appear. Device positions live in each site's
+ * device registry, site positions in the site's config (site.lat/lon) — both set
+ * through the hub's proxy routes. Imagery: Esri World Imagery (free, no key).
+ */
 (function () {
   "use strict";
   const { $, esc, icon, api, state: S } = CC;
   const view = () => $("#view");
   const enc = encodeURIComponent;
 
-  /* Accepts "-33.92, 18.42", "-33.92 18.42", Google Maps links (@lat,lon · q=lat,lon ·
-     !3dlat!4dlon) and DMS like 33°55'29.5"S 18°25'26.6"E. Returns {lat, lon} or null. */
+  /* "-33.92, 18.42", "-33.92 18.42", Google Maps links (@lat,lon · q=lat,lon · !3dlat!4dlon)
+     or DMS like 33°55'29.5"S 18°25'26.6"E  ->  {lat, lon} | null */
   CC.parseLatLon = (raw) => {
     let t = String(raw || "").trim();
     if (!t) return null;
@@ -37,244 +48,372 @@
     CC.emit();
     return j.geo || null;
   };
+  /** Save (or clear) a site's own position through the hub; patches the card. */
+  CC.setSiteLocation = async (siteId, body) => {
+    const j = await api(`/api/hub/sites/${enc(siteId)}/location`, { method: "POST", body });
+    const s = CC.site(siteId);
+    if (s) s.geo = j.geo || null;
+    CC.emit();
+    return j.geo || null;
+  };
+  CC.siteLocationDialog = (siteId) => {
+    const s = CC.site(siteId); if (!s) return;
+    const d = CC.dialog(`<div class="dhd"><div><h2>Location · ${esc(s.name)}</h2><p>Where the site is — the map shows its devices around this point</p></div><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div>
+      <form class="dbd" id="sl-form"><label class="fld">GPS position<input class="inp mono" name="pos" placeholder="-28.110100, 26.432100  or a Google Maps link" value="${s.geo ? CC.fmtLatLon(s.geo) : ""}" required></label>
+        <p class="note" style="margin:0">Stored on the site Pi (its Settings → Site GPS position), so the site page and backups agree.</p>
+        <div class="bad note" id="sl-err" aria-live="polite"></div>
+        <div class="row" style="justify-content:space-between"><span>${s.geo ? `<button type="button" class="btn danger" id="sl-clear">Remove</button>` : ""}</span><span class="row"><button type="button" class="btn" data-close>Cancel</button><button class="btn pri">Save</button></span></div></form>`);
+    $("#sl-form", d).onsubmit = async (e) => {
+      e.preventDefault();
+      const pos = CC.parseLatLon(e.target.pos.value);
+      if (!pos) { $("#sl-err", d).textContent = "Not a position — use e.g. -28.1101, 26.4321 or a Google Maps link."; return; }
+      await CC.busy(e.submitter, async () => {
+        try { await CC.setSiteLocation(siteId, pos); d.close(); CC.toast(`${s.name} location saved`, "ok"); } catch (err) { $("#sl-err", d).textContent = err.message; }
+      });
+    };
+    const clr = $("#sl-clear", d);
+    if (clr) clr.onclick = async () => { try { await CC.setSiteLocation(siteId, { clear: true }); d.close(); CC.toast("Site location removed", "ok"); } catch (err) { $("#sl-err", d).textContent = err.message; } };
+  };
 
-  const M = {
-    map: null, layer: null, siteId: null, placing: null, edit: false, tab: "on", fitted: false, focus: null, el: null,
+  const pinCls = (d) => { const st = CC.devState(d); return st === "online" ? (d.category && d.category !== "unknown" ? "" : "myst") : st === "offline" ? "off" : "quiet"; };
+  const stateDot = { ok: "", warn: "warn", fault: "bad", offline: "bad", paused: "unk" };
 
-    mount(el, { siteId = null } = {}) {
-      this.destroy();
-      this.siteId = siteId; this.el = el; this.fitted = false; this.tab = "on";
-      const p = CC.params();
-      this.focus = p.get("focus"); const place = p.get("place");
-      el.innerHTML = `
-        <div class="tbar" style="border:0;padding:0 0 12px">
-          <label class="search">${icon("search")}<span class="sr">Find a device</span><input class="inp" id="mp-q" type="search" placeholder="Find a device…"></label>
-          ${siteId ? "" : `<select class="sel" id="mp-site" aria-label="Site"><option value="">All sites</option>${S.sites.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("")}</select>`}
-          <select class="sel" id="mp-show" aria-label="Show"><option value="">All placed devices</option><option value="online">Online</option><option value="offline">Offline</option><option value="cctv">Cameras &amp; recorders</option><option value="net">Network &amp; wireless</option></select>
-          <label class="chk"><input type="checkbox" id="mp-labels"> Names</label>
-          <button class="btn sm" id="mp-edit">${icon("lock")} <span>Move pins</span></button>
-          <button class="btn sm" id="mp-fit">Fit all</button>
-          <span class="note" id="mp-sub" style="margin-left:auto"></span>
-        </div>
-        <div class="mapgrid">
-          <section class="panel mapbox"><div class="mapbanner" id="mp-banner" hidden><span id="mp-banner-t"></span><button id="mp-cancel">Cancel</button></div><div class="mapel" id="mp-map" role="application" aria-label="Device map"></div></section>
-          <aside class="panel">
-            <div class="phd"><div class="tabs" style="margin:0;border:0"><a href="#" data-t="on" class="on">On the map <span class="count quiet" id="mp-n-on">0</span></a><a href="#" data-t="off">Not placed <span class="count quiet" id="mp-n-off">0</span></a></div></div>
-            <p class="note" id="mp-hint" style="margin:10px 18px"></p>
-            <div class="mlist" id="mp-list"></div>
-          </aside>
-        </div>`;
-      if (!window.L) { $("#mp-map").innerHTML = `<div class="empty"><b>Map library did not load</b>Reload the page.</div>`; return; }
-      const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19, attribution: "Imagery © Esri, Maxar, Earthstar Geographics, GIS User Community" });
-      const labels = L.layerGroup([
-        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19, opacity: 0.85 }),
-        L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19 }),
-      ]);
-      const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 21, maxNativeZoom: 19, attribution: "© OpenStreetMap contributors" });
-      this.map = L.map($("#mp-map"), { layers: [sat], worldCopyJump: true }).setView([-29.0, 24.5], 5);
-      L.control.layers({ Satellite: sat, "Street map": street }, { "Roads & place names": labels }, { position: "topright" }).addTo(this.map);
-      L.control.scale({ imperial: false }).addTo(this.map);
-      this.layer = L.layerGroup().addTo(this.map);
-      this.map.on("click", (e) => { if (this.placing) this.save(this.placing, e.latlng.lat, e.latlng.lng); });
-      const redraw = () => this.draw();
-      $("#mp-q", el).oninput = redraw;
-      $("#mp-show", el).onchange = () => { this.fitted = false; redraw(); };
-      if (!siteId) $("#mp-site", el).onchange = () => { this.fitted = false; redraw(); };
-      $("#mp-labels", el).onchange = redraw;
-      $("#mp-fit", el).onclick = () => this.fit(true);
-      $("#mp-cancel", el).onclick = () => this.cancel();
-      $("#mp-edit", el).onclick = (e) => { this.edit = !this.edit; e.currentTarget.classList.toggle("pri", this.edit); e.currentTarget.querySelector("span").textContent = this.edit ? "Pins unlocked" : "Move pins"; redraw(); };
-      el.querySelectorAll(".tabs a").forEach((a) => (a.onclick = (e) => { e.preventDefault(); this.tab = a.dataset.t; el.querySelectorAll(".tabs a").forEach((x) => x.classList.toggle("on", x === a)); redraw(); }));
-      $("#mp-list", el).onclick = (e) => {
-        const b = e.target.closest("[data-place]"); if (b) { e.stopPropagation(); return this.start(b.dataset.site, b.dataset.place); }
-        const row = e.target.closest("[data-focus]"); if (row) { this.focus = row.dataset.focus; this.draw(); }
-      };
-      this.keyh = (e) => { if (e.key === "Escape" && this.placing) this.cancel(); };
+  /** Where a site is: its own GPS, else the centre of its placed devices (approximate). */
+  CC.siteGeo = (s) => {
+    if (s.geo && s.geo.lat != null) return { lat: s.geo.lat, lon: s.geo.lon, exact: true };
+    const placed = (S.devices[s.id] || []).filter((d) => d.geo);
+    if (!placed.length) return null;
+    return { lat: placed.reduce((a, d) => a + d.geo.lat, 0) / placed.length, lon: placed.reduce((a, d) => a + d.geo.lon, 0) / placed.length, exact: false };
+  };
+
+  function tiles(mini) {
+    const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19, attribution: "Imagery © Esri, Maxar, Earthstar Geographics, GIS User Community" });
+    const places = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19 });
+    if (mini) return { base: [sat, places] };
+    const roads = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19, opacity: 0.85 });
+    const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 21, maxNativeZoom: 19, attribution: "© OpenStreetMap contributors" });
+    return { base: [sat, places], control: L.control.layers({ Satellite: sat, "Street map": street }, { "Place names": places, Roads: roads }, { position: "topright" }) };
+  }
+
+  class FleetMap {
+    constructor(el, { mini = false, siteId = null } = {}) {
+      this.el = el; this.mini = mini; this.fixedSite = siteId;
+      this.focusSite = siteId; this.focusKey = null; this.placing = null;
+      this.edit = false; this.tab = "on"; this.viewKey = ""; this.sig = "";
+      this.map = null;
+    }
+    mount({ focusSite = null, focusKey = null, place = null } = {}) {
+      if (focusSite && !this.fixedSite) this.focusSite = focusSite;
+      this.focusKey = focusKey;
+      const el = this.el;
+      if (this.mini) {
+        el.innerHTML = `<div class="ovmap-wrap" hidden><div class="ovmap-bar" hidden><button class="btn sm" data-back>← All sites</button><b data-site-name></b><span class="note" data-site-n></span><a class="btn sm ghost" data-site-open href="#">Open on the full map</a></div><div class="ovmap" role="application" aria-label="Map of sites and devices"></div></div>
+          <div class="ovmap-empty pbd row" hidden><span class="muted" style="flex:1 1 300px">No site or device is on the map yet. Give each site its GPS location, then place its cameras, radios and switches.</span><a class="btn sm pri" href="#/map">Open the map</a></div>`;
+      } else {
+        el.innerHTML = `
+          <div class="tbar" style="border:0;padding:0 0 12px">
+            <button class="btn sm" data-back hidden>← All sites</button>
+            <label class="search">${icon("search")}<span class="sr">Find</span><input class="inp" data-q type="search" placeholder="Find a site or device…"></label>
+            <select class="sel" data-show aria-label="Show"><option value="">All placed devices</option><option value="online">Online</option><option value="offline">Offline</option><option value="cctv">Cameras &amp; recorders</option><option value="net">Network &amp; wireless</option></select>
+            <label class="chk"><input type="checkbox" data-labels> Names</label>
+            <button class="btn sm" data-edit hidden>${icon("lock")} <span>Move pins</span></button>
+            <button class="btn sm" data-site-loc hidden>${icon("pin")} <span>Site location</span></button>
+            <button class="btn sm" data-fit>Fit</button>
+            <span class="note" data-sub style="margin-left:auto"></span>
+          </div>
+          <div class="mapgrid">
+            <section class="panel mapbox"><div class="mapbanner" data-banner hidden><span data-banner-t></span><button data-cancel>Cancel</button></div><div class="mapel" role="application" aria-label="Map of sites and devices"></div></section>
+            <aside class="panel"><div class="phd" data-list-head></div><p class="note" data-hint style="margin:10px 18px"></p><div class="mlist" data-list></div></aside>
+          </div>`;
+      }
+      const q = (sel) => el.querySelector(sel);
+      if (!window.L) { (q(".ovmap") || q(".mapel")).innerHTML = `<div class="empty"><b>Map library did not load</b>Reload the page.</div>`; return this; }
+      const box = q(".ovmap") || q(".mapel");
+      const t = tiles(this.mini);
+      this.map = L.map(box, { layers: t.base, worldCopyJump: true, scrollWheelZoom: !this.mini }).setView([-29.0, 24.5], 5);
+      if (t.control) t.control.addTo(this.map);
+      if (!this.mini) L.control.scale({ imperial: false }).addTo(this.map);
+      else { this.map.on("focus", () => this.map.scrollWheelZoom.enable()); this.map.on("blur", () => this.map.scrollWheelZoom.disable()); }
+      this.sitesLayer = L.layerGroup().addTo(this.map);
+      this.devLayer = L.layerGroup().addTo(this.map);
+      this.map.on("click", (e) => { if (this.placing) this.savePlace(e.latlng.lat, e.latlng.lng); });
+      el.addEventListener("click", (e) => {
+        if (e.target.closest("[data-back]")) return this.focus(null);
+        if (e.target.closest("[data-cancel]")) return this.cancelPlace();
+        if (e.target.closest("[data-fit]")) return this.fit(true);
+        if (e.target.closest("[data-site-loc]")) return this.siteLocMenu();
+        const ed = e.target.closest("[data-edit]");
+        if (ed) { this.edit = !this.edit; ed.classList.toggle("pri", this.edit); ed.querySelector("span").textContent = this.edit ? "Pins unlocked" : "Move pins"; return this.render(true); }
+        const tab = e.target.closest("[data-tab]");
+        if (tab) { e.preventDefault(); this.tab = tab.dataset.tab; return this.render(true); }
+        const pl = e.target.closest("[data-place]");
+        if (pl) { e.stopPropagation(); return this.startPlace({ type: pl.dataset.type, siteId: pl.dataset.site, key: pl.dataset.place }); }
+        const fs = e.target.closest("[data-focus-site]");
+        if (fs) return this.focus(fs.dataset.focusSite);
+        const fk = e.target.closest("[data-focus-key]");
+        if (fk) { this.focusKey = fk.dataset.focusKey; this.viewKey = ""; return this.render(true); }
+      });
+      const inp = q("[data-q]"); if (inp) inp.oninput = () => this.render(true);
+      const show = q("[data-show]"); if (show) show.onchange = () => { this.viewKey = ""; this.render(true); };
+      const lab = q("[data-labels]"); if (lab) lab.onchange = () => this.render(true);
+      this.keyh = (e) => { if (e.key === "Escape" && this.placing) this.cancelPlace(); };
       document.addEventListener("keydown", this.keyh);
-      setTimeout(() => { if (!this.map) return; this.map.invalidateSize(); if (place) this.start(siteId || p.get("site"), place); this.draw(); }, 60);
-    },
+      setTimeout(() => {
+        if (!this.map) return;
+        this.map.invalidateSize();
+        if (place) this.startPlace({ type: "device", siteId: this.focusSite, key: place });
+        this.render(true);
+      }, 60);
+      return this;
+    }
     destroy() {
       if (this.map) { this.map.remove(); this.map = null; }
       if (this.keyh) document.removeEventListener("keydown", this.keyh);
       document.body.classList.remove("placing");
-      this.placing = null;
-    },
-    devices() {
-      const siteId = this.siteId || ($("#mp-site") && $("#mp-site").value) || "";
-      const sites = siteId ? [CC.site(siteId)].filter(Boolean) : S.sites;
-      const q = ($("#mp-q") && $("#mp-q").value.trim().toLowerCase()) || "";
-      const show = ($("#mp-show") && $("#mp-show").value) || "";
+    }
+    q(sel) { return this.el.querySelector(sel); }
+    query() { const i = this.q("[data-q]"); return i ? i.value.trim().toLowerCase() : ""; }
+    focus(siteId) {
+      if (this.fixedSite) return;
+      this.focusSite = siteId; this.focusKey = null; this.viewKey = ""; this.tab = "on";
+      this.cancelPlace(true);
+      if (!this.mini) history.replaceState(null, "", siteId ? `#/map?site=${enc(siteId)}` : "#/map");
+      this.render(true);
+    }
+    devices(siteId) {
+      const s = CC.site(siteId); if (!s) return [];
+      const q = this.query(), show = (this.q("[data-show]") || {}).value || "";
       const ipm = CC.ipMatcher(q);
-      return sites.flatMap((s) => (S.devices[s.id] || []).map((d) => Object.assign(d, { __site: s }))).filter((d) => {
-        if (q && !(ipm ? ipm(d.ip) : [CC.devName(d), d.ip, d.mac, d.vendor, d.model, d.__site.name, (d.geo || {}).note].join(" ").toLowerCase().includes(q))) return false;
+      return (S.devices[siteId] || []).map((d) => Object.assign(d, { __site: s })).filter((d) => {
+        if (q && !(ipm ? ipm(d.ip) : [CC.devName(d), d.ip, d.mac, d.vendor, d.model, (d.geo || {}).note].join(" ").toLowerCase().includes(q))) return false;
         const st = CC.devState(d);
         if (show === "online" && st !== "online") return false;
         if (show === "offline" && st !== "offline") return false;
         if ((show === "cctv" || show === "net") && CC.cat(d).group !== show) return false;
         return true;
       });
-    },
-    /** Live refreshes: never yank an open popup or a pin being dragged. */
-    softDraw() {
+    }
+    /** Live refreshes: never yank an open popup or a placement in progress. */
+    softRender() {
       if (!this.map) return;
       const pop = this.map._popup;
-      if (pop && pop.isOpen && pop.isOpen()) return;
-      this.draw();
-    },
-    pinCls(d) { const st = CC.devState(d); return st === "online" ? (d.category && d.category !== "unknown" ? "" : "myst") : st === "offline" ? "off" : "quiet"; },
-    draw() {
-      if (!this.map || !this.el || !document.body.contains(this.el)) return;
-      const all = this.devices();
-      const placed = all.filter((d) => d.geo), unplaced = all.filter((d) => !d.geo && CC.devState(d) !== "quiet");
-      const labels = $("#mp-labels").checked;
-      this.layer.clearLayers();
+      if ((pop && pop.isOpen && pop.isOpen()) || this.placing) return;
+      this.render(false);
+    }
+    render(force) {
+      if (!this.map || !this.el.isConnected) return;
+      const siteGeos = S.sites.map((s) => [s, CC.siteGeo(s)]).filter(([, g]) => g);
+      const focus = this.focusSite && CC.site(this.focusSite);
+      const devs = focus ? this.devices(focus.id) : [];
+      const placed = devs.filter((d) => d.geo);
+      const labels = (this.q("[data-labels]") || {}).checked;
+      if (this.mini) this.renderMiniChrome(focus, siteGeos, placed);
+      else this.renderChrome(focus, siteGeos, devs, placed);
+      const sig = JSON.stringify([this.focusSite, this.focusKey, this.edit, labels, this.query(),
+        siteGeos.map(([s, g]) => [s.id, g.lat, g.lon, g.exact, CC.siteState(s), (S.devices[s.id] || []).filter((d) => d.geo).length]),
+        placed.map((d) => [d.key, d.geo.lat, d.geo.lon, pinCls(d)])]);
+      if (!force && sig === this.sig) return;
+      this.sig = sig;
+
+      // --- site markers (all sites; in a site view only that site, as its anchor)
+      this.sitesLayer.clearLayers();
       const bounds = [];
+      for (const [s, g] of siteGeos) {
+        const here = focus && focus.id === s.id;
+        if (focus && !here) continue;
+        // inside a site, an approximate position is just the middle of its pins — no anchor
+        if (here && !g.exact) continue;
+        const st = CC.siteState(s);
+        const c = CC.siteCounts(s);
+        const nPlaced = (S.devices[s.id] || []).filter((d) => d.geo).length;
+        const icon = here
+          ? L.divIcon({ className: "", html: `<div class="siteanchor" aria-label="${esc(s.name)} site location">🏠</div>`, iconSize: [26, 26], iconAnchor: [13, 13] })
+          : L.divIcon({ className: "sitepin-wrap", html: `<div class="sitepin ${g.exact ? "" : "approx"}"><i class="dot ${stateDot[st]}"></i><b>${esc(s.name)}</b><span>${nPlaced} 📍</span></div>`, iconSize: null });
+        const mk = L.marker([g.lat, g.lon], { icon, zIndexOffset: here ? -1000 : 1000, keyboard: true, title: s.name });
+        mk.bindTooltip(`${esc(s.name)} · ${esc(CC.STATE[st].label)}${c.total != null ? ` · ${c.online}/${c.total} online` : ""}${g.exact ? "" : " · approximate position — set the site location"}${here ? "" : " · click to show its devices"}`, { className: "ptip", direction: "top", offset: [0, -20] });
+        if (!here) mk.on("click", () => this.focus(s.id));
+        mk.addTo(this.sitesLayer);
+        bounds.push([g.lat, g.lon]);
+      }
+
+      // --- device pins: only for the site being looked at
+      this.devLayer.clearLayers();
       for (const d of placed) {
-        const k = d.__site.id + "|" + d.key;
-        const ic = L.divIcon({ className: "", html: `<div class="pin ${this.pinCls(d)} ${this.focus === d.key ? "sel" : ""}"><span>${CC.cat(d).icon}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30], tooltipAnchor: [0, -28] });
-        const mk = L.marker([d.geo.lat, d.geo.lon], { icon: ic, draggable: this.edit, title: `${CC.devName(d)} ${d.ip}` });
+        const ic = L.divIcon({ className: "", html: `<div class="pin ${pinCls(d)} ${this.focusKey === d.key ? "sel" : ""}"><span>${CC.cat(d).icon}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30], tooltipAnchor: [0, -28] });
+        const mk = L.marker([d.geo.lat, d.geo.lon], { icon: ic, draggable: this.edit && !this.mini, title: `${CC.devName(d)} ${d.ip}` });
         mk.bindTooltip(esc(CC.devName(d)), { className: "ptip", direction: "top", permanent: labels });
         mk.bindPopup(() => this.popup(d), { maxWidth: 290 });
-        mk.on("dragend", (e) => { const ll = e.target.getLatLng(); this.save(k, ll.lat, ll.lng, true); });
         mk.on("popupopen", (e) => {
-          const box = e.popup.getElement();
-          box.querySelector("[data-open]").onclick = () => CC.openDevice(d.__site.id, d.key);
-          box.querySelector("[data-move]").onclick = () => { this.map.closePopup(); this.start(d.__site.id, d.key); };
+          const b = e.popup.getElement();
+          b.querySelector("[data-open]").onclick = () => CC.openDevice(d.__site.id, d.key);
+          const mv = b.querySelector("[data-move]");
+          if (mv) mv.onclick = () => { this.map.closePopup(); this.startPlace({ type: "device", siteId: d.__site.id, key: d.key }); };
         });
-        mk.addTo(this.layer);
+        mk.on("dragend", (e) => { const ll = e.target.getLatLng(); this.saveDevice(d.__site.id, d.key, ll.lat, ll.lng, true); });
+        mk.addTo(this.devLayer);
         bounds.push([d.geo.lat, d.geo.lon]);
-        if (this.focus === d.key) setTimeout(() => { if (!this.map) return; this.map.setView([d.geo.lat, d.geo.lon], Math.max(this.map.getZoom(), 18)); mk.openPopup(); }, 60);
       }
-      if (!this.fitted && !this.focus) { if (bounds.length) this.fit(false, bounds); this.fitted = true; }
-      const total = all.length;
-      $("#mp-sub").textContent = placed.length ? `${placed.length} of ${total} devices placed · only devices with a GPS position are shown` : "No device has a GPS position yet — use “Not placed” to put one on the map";
-      $("#mp-n-on").textContent = placed.length; $("#mp-n-off").textContent = unplaced.length;
-      const box = $("#mp-list"), hint = $("#mp-hint");
-      const siteLbl = (d) => (this.siteId ? "" : ` · ${esc(d.__site.name)}`);
-      if (this.tab === "on") {
-        hint.textContent = placed.length ? "Click a device to fly to it." : "Nothing placed yet.";
-        box.innerHTML = placed.map((d) => `<div class="alist-row" data-focus="${esc(d.key)}" style="display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;align-items:center;padding:9px 18px;border-top:1px solid var(--line);cursor:pointer">
-          <i class="dot ${CC.devState(d) === "online" ? "" : CC.devState(d) === "offline" ? "bad" : "unk"}"></i><b style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${CC.cat(d).icon} ${esc(CC.devName(d))}</b><span class="mono cyan" style="font-size:12px">${esc(d.ip)}</span>
-          <span class="note" style="grid-column:2/4">${esc((d.geo.note || "") || CC.cat(d).label)}${siteLbl(d)}</span></div>`).join("") || `<div class="empty">No placed devices match.</div>`;
-      } else {
-        hint.textContent = this.siteId || S.sites.length === 1 ? "Click Place, then click where the device is on the map." : "Click Place, then click where the device is. Pick a site above to narrow the list.";
-        box.innerHTML = unplaced.slice(0, 300).map((d) => `<div style="display:grid;grid-template-columns:auto 1fr auto;gap:2px 10px;align-items:center;padding:9px 18px;border-top:1px solid var(--line)">
-          <i class="dot ${CC.devState(d) === "online" ? "" : "bad"}"></i><b style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${CC.cat(d).icon} ${esc(CC.devName(d))}</b>
-          <button class="btn sm ${this.placing === d.__site.id + "|" + d.key ? "pri" : ""}" data-place="${esc(d.key)}" data-site="${esc(d.__site.id)}">${this.placing === d.__site.id + "|" + d.key ? "Placing…" : "Place"}</button>
-          <span class="note" style="grid-column:2/4"><span class="mono">${esc(d.ip)}</span> · ${esc(CC.cat(d).label)}${siteLbl(d)}</span></div>`).join("") || `<div class="empty"><b>Everything is placed</b>Every device seen this week has a position.</div>`;
+
+      // --- view: re-fit when what we're looking at changed, not on every refresh
+      const vk = JSON.stringify([this.focusSite, this.focusKey, bounds.map((b) => b.map((x) => (+x).toFixed(5)))]);
+      if (vk !== this.viewKey) {
+        this.viewKey = vk;
+        const fk = this.focusKey && placed.find((d) => d.key === this.focusKey);
+        if (fk) {
+          this.map.setView([fk.geo.lat, fk.geo.lon], Math.max(this.map.getZoom(), 18));
+          setTimeout(() => this.devLayer && this.devLayer.eachLayer((l) => { const ll = l.getLatLng(); if (ll.lat === fk.geo.lat && ll.lng === fk.geo.lon) l.openPopup(); }), 80);
+        } else this.fit(false, bounds, !!focus);
       }
-    },
+    }
+    fit(animate, bounds, siteView) {
+      if (!this.map) return;
+      if (!bounds) {
+        const focus = this.focusSite && CC.site(this.focusSite);
+        if (focus) {
+          const g = CC.siteGeo(focus);
+          bounds = this.devices(focus.id).filter((d) => d.geo).map((d) => [d.geo.lat, d.geo.lon]).concat(g ? [[g.lat, g.lon]] : []);
+        } else bounds = S.sites.map(CC.siteGeo).filter(Boolean).map((g) => [g.lat, g.lon]);
+        siteView = !!focus;
+      }
+      if (!bounds.length) return;
+      if (bounds.length === 1) this.map.setView(bounds[0], siteView ? 17 : 9, { animate: !!animate });
+      else this.map.fitBounds(bounds, { padding: [60, 60], maxZoom: siteView ? 19 : 12, animate: !!animate });
+    }
     popup(d) {
       const st = CC.devState(d), g = d.geo;
-      return `<div><b style="font-size:14px">${esc(CC.devName(d))}</b><br>
-        <span class="mono">${esc(d.ip)}</span> · ${CC.cat(d).icon} ${esc(CC.cat(d).label)}${this.siteId ? "" : ` · ${esc(d.__site.name)}`}<br>
+      return `<div><b style="font-size:14px">${esc(CC.devName(d))}</b><br><span class="mono">${esc(d.ip)}</span> · ${CC.cat(d).icon} ${esc(CC.cat(d).label)}<br>
         <span style="color:${st === "online" ? "#34d399" : st === "offline" ? "#fb7185" : "#94a3b8"}">● ${st === "online" ? "Online" : st === "offline" ? "Offline · " + CC.ago(d.last_seen) : "Not seen for 7+ days"}</span><br>
         ${g.note ? `<span class="muted">${esc(g.note)}</span><br>` : ""}<span class="mono dim" style="font-size:11.5px">${CC.fmtLatLon(g)}</span>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px"><button class="btn sm pri" data-open>Open device</button><button class="btn sm" data-move>Move</button><a class="btn sm" href="${CC.directions(g)}" target="_blank" rel="noopener">Directions ↗</a></div></div>`;
-    },
-    fit(animate, bounds) {
-      if (!this.map) return;
-      bounds = bounds || this.devices().filter((d) => d.geo).map((d) => [d.geo.lat, d.geo.lon]);
-      if (!bounds.length) return;
-      if (bounds.length === 1) this.map.setView(bounds[0], 18, { animate: !!animate });
-      else this.map.fitBounds(bounds, { padding: [50, 50], maxZoom: 19, animate: !!animate });
-    },
-    start(siteId, key) {
-      const d = (S.devices[siteId] || []).find((x) => x.key === key);
-      if (!d) return;
-      this.placing = siteId + "|" + key;
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px"><button class="btn sm pri" data-open>Open device</button>${this.mini ? `<a class="btn sm" href="#/map?site=${enc(d.__site.id)}&focus=${enc(d.key)}">Full map</a>` : `<button class="btn sm" data-move>Move</button>`}<a class="btn sm" href="${CC.directions(g)}" target="_blank" rel="noopener">Directions ↗</a></div></div>`;
+    }
+    renderMiniChrome(focus, siteGeos, placed) {
+      const wrap = this.q(".ovmap-wrap"), empty = this.q(".ovmap-empty");
+      const ready = S.loaded && !S.sites.some((s) => s.enabled && !S.devices[s.id]);
+      const any = siteGeos.length > 0;
+      if (wrap.hidden === any) { wrap.hidden = !any; if (any) setTimeout(() => { if (this.map) { this.map.invalidateSize(); this.viewKey = ""; this.render(true); } }, 30); }
+      empty.hidden = any || !ready;
+      const bar = this.q(".ovmap-bar");
+      bar.hidden = !focus;
+      if (focus) {
+        bar.querySelector("[data-site-name]").textContent = focus.name;
+        bar.querySelector("[data-site-n]").textContent = placed.length ? `${CC.plural(placed.length, "device")} on the map` : "no devices placed yet";
+        bar.querySelector("[data-site-open]").href = `#/map?site=${enc(focus.id)}`;
+      }
+      const host = this.el.closest("section");
+      const n = host && host.querySelector("[data-n]");
+      if (n) n.textContent = any ? (focus ? `· ${focus.name}` : `${CC.plural(siteGeos.length, "site")} · click a site to see its devices`) : "";
+    }
+    renderChrome(focus, siteGeos, devs, placed) {
+      const q = (s) => this.q(s);
+      q("[data-back]").hidden = !focus || !!this.fixedSite;
+      q("[data-edit]").hidden = !focus;
+      q("[data-site-loc]").hidden = !focus;
+      q("[data-q]").placeholder = focus ? "Find a device…" : "Find a site…";
+      const head = q("[data-list-head]"), list = q("[data-list]"), hint = q("[data-hint]");
+      if (!focus) {
+        const query = this.query();
+        const match = (s) => !query || s.name.toLowerCase().includes(query) || (s.location || "").toLowerCase().includes(query);
+        const withLoc = siteGeos.map(([s]) => s);
+        const without = S.sites.filter((s) => !CC.siteGeo(s));
+        q("[data-sub]").textContent = `${CC.plural(withLoc.length, "site")} on the map${without.length ? ` · ${without.length} without a location` : ""}`;
+        head.innerHTML = `<h2>Sites</h2>`;
+        hint.textContent = withLoc.length ? "Click a site — on the map or here — to see its devices." : "Set each site's location to put it on the map.";
+        list.innerHTML = withLoc.filter(match).map((s) => {
+          const g = CC.siteGeo(s), n = (S.devices[s.id] || []).filter((d) => d.geo).length;
+          return `<div class="mrow" data-focus-site="${esc(s.id)}"><i class="dot ${stateDot[CC.siteState(s)]}"></i><b>${esc(s.name)}</b><span class="note">${n} 📍</span><span class="note sub">${esc(s.location || "")}${g.exact ? "" : " · approximate — set its location"}</span></div>`;
+        }).join("") + (without.length ? `<div class="mhead">No location yet</div>` + without.filter(match).map((s) => `<div class="mrow"><i class="dot ${stateDot[CC.siteState(s)]}"></i><b>${esc(s.name)}</b><button class="btn sm ${this.placing && this.placing.type === "site" && this.placing.siteId === s.id ? "pri" : ""}" data-type="site" data-site="${esc(s.id)}" data-place="${esc(s.id)}">Place</button><span class="note sub">${esc(s.location || s.vpn_ip)}</span></div>`).join("") : "")
+          || `<div class="empty">No sites match.</div>`;
+        return;
+      }
+      const unplaced = devs.filter((d) => !d.geo && CC.devState(d) !== "quiet");
+      const sg = CC.siteGeo(focus);
+      q("[data-site-loc]").querySelector("span").textContent = focus.geo ? "Site location" : "Set site location";
+      q("[data-site-loc]").classList.toggle("pri", !focus.geo);
+      q("[data-sub]").textContent = `${focus.name} · ${placed.length} of ${devs.length} devices placed${sg ? (sg.exact ? "" : " · site position approximate") : " · site has no location yet"}`;
+      head.innerHTML = `<div class="tabs" style="margin:0;border:0"><a href="#" data-tab="on" class="${this.tab === "on" ? "on" : ""}">On the map <span class="count quiet">${placed.length}</span></a><a href="#" data-tab="off" class="${this.tab === "off" ? "on" : ""}">Not placed <span class="count quiet">${unplaced.length}</span></a></div>`;
+      if (this.tab === "on") {
+        hint.textContent = placed.length ? "Click a device to fly to it." : "Nothing placed at this site yet — use Not placed.";
+        list.innerHTML = placed.map((d) => `<div class="mrow" data-focus-key="${esc(d.key)}"><i class="dot ${CC.devState(d) === "online" ? "" : CC.devState(d) === "offline" ? "bad" : "unk"}"></i><b>${CC.cat(d).icon} ${esc(CC.devName(d))}</b><span class="mono cyan" style="font-size:12px">${esc(d.ip)}</span><span class="note sub">${esc(d.geo.note || CC.cat(d).label)}</span></div>`).join("") || `<div class="empty">No placed devices match.</div>`;
+      } else {
+        hint.textContent = "Click Place, then click where the device is on the map.";
+        list.innerHTML = unplaced.slice(0, 300).map((d) => {
+          const on = this.placing && this.placing.type === "device" && this.placing.key === d.key;
+          return `<div class="mrow"><i class="dot ${CC.devState(d) === "online" ? "" : "bad"}"></i><b>${CC.cat(d).icon} ${esc(CC.devName(d))}</b><button class="btn sm ${on ? "pri" : ""}" data-place="${esc(d.key)}" data-type="device" data-site="${esc(focus.id)}">${on ? "Placing…" : "Place"}</button><span class="note sub"><span class="mono">${esc(d.ip)}</span> · ${esc(CC.cat(d).label)}</span></div>`;
+        }).join("") || `<div class="empty"><b>Everything is placed</b>Every device seen this week has a position.</div>`;
+      }
+    }
+    siteLocMenu() {
+      const s = CC.site(this.focusSite); if (!s) return;
+      const d = CC.dialog(`<div class="dhd"><div><h2>${esc(s.name)} location</h2><p>${s.geo ? CC.fmtLatLon(s.geo) : "Not set yet"}</p></div><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div>
+        <div class="dbd"><button class="btn pri" data-a="click">🗺️ Click the spot on the map</button><button class="btn" data-a="type">Type or paste coordinates</button>${s.geo ? `<button class="btn danger" data-a="clear">Remove the site location</button>` : ""}</div>`);
+      d.addEventListener("click", async (e) => {
+        const a = e.target.closest("[data-a]"); if (!a) return;
+        d.close();
+        if (a.dataset.a === "click") this.startPlace({ type: "site", siteId: s.id, key: s.id });
+        if (a.dataset.a === "type") CC.siteLocationDialog(s.id);
+        if (a.dataset.a === "clear") { try { await CC.setSiteLocation(s.id, { clear: true }); CC.toast("Site location removed", "ok"); } catch (err) { CC.toast(err.message, "bad"); } }
+      });
+    }
+    startPlace(p) {
+      if (this.mini) return;
+      let label = "";
+      if (p.type === "site") label = (CC.site(p.siteId) || {}).name || "";
+      else { const d = (S.devices[p.siteId] || []).find((x) => x.key === p.key); label = d ? `${CC.devName(d)} (${d.ip})` : ""; }
+      if (!label) return;
+      if (p.type === "device" && this.focusSite !== p.siteId && !this.fixedSite) { this.focusSite = p.siteId; this.viewKey = ""; }
+      this.placing = p;
       document.body.classList.add("placing");
-      $("#mp-banner-t").textContent = `Click where ${CC.devName(d)} (${d.ip}) is`;
-      $("#mp-banner").hidden = false;
-      this.draw();
-    },
-    cancel() {
+      this.q("[data-banner-t]").textContent = p.type === "site" ? `Click where the ${label} site is` : `Click where ${label} is`;
+      this.q("[data-banner]").hidden = false;
+      this.render(true);
+    }
+    cancelPlace(silent) {
       this.placing = null;
       document.body.classList.remove("placing");
-      if ($("#mp-banner")) $("#mp-banner").hidden = true;
-      this.draw();
-    },
-    async save(ref, lat, lon, moved) {
-      const [siteId, key] = ref.split("|");
+      const b = this.q("[data-banner]"); if (b) b.hidden = true;
+      if (!silent) this.render(true);
+    }
+    async savePlace(lat, lon) {
+      const p = this.placing; if (!p) return;
+      if (p.type === "site") {
+        try { await CC.setSiteLocation(p.siteId, { lat, lon }); CC.toast(`${CC.site(p.siteId).name} location saved`, "ok"); this.cancelPlace(true); this.viewKey = ""; this.render(true); }
+        catch (e) { CC.toast(`Could not save: ${e.message}`, "bad"); }
+      } else await this.saveDevice(p.siteId, p.key, lat, lon, false);
+    }
+    async saveDevice(siteId, key, lat, lon, moved) {
       const d = (S.devices[siteId] || []).find((x) => x.key === key);
       try {
         await CC.setLocation(siteId, key, { lat, lon, note: (d && d.geo && d.geo.note) || "" });
         CC.toast(`${d ? CC.devName(d) : "Device"} ${moved ? "moved" : "placed"}`, "ok");
-        this.placing = null; document.body.classList.remove("placing"); $("#mp-banner").hidden = true;
-        this.focus = key; this.draw();
-      } catch (e) { CC.toast(`Could not save the position: ${e.message}`, "bad"); if (moved) this.draw(); }
-    },
-  };
-  CC.mapView = M;
+        this.cancelPlace(true); this.focusKey = key; this.render(true);
+      } catch (e) { CC.toast(`Could not save the position: ${e.message}`, "bad"); if (moved) this.render(true); }
+    }
+  }
+  CC.FleetMap = FleetMap;
 
-  /* A compact, read-only map for the Overview page: every placed device across the
-     fleet, pins by state, popups with Open device / Directions / full map. Redraws
-     only when a position or state actually changed, and never under an open popup. */
+  /* ---- adapters used by the pages ---- */
   CC.miniMap = (el) => {
-    let map = null, layer = null, sig = "", keys = "";
-    const placedDevices = () => S.sites.flatMap((s) => (S.devices[s.id] || []).filter((d) => d.geo).map((d) => Object.assign(d, { __site: s })));
-    const pinCls = (d) => { const st = CC.devState(d); return st === "online" ? (d.category && d.category !== "unknown" ? "" : "myst") : st === "offline" ? "off" : "quiet"; };
-    function build() {
-      if (map || !window.L) return;
-      const box = el.querySelector(".ovmap");
-      const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19, attribution: "Imagery © Esri, Maxar, Earthstar Geographics" });
-      const labels = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19 });
-      map = L.map(box, { layers: [sat, labels], scrollWheelZoom: false, worldCopyJump: true }).setView([-29.0, 24.5], 5);
-      map.on("focus", () => map.scrollWheelZoom.enable());
-      map.on("blur", () => map.scrollWheelZoom.disable());
-      layer = L.layerGroup().addTo(map);
-      setTimeout(() => map && map.invalidateSize(), 60);
-    }
-    function update() {
-      if (!el.isConnected) return;
-      const placed = placedDevices();
-      const nSites = new Set(placed.map((d) => d.__site.id)).size;
-      el.querySelector("[data-n]").textContent = placed.length ? `${placed.length} device${placed.length === 1 ? "" : "s"} · ${CC.plural(nSites, "site")}` : "";
-      const empty = el.querySelector(".ovmap-empty");
-      empty.hidden = !!placed.length || !S.loaded || S.sites.some((s) => s.enabled && !S.devices[s.id]);
-      el.querySelector(".ovmap").hidden = !placed.length;
-      if (!placed.length) return;
-      build();
-      if (!map) return;
-      const pop = map._popup;
-      if (pop && pop.isOpen && pop.isOpen()) return;
-      const next = placed.map((d) => `${d.__site.id}|${d.key}|${d.geo.lat},${d.geo.lon}|${pinCls(d)}`).join(";");
-      if (next === sig) return;
-      sig = next;
-      layer.clearLayers();
-      const bounds = [];
-      for (const d of placed) {
-        const ic = L.divIcon({ className: "", html: `<div class="pin ${pinCls(d)}"><span>${CC.cat(d).icon}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30], tooltipAnchor: [0, -28] });
-        const st = CC.devState(d);
-        const mk = L.marker([d.geo.lat, d.geo.lon], { icon: ic, title: `${CC.devName(d)} ${d.ip}` })
-          .bindTooltip(`${esc(CC.devName(d))} · ${esc(d.__site.name)}`, { className: "ptip", direction: "top" })
-          .bindPopup(`<div><b style="font-size:14px">${esc(CC.devName(d))}</b><br><span class="mono">${esc(d.ip)}</span> · ${esc(d.__site.name)}<br>
-            <span style="color:${st === "online" ? "#34d399" : st === "offline" ? "#fb7185" : "#94a3b8"}">● ${st === "online" ? "Online" : st === "offline" ? "Offline · " + CC.ago(d.last_seen) : "Not seen for 7+ days"}</span>${d.geo.note ? `<br><span class="muted">${esc(d.geo.note)}</span>` : ""}
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px"><button class="btn sm pri" data-open>Open device</button><a class="btn sm" href="#/map?focus=${encodeURIComponent(d.key)}">Full map</a><a class="btn sm" href="${CC.directions(d.geo)}" target="_blank" rel="noopener">Directions ↗</a></div></div>`, { maxWidth: 290 });
-        mk.on("popupopen", (e) => { e.popup.getElement().querySelector("[data-open]").onclick = () => CC.openDevice(d.__site.id, d.key); });
-        mk.addTo(layer);
-        bounds.push([d.geo.lat, d.geo.lon]);
-      }
-      // re-fit when the SET of placed devices changes (a site's list arriving, a new
-      // pin), not on a state change — so a user's own pan/zoom survives refreshes
-      const nextKeys = placed.map((d) => `${d.__site.id}|${d.key}|${d.geo.lat},${d.geo.lon}`).sort().join(";");
-      if (nextKeys !== keys) {
-        keys = nextKeys;
-        if (bounds.length === 1) map.setView(bounds[0], 17);
-        else map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
-      }
-    }
-    return { update, destroy() { if (map) { map.remove(); map = null; } sig = ""; keys = ""; } };
+    const fm = new FleetMap(el, { mini: true }).mount();
+    return { update: () => fm.softRender(), destroy: () => fm.destroy() };
+  };
+  let active = null;
+  CC.mapView = {
+    mount(el, { siteId = null } = {}) {
+      if (active) active.destroy();
+      const p = CC.params();
+      active = new FleetMap(el, { siteId }).mount({ focusSite: p.get("site"), focusKey: p.get("focus"), place: p.get("place") });
+    },
+    softDraw() { if (active) active.softRender(); },
+    destroy() { if (active) { active.destroy(); active = null; } },
   };
 
-  // fleet map
   CC.route("/map", {
     enter() {
       CC.setCrumbs([{ label: "Overview", href: "#/" }, { label: "Map" }]);
-      view().innerHTML = `<div class="ph"><div><div class="eyebrow">Fleet</div><h1>Device map</h1><p>Where each site's equipment is. Only devices that have been given a GPS position appear. Satellite imagery © Esri.</p></div></div><div id="mp-host"></div>`;
-      M.mount($("#mp-host"));
+      view().innerHTML = `<div class="ph"><div><div class="eyebrow">Fleet</div><h1>Sites &amp; equipment map</h1><p>Every site at its location — click one to see its devices. Only devices with a GPS position appear. Satellite imagery © Esri.</p></div></div><div id="mp-host"></div>`;
+      CC.mapView.mount($("#mp-host"));
     },
-    update() { M.softDraw(); },
-    leave() { M.destroy(); },
+    update() { CC.mapView.softDraw(); },
+    leave() { CC.mapView.destroy(); },
   });
 })();

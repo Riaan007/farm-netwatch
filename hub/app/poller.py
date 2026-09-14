@@ -74,6 +74,17 @@ class Poller:
                     return True
         return False
 
+    def update_site(self, site_id, **fields):
+        """Patch the cached /api/status `site` block (e.g. its GPS position set from
+        the hub) so the next overview shows it without waiting for a status poll."""
+        with self._lock:
+            self._overrides[(site_id, "@site")] = (dict(fields), time.time())
+            st = (self._snap.get(site_id) or {}).get("status")
+            if isinstance(st, dict):
+                st.setdefault("site", {}).update(fields)
+                return True
+        return False
+
     def snapshot(self, site_id):
         with self._lock:
             return dict(self._snap.get(site_id) or {})
@@ -213,6 +224,7 @@ class Poller:
 
     def _fetch_status(self, sid, site, timeout):
         t0 = time.time()
+        started = t0
         status, err = None, ""
         try:
             r = requests.get(self._base_url(site) + "/api/status", timeout=timeout,
@@ -224,6 +236,11 @@ class Poller:
         except ValueError:
             err = "bad-json"
         latency = round((time.time() - t0) * 1000, 1) if status else None
+        if status:
+            with self._lock:     # a site edit made through the hub after this request left
+                ov = self._overrides.get((sid, "@site"))
+                if ov and ov[1] >= started and time.time() - ov[1] < 600:
+                    status.setdefault("site", {}).update(ov[0])
         api_auth = siteapi.reconcile(site, status, timeout) if status else None
 
         with self._lock:

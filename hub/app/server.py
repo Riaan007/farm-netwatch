@@ -164,6 +164,7 @@ def _site_card(site):
         "id": site["id"],
         "name": (status.get("site") or {}).get("name") or site.get("name") or site["id"],
         "location": (status.get("site") or {}).get("location", ""),
+        "geo": _site_geo(status.get("site") or {}),
         "enabled": site.get("enabled", True),
         "reachable": snap.get("reachable", False),
         "error": snap.get("status_error", ""),
@@ -195,6 +196,15 @@ def _site_card(site):
         "pi_health": _pi_health_level(snap),
         "api_auth": snap.get("api_auth"),
     }
+
+
+def _site_geo(site_cfg):
+    """{lat, lon} from the site's own config (Settings -> Site GPS), or None."""
+    try:
+        lat, lon = float(site_cfg.get("lat")), float(site_cfg.get("lon"))
+    except (TypeError, ValueError):
+        return None
+    return {"lat": lat, "lon": lon} if -90 <= lat <= 90 and -180 <= lon <= 180 else None
 
 
 def _pi_health_level(snap):
@@ -921,6 +931,36 @@ def api_site_device_location(site_id, key):
     if r.ok and body.get("ok"):
         poller.update_device(site_id, key, geo=body.get("geo"))
     return jsonify(body), r.status_code
+
+
+@app.route("/api/hub/sites/<site_id>/location", methods=["POST"])
+def api_site_location(site_id):
+    """Set or clear a site's GPS position ({lat, lon} | {clear: true}). It lives in
+    the site's own config (site.lat/lon, the site page's Settings -> Site GPS), so
+    the site Pi, its backups and the hub all agree."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    if body.get("clear"):
+        lat = lon = None
+    else:
+        geo = _site_geo(body)
+        if not geo or (geo["lat"] == 0 and geo["lon"] == 0):
+            return jsonify({"ok": False, "error": "Enter a latitude between -90 and 90 and a longitude between -180 and 180"}), 400
+        lat, lon = round(geo["lat"], 6), round(geo["lon"], 6)
+    try:
+        r = requests.post(siteapi.base_url(site) + "/api/config", json={"site": {"lat": lat, "lon": lon}},
+                          headers=siteapi.headers(site), timeout=(5, 15))
+    except requests.RequestException:
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site doesn't accept this hub's key yet"}), 502
+    if not r.ok:
+        return jsonify({"ok": False, "error": f"site refused the change ({r.status_code})"}), 502
+    geo = None if lat is None else {"lat": lat, "lon": lon}
+    poller.update_site(site_id, lat=lat, lon=lon)
+    return jsonify({"ok": True, "geo": geo})
 
 
 @app.route("/api/hub/sites/<site_id>/pi-password", methods=["POST"])

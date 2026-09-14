@@ -89,9 +89,8 @@
         <div id="ov-banner"></div>
         <div id="ov-kpis"></div>
         <section class="panel" id="ov-map" style="margin-bottom:16px">
-          <div class="phd"><h2>${icon("pin")} Device map <small data-n></small></h2><a class="btn sm ghost" href="#/map">Full map ${icon("ext")}</a></div>
-          <div class="ovmap" role="application" aria-label="Map of placed devices" hidden></div>
-          <div class="ovmap-empty pbd row" hidden><span class="muted" style="flex:1 1 300px">No device is on the map yet. Give cameras, radios and switches a GPS position — paste coordinates or a Google Maps link in a device's Location, or click “Place” on the map.</span><a class="btn sm pri" href="#/map">Open the map</a></div>
+          <div class="phd"><h2>${icon("pin")} Sites &amp; equipment map <small data-n></small></h2><a class="btn sm ghost" href="#/map">Full map ${icon("ext")}</a></div>
+          <div id="ov-map-host"></div>
         </section>
         <div class="cols">
           <div><section class="panel"><div class="phd"><h2>Sites <small id="ov-sites-n"></small></h2><div class="row"><select class="sel" id="ov-sort" aria-label="Sort sites"><option value="state">Worst first</option><option value="name">By name</option></select></div></div><div class="pbd"><div class="sites" id="ov-sites"></div></div></section></div>
@@ -99,7 +98,7 @@
           <section class="panel"><div class="phd"><h2>Monitoring path</h2></div><div class="pbd" id="ov-path"></div></section></div>
         </div>`;
       $("#ov-sort").onchange = () => this.update();
-      this.mini = CC.miniMap($("#ov-map"));
+      this.mini = CC.miniMap($("#ov-map-host"));
       this.update();
     },
     leave() { if (this.mini) { this.mini.destroy(); this.mini = null; } },
