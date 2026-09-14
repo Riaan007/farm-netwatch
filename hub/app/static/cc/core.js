@@ -215,7 +215,7 @@
   CC.isInfra = (d) => ["cctv", "net", "power"].includes(CC.cat(d).group) || CC.isMikrotik(d);
   CC.isMikrotik = (d) => /mikrotik|routerboard|routeros/i.test([d.vendor, d.model, d.hostname, d.name, d.banner, d.os].join(" "));
   CC.devName = (d) =>
-    d.name || d.model || (d.hostname && !/^(localhost|unknown)$/i.test(d.hostname) ? d.hostname : "") || (d.type && !/^unknown/i.test(d.type) ? d.type : "") || (d.vendor ? d.vendor.replace(/,?\s*(Co\.|Ltd|Inc|Corp|Technology|Digital).*$/i, "") : "") || "Unknown device";
+    d.name || d.device_name || d.model || (d.hostname && !/^(localhost|unknown)$/i.test(d.hostname) ? d.hostname : "") || (d.type && !/^unknown/i.test(d.type) ? d.type : "") || (d.vendor ? d.vendor.replace(/,?\s*(Co\.|Ltd|Inc|Corp|Technology|Digital).*$/i, "") : "") || "Unknown device";
   /** online | offline (seen in the last 7 days) | quiet (not seen for 7+ days) */
   CC.devState = (d) => (d.online ? "online" : d.last_seen && CC.now() - d.last_seen < QUIET_AFTER ? "offline" : "quiet");
 

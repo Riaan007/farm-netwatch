@@ -31,7 +31,7 @@ import tunnels
 import kuma
 import notify
 from listener import listener
-from scanner import REGISTRY_PATH, scanner, default_gateway
+from scanner import REGISTRY_PATH, scanner, default_gateway, hik_own_name
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -640,6 +640,8 @@ def api_hikvision(key):
         info = res["info"]
         scanner.set_device_meta(key, serial=info.get("serialNumber") or None,
                                 model=info.get("model") or None)
+        info["display_name"] = scanner.set_device_name(key, hik_own_name(info),
+                                                       model=info.get("model"))
         if info.get("firmwareVersion"):
             scanner.registry.setdefault(key, {})["firmware"] = info["firmwareVersion"]
             scanner.save_registry()
@@ -739,6 +741,8 @@ def api_airos_wifi(key):
         # with an empty model, and "copy this login to the same model" in Bulk
         # logins can only group devices that HAVE one.
         scanner.set_device_meta(key, model=res.get("platform") or None)
+        res["display_name"] = scanner.set_device_name(key, res.get("deviceName"),
+                                                      model=res.get("platform"))
         if res.get("firmware"):
             scanner.registry.setdefault(key, {})["firmware"] = res["firmware"]
             scanner.save_registry()

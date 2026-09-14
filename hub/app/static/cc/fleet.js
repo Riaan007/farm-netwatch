@@ -181,7 +181,7 @@
       if (f.cat && CC.cat(d).group !== f.cat) return false;
       if (f.watch && !d.watch) return false;
       if (ipMatch) return ipMatch(d.ip);
-      if (q && ![CC.devName(d), d.ip, d.mac, d.vendor, d.hostname, d.model, d.category, d.type, d.__site.name].join(" ").toLowerCase().includes(q)) return false;
+      if (q && ![CC.devName(d), d.device_name, d.ip, d.mac, d.vendor, d.hostname, d.model, d.category, d.type, d.__site.name].join(" ").toLowerCase().includes(q)) return false;
       return true;
     });
   };

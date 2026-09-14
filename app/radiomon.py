@@ -118,6 +118,7 @@ class RadioMonitor:
         self._problems = []         # current problems, rebuilt every poll round
         self._busy = False
         self._warmed = False
+        self.on_identity = None     # fn(key, name, model=) — set by the scanner
         try:
             with open(STATE_PATH) as f:
                 self._state = json.load(f)
@@ -174,6 +175,11 @@ class RadioMonitor:
             self._last[key] = {"ok": False, "error": res.get("error", "failed"),
                                "ts": int(time.time()), "ip": dev.get("ip")}
             return []       # unreachable-over-SSH is the uptime monitor's story
+        if self.on_identity:
+            try:
+                self.on_identity(key, res.get("deviceName"), model=res.get("platform"))
+            except Exception as e:  # noqa: BLE001 - a name is cosmetic
+                print("radiomon: could not store device name:", e, flush=True)
         sample, links = _sample_from(res), _links_from(res)
         try:
             history.radio_record(key, sample, links)

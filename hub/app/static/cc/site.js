@@ -484,7 +484,7 @@
       <div class="dbd">
         <div class="sect"><h3>Identity</h3><dl class="kv">
           <dt>IP</dt><dd class="mono">${esc(d.ip || "—")}</dd><dt>MAC</dt><dd class="mono">${esc(d.mac || "—")}</dd>
-          <dt>Vendor</dt><dd>${esc(d.vendor || "—")}</dd>${d.model ? `<dt>Model</dt><dd>${esc(d.model)}</dd>` : ""}${d.firmware ? `<dt>Firmware</dt><dd class="mono">${esc(d.firmware)}</dd>` : ""}${d.serial ? `<dt>Serial</dt><dd class="mono">${esc(d.serial)}</dd>` : ""}
+          ${d.device_name ? `<dt>Own name</dt><dd>${esc(d.device_name)} <span class="note">(${d.device_name_src === "nvr" ? "from the NVR" : "set on the device"})</span></dd>` : ""}<dt>Vendor</dt><dd>${esc(d.vendor || "—")}</dd>${d.model ? `<dt>Model</dt><dd>${esc(d.model)}</dd>` : ""}${d.firmware ? `<dt>Firmware</dt><dd class="mono">${esc(d.firmware)}</dd>` : ""}${d.serial ? `<dt>Serial</dt><dd class="mono">${esc(d.serial)}</dd>` : ""}
           ${d.hostname ? `<dt>Hostname</dt><dd class="mono">${esc(d.hostname)}</dd>` : ""}${d.type ? `<dt>Detected as</dt><dd>${esc(d.type)} <span class="note">(${esc(d.confidence || "")} confidence)</span></dd>` : ""}
           <dt>Last seen</dt><dd>${d.online ? "now" : CC.ago(d.last_seen)} <span class="note">${esc(CC.when(d.last_seen))}</span></dd><dt>First seen</dt><dd>${esc(CC.when(d.first_seen))}</dd>
           ${(d.ports || []).length ? `<dt>Open ports</dt><dd class="mono">${d.ports.map((p) => esc(p) + ((d.services || {})[p] ? ` <span class="dim">${esc(d.services[p].split(" ")[0])}</span>` : "")).join(", ")}</dd>` : ""}

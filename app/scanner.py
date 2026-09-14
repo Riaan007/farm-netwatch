@@ -40,6 +40,38 @@ QUICK_PORTS = "22,53,80,443,515,554,631,1883,2000,5000,5060,8000,8080,8291,8443,
 # MACs rotating, DHCP reuse — are the softer "identity_rotated" problem type.
 # Old stale records whose IP was later reused fall outside the window entirely.
 CONFLICT_WINDOW_S = 24 * 3600
+# How often a camera's own display name is re-read over ISAPI (see _names_pass).
+NAME_REFRESH_S = 6 * 3600
+# Factory-default names that identify nothing — shown as if the device had none.
+_GENERIC_NAMES = {"ipcamera", "ipdome", "camera", "networkcamera", "ipc", "embeddednetdvr",
+                  "networkvideorecorder", "nvr", "dvr", "hikvision", "ubnt", "ubiquiti",
+                  "localhost", "unknown", "airmax", "unifi", "acusense"}
+_NUMBERED_DEFAULT = re.compile(r"^(camera|channel|ipcamera|ipc|cam|ch|d)\d+$")   # "Camera 01", "D1"
+
+
+def _norm_name(v):
+    return re.sub(r"[^a-z0-9]", "", (v or "").lower())
+
+
+def _useful_device_name(raw, model=None):
+    """The device's own name, or "" when it is only a factory default."""
+    name = re.sub(r"\s+", " ", str(raw or "")).strip()[:64]
+    n = _norm_name(name)
+    if (not n or n in _GENERIC_NAMES or _NUMBERED_DEFAULT.match(n)
+            or (model and n == _norm_name(model))):
+        return ""
+    return name
+
+
+def hik_own_name(info):
+    """A Hikvision device's own name: the on-video camera name when it has been
+    set, else the Device Name (usually left as "IP CAMERA")."""
+    return _useful_device_name(info.get("channelName"), info.get("model")) or info.get("deviceName")
+
+
+def _is_hik(dev):
+    v = (dev.get("vendor") or "").lower()
+    return any(x in v for x in ("hikvision", "hangzhou")) or dev.get("category") in ("camera", "nvr")
 
 # Plaintext / remote-admin ports worth flagging as a security problem.
 RISKY_PORTS = {21: "FTP", 23: "Telnet", 2323: "Telnet (alt)",
@@ -117,12 +149,18 @@ def _read_json(path, default):
         return default
 
 
+_WRITE_LOCK = threading.Lock()
+
+
 def _write_json(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp, path)
+    # Serialised: two threads saving the registry at once (e.g. the names pass
+    # workers) would otherwise race on the shared .tmp file and one would fail.
+    with _WRITE_LOCK:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, path)
 
 
 class Scanner:
@@ -144,6 +182,10 @@ class Scanner:
         # these MACs are keyed per-IP — see _resolve_key.
         self._bridge_macs = self._load_bridge_macs(config.load())
         self.registry = self._load_registry()
+        self._name_checked = {}    # key -> last time its own display name was read
+        # The radio monitor already SSHes into every radio with a login; it hands
+        # back the host name it reads so radios get a display name for free.
+        radiomon.monitor.on_identity = self.set_device_name
         self._wake = threading.Event()
         self._hb_wake = threading.Event()
         self._hub_up = None        # last-known hub VPN link state (for alerts)
@@ -531,6 +573,8 @@ class Scanner:
             "serial": reg.get("serial", ""),
             "model": reg.get("model", ""),
             "firmware": reg.get("firmware", ""),
+            "device_name": reg.get("device_name", ""),
+            "device_name_src": reg.get("device_name_src", ""),
             "link": reg.get("link", ""),
             "target": cidr, "local": is_local,
             "online": True, "status": "online",
@@ -543,8 +587,7 @@ class Scanner:
     def _enrich_hik(self, rec):
         """On a deep scan, pull model/serial/firmware from a Hikvision device
         using its saved credentials (best-effort)."""
-        v = (rec.get("vendor") or "").lower()
-        if not (any(x in v for x in ("hikvision", "hangzhou")) or rec.get("category") in ("camera", "nvr")):
+        if not _is_hik(rec):
             return
         c = creds.get(rec["key"])
         if not (c["username"] or c["password"]):
@@ -563,6 +606,75 @@ class Scanner:
             rec["hostname"] = info["deviceName"]
         self.set_device_meta(rec["key"], serial=rec.get("serial") or None,
                              model=rec.get("model") or None)
+        rec["device_name"] = self.set_device_name(rec["key"], hik_own_name(info),
+                                                  model=rec.get("model"))
+        self._name_checked[rec["key"]] = time.time()
+
+    # ---- the device's own display name -----------------------------------
+    def set_device_name(self, key, raw, model=None, src="device"):
+        """Record the name a device goes by (camera OSD name, radio host name, or
+        the name an NVR gives the camera: src="nvr") as `device_name`. Kept apart
+        from `name`, which is the operator's own label and always wins. Factory
+        defaults ("IP CAMERA", a radio still named after its model) say nothing
+        a model column doesn't, so they count as no name. The device's own name
+        beats the NVR's, and a camera with no name of its own keeps the NVR's.
+        Returns the stored value."""
+        clean = _useful_device_name(raw, model)
+        reg = self.registry.setdefault(key, {})
+        have, have_src = reg.get("device_name", ""), reg.get("device_name_src", "device")
+        if src == "nvr" and have and have_src == "device":
+            return have
+        if not clean and src == "device" and have_src == "nvr":
+            return have
+        if (have, have_src) != (clean, src if clean else have_src):
+            if clean:
+                reg["device_name"], reg["device_name_src"] = clean, src
+            else:
+                reg.pop("device_name", None)
+                reg.pop("device_name_src", None)
+            self.save_registry()
+        with self.lock:
+            if key in self.devices:
+                self.devices[key]["device_name"] = clean
+                self.devices[key]["device_name_src"] = src if clean else ""
+        return clean
+
+    def _names_pass(self, devices):
+        """Read display names from Hikvision cameras/NVRs that have a saved login.
+        A deep scan does this too, but deep scans are rare; this runs after
+        ordinary scans, at most every NAME_REFRESH_S per device. An NVR's channel
+        list also names the cameras behind it that have no login of their own.
+        Radios get theirs from the radio monitor's SSH poll."""
+        have = creds.keys_with_creds()
+        now = time.time()
+        due = [d for k, d in devices.items()
+               if k in have and d.get("online") and d.get("ip") and _is_hik(d)
+               and not radiomon.is_radio(d)
+               and now - self._name_checked.get(k, 0) >= NAME_REFRESH_S]
+        for d in due:
+            self._name_checked[d["key"]] = now
+        by_nvr = {}         # camera IP -> the name an NVR shows for it
+
+        def one(d):
+            c = creds.get(d["key"])
+            res = hikvision.fetch(d["ip"], c["username"], c["password"], timeout=5)
+            if not res.get("ok"):
+                return
+            info = res["info"]
+            self.set_device_name(d["key"], hik_own_name(info),
+                                 model=info.get("model") or d.get("model"))
+            if d.get("category") == "nvr" or re.search(r"NVR|DVR", info.get("deviceType", ""), re.I):
+                for ch in hikvision.nvr_channels(d["ip"], c["username"], c["password"]):
+                    if ch["ip"] and _useful_device_name(ch["name"]):
+                        by_nvr.setdefault(ch["ip"], ch["name"])   # first channel of a multi-lens camera
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(one, due))
+            for d in devices.values():
+                if d.get("ip") in by_nvr and _is_hik(d) and not radiomon.is_radio(d):
+                    self.set_device_name(d["key"], by_nvr[d["ip"]], model=d.get("model"), src="nvr")
+        except Exception as e:  # noqa: BLE001 - names are cosmetic; never break scanning
+            print("names pass error:", e, flush=True)
 
     # ---- local L2 discovery (mDNS / SSDP / NetBIOS / ARP) --------------
     def _apply_disc(self, rec, info):
@@ -787,6 +899,7 @@ class Scanner:
             pass
 
     def _radio_poll(self, cfg, devices, registry):
+        self._names_pass(devices)
         try:
             radiomon.monitor.poll_round(cfg, devices, registry)
         except Exception as e:  # noqa: BLE001 - telemetry must never break scanning

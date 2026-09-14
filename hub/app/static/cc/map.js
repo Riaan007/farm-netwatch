@@ -185,7 +185,7 @@
       const q = this.query(), show = (this.q("[data-show]") || {}).value || "";
       const ipm = CC.ipMatcher(q);
       return (S.devices[siteId] || []).map((d) => Object.assign(d, { __site: s })).filter((d) => {
-        if (q && !(ipm ? ipm(d.ip) : [CC.devName(d), d.ip, d.mac, d.vendor, d.model, (d.geo || {}).note].join(" ").toLowerCase().includes(q))) return false;
+        if (q && !(ipm ? ipm(d.ip) : [CC.devName(d), d.device_name, d.ip, d.mac, d.vendor, d.model, (d.geo || {}).note].join(" ").toLowerCase().includes(q))) return false;
         const st = CC.devState(d);
         if (show === "online" && st !== "online") return false;
         if (show === "offline" && st !== "offline") return false;

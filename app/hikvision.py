@@ -44,6 +44,9 @@ def fetch(ip, username, password, timeout=6):
             if r.status_code == 200:
                 info = _parse(r.text)
                 if info:
+                    name = _channel_name(f"{scheme}://{ip}", auth, timeout)
+                    if name:
+                        info["channelName"] = name
                     return {"ok": True, "info": info}
                 last = "200 OK but no ISAPI device-info (not a Hikvision device?)"
             elif r.status_code in (401, 403):
@@ -51,6 +54,56 @@ def fetch(ip, username, password, timeout=6):
             else:
                 last = f"HTTP {r.status_code}"
     return {"ok": False, "error": last}
+
+
+def _child(el, tag):
+    """Text of el's direct child <tag> (namespace-agnostic), or ''."""
+    for c in el:
+        if c.tag.rsplit("}", 1)[-1] == tag and c.text:
+            return c.text.strip()
+    return ""
+
+
+def _channel_name(base, auth, timeout):
+    """The camera name shown on the video (OSD) — what installers actually set.
+    The deviceInfo `deviceName` is almost always left as "IP CAMERA". NVRs have
+    no local input channel, so this is simply '' for them."""
+    try:
+        r = requests.get(f"{base}/ISAPI/System/Video/inputs/channels/1", auth=auth,
+                         timeout=timeout, verify=False)
+        if r.status_code != 200:
+            return ""
+        return _child(ET.fromstring(r.text), "name")
+    except (requests.RequestException, ET.ParseError):
+        return ""
+
+
+def nvr_channels(ip, username, password, timeout=8):
+    """An NVR's camera list: [{'id', 'name', 'ip'}]. The channel names are what
+    the operator sees on the recorder, and cover cameras whose own login was
+    never saved. [] if this isn't an NVR or the login fails."""
+    for scheme in ("http", "https"):
+        for auth in (HTTPDigestAuth(username, password), HTTPBasicAuth(username, password)):
+            try:
+                r = requests.get(f"{scheme}://{ip}/ISAPI/ContentMgmt/InputProxy/channels",
+                                 auth=auth, timeout=timeout, verify=False)
+            except requests.RequestException:
+                continue
+            if r.status_code != 200:
+                continue
+            try:
+                root = ET.fromstring(r.text)
+            except ET.ParseError:
+                return []
+            out = []
+            for ch in root.iter():
+                if ch.tag.rsplit("}", 1)[-1] != "InputProxyChannel":
+                    continue
+                cam_ip = next((e.text.strip() for e in ch.iter()
+                               if e.tag.rsplit("}", 1)[-1] == "ipAddress" and e.text), "")
+                out.append({"id": _child(ch, "id"), "name": _child(ch, "name"), "ip": cam_ip})
+            return out
+    return []
 
 
 # ---- network config (read + change the camera's IP) ----------------------

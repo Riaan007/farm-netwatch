@@ -1317,7 +1317,7 @@
         const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         const nowS = () => Math.floor(Date.now()/1000);
         function devState(d){ return d.online ? 'online' : (d.last_seen && nowS() - d.last_seen < QUIET_AFTER ? 'offline' : 'quiet'); }
-        function devTitle(d){ return d.name || d.model || (d.type && !/^unknown/i.test(d.type) ? d.type : '') || d.hostname || (d.vendor ? d.vendor.replace(/,?\s*(Co\.|Ltd|Inc|Corp|Technology|Digital).*$/i,'') : '') || 'Unknown device'; }
+        function devTitle(d){ return d.name || d.device_name || d.model || (d.type && !/^unknown/i.test(d.type) ? d.type : '') || d.hostname || (d.vendor ? d.vendor.replace(/,?\s*(Co\.|Ltd|Inc|Corp|Technology|Digital).*$/i,'') : '') || 'Unknown device'; }
         function vendorShort(v){ return (v||'').replace(/,?\s*(Co\.,?\s*Ltd\.?|Ltd\.?|Inc\.?|Corp\.?|Corporation)\s*$/i,'').replace(/\s+(Digital\s+)?Technolog(y|ies)(\s+Co.*)?$/i,'').replace(/^Hangzhou\s+/i,'').trim(); }
         /* IP search, same rules as the hub Control Center:
            192.168.0.1 exact · .31 ends in · 192.168.0. subnet · 192.168.0.1* prefix · 88.3 octet-aligned */
@@ -1350,7 +1350,7 @@
             if(!q) return true;
             const m = ipMatcher(q);
             if(m) return m(d.ip);
-            return [devTitle(d), d.name, d.type, d.ip, d.mac, d.vendor, d.model, d.hostname, catLabel[d.category], d.serial].join(' ').toLowerCase().includes(q);
+            return [devTitle(d), d.name, d.device_name, d.type, d.ip, d.mac, d.vendor, d.model, d.hostname, catLabel[d.category], d.serial].join(' ').toLowerCase().includes(q);
         }
         function sortDevices(list){
             const rank = { offline:0, online:1, quiet:2 };
@@ -1961,13 +1961,14 @@
             const extra = document.getElementById('modal-extra-info');
             if(dev){
                 extra.classList.remove('hidden');
-                let txt = `MAC:      ${dev.mac||'n/a (routed host)'}\nHostname: ${dev.hostname||'—'}\nVendor:   ${dev.vendor||'—'}\nModel:    ${dev.model||'—'}\nSerial:   ${dev.serial||'—'}\nPorts:    ${(dev.ports||[]).join(', ')||'none'}\nOS guess: ${dev.os||'—'}\nNetwork:  ${dev.target}${dev.local===false?' (remote)':''}`;
+                let txt = (dev.device_name ? `Own name: ${dev.device_name}${dev.device_name_src==='nvr' ? ' (from the NVR)' : ''}\n` : '') + `MAC:      ${dev.mac||'n/a (routed host)'}\nHostname: ${dev.hostname||'—'}\nVendor:   ${dev.vendor||'—'}\nModel:    ${dev.model||'—'}\nSerial:   ${dev.serial||'—'}\nPorts:    ${(dev.ports||[]).join(', ')||'none'}\nOS guess: ${dev.os||'—'}\nNetwork:  ${dev.target}${dev.local===false?' (remote)':''}`;
                 if(dev.banner&&dev.banner.title) txt += `\nWeb title: ${dev.banner.title}`;
                 const linked = DATA.devices.filter(o => o.key!==dev.key && (o.link===dev.key || (dev.link && (o.link===dev.link || o.key===dev.link))));
                 if(dev.link || linked.length) txt += `\nLinked:   ` + ([dev.link, ...linked.map(o=>o.ip)].filter(Boolean).join(', '));
                 if(dev.services && Object.keys(dev.services).length) txt += `\n\nServices:\n`+Object.entries(dev.services).map(([p,s])=>`  ${p}: ${s}`).join('\n');
                 document.getElementById('modal-extended').innerText = txt;
                 document.getElementById('edit-name').value = dev.name||'';
+                document.getElementById('edit-name').placeholder = dev.device_name ? `${dev.device_name} (${dev.device_name_src==='nvr' ? 'from the NVR' : "the device's own name"})` : 'e.g. Front Gate Camera';
                 document.getElementById('edit-category').value = dev.category||'unknown';
                 document.getElementById('edit-watch').checked = !!dev.watch;
                 document.getElementById('edit-serial').value = dev.serial||'';
@@ -2301,7 +2302,7 @@
         }
         function closeBulkCreds(){ document.getElementById('bulkcred-modal').classList.add('hidden'); }
         function devLabel(d){
-            return (d.name || d.hostname || d.ip) + ' · ' + d.ip + (d.model ? ' · '+d.model : (d.vendor ? ' · '+d.vendor : ''));
+            return (d.name || d.device_name || d.hostname || d.ip) + ' · ' + d.ip + (d.model ? ' · '+d.model : (d.vendor ? ' · '+d.vendor : ''));
         }
         function bulkCredMode(mode){
             BULK_MODE = mode;
@@ -2355,7 +2356,7 @@
                 return '<label class="flex items-center gap-2 p-2 text-xs cursor-pointer hover:bg-white/5">'
                     + '<input type="checkbox" class="w-4 h-4 shrink-0" data-bulkkey="'+wifiEsc(d.key)+'" '+(checked?'checked':'')+' onchange="BULK_CHECKED[this.dataset.bulkkey]=this.checked">'
                     + '<span class="font-mono text-slate-400 w-28 shrink-0">'+wifiEsc(d.ip)+'</span>'
-                    + '<span class="flex-grow truncate">'+wifiEsc(d.name || d.hostname || '—')+'</span>'
+                    + '<span class="flex-grow truncate">'+wifiEsc(d.name || d.device_name || d.hostname || '—')+'</span>'
                     + '<span class="text-slate-500 truncate hidden sm:inline">'+wifiEsc(d.model || d.vendor || '')+'</span>'
                     + (d.has_credentials ? '<span title="Already has a login">🔑</span>' : '')
                     + '</label>';
@@ -2767,7 +2768,7 @@
             const show = document.getElementById('map-show').value;
             return DATA.devices.filter(d => (!q || matchesQueryText(d, q)) && (!show || matchesFilter(d, show)));
         }
-        function matchesQueryText(d, q){ const m = ipMatcher(q); return m ? m(d.ip) : [devTitle(d), d.ip, d.mac, d.vendor, d.model, d.hostname, (d.geo||{}).note].join(' ').toLowerCase().includes(q.toLowerCase()); }
+        function matchesQueryText(d, q){ const m = ipMatcher(q); return m ? m(d.ip) : [devTitle(d), d.device_name, d.ip, d.mac, d.vendor, d.model, d.hostname, (d.geo||{}).note].join(' ').toLowerCase().includes(q.toLowerCase()); }
         function pinClass(d){ const st = devState(d); return st === 'online' ? (isIdentified(d) ? '' : 'myst') : st === 'offline' ? 'off' : 'quiet'; }
         function renderMap(){
             if(!MAP) return;
