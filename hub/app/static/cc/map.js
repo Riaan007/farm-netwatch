@@ -227,7 +227,7 @@
         const c = CC.siteCounts(s);
         const nPlaced = (S.devices[s.id] || []).filter((d) => d.geo).length;
         const icon = here
-          ? L.divIcon({ className: "", html: `<div class="siteanchor" aria-label="${esc(s.name)} site location">🏠</div>`, iconSize: [26, 26], iconAnchor: [13, 13] })
+          ? L.divIcon({ className: "sitepin-wrap", html: `<div class="sitepin here"><span class="home">🏠</span><b>${esc(s.name)}</b></div>`, iconSize: null })
           : L.divIcon({ className: "sitepin-wrap", html: `<div class="sitepin ${g.exact ? "" : "approx"}"><i class="dot ${stateDot[st]}"></i><b>${esc(s.name)}</b><span>${nPlaced} 📍</span></div>`, iconSize: null });
         const mk = L.marker([g.lat, g.lon], { icon, zIndexOffset: here ? -1000 : 1000, keyboard: true, title: s.name });
         mk.bindTooltip(`${esc(s.name)} · ${esc(CC.STATE[st].label)}${c.total != null ? ` · ${c.online}/${c.total} online` : ""}${g.exact ? "" : " · approximate position — set the site location"}${here ? "" : " · click to show its devices"}`, { className: "ptip", direction: "top", offset: [0, -20] });

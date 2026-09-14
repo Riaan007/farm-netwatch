@@ -268,6 +268,12 @@
         .leaflet-control-layers-expanded { color: #e2e8f0; }
         .leaflet-control-attribution { background: rgba(6,10,19,.75) !important; color: #94a3b8 !important; font-size: 10px; }
         .leaflet-control-attribution a { color: #cbd5e1 !important; }
+        /* the site's own marker: a labelled pill with a pointer, under the device pins */
+        .nw-sitepin-wrap { width: 0 !important; height: 0 !important; background: none; border: 0; }
+        .nw-sitepin { position: absolute; left: 0; top: 0; transform: translate(-50%, calc(-100% - 9px)); display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .7rem .3rem .55rem; border-radius: 999px; background: rgba(8,14,28,.92); border: 2px solid #e2e8f0; color: #f8fafc; font-size: 13px; white-space: nowrap; box-shadow: 0 6px 18px rgba(0,0,0,.55); cursor: pointer; }
+        .nw-sitepin::after { content: ""; position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); border: 7px solid transparent; border-top-color: #e2e8f0; border-bottom: 0; }
+        .nw-sitepin b { font-weight: 700; }
+        .nw-sitepin:hover { border-color: #22d3ee; } .nw-sitepin:hover::after { border-top-color: #22d3ee; }
         .nw-mlist { max-height: calc(100vh - 330px); min-height: 200px; overflow-y: auto; }
         .nw-mitem { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: .2rem .6rem; align-items: center; padding: .55rem 1rem; border-top: 1px solid rgba(148,163,184,.08); cursor: pointer; }
         .nw-mitem:hover { background: rgba(34,211,238,.05); }
@@ -492,6 +498,7 @@
                 <label class="nw-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm9 3-4.3-4.3"/></svg><span class="sr-only">Find a device</span><input id="map-q" type="search" placeholder="Find a device…" autocomplete="off"></label>
                 <select id="map-show" class="nw-sel" aria-label="Show"><option value="">All placed devices</option><option value="online">Online</option><option value="offline">Offline</option><option value="camera">Cameras &amp; NVRs</option><option value="network">Network</option></select>
                 <label class="nw-ib" style="cursor:pointer"><input id="map-labels" type="checkbox" style="accent-color:#22d3ee"> <span class="lbl">Names</span></label>
+                <button class="nw-ib" id="map-site" onclick="mapSiteButton()" title="Where this site is — click the spot on the map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7M5 10v10h14V10M9 20v-6h6v6"/></svg><span class="lbl" id="map-site-lbl">Site location</span></button>
                 <button class="nw-ib" id="map-edit" title="Unlock the pins so you can drag them"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11h12v10H6zM9 11V8a3 3 0 0 1 6 0"/></svg><span class="lbl" id="map-edit-lbl">Move pins</span></button>
                 <button class="nw-ib" onclick="mapFit(true)" title="Zoom to all pins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><span class="lbl">Fit</span></button>
             </div>
@@ -2734,7 +2741,7 @@
             const site = (STATUS && STATUS.site) || {};
             if(site.lat != null && site.lon != null) MAP.setView([site.lat, site.lon], 16);
             else MAP.setView([-29.0, 24.5], 5);            // South Africa until something is placed
-            MAP.on('click', (e) => { if(MAP_PLACING) placeDeviceAt(MAP_PLACING, e.latlng.lat, e.latlng.lng); });
+            MAP.on('click', (e) => { if(MAP_PLACING === '@site') placeSiteAt(e.latlng.lat, e.latlng.lng); else if(MAP_PLACING) placeDeviceAt(MAP_PLACING, e.latlng.lat, e.latlng.lng); });
             document.getElementById('map-q').addEventListener('input', () => renderMap());
             document.getElementById('map-show').addEventListener('change', () => { MAP_FITTED = false; renderMap(); });
             document.getElementById('map-labels').addEventListener('change', () => renderMap());
@@ -2779,11 +2786,27 @@
                 bounds.push([d.geo.lat, d.geo.lon]);
                 if(MAP_FOCUS === d.key){ setTimeout(() => { MAP.setView([d.geo.lat, d.geo.lon], Math.max(MAP.getZoom(), 18)); mk.openPopup(); }, 50); }
             });
+            const site = siteGeo();
+            if(site){
+                const sname = (STATUS && STATUS.site && STATUS.site.name) || 'This site';
+                const mk = L.marker([site.lat, site.lon], {
+                    icon: L.divIcon({ className: 'nw-sitepin-wrap', html: `<div class="nw-sitepin"><span>🏠</span><b>${esc(sname)}</b></div>`, iconSize: null }),
+                    zIndexOffset: -1000, draggable: MAP_EDIT, keyboard: true, title: sname + ' — site location' });
+                mk.bindTooltip(esc(((STATUS && STATUS.site && STATUS.site.location) || sname) + ' · site location'), { className: 'nw-tip', direction: 'top', offset: [0, -22] });
+                mk.bindPopup(() => sitePopup(site), { maxWidth: 280 });
+                mk.on('dragend', (e) => { const ll = e.target.getLatLng(); placeSiteAt(ll.lat, ll.lng, true); });
+                mk.addTo(MAP_LAYER);
+                bounds.push([site.lat, site.lon]);
+            }
+            const lbl = document.getElementById('map-site-lbl');
+            lbl.textContent = site ? 'Site location' : 'Set site location';
+            document.getElementById('map-site').classList.toggle('on', !site);
             if(!MAP_FITTED && !MAP_FOCUS && bounds.length){ mapFit(false, bounds); MAP_FITTED = true; }
             const nPlaced = DATA.devices.filter(d => d.geo).length;
-            document.getElementById('map-sub').textContent = nPlaced
-                ? `${nPlaced} of ${DATA.devices.length} devices placed · only devices with a GPS position appear on the map · imagery © Esri`
-                : 'No device has a GPS position yet — pick one under "Not placed" and click where it is on the map.';
+            document.getElementById('map-sub').textContent = (nPlaced
+                ? `${nPlaced} of ${DATA.devices.length} devices placed · only devices with a GPS position appear on the map`
+                : 'No device has a GPS position yet — pick one under "Not placed" and click where it is on the map.')
+                + (site ? '' : ' · this site has no location yet');
             document.getElementById('map-n-on').textContent = placed.length;
             document.getElementById('map-n-off').textContent = unplaced.filter(d => devState(d) !== 'quiet').length;
             renderMapList(placed, unplaced);
@@ -2821,12 +2844,58 @@
         function mapTab(t){ MAP_TAB = t; document.getElementById('map-tab-on').classList.toggle('on', t==='on'); document.getElementById('map-tab-off').classList.toggle('on', t==='off'); renderMap(); }
         function mapFit(animate, bounds){
             if(!MAP) return;
-            bounds = bounds || mapDevices().filter(d => d.geo).map(d => [d.geo.lat, d.geo.lon]);
+            bounds = bounds || mapDevices().filter(d => d.geo).map(d => [d.geo.lat, d.geo.lon]).concat(siteGeo() ? [[siteGeo().lat, siteGeo().lon]] : []);
             if(!bounds.length) return;
             if(bounds.length === 1) MAP.setView(bounds[0], 18, {animate: !!animate});
             else MAP.fitBounds(bounds, { padding: [50, 50], maxZoom: 19, animate: !!animate });
         }
         function mapFocus(key){ MAP_FOCUS = key; renderMap(); }
+        function siteGeo(){
+            const st = (STATUS && STATUS.site) || {};
+            const lat = parseFloat(st.lat), lon = parseFloat(st.lon);
+            return (isFinite(lat) && isFinite(lon) && !(lat === 0 && lon === 0)) ? { lat, lon } : null;
+        }
+        function sitePopup(g){
+            const st = (STATUS && STATUS.site) || {};
+            return `<div><b style="font-size:14px">🏠 ${esc(st.name || 'This site')}</b><br>
+                ${st.location ? `<span style="color:#94a3b8">${esc(st.location)}</span><br>` : ''}
+                <span style="color:#64748b;font-size:11.5px;font-family:ui-monospace,monospace">${fmtLatLon(g)}</span>
+                <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.55rem">
+                    <button class="nw-btn sm" onclick="MAP.closePopup(); mapStartPlaceSite()">Move</button>
+                    <a class="nw-btn sm" href="https://www.google.com/maps/dir/?api=1&destination=${g.lat},${g.lon}" target="_blank" rel="noopener">Directions ↗</a>
+                    <button class="nw-btn sm danger" onclick="MAP.closePopup(); clearSiteLocation()">Remove</button>
+                </div></div>`;
+        }
+        function mapSiteButton(){
+            const g = siteGeo();
+            if(g && MAP){ MAP.setView([g.lat, g.lon], Math.max(MAP.getZoom(), 17)); setTimeout(() => MAP_LAYER.eachLayer(l => { const ll = l.getLatLng(); if(ll.lat === g.lat && ll.lng === g.lon) l.openPopup(); }), 300); }
+            else mapStartPlaceSite();
+        }
+        function mapStartPlaceSite(){
+            MAP_PLACING = '@site';
+            document.body.classList.add('nw-placing');
+            document.getElementById('map-banner-txt').textContent = `Click where ${(STATUS && STATUS.site && STATUS.site.name) || 'the site'} is`;
+            document.getElementById('map-banner').hidden = false;
+        }
+        async function saveSite(patch){
+            // /api/config needs the Pi login (or the hub) — auth.js asks for it if needed
+            const r = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({site: patch})});
+            if(!r.ok) throw new Error(r.status === 401 ? 'log in with the Pi password to change the site location' : 'not saved (' + r.status + ')');
+            if(STATUS){ STATUS.site = {...(STATUS.site || {}), ...patch}; }
+            SETTINGS_LOADED = false;          // the Settings page re-reads it next time
+        }
+        async function placeSiteAt(lat, lon, moved){
+            try {
+                await saveSite({ lat: +lat.toFixed(6), lon: +lon.toFixed(6) });
+                nwToast(`Site location ${moved ? 'moved' : 'saved'}`, 'ok');
+                mapCancelPlace(true); renderMap();
+            } catch(e){ nwToast('Could not save the site location: ' + e.message, 'bad'); if(moved) renderMap(); }
+        }
+        async function clearSiteLocation(){
+            if(!confirm('Remove this site\'s location from the map?')) return;
+            try { await saveSite({ lat: null, lon: null }); nwToast('Site location removed', 'ok'); renderMap(); }
+            catch(e){ nwToast(e.message, 'bad'); }
+        }
         function mapStartPlace(key){
             const d = DEV_BY_KEY[key]; if(!d) return;
             MAP_PLACING = key;
