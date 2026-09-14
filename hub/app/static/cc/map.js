@@ -207,6 +207,66 @@
   };
   CC.mapView = M;
 
+  /* A compact, read-only map for the Overview page: every placed device across the
+     fleet, pins by state, popups with Open device / Directions / full map. Redraws
+     only when a position or state actually changed, and never under an open popup. */
+  CC.miniMap = (el) => {
+    let map = null, layer = null, sig = "", keys = "";
+    const placedDevices = () => S.sites.flatMap((s) => (S.devices[s.id] || []).filter((d) => d.geo).map((d) => Object.assign(d, { __site: s })));
+    const pinCls = (d) => { const st = CC.devState(d); return st === "online" ? (d.category && d.category !== "unknown" ? "" : "myst") : st === "offline" ? "off" : "quiet"; };
+    function build() {
+      if (map || !window.L) return;
+      const box = el.querySelector(".ovmap");
+      const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19, attribution: "Imagery © Esri, Maxar, Earthstar Geographics" });
+      const labels = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19 });
+      map = L.map(box, { layers: [sat, labels], scrollWheelZoom: false, worldCopyJump: true }).setView([-29.0, 24.5], 5);
+      map.on("focus", () => map.scrollWheelZoom.enable());
+      map.on("blur", () => map.scrollWheelZoom.disable());
+      layer = L.layerGroup().addTo(map);
+      setTimeout(() => map && map.invalidateSize(), 60);
+    }
+    function update() {
+      if (!el.isConnected) return;
+      const placed = placedDevices();
+      const nSites = new Set(placed.map((d) => d.__site.id)).size;
+      el.querySelector("[data-n]").textContent = placed.length ? `${placed.length} device${placed.length === 1 ? "" : "s"} · ${CC.plural(nSites, "site")}` : "";
+      const empty = el.querySelector(".ovmap-empty");
+      empty.hidden = !!placed.length || !S.loaded || S.sites.some((s) => s.enabled && !S.devices[s.id]);
+      el.querySelector(".ovmap").hidden = !placed.length;
+      if (!placed.length) return;
+      build();
+      if (!map) return;
+      const pop = map._popup;
+      if (pop && pop.isOpen && pop.isOpen()) return;
+      const next = placed.map((d) => `${d.__site.id}|${d.key}|${d.geo.lat},${d.geo.lon}|${pinCls(d)}`).join(";");
+      if (next === sig) return;
+      sig = next;
+      layer.clearLayers();
+      const bounds = [];
+      for (const d of placed) {
+        const ic = L.divIcon({ className: "", html: `<div class="pin ${pinCls(d)}"><span>${CC.cat(d).icon}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30], tooltipAnchor: [0, -28] });
+        const st = CC.devState(d);
+        const mk = L.marker([d.geo.lat, d.geo.lon], { icon: ic, title: `${CC.devName(d)} ${d.ip}` })
+          .bindTooltip(`${esc(CC.devName(d))} · ${esc(d.__site.name)}`, { className: "ptip", direction: "top" })
+          .bindPopup(`<div><b style="font-size:14px">${esc(CC.devName(d))}</b><br><span class="mono">${esc(d.ip)}</span> · ${esc(d.__site.name)}<br>
+            <span style="color:${st === "online" ? "#34d399" : st === "offline" ? "#fb7185" : "#94a3b8"}">● ${st === "online" ? "Online" : st === "offline" ? "Offline · " + CC.ago(d.last_seen) : "Not seen for 7+ days"}</span>${d.geo.note ? `<br><span class="muted">${esc(d.geo.note)}</span>` : ""}
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px"><button class="btn sm pri" data-open>Open device</button><a class="btn sm" href="#/map?focus=${encodeURIComponent(d.key)}">Full map</a><a class="btn sm" href="${CC.directions(d.geo)}" target="_blank" rel="noopener">Directions ↗</a></div></div>`, { maxWidth: 290 });
+        mk.on("popupopen", (e) => { e.popup.getElement().querySelector("[data-open]").onclick = () => CC.openDevice(d.__site.id, d.key); });
+        mk.addTo(layer);
+        bounds.push([d.geo.lat, d.geo.lon]);
+      }
+      // re-fit when the SET of placed devices changes (a site's list arriving, a new
+      // pin), not on a state change — so a user's own pan/zoom survives refreshes
+      const nextKeys = placed.map((d) => `${d.__site.id}|${d.key}|${d.geo.lat},${d.geo.lon}`).sort().join(";");
+      if (nextKeys !== keys) {
+        keys = nextKeys;
+        if (bounds.length === 1) map.setView(bounds[0], 17);
+        else map.fitBounds(bounds, { padding: [40, 40], maxZoom: 18 });
+      }
+    }
+    return { update, destroy() { if (map) { map.remove(); map = null; } sig = ""; keys = ""; } };
+  };
+
   // fleet map
   CC.route("/map", {
     enter() {

@@ -53,6 +53,7 @@ class Poller:
         self._wake = threading.Event()
         self._lock = threading.Lock()
         self._snap = {}        # site_id -> snapshot dict
+        self._overrides = {}   # (site_id, key) -> (fields, ts): edits made through the hub
         self._due = {}         # site_id -> {class: next_due_ts}
         self._last_prune = 0
 
@@ -61,6 +62,11 @@ class Poller:
         """Patch one device in the cached snapshot (e.g. a location just set from
         the hub) so it shows before the next device poll."""
         with self._lock:
+            # Remembered briefly: a device poll that was already in flight carries
+            # the old values and would otherwise undo this until the next poll.
+            now = time.time()
+            self._overrides = {k: v for k, v in self._overrides.items() if now - v[1] < 600}
+            self._overrides[(site_id, key)] = (dict(fields), now)
             payload = (self._snap.get(site_id) or {}).get("devices") or {}
             for d in payload.get("devices") or []:
                 if d.get("key") == key:
@@ -333,6 +339,7 @@ class Poller:
                         tags=["white_check_mark"])
 
     def _fetch_devices(self, sid, site, timeout):
+        started = time.time()
         try:
             r = requests.get(self._base_url(site) + "/api/devices", timeout=timeout)
             r.raise_for_status()
@@ -341,6 +348,12 @@ class Poller:
             return                                     # keep last-known-good
         fetched = int(time.time())
         with self._lock:
+            # re-apply hub edits made after this request left (its data predates them)
+            late = {k: f for (s2, k), (f, ts) in self._overrides.items() if s2 == sid and ts >= started}
+            if late:
+                for d in payload.get("devices") or []:
+                    if d.get("key") in late:
+                        d.update(late[d["key"]])
             snap = self._snap.setdefault(sid, {})
             snap["devices"] = payload
             snap["devices_fetched"] = fetched
