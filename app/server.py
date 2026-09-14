@@ -463,6 +463,19 @@ def api_radio_links():
                        "rows": rows} for peer, rows in by_peer.items()],
         })
     diag = wifidiag.build(radios, poll_gap_s=max(1, int(rcfg.get("poll_min", 15))) * 60)
+    # For the hub over a farm's link: ?lite=1 drops every chart series (the
+    # findings and figures stay), ?link=<id> returns only that link with its
+    # series — a Control Center fetches the summary on a timer and one link's
+    # charts only when someone opens it.
+    only = request.args.get("link")
+    if only:
+        diag["links"] = [L for L in diag["links"] if L["id"] == only]
+    if request.args.get("lite") == "1" or only:
+        for L in diag["links"]:
+            if not only:
+                L.pop("series", None)
+        for r in diag["radios"]:
+            r.pop("series", None)
     return jsonify({"ok": True, "hours": hours, "problems": snap["problems"], "polling": snap["busy"],
                     "enabled": bool(rcfg.get("enabled", True)),
                     "poll_min": int(rcfg.get("poll_min", 15)), **diag})

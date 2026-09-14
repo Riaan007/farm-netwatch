@@ -9,6 +9,7 @@ import io
 import ipaddress
 import os
 import re
+import threading
 import time
 from urllib.parse import quote
 
@@ -1027,6 +1028,104 @@ def api_site_wifi(site_id):
         return jsonify(r.json())
     except (requests.RequestException, ValueError) as e:
         return jsonify({"ok": False, "error": f"Site unreachable: {e}"}), 502
+
+
+_WIFI_CACHE = {}           # (site, hours, lite, link) -> (ts, payload)
+_WIFI_CACHE_LOCK = threading.Lock()
+_WIFI_VERSION = {}         # site -> (ts, legacy: bool, problems) — re-checked every 6 h
+
+
+@app.route("/api/hub/sites/<site_id>/wifi-links", methods=["GET"])
+def api_site_wifi_links(site_id):
+    """A site's wireless links with the site's own diagnosis (wifidiag).
+
+    Cached for a few minutes: the radios are only read every 15 min, the
+    payload crosses a farm's link, and several Control Center tabs ask at once.
+    `lite=1` (default) leaves out chart series; `link=<id>` returns one link
+    with its series. A site on an older Netwatch answers without a diagnosis:
+    reported as `legacy` so the page can say to update it.
+    """
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    try:
+        hours = max(1, min(int(request.args.get("hours", 168)), 24 * 90))
+    except ValueError:
+        hours = 168
+    link = (request.args.get("link") or "").strip()[:80]
+    lite = request.args.get("lite", "1") == "1" and not link
+    key = (site_id, hours, lite, link)
+    fresh = request.args.get("fresh") == "1"
+    now = time.time()
+    with _WIFI_CACHE_LOCK:
+        hit = _WIFI_CACHE.get(key)
+    if hit and not fresh and now - hit[0] < 240:
+        return jsonify({**hit[1], "cached_at": int(hit[0])})
+    poll = hubconfig.load()["poll"]
+    to = (poll["timeout_connect_s"], max(poll["timeout_read_s"], 30))
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    # An older site ignores lite/link and would send every chart series for the
+    # whole window (~400 kB for a week) on each refresh. Probe with one hour
+    # first, and remember the answer for a few hours.
+    ver = _WIFI_VERSION.get(site_id)
+    if not ver or now - ver[0] > 6 * 3600:
+        try:
+            pr = requests.get(f"{base}/api/radio/links", params={"hours": 1, "lite": 1}, timeout=to)
+            if pr.status_code == 404:
+                ver = (now, True, [])
+            else:
+                pr.raise_for_status()
+                pj = pr.json()
+                ver = (now, "summary" not in pj, pj.get("problems") or [])
+            _WIFI_VERSION[site_id] = ver
+        except (requests.RequestException, ValueError) as e:
+            if hit:
+                return jsonify({**hit[1], "cached_at": int(hit[0]), "stale": True})
+            return jsonify({"ok": False, "error": f"Site unreachable: {e}"}), 502
+    if ver[1]:
+        return jsonify({"ok": True, "legacy": True, "reason": "no-diagnosis", "problems": ver[2],
+                        "error": "This site's Netwatch is older than the link diagnosis — update it.",
+                        "cached_at": int(ver[0])})
+    params = {"hours": hours}
+    if link:
+        params["link"] = link
+    elif lite:
+        params["lite"] = 1
+    try:
+        r = requests.get(f"{base}/api/radio/links", params=params, timeout=to)
+        r.raise_for_status()
+        j = r.json()
+    except (requests.RequestException, ValueError) as e:
+        if hit:           # a farm link blip: show the last answer, marked stale
+            return jsonify({**hit[1], "cached_at": int(hit[0]), "stale": True})
+        return jsonify({"ok": False, "error": f"Site unreachable: {e}"}), 502
+    out = {k: j.get(k) for k in ("hours", "problems", "polling", "enabled", "poll_min",
+                                 "links", "radios", "fixes", "shared", "summary")}
+    out["ok"] = True
+    with _WIFI_CACHE_LOCK:
+        _WIFI_CACHE[key] = (now, out)
+        for k in [k for k, v in _WIFI_CACHE.items() if now - v[0] > 3600]:
+            _WIFI_CACHE.pop(k, None)
+    return jsonify({**out, "cached_at": int(now)})
+
+
+@app.route("/api/hub/sites/<site_id>/radio-poll", methods=["POST"])
+def api_site_radio_poll(site_id):
+    """Ask a site to read every radio now (it runs in the background there)."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    base = f"http://{site['vpn_ip']}:{site.get('netwatch_port', 8090)}"
+    try:
+        r = requests.post(f"{base}/api/radio/poll", timeout=(poll["timeout_connect_s"], poll["timeout_read_s"]))
+        r.raise_for_status()
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"Site unreachable: {e}"}), 502
+    with _WIFI_CACHE_LOCK:
+        for k in [k for k in _WIFI_CACHE if k[0] == site_id]:
+            _WIFI_CACHE.pop(k, None)
+    return jsonify({"ok": True, "started": True})
 
 
 @app.route("/api/hub/sites/<site_id>/wifi-doctor", methods=["POST"])

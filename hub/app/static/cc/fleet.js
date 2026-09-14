@@ -75,6 +75,8 @@
       ${kpi("Key equipment up", have ? `${infraUp}<small>/${infra}</small>` : "—", "Cameras, recorders, network & power seen this week", infra && infraUp < infra ? "is-warn" : "is-ok", "#/devices?scope=infra&state=offline")}
       ${kpi("Devices online", have ? `${online}<small>/${total}</small>` : "—", `${offline} offline this week${quiet ? ` · ${quiet} gone quiet` : ""}`, "", "#/devices")}
       ${kpi("Watched down", watched, watched ? "Devices you flagged to watch" : "Every watched device is up", watched ? "is-bad" : "is-ok", "#/devices?watch=1&state=offline")}
+      ${(() => { const wa = CC.wifiAttention(); const tot = sites.reduce((a, s) => { const x = CC.wifiOf(s.id); return a + (x.state === "ok" ? x.summary.links : 0); }, 0); const crit = wa.filter((x) => x.link.grade === "crit").length;
+        return kpi("Wireless links", tot ? `${tot - wa.length}<small>/${tot}</small>` : "—", tot ? (wa.length ? `${wa.length} need attention${crit ? ` · ${crit} poor` : ""}` : "All links healthy") : "No radio links read yet", crit ? "is-bad" : wa.length ? "is-warn" : tot ? "is-ok" : "", "#/wifi"); })()}
       ${kpi("Conflicts · Kuma", `${conflicts}<small> · ${kumaDown}</small>`, `${conflicts ? CC.plural(conflicts, "IP clash", "IP clashes") : "No IP clashes"} · ${kumaDown ? kumaDown + " Kuma down" : "Kuma all up"}`, conflicts || kumaDown ? (kumaDown ? "is-bad" : "is-warn") : "is-ok", "#/attention")}
     </section>`;
   }
@@ -95,6 +97,7 @@
         <div class="cols">
           <div><section class="panel"><div class="phd"><h2>Sites <small id="ov-sites-n"></small></h2><div class="row"><select class="sel" id="ov-sort" aria-label="Sort sites"><option value="state">Worst first</option><option value="name">By name</option></select></div></div><div class="pbd"><div class="sites" id="ov-sites"></div></div></section></div>
           <div><section class="panel"><div class="phd"><h2>Needs attention <small id="ov-att-n"></small></h2><a class="btn sm ghost" href="#/attention">All</a></div><div id="ov-att"></div></section>
+          <section class="panel"><div class="phd"><h2>${icon("wifi")} Wireless links <small id="ov-wifi-n"></small></h2><a class="btn sm ghost" href="#/wifi">All</a></div><div id="ov-wifi"></div></section>
           <section class="panel"><div class="phd"><h2>Monitoring path</h2></div><div class="pbd" id="ov-path"></div></section></div>
         </div>`;
       $("#ov-sort").onchange = () => this.update();
@@ -119,6 +122,13 @@
       $("#ov-sites").innerHTML = sites.map(siteCard).join("") || `<div class="empty"><b>No sites yet</b>Add a farm with the new-site wizard — it creates the VPN client and gives you one command to paste on the Pi.<div style="margin-top:12px"><a class="btn pri" href="#/settings/sites">${icon("plus")} Add site</a></div></div>`;
       $("#ov-att-n").textContent = issues.length || "";
       $("#ov-att").innerHTML = CC.issueList(issues, { limit: 8 });
+      const wa = CC.wifiAttention();
+      const wsites = S.sites.filter((s) => s.enabled).map((s) => CC.wifiOf(s.id)).filter((x) => x.state === "ok");
+      const wtot = wsites.reduce((a, x) => a + x.summary.links, 0);
+      $("#ov-wifi-n").textContent = wtot ? `${wtot - wa.length}/${wtot} healthy` : "";
+      $("#ov-wifi").innerHTML = !wsites.length ? `<div class="pbd note">No link diagnosis yet — sites read Ubiquiti radios that have a saved SSH login.</div>`
+        : !wa.length ? `<div class="empty"><b>All ${CC.plural(wtot, "link")} healthy</b>Nothing in the link diagnosis needs attention.</div>`
+        : `<ul class="alist">${wa.slice(0, 5).map(({ site, link: l }) => { const f = (l.findings || []).find((x) => x.id !== "blind_end") || {}; return `<li><span class="sev ${l.grade === "crit" ? "bad" : "warn"}">${l.quality ?? "!"}</span><div style="min-width:0"><div class="t">${esc(l.name)}</div><div class="d"><b class="cyan" style="font-weight:600">${esc(site.name)}</b> · ${esc(f.title || "")}</div></div><a class="btn sm" href="#/site/${encodeURIComponent(site.id)}/wifi?link=${encodeURIComponent(l.id)}">Open</a></li>`; }).join("")}</ul>${wa.length > 5 ? `<a class="more" href="#/wifi" style="text-align:center;text-decoration:none">Show all ${wa.length}</a>` : ""}`;
       const iso = S.vpn;
       const enabled = S.sites.filter((s) => s.enabled);
       const backedUp = enabled.filter((s) => { const a = CC.backupAge(s.id); return a != null && a <= 26; }).length;

@@ -10,7 +10,9 @@
  *               fault    = watched device down, Kuma monitor down, internet down,
  *                          Pi health critical
  *               warn     = live IP conflict, Pi health warning, Pi login/key
- *                          problem, no backup in 26 h, Wi-Fi link degraded
+ *                          problem, no backup in 26 h, a wireless link or radio
+ *                          the site's own link diagnosis grades Needs attention
+ *                          (a Poor link makes it a fault)
  *               ok       = none of the above
  *  devices      "offline" counts only devices seen in the last 7 days; older
  *               ones are "gone quiet" (old discoveries, visitors' phones) and
@@ -224,7 +226,7 @@
     loaded: false, error: "", updated: 0,
     hubName: "", sites: [],            // overview cards
     devices: {}, devicesAt: {},        // site id -> devices[]
-    internet: {}, wifi: {}, kuma: {}, backups: {}, sysinfo: {},
+    internet: {}, wifi: {}, wifiLinks: {}, kuma: {}, backups: {}, sysinfo: {},
     vpn: null, remote: null,
     listeners: new Set(),
   });
@@ -274,6 +276,14 @@
     const age = CC.backupAge(s.id);
     if (age === null) add("warn", "No config backup yet", "Take one from the Backups tab", link("backups"));
     else if (age !== undefined && age > 26) add("warn", "Config backup overdue", `Newest backup is ${Math.round(age)} h old`, link("backups"));
+    const wl = CC.wifiOf ? CC.wifiOf(s.id) : { state: "loading" };
+    if (wl.state === "ok") {
+      const items = [...wl.crit, ...wl.warn].map((l) => `${l.sta.name}: ${((l.findings || []).find((f) => f.id !== "blind_end") || {}).title || "needs attention"}`)
+        .concat(wl.radioIssues.map((f) => `${f.radio.name}: ${f.title}`));
+      if (items.length)
+        add(wl.crit.length ? "bad" : "warn", CC.plural(items.length, "wireless issue"), items.slice(0, 2).join(" · "), link("wifi"));
+      return out;
+    }
     const wifi = S.wifi[s.id];
     if (wifi && wifi.problems && wifi.problems.length) {
       const crit = wifi.problems.filter((p) => p.level === "crit").length;
@@ -334,6 +344,11 @@
           jobs.push(CC.api(`/api/hub/sites/${s.id}/internet`, { timeout: 15000 }).then((j) => { S.internet[s.id] = { ...j, __at: CC.now() }; }).catch(() => {}));
         if (s.reachable && due(S.wifi, s.id, 300))
           jobs.push(CC.api(`/api/hub/sites/${s.id}/wifi`, { timeout: 15000 }).then((j) => { S.wifi[s.id] = { ...j, __at: CC.now() }; }).catch(() => { S.wifi[s.id] = { __at: CC.now() }; }));
+        // Link diagnosis: light 7-day summary. The radios are read every 15 min and this
+        // crosses the farm's link, so it refreshes on that cadence, not every poll.
+        if (s.reachable && due(S.wifiLinks, s.id, 900))
+          jobs.push(CC.api(`/api/hub/sites/${s.id}/wifi-links?hours=168`, { timeout: 60000 }).then((j) => { S.wifiLinks[s.id] = { ...j, __at: CC.now() }; })
+            .catch((e) => { S.wifiLinks[s.id] = { ...(S.wifiLinks[s.id] || {}), error: e.message, __at: CC.now() }; }));
         if (due(S.backups, s.id, 300))
           jobs.push(CC.api(`/api/hub/sites/${s.id}/backups`).then((j) => { S.backups[s.id] = { list: j.backups || [], __at: CC.now() }; }).catch(() => {}));
         await Promise.all(jobs.map((p) => p.catch(() => {})));
@@ -391,6 +406,9 @@
     });
     const issues = CC.allIssues();
     const bad = issues.filter((i) => i.sev === "bad").length;
+    const wa = CC.wifiAttention ? CC.wifiAttention() : [];
+    const wcnt = $("#nav-wifi-count");
+    if (wcnt) { wcnt.hidden = !wa.length; wcnt.textContent = wa.length; wcnt.classList.toggle("quiet", !wa.some((x) => x.link.grade === "crit")); }
     const cnt = $("#nav-att-count");
     cnt.hidden = !issues.length;
     cnt.textContent = issues.length;

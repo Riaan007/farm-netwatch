@@ -6,7 +6,7 @@
   const view = () => $("#view");
   const enc = encodeURIComponent;
   const TABS = [
-    ["overview", "Overview"], ["devices", "Devices"], ["map", "Map"], ["problems", "Problems"], ["health", "Pi health"],
+    ["overview", "Overview"], ["devices", "Devices"], ["map", "Map"], ["wifi", "Wi-Fi"], ["problems", "Problems"], ["health", "Pi health"],
     ["history", "History"], ["backups", "Backups"], ["access", "Remote access"],
   ];
 
@@ -97,6 +97,8 @@
     }
   }
 
+  CC.wifiDoctor = wifiDoctor;
+
   // ---- site route --------------------------------------------------------------------------
   const site = {
     id: null, tab: "overview",
@@ -156,8 +158,10 @@
     tabs() {
       const s = CC.site(this.id);
       const issues = CC.siteIssues(s);
-      const probs = (s.conflicts || 0) + (s.rotated || 0) + (((S.wifi[s.id] || {}).problems || []).length);
-      const counts = { overview: issues.length ? [issues.length, issues.some((i) => i.sev === "bad")] : null, problems: probs ? [probs, !!s.conflicts] : null, devices: S.devices[s.id] ? [S.devices[s.id].length, false] : null };
+      const probs = (s.conflicts || 0) + (s.rotated || 0);
+      const wl = CC.wifiOf(s.id);
+      const wn = wl.state === "ok" ? wl.attn + wl.radioIssues.length : 0;
+      const counts = { overview: issues.length ? [issues.length, issues.some((i) => i.sev === "bad")] : null, problems: probs ? [probs, !!s.conflicts] : null, devices: S.devices[s.id] ? [S.devices[s.id].length, false] : null, wifi: wn ? [wn, wl.crit.length > 0] : null };
       $("#st-tabs").innerHTML = TABS.map(([k, l]) => {
         const c = counts[k];
         return `<a href="#/site/${enc(s.id)}${k === "overview" ? "" : "/" + k}" class="${this.tab === k ? "on" : ""}">${l}${c ? ` <span class="count ${c[1] ? "" : "quiet"}">${c[0]}</span>` : ""}</a>`;
@@ -264,6 +268,12 @@
     leave() { CC.mapView.destroy(); },
   };
 
+  TABS_IMPL.wifi = {
+    enter: (s, el) => CC.wifiTab.enter(s, el),
+    update: (s) => CC.wifiTab.update(s),
+    leave: () => CC.wifiTab.leave(),
+  };
+
   TABS_IMPL.problems = {
     enter(s, el) {
       el.innerHTML = `<section class="panel"><div class="phd"><h2>IP address conflicts</h2><small class="note" id="sp-src"></small></div><div id="sp-conf"><div class="pbd"><div class="skel" style="height:60px"></div></div></div></section>
@@ -295,8 +305,16 @@
            ${soft.length ? `<div class="pbd note" style="padding-bottom:0;border-top:1px solid var(--line)">Address reuse: different devices held it in turn (DHCP, phones with private MACs) — usually harmless.</div><ul class="alist">${soft.map((x) => row(x, true)).join("")}</ul>` : ""}`;
       }
       const w = S.wifi[s.id];
+      const wl = CC.wifiOf(s.id);
+      if (wl.state === "ok") {
+        const bad = [...wl.crit, ...wl.warn];
+        $("#sp-wifi").innerHTML = `<div class="pbd note" style="padding-bottom:0">${wl.summary.good}/${wl.summary.links} links healthy · ${wl.summary.radios_read}/${wl.summary.radios} radios read · <a href="#/site/${enc(s.id)}/wifi">diagnosis, charts and what to do</a></div>` +
+          (bad.length || wl.radioIssues.length ? `<ul class="alist">${wl.radioIssues.map((f) => `<li><span class="sev warn">!</span><div style="min-width:0"><div class="t">${esc(f.title)}</div><div class="d">${esc(f.radio.name)} · ${esc((f.steps[0] || {}).text || "")}</div></div><a class="btn sm" href="#/site/${enc(s.id)}/wifi">Open</a></li>`).join("")}${bad.map((l) => `<li><span class="sev ${l.grade === "crit" ? "bad" : "warn"}">!</span><div style="min-width:0"><div class="t">${esc(l.name)}</div><div class="d">${esc(((l.findings || [])[0] || {}).title || "")}</div></div><a class="btn sm" href="#/site/${enc(s.id)}/wifi?link=${enc(l.id)}">Open</a></li>`).join("")}</ul>`
+            : `<div class="empty"><b>Links look normal</b>Nothing in the site's link diagnosis needs attention.</div>`);
+        return;
+      }
       $("#sp-wifi").innerHTML = !w ? `<div class="pbd note">Loading…</div>` : !w.ok ? `<div class="pbd note">No wireless telemetry — the site reads Ubiquiti radios that have a saved SSH login.</div>` :
-        `<div class="pbd note" style="padding-bottom:0">${Object.keys(w.radios || {}).length} radios read · <a href="${esc(((s.links && s.links.netwatch) || "").replace(/\/$/, ""))}/wifi" target="_blank" rel="noopener">link history charts ${icon("ext")}</a></div>` +
+        `<div class="pbd note" style="padding-bottom:0">${Object.keys(w.radios || {}).length} radios read · <a href="#/site/${enc(s.id)}/wifi">Wi-Fi tab</a></div>` +
         ((w.problems || []).length ? `<ul class="alist">${w.problems.map((p) => `<li><span class="sev ${p.level === "crit" ? "bad" : "warn"}">!</span><div style="min-width:0"><div class="t">${esc(p.what)}</div><div class="d">${esc(p.hint || "")} · ${esc(p.ip || "")} · ${CC.ago(p.ts)}</div></div></li>`).join("")}</ul>` : `<div class="empty"><b>Links look normal</b>Every radio is within its own usual range.</div>`);
     },
   };
