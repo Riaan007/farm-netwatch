@@ -102,8 +102,9 @@
         .nw-brand svg { width: 38px; height: 38px; flex: none; }
         .nw-id { min-width: 0; flex: 1 1 0; }
         .nw-idrow { display: flex; align-items: center; gap: .6rem; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
-        .nw-idrow .nw-status { flex-wrap: nowrap; min-width: 0; }
-        .nw-title { font-size: 1.25rem; line-height: 1.25; color: #f1f5f9; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 26rem; }
+        /* the site name keeps its width; status chips give way (clipped) instead */
+        .nw-idrow .nw-status { flex-wrap: nowrap; min-width: 0; flex: 1 1 auto; overflow: hidden; }
+        .nw-title { font-size: 1.25rem; line-height: 1.25; color: #f1f5f9; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 26rem; flex: 0 0 auto; }
         .nw-subt { display: block; font-size: 11.5px; color: #64748b; margin-top: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .nw-live span.t { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
         .nw-brand b { display: block; font-size: 1.2rem; line-height: 1.2; color: #f1f5f9; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32rem; }
@@ -114,7 +115,8 @@
         .nw-live.scan { color: #67e8f9; background: rgba(34,211,238,.12); }
         .nw-live.scan i { background: #22d3ee; animation: pulse-soft 1.2s infinite; }
         .nw-actions { margin-left: auto; display: flex; align-items: center; gap: .45rem; flex: none; }
-        @media (max-width: 1180px) { .nw-top .nw-ib .lbl { display: none; } .nw-live span.t { max-width: 12rem; } }
+        @media (max-width: 1400px) { #pi-ip { display: none !important; } .nw-live span.t { max-width: 15rem; } }
+        @media (max-width: 1180px) { .nw-top .nw-ib .lbl { display: none; } .nw-live span.t { max-width: 11rem; } }
         .nw-scan { display: flex; align-items: stretch; border: 1px solid rgba(103,232,249,.4); border-radius: .7rem; overflow: visible; position: relative; background: rgba(8,145,178,.12); }
         .nw-scan select { height: 34px; background: transparent; border: 0; color: #cffafe; font-size: 12px; padding: 0 .5rem 0 .65rem; max-width: 13rem; border-right: 1px solid rgba(103,232,249,.25); }
         .nw-scan select option { background: #0b1322; }
