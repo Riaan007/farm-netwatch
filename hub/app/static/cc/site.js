@@ -508,6 +508,13 @@
           ${(d.ports || []).length ? `<dt>Open ports</dt><dd class="mono">${d.ports.map((p) => esc(p) + ((d.services || {})[p] ? ` <span class="dim">${esc(d.services[p].split(" ")[0])}</span>` : "")).join(", ")}</dd>` : ""}
           ${d.ip_conflict_with && d.ip_conflict_with.length ? `<dt>Shares IP with</dt><dd>${d.ip_conflict_with.map((x) => esc(x.name || x.vendor || x.mac)).join(", ")}</dd>` : ""}
         </dl></div>
+        ${CC.isMikrotik(d) ? `<div class="sect"><h3>MikroTik router</h3>
+          <div class="row"><button class="btn sm pri" id="dd-mt-load">🧭 Load router info</button>${d.ip ? `<button class="btn sm" id="dd-mt-webfig">🌐 Manage in Webfig</button>` : ""}</div>
+          <div id="dd-mt" style="margin-top:10px"></div>
+          <div style="margin-top:10px"><div class="row" style="flex-wrap:nowrap"><input class="inp mono" id="dd-mt-cmd" placeholder="/system resource print"><button class="btn" id="dd-mt-run">Run</button></div>
+          <pre id="dd-mt-term" class="mono" style="margin:8px 0 0;max-height:180px;overflow:auto;white-space:pre-wrap;background:#050b16;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px;font-size:11px"></pre>
+          <p class="note" style="margin:6px 0 0">Router info reads by MAC (MAC-Telnet), API over its IP as the fallback. The terminal needs MikroTik management enabled in the site's Settings.</p></div>
+        </div>` : ""}
         <div class="sect"><h3>Availability</h3><div id="dd-up" class="note">Loading…</div>
           <div class="row" style="margin:10px 0 6px;gap:4px" id="dd-range">${["30m", "1h", "12h", "24h"].map((r) => `<button class="btn sm ${r === "1h" ? "pri" : ""}" data-r="${r}">${r}</button>`).join("")}</div><div id="dd-chart"></div></div>
         <div class="sect"><h3>Location</h3><div id="dd-loc"></div></div>
@@ -547,6 +554,48 @@
     };
     $("#dd-range", dlg).onclick = (e) => { const b = e.target.closest("[data-r]"); if (b) chart(b.dataset.r); };
     chart("1h");
+    if (CC.isMikrotik(d)) {
+      const mtBytes = (v) => { let n = parseInt(v, 10); if (isNaN(n)) return esc(String(v || "0")); const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + " " + u[i]; };
+      const renderMt = (r) => {
+        const src = r.source === "mactelnet" ? "🔗 by MAC (MAC-Telnet)" : "🌐 via IP (API)";
+        const mem = (r.free_memory && r.total_memory) ? mtBytes(r.total_memory - r.free_memory) + " / " + mtBytes(r.total_memory) : "";
+        const kv = [["Model", r.model || r.board], ["RouterOS", r.version], ["Firmware", r.firmware], ["Serial", r.serial], ["Uptime", r.uptime], ["CPU", (r.cpu !== "" && r.cpu != null) ? r.cpu + "%" : ""], ["Memory", mem]];
+        if (r.health && (r.health.voltage || r.health.temperature)) kv.push(["Health", [r.health.voltage ? r.health.voltage + " V" : "", r.health.temperature ? r.health.temperature + "°C" : ""].filter(Boolean).join(" · ")]);
+        let h = `<div class="panel pbd"><p class="row" style="justify-content:space-between;margin:0 0 6px"><b>🧭 ${esc(r.identity || "MikroTik")}</b><span class="note">${src}</span></p><dl class="kv">`;
+        kv.forEach(([k, v]) => { if (v) h += `<dt>${k}</dt><dd class="mono">${esc(String(v))}</dd>`; });
+        h += `</dl>`;
+        if ((r.interfaces || []).length) { h += `<div class="note" style="margin-top:8px">Interfaces</div>` + r.interfaces.map((i) => `<div class="row" style="gap:6px;font-size:11px"><span class="b ${i.running ? "ok" : (i.disabled ? "unk" : "bad")} nodot">${esc(i.name)}</span><span class="dim">${esc(i.type || "")}</span><span style="margin-left:auto" class="mono dim">↓${mtBytes(i.rx)} ↑${mtBytes(i.tx)}</span></div>`).join(""); }
+        if ((r.poe || []).length) { h += `<div class="note" style="margin-top:8px">PoE out</div><div class="chips">` + r.poe.map((p) => `<span class="b unk nodot">${esc(p.name)}: ${esc(p.poe_out || "?")}${p.power ? " " + esc(p.power) + "W" : ""}</span>`).join("") + `</div>`; }
+        h += `</div>`;
+        $("#dd-mt", dlg).innerHTML = h;
+      };
+      const loadBtn = $("#dd-mt-load", dlg);
+      loadBtn.onclick = () => CC.busy(loadBtn, async () => {
+        $("#dd-mt", dlg).innerHTML = `<div class="skel" style="height:80px"></div>`;
+        try { renderMt(await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/mikrotik`, { timeout: 45000 })); }
+        catch (err) { $("#dd-mt", dlg).innerHTML = `<p class="note bad">${esc(err.message)}</p>`; }
+      });
+      const wf = $("#dd-mt-webfig", dlg);
+      if (wf) wf.onclick = () => CC.busy(wf, async () => {
+        try { const j = await api(`/api/hub/sites/${siteId}/tunnel`, { method: "POST", body: { ip: d.ip, port: 80 }, timeout: 30000 }); tunnelResult(j, `${CC.devName(d)} · Webfig`, "Log in with the router's own user and password."); }
+        catch (err) { CC.toast(err.message, "bad"); }
+      });
+      const run = $("#dd-mt-run", dlg), cmd = $("#dd-mt-cmd", dlg), term = $("#dd-mt-term", dlg);
+      const runCmd = async (confirmDanger) => {
+        const c = cmd.value.trim(); if (!c) return;
+        await CC.busy(run, async () => {
+          let r;
+          try { r = await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/mikrotik/console`, { method: "POST", body: { command: c, confirm: !!confirmDanger }, timeout: 45000 }); }
+          catch (err) {
+            if (err.body && err.body.needs_confirm) { if (confirm("⚠ " + err.body.warning + "\n\nRun this command anyway?")) runCmd(true); return; }
+            term.textContent += `> ${c}\n${err.message}\n\n`; term.scrollTop = term.scrollHeight; return;
+          }
+          term.textContent += `> ${c}\n${r.output || "(no output)"}\n\n`; term.scrollTop = term.scrollHeight; cmd.value = "";
+        });
+      };
+      run.onclick = () => runCmd(false);
+      cmd.onkeydown = (e) => { if (e.key === "Enter") runCmd(false); };
+    }
     if (d.ip) {
       const common = [[80, "HTTP"], [443, "HTTPS"], [22, "SSH"], [554, "RTSP"]];
       const scanned = (d.ports || []).map((p) => [p, ((d.services || {})[p] || "").split(" ")[0] || "open"]);

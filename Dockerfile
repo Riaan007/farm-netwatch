@@ -21,7 +21,27 @@ RUN set -eux; \
     chmod +x /usr/local/bin/tailwindcss; \
     tailwindcss -c tailwind.config.js -i input.css -o ./static/app.css --minify
 
-# --- Stage 2: the runtime image ----------------------------------------------
+# --- Stage 2: build a current mac-telnet (MAC-address login to RouterOS) ------
+# The Debian mactelnet (0.6.1) predates RouterOS 6.43's elliptic-curve secure
+# login ("mtwei", Curve25519 EC-SRP) and SEGFAULTS on connect to modern RouterOS.
+# mtwei support lives only on upstream master, so we pin a commit and compile it.
+# No --platform: built per-target-arch so the binary matches the runtime image.
+FROM debian:bookworm-slim AS mactelnet
+ARG MACTELNET_COMMIT=de620882c73e235ab319f3cb55481888d7d8f71d
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates build-essential autoconf automake autopoint gettext \
+      libssl-dev zlib1g-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+RUN git clone https://github.com/haakonnessjoen/MAC-Telnet.git \
+    && cd MAC-Telnet \
+    && git checkout "${MACTELNET_COMMIT}" \
+    && autopoint --force && autoreconf -fi \
+    && ./configure \
+    && make -j"$(nproc)" \
+    && strip src/mactelnet
+
+# --- Stage 3: the runtime image ----------------------------------------------
 FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 \
     NETWATCH_DATA=/data \
@@ -33,8 +53,12 @@ ENV PYTHONUNBUFFERED=1 \
 # host netns — the site dials out to the hub, opening NO inbound ports).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       nmap iproute2 iputils-ping wireguard-tools ca-certificates tzdata \
-      openssh-client sshpass smartmontools \
+      openssh-client sshpass smartmontools libssl3 \
     && rm -rf /var/lib/apt/lists/*
+
+# mac-telnet: WinBox-style login to a MikroTik by MAC address (built in stage 2).
+# libssl3 above is its only runtime dep (mtwei uses OpenSSL EC). See mikrotik.py.
+COPY --from=mactelnet /build/MAC-Telnet/src/mactelnet /usr/local/bin/mactelnet
 
 # OPT-IN: DHCP<->static IP control via NetworkManager. The lean :latest image leaves
 # this OFF (INSTALL_NM=0) to stay small. Build with --build-arg INSTALL_NM=1 (see

@@ -990,6 +990,100 @@ def api_site_pi_password(site_id):
         return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
 
 
+def _mikrotik_too_old():
+    return jsonify({"ok": False, "error": "this site's Netwatch is too old for MikroTik "
+                    "management — update it (docker compose pull)"}), 501
+
+
+@app.route("/api/hub/sites/<site_id>/mikrotik/neighbors")
+def api_site_mikrotik_neighbors(site_id):
+    """MNDP discovery on a site's LAN (find MikroTik routers by MAC), proxied."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    try:
+        r = requests.get(siteapi.base_url(site) + "/api/mikrotik/neighbors",
+                         params={"t": request.args.get("t", 4)},
+                         headers=siteapi.headers(site),
+                         timeout=(poll["timeout_connect_s"], poll["timeout_read_s"] + 6))
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"site unreachable: {e}"}), 502
+    if r.status_code == 404:
+        return _mikrotik_too_old()
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+
+
+@app.route("/api/hub/sites/<site_id>/devices/<path:key>/mikrotik")
+def api_site_mikrotik_status(site_id, key):
+    """Structured RouterOS status for one device on a site (MAC-Telnet/API)."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    try:
+        r = requests.get(f"{siteapi.base_url(site)}/api/devices/{quote(key, safe='')}/mikrotik",
+                         headers=siteapi.headers(site),
+                         timeout=(poll["timeout_connect_s"], poll["timeout_read_s"] + 20))
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"site unreachable: {e}"}), 502
+    if r.status_code == 404:
+        return _mikrotik_too_old()
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site doesn't accept this hub's key yet"}), 502
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+
+
+@app.route("/api/hub/sites/<site_id>/devices/<path:key>/mikrotik/action", methods=["POST"])
+def api_site_mikrotik_action(site_id, key):
+    """Gated MikroTik management write on a site (rename/port/PoE/reboot/export)."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    try:
+        r = requests.post(f"{siteapi.base_url(site)}/api/devices/{quote(key, safe='')}/mikrotik/action",
+                          json=request.get_json(silent=True) or {}, headers=siteapi.headers(site),
+                          timeout=(5, 25))
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"site unreachable: {e}"}), 502
+    if r.status_code == 404:
+        return _mikrotik_too_old()
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site doesn't accept this hub's key yet"}), 502
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+
+
+@app.route("/api/hub/sites/<site_id>/devices/<path:key>/mikrotik/console", methods=["POST"])
+def api_site_mikrotik_console(site_id, key):
+    """Web terminal to a site's MikroTik (MAC-Telnet first, SSH fallback)."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    try:
+        r = requests.post(f"{siteapi.base_url(site)}/api/devices/{quote(key, safe='')}/mikrotik/console",
+                          json=request.get_json(silent=True) or {}, headers=siteapi.headers(site),
+                          timeout=(5, 35))
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"site unreachable: {e}"}), 502
+    if r.status_code == 404:
+        return _mikrotik_too_old()
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site doesn't accept this hub's key yet"}), 502
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+
+
 @app.route("/api/hub/sites/<site_id>/pi-ssh", methods=["POST"])
 def api_site_pi_ssh(site_id):
     """One-click SSH to the site's own Pi. VPN sites get a direct hub relay to

@@ -45,7 +45,7 @@ NAME_REFRESH_S = 6 * 3600
 # Factory-default names that identify nothing — shown as if the device had none.
 _GENERIC_NAMES = {"ipcamera", "ipdome", "camera", "networkcamera", "ipc", "embeddednetdvr",
                   "networkvideorecorder", "nvr", "dvr", "hikvision", "ubnt", "ubiquiti",
-                  "localhost", "unknown", "airmax", "unifi", "acusense"}
+                  "localhost", "unknown", "airmax", "unifi", "acusense", "mikrotik", "routeros"}
 _NUMBERED_DEFAULT = re.compile(r"^(camera|channel|ipcamera|ipc|cam|ch|d)\d+$")   # "Camera 01", "D1"
 
 

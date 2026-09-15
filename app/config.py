@@ -79,6 +79,12 @@ DEFAULTS = {
     # want a reboot-capable button on its backhaul can turn it back off.
     "features": {
         "airos_change_ip": True,
+        # MikroTik management: config-WRITE power over a router (rename, ports,
+        # PoE, reboot) + a web terminal. Off by default — read-only Router info
+        # and discovery are always available; this gate only unlocks the writes.
+        # A brand-new key, so _deep_merge fills it False on existing sites with
+        # no config_rev bump. Turn it on per site in Settings.
+        "mikrotik_manage": False,
     },
     # Bumped when a default changes in a way an EXISTING config must adopt —
     # _deep_merge only fills MISSING keys, so a stored False would otherwise
