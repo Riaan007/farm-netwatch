@@ -557,6 +557,7 @@
                     <a href="#/" data-page="devices" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
                     <a href="#/map" data-page="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg><span class="lbl">Map</span></a>
                     <a href="#/wifi" data-page="wifi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
+                    <a href="#/switches" data-page="switches"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18v10H3zM7 11v2M11 11v2M15 11v2M19 11v2"/></svg><span class="lbl">Switches</span></a>
                     <a href="#/neighbors" data-page="neighbors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 4v3M16 4v3M8 17v3M16 17v3"/></svg><span class="lbl">Neighbors</span></a>
                     <a href="#/history" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></a>
                     <a href="#/settings" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg><span class="lbl">Settings</span></a>
@@ -689,6 +690,14 @@
                 </section>
             </aside>
         </div>
+      </div>
+
+      <div id="page-switches" hidden>
+        <div class="nw-phead">
+            <div><div class="nw-eyebrow">Network</div><h1>Switches</h1><p id="switches-sub">Every port on every Ubiquiti switch: what is plugged in, link speed, PoE power, traffic and faults — read from the switch itself, no need to open its web page.</p></div>
+        </div>
+        <div id="switches-list" class="nw-kpis" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))" hidden></div>
+        <div id="switch-view"></div>
       </div>
 
       <div id="page-neighbors" hidden>
@@ -935,6 +944,7 @@
                     <label class="nw-tgl"><input id="setup-watchdog" type="checkbox" data-track><b>Hardware watchdog</b><span>Reboot this Pi automatically if it hard-hangs: Netwatch feeds /dev/watchdog every 5 s and the chip reboots after ~15 s of silence. Needs the health add-on (<code>docker-compose.health.yml</code>). A clean stop disarms it safely.</span></label>
                     <label class="nw-tgl"><input id="setup-airos-setip" type="checkbox" data-track><b>Change IP for Ubiquiti airOS radios <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Edits the radio's config over SSH and <b>reboots it</b> — a wrong value can drop the link to a whole building. Needs the radio's SSH login saved. Turn off to hide the button on this site.</span></label>
                     <label class="nw-tgl"><input id="setup-mikrotik-manage" type="checkbox" data-track><b>Manage MikroTik routers <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Unlocks the write actions (rename, enable/disable ports, PoE, reboot) and the <b>web terminal</b> on a MikroTik's Tools tab — config power over the router. Finding routers by MAC and reading their status stay available whether this is on or off.</span></label>
+                    <label class="nw-tgl"><input id="setup-switch-manage" type="checkbox" data-track><b>Manage switches <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Lets the Switches page (and the hub) turn Ubiquiti switch ports on and off, change PoE, power-cycle PoE devices, run cable tests and restart the switch. Ports the Pi or the router are on are always refused. Reading ports, PoE, traffic and the alerts stay on either way.</span></label>
                 </div>
             </section>
 
@@ -1051,6 +1061,7 @@
                         <label class="text-xs font-bold text-slate-400 uppercase">Identity</label>
                         <p id="modal-desc" class="text-lg font-medium text-slate-200 leading-tight">Loading...</p>
                         <p id="modal-friendly-name" class="text-xs text-cyan-300 font-bold mt-1 italic"></p>
+                        <div id="modal-plugged" class="hidden mt-2 text-[12px] text-slate-300"></div>
                         <div id="modal-conflict" class="hidden mt-2 p-2 bg-amber-500/10 border border-amber-400/35 rounded-lg text-[11px] text-amber-200 leading-snug"></div>
                     </div>
                     <div id="modal-features-list" class="flex flex-wrap gap-2"></div>
@@ -1086,6 +1097,7 @@
                             <button id="airos-btn" onclick="openAirosIp()" class="px-3 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold hidden">🛠️ Change IP (airOS)</button>
                             <button id="mikrotik-status-btn" onclick="fetchMikrotikStatus()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">🧭 Router info (MikroTik)</button>
                             <button id="mikrotik-manage-btn" onclick="openSiteMtkConsole()" class="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold hidden">🖥️ Open console</button>
+                            <button id="switch-view-btn" onclick="openSwitchFor(CURRENT_KEY)" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">🔀 Switch ports &amp; PoE</button>
                             <button onclick="deepScanDevice()" class="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-xs font-bold">🔬 Deep scan</button>
                         </div>
                         <div id="setip-panel" class="hidden mt-3 p-3 bg-rose-500/10 border border-rose-400/30 rounded-lg">
@@ -1263,6 +1275,7 @@
     </div>
 
     <script src="/static/auth.js"></script>
+    <script src="/static/switchview.js"></script>
     <script src="/static/vendor/leaflet/leaflet.js"></script>
     <script>
         let DATA = { targets: [], devices: [] };
@@ -1286,6 +1299,7 @@
             ip_change:         {label:'IP changed (DHCP drift)', sev:'low'},
             replaced:          {label:'Device replaced at IP', sev:'low'},
             wifi_degraded:     {label:'Wi-Fi link',           sev:'high'},
+            switch:            {label:'Switch',               sev:'high'},
         };
         const SEV_STYLE = {high:'border-red-500/40 bg-red-500/10 text-red-200',
             medium:'border-amber-400/40 bg-amber-500/10 text-amber-200',
@@ -2137,6 +2151,53 @@
                 else { toast(r.error||'Adopt failed', 'bad'); if(btn){ btn.disabled=false; btn.textContent='Adopt & track'; } }
             } catch(e){ toast('Adopt failed', 'bad'); if(btn){ btn.disabled=false; btn.textContent='Adopt & track'; } }
         }
+        // --- Switches (Ubiquiti EdgeSwitch / UISP) — the view itself is /static/switchview.js,
+        // shared with the hub's Control Center ------------------------------------------
+        let SW_CTL = null, SW_KEY = null;
+        function unmountSwitch(){ if(SW_CTL){ SW_CTL.destroy(); SW_CTL = null; SW_KEY = null; } }
+        function openSwitchFor(key){ closeModal(); location.hash = '#/switches?key=' + encodeURIComponent(key); }
+        async function swJson(url, init){
+            const r = await fetch(url, init);
+            let j = {};
+            try { j = await r.json(); } catch(e){}
+            if(!r.ok){ const err = new Error(j.error || ('HTTP ' + r.status)); err.body = j; err.status = r.status; throw err; }
+            return j;
+        }
+        async function loadSwitchesPage(key){
+            const list = document.getElementById('switches-list'), view = document.getElementById('switch-view');
+            let j;
+            try { j = await swJson('/api/switches'); }
+            catch(e){ view.innerHTML = '<div class="nw-empty"><b>Couldn\'t load switches</b>'+esc(e.message)+'</div>'; return; }
+            const sws = j.switches || [];
+            if(!sws.length){
+                unmountSwitch(); list.hidden = true;
+                view.innerHTML = '<section class="nw-panel"><div class="nw-empty"><b>No Ubiquiti switch found on this network</b>Netwatch recognises EdgeSwitch and UISP switches from their web page. Once one is scanned, save its web login on the device\'s Access tab and its ports appear here.</div></section>';
+                return;
+            }
+            const pick = (key && sws.find(x => x.key === key)) ? key : (SW_KEY && sws.find(x => x.key === SW_KEY) ? SW_KEY : sws[0].key);
+            list.hidden = sws.length < 2;
+            list.innerHTML = sws.map(x => '<div' + (x.key === pick ? ' style="outline:2px solid rgba(34,211,238,.5);border-radius:14px"' : '') + '>' + SwitchView.summaryCard(x, '#/switches?key=' + encodeURIComponent(x.key)) + '</div>').join('');
+            if(SW_CTL && SW_KEY === pick){ SW_CTL.refresh(); return; }
+            unmountSwitch();
+            view.innerHTML = '';
+            const base = '/api/devices/' + encodeURIComponent(pick) + '/switch';
+            SW_KEY = pick;
+            SW_CTL = SwitchView.mount(view, {
+                load: (hours, port) => swJson(base + '?hours=' + (hours || 24) + (port ? '&port=' + encodeURIComponent(port) : '')),
+                poll: () => swJson(base + '/poll', {method:'POST'}),
+                action: (body) => swJson(base + '/action', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}),
+                backups: {
+                    list: () => swJson(base + '/backups'),
+                    take: () => swJson(base + '/backups', {method:'POST'}),
+                    href: (name) => base + '/backups/' + encodeURIComponent(name),
+                },
+                deviceHref: (d) => d.key ? '#/?open=' + encodeURIComponent(d.key) : null,
+                onLogin: () => { openModal(pick); setTimeout(() => modalTab('access'), 250); },
+                settingsHref: '#/settings/advanced',
+                toast: (m, k) => nwToast(m, k || ''),
+            });
+        }
+
         function openMikrotikFor(key){ openModal(key); setTimeout(() => { modalTab('tools'); fetchMikrotikStatus(); }, 250); }
 
         async function fetchMikrotikStatus(){
@@ -2383,6 +2444,16 @@
             document.getElementById('modal-type-header').innerText = dev ? (dev.type||dev.category||'DEVICE') : 'UNUSED ADDRESS';
             document.getElementById('modal-desc').innerText = dev ? (dev.vendor || dev.type || 'Unknown device') : 'No device responding at this address.';
             document.getElementById('modal-friendly-name').innerText = dev && dev.name ? '★ '+dev.name : '';
+            const mpl = document.getElementById('modal-plugged');
+            const sp = dev && dev.switch_port;
+            mpl.classList.toggle('hidden', !sp);
+            if(sp){
+                const swd = DEV_BY_KEY[sp.switch_key] || {};
+                const pno = String(sp.port).split('/').pop();
+                mpl.innerHTML = `🔌 Plugged into <a href="#/switches?key=${encodeURIComponent(sp.switch_key)}" onclick="closeModal()" class="text-cyan-300 hover:underline font-bold">${esc(devTitle(swd) || 'a switch')} · port ${esc(pno)}</a>`
+                    + (sp.port_name && !/^port\s*\d+$/i.test(sp.port_name) ? ` <span class="text-slate-400">(${esc(sp.port_name)})</span>` : '')
+                    + (sp.uplink ? ' <span class="text-slate-500">via an uplink</span>' : '');
+            }
             const mc = document.getElementById('modal-conflict');
             if(dev && (dev.ip_conflict || dev.ip_rotated) && (dev.ip_conflict_with||[]).length){
                 mc.classList.remove('hidden');
@@ -2428,7 +2499,9 @@
             document.getElementById('setip-panel').classList.add('hidden');
             // airOS Change IP: only for Ubiquiti radios, and only when the
             // experimental feature is enabled in Settings.
-            const isAiros = dev && /ubiquiti/i.test(dev.vendor||'') && !isHik;
+            const isSwitch = !!(dev && dev.is_switch);
+            const isAiros = dev && /ubiquiti/i.test(dev.vendor||'') && !isHik && !isSwitch;
+            document.getElementById('switch-view-btn').classList.toggle('hidden', !isSwitch);
             document.getElementById('airos-btn').classList.toggle('hidden', !(isAiros && FEATURES.airos_change_ip));
             document.getElementById('airos-panel').classList.add('hidden');
             // Wi-Fi info is read-only, so it is NOT behind the change-IP flag.
@@ -2918,17 +2991,18 @@
             const h = (location.hash || '').replace(/^#\/?/, '');
             const [path, query] = h.split('?');
             const [page, sub] = (path || '').split('/');
-            const next = ['history','settings','map','wifi','neighbors'].includes(page) ? page : 'devices';
+            const next = ['history','settings','map','wifi','switches','neighbors'].includes(page) ? page : 'devices';
             if(PAGE === 'settings' && next !== 'settings' && SETTINGS_DIRTY.size && !confirm('Leave settings without saving your changes?')){
                 history.replaceState(null, '', '#/settings'); return;
             }
             const changed = next !== PAGE;
             PAGE = next;
-            ['devices','map','wifi','neighbors','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            ['devices','map','wifi','switches','neighbors','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            if(PAGE !== 'switches') unmountSwitch();
             if(PAGE !== 'map') mapCancelPlace(true);
             document.querySelectorAll('.nw-pages a').forEach(a => a.classList.toggle('on', a.dataset.page === PAGE));
             const siteName = (STATUS && STATUS.site && STATUS.site.name) || 'Netwatch';
-            document.title = ({devices:'', map:'Map · ', wifi:'Wi-Fi · ', neighbors:'Neighbors · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
+            document.title = ({devices:'', map:'Map · ', wifi:'Wi-Fi · ', switches:'Switches · ', neighbors:'Neighbors · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
             if(PAGE === 'map'){
                 const qp = new URLSearchParams(query || '');
                 showMapPage(qp.get('focus'), qp.get('place'));
@@ -2940,6 +3014,13 @@
             }
             if(PAGE === 'neighbors'){
                 loadNeighborsPage();
+            }
+            if(PAGE === 'switches'){
+                loadSwitchesPage(new URLSearchParams(query || '').get('key'));
+            }
+            if(PAGE === 'devices'){
+                const open = new URLSearchParams(query || '').get('open');
+                if(open){ history.replaceState(null, '', '#/'); setTimeout(() => openModal(open), changed ? 400 : 0); }
             }
             if(PAGE === 'history'){
                 const ip = new URLSearchParams(query || '').get('ip');
@@ -3001,6 +3082,7 @@
             if(c.scan){ document.getElementById('setup-deep-on-new').checked = !!c.scan.deep_on_new; document.getElementById('setup-discovery').checked = c.scan.discovery !== false; }
             document.getElementById('setup-airos-setip').checked = !!(c.features && c.features.airos_change_ip);
             document.getElementById('setup-mikrotik-manage').checked = !!(c.features && c.features.mikrotik_manage);
+            document.getElementById('setup-switch-manage').checked = !!(c.features && c.features.switch_manage);
             document.getElementById('setup-watchdog').checked = !!(c.sysmon && c.sysmon.watchdog);
             document.getElementById('kuma-auto-ip').textContent = PI_IP;
             const k = (c.integrations && c.integrations.kuma) || {};
@@ -3022,7 +3104,7 @@
         function updateSaveBar(){
             const bar = document.getElementById('save-bar');
             bar.hidden = !SETTINGS_DIRTY.size;
-            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','cat-alerts':'alerts per type','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management'};
+            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','cat-alerts':'alerts per type','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management'};
             const what = new Set([...SETTINGS_DIRTY].map(id => Object.entries(names).find(([k]) => id.startsWith(k)) ).filter(Boolean).map(x => x[1]));
             document.getElementById('save-bar-what').textContent = [...what].join(', ');
         }
@@ -3910,6 +3992,7 @@
                 discovery: document.getElementById('setup-discovery').checked,
                 airos_change_ip: document.getElementById('setup-airos-setip').checked,
                 mikrotik_manage: document.getElementById('setup-mikrotik-manage').checked,
+                switch_manage: document.getElementById('setup-switch-manage').checked,
                 watchdog: document.getElementById('setup-watchdog').checked,
                 kuma_base_url: document.getElementById('setup-kuma-url').value,
                 kuma_auto_url: document.getElementById('setup-kuma-auto').checked,

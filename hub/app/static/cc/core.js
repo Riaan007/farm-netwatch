@@ -226,7 +226,7 @@
     loaded: false, error: "", updated: 0,
     hubName: "", sites: [],            // overview cards
     devices: {}, devicesAt: {},        // site id -> devices[]
-    internet: {}, wifi: {}, wifiLinks: {}, kuma: {}, backups: {}, sysinfo: {},
+    internet: {}, wifi: {}, wifiLinks: {}, switches: {}, kuma: {}, backups: {}, sysinfo: {},
     vpn: null, remote: null,
     listeners: new Set(),
   });
@@ -276,6 +276,11 @@
     const age = CC.backupAge(s.id);
     if (age === null) add("warn", "No config backup yet", "Take one from the Backups tab", link("backups"));
     else if (age !== undefined && age > 26) add("warn", "Config backup overdue", `Newest backup is ${Math.round(age)} h old`, link("backups"));
+    // Switch ports: faults the site's switch monitor found (port down, PoE lost, speed drop, errors, login…)
+    const swp = CC.switchProblems(s.id).filter((p) => p.level !== "info");
+    if (swp.length)
+      add(swp.some((p) => p.level === "crit") ? "bad" : "warn", CC.plural(swp.length, "switch issue"),
+        swp.slice(0, 2).map((p) => `${p.sw.name}: ${p.what}`).join(" · "), link("switches"));
     const wl = CC.wifiOf ? CC.wifiOf(s.id) : { state: "loading" };
     if (wl.state === "ok") {
       const items = [...wl.crit, ...wl.warn].map((l) => `${l.sta.name}: ${((l.findings || []).find((f) => f.id !== "blind_end") || {}).title || "needs attention"}`)
@@ -292,6 +297,9 @@
     }
     return out;
   };
+  /** The site's switches (from its switch monitor), [] until loaded or when it has none. */
+  CC.switchesOf = (id) => (S.switches[id] && S.switches[id].switches) || [];
+  CC.switchProblems = (id) => CC.switchesOf(id).flatMap((sw) => (sw.problems || []).map((p) => ({ ...p, sw })));
   CC.siteState = (s) => {
     if (!s.enabled) return "paused";
     if (!s.reachable) return "offline";
@@ -349,6 +357,10 @@
         if (s.reachable && due(S.wifiLinks, s.id, 900))
           jobs.push(CC.api(`/api/hub/sites/${s.id}/wifi-links?hours=168`, { timeout: 60000 }).then((j) => { S.wifiLinks[s.id] = { ...j, __at: CC.now() }; })
             .catch((e) => { S.wifiLinks[s.id] = { ...(S.wifiLinks[s.id] || {}), error: e.message, __at: CC.now() }; }));
+        // Switches are read by the site every 5 min; a 2-min refresh keeps port faults current.
+        if (s.reachable && due(S.switches, s.id, 120))
+          jobs.push(CC.api(`/api/hub/sites/${s.id}/switches`, { timeout: 30000 }).then((j) => { S.switches[s.id] = { ...j, __at: CC.now() }; })
+            .catch((e) => { S.switches[s.id] = { ...(S.switches[s.id] || {}), error: e.message, legacy: e.status === 501, __at: CC.now() }; }));
         if (due(S.backups, s.id, 300))
           jobs.push(CC.api(`/api/hub/sites/${s.id}/backups`).then((j) => { S.backups[s.id] = { list: j.backups || [], __at: CC.now() }; }).catch(() => {}));
         await Promise.all(jobs.map((p) => p.catch(() => {})));

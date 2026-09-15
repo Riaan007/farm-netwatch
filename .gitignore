@@ -5,3 +5,5 @@ __pycache__/
 app/static/app.css
 hub/app/static/app.css
 app/data/oui.tsv
+# copied from app/static/switchview.js at image build (hub/Dockerfile)
+hub/app/static/cc/switchview.js

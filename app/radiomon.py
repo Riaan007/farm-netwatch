@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import airos
 import creds
+import edgeswitch
 import history
 import notify
 
@@ -61,9 +62,10 @@ def _f(v):
 
 
 def is_radio(dev):
-    """Ubiquiti gear we can read over SSH. Cameras answer to Hikvision instead."""
+    """Ubiquiti gear we can read over SSH. Cameras answer to Hikvision instead;
+    EdgeSwitch/UISP switches are read over their own API by switchmon."""
     vendor = (dev.get("vendor") or "").lower()
-    return "ubiquiti" in vendor or "ubnt" in vendor
+    return ("ubiquiti" in vendor or "ubnt" in vendor) and not edgeswitch.is_edgeswitch(dev)
 
 
 def targets(devices, registry):

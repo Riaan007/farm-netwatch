@@ -6,7 +6,7 @@
   const view = () => $("#view");
   const enc = encodeURIComponent;
   const TABS = [
-    ["overview", "Overview"], ["devices", "Devices"], ["map", "Map"], ["wifi", "Wi-Fi"], ["problems", "Problems"], ["health", "Pi health"],
+    ["overview", "Overview"], ["devices", "Devices"], ["map", "Map"], ["wifi", "Wi-Fi"], ["switches", "Switches"], ["problems", "Problems"], ["health", "Pi health"],
     ["history", "History"], ["backups", "Backups"], ["access", "Remote access"],
   ];
 
@@ -161,7 +161,8 @@
       const probs = (s.conflicts || 0) + (s.rotated || 0);
       const wl = CC.wifiOf(s.id);
       const wn = wl.state === "ok" ? wl.attn + wl.radioIssues.length : 0;
-      const counts = { overview: issues.length ? [issues.length, issues.some((i) => i.sev === "bad")] : null, problems: probs ? [probs, !!s.conflicts] : null, devices: S.devices[s.id] ? [S.devices[s.id].length, false] : null, wifi: wn ? [wn, wl.crit.length > 0] : null };
+      const swp = CC.switchProblems(s.id).filter((p) => p.level !== "info");
+      const counts = { switches: swp.length ? [swp.length, swp.some((p) => p.level === "crit")] : null, overview: issues.length ? [issues.length, issues.some((i) => i.sev === "bad")] : null, problems: probs ? [probs, !!s.conflicts] : null, devices: S.devices[s.id] ? [S.devices[s.id].length, false] : null, wifi: wn ? [wn, wl.crit.length > 0] : null };
       $("#st-tabs").innerHTML = TABS.map(([k, l]) => {
         const c = counts[k];
         return `<a href="#/site/${enc(s.id)}${k === "overview" ? "" : "/" + k}" class="${this.tab === k ? "on" : ""}">${l}${c ? ` <span class="count ${c[1] ? "" : "quiet"}">${c[0]}</span>` : ""}</a>`;
@@ -218,7 +219,7 @@
     },
   };
 
-  const EV = { new: ["New device", "info"], offline: ["Went offline", "bad"], online: ["Came online", "ok"], ip_change: ["IP changed", "warn"], replaced: ["Address taken over", "warn"] };
+  const EV = { new: ["New device", "info"], offline: ["Went offline", "bad"], online: ["Came online", "ok"], ip_change: ["IP changed", "warn"], replaced: ["Address taken over", "warn"], switch: ["Switch", "info"] };
   function eventsList(evs, { compact = false } = {}) {
     if (!evs.length) return `<div class="empty"><b>No events</b>Nothing recorded for this filter.</div>`;
     // The same device flipping the same way every scan (phones with private
@@ -226,7 +227,7 @@
     // into their newest occurrence with a count.
     const merged = [], seen = new Map();
     for (const e of evs) {
-      const k = [e.type, e.ip, e.key].join("|");
+      const k = [e.type, e.ip, e.key, (e.detail || {}).switch_event, (e.detail || {}).action, (e.detail || {}).port].join("|");
       const first = seen.get(k);
       if (first) { first.__n = (first.__n || 1) + 1; first.__first = e.ts; continue; }
       const row = { ...e }; seen.set(k, row); merged.push(row);
@@ -236,7 +237,7 @@
       const [label, tone] = EV[e.type] || [e.type, "unk"];
       const who = e.name || (e.detail && e.detail.type_label) || e.vendor || e.hostname || e.mac || "Unknown device";
       const det = e.detail || {};
-      const extra = compact ? "" : [e.mac, e.hostname, det.model, det.ports, det.prev_name || det.prev_vendor || det.prev_mac ? "replaced " + (det.prev_name || det.prev_vendor || det.prev_mac) : ""].filter(Boolean).map(esc).join(" · ");
+      const extra = e.type === "switch" && CC.switchEventText ? esc(CC.switchEventText(e)) : compact ? "" : [e.mac, e.hostname, det.model, det.ports, det.prev_name || det.prev_vendor || det.prev_mac ? "replaced " + (det.prev_name || det.prev_vendor || det.prev_mac) : ""].filter(Boolean).map(esc).join(" · ");
       return `<li><span class="b ${tone === "info" ? "info" : tone} nodot" style="min-width:${compact ? 0 : 128}px;justify-content:center">${label}</span><div style="min-width:0"><div class="t" style="font-weight:600">${esc(who)} <span class="mono dim">${esc(e.ip || "")}</span></div>${extra ? `<div class="d">${extra}</div>` : ""}</div><span class="note" title="${esc(CC.when(e.ts))}" style="text-align:right;white-space:nowrap">${CC.ago(e.ts)}${e.__n ? `<br><span class="b warn nodot" title="Repeated since ${esc(CC.when(e.__first))}">×${e.__n}</span>` : ""}</span></li>`;
     }).join("")}</ul>`;
   }
@@ -272,6 +273,12 @@
     enter: (s, el) => CC.wifiTab.enter(s, el),
     update: (s) => CC.wifiTab.update(s),
     leave: () => CC.wifiTab.leave(),
+  };
+
+  TABS_IMPL.switches = {
+    enter: (s, el) => CC.switchTab.enter(s, el),
+    update: (s) => CC.switchTab.update(s),
+    leave: () => CC.switchTab.leave(),
   };
 
   TABS_IMPL.problems = {
@@ -520,6 +527,8 @@
         <div class="sect"><h3>Remote access</h3><div class="chips" id="dd-ports"></div><p class="note" style="margin:8px 0 0">Opens a tunnel through the site Pi — only this computer can use it.</p></div>` : ""}
       </div>
       <div class="dft">${s.links && s.links.netwatch ? `<a class="btn" href="${esc(s.links.netwatch)}" target="_blank" rel="noopener">Edit on site Netwatch ${icon("ext")}</a>` : ""}<a class="btn" href="#/site/${enc(s.id)}/history?q=${enc(d.ip || d.mac || "")}" data-close>${icon("history")} History</a><button class="btn pri" data-close>Close</button></div>`, { cls: "drawer" });
+
+    if (CC.switchDrawer) CC.switchDrawer(dlg, siteId, d);
 
     const drawLoc = () => {
       const g = d.geo;

@@ -110,6 +110,39 @@ def _init(c):
         );
         CREATE INDEX IF NOT EXISTS idx_rlink_key_ts  ON radio_links(key, ts);
         CREATE INDEX IF NOT EXISTS idx_rlink_peer_ts ON radio_links(peer, ts);
+
+        -- Ubiquiti EdgeSwitch / UISP switch telemetry (see switchmon.py): one row
+        -- per switch per poll, and one per PORT — a failing cable, a dying PoE
+        -- camera or a flapping uplink shows up on its port long before the
+        -- device behind it drops off the network.
+        CREATE TABLE IF NOT EXISTS switch_samples (
+            key     TEXT NOT NULL,
+            ts      INTEGER NOT NULL,
+            cpu     REAL,
+            ram     REAL,
+            temp    REAL,
+            poe_w   REAL,
+            ports_up INTEGER,
+            rx_bps  REAL,
+            tx_bps  REAL,
+            uptime  REAL
+        );
+        CREATE INDEX IF NOT EXISTS idx_sw_key_ts ON switch_samples(key, ts);
+
+        CREATE TABLE IF NOT EXISTS switch_ports (
+            key     TEXT NOT NULL,          -- the switch
+            ts      INTEGER NOT NULL,
+            port    TEXT NOT NULL,          -- '0/1'
+            up      INTEGER,
+            speed   INTEGER,                -- Mbps, NULL when down
+            poe_w   REAL,
+            rx_bps  REAL,
+            tx_bps  REAL,
+            errors  REAL,                   -- cumulative counters as the switch reports them
+            dropped REAL,
+            macs    INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_swp_key_ts ON switch_ports(key, ts);
         """
     )
     c.commit()
@@ -224,6 +257,83 @@ def radio_prune(retention_days):
     c = _conn()
     c.execute("DELETE FROM radio_samples WHERE ts < ?", (cutoff,))
     c.execute("DELETE FROM radio_links WHERE ts < ?", (cutoff,))
+    c.commit()
+
+
+# ---- switch telemetry --------------------------------------------------------
+_SW_COLS = ("cpu", "ram", "temp", "poe_w", "ports_up", "rx_bps", "tx_bps", "uptime")
+_SWP_COLS = ("port", "up", "speed", "poe_w", "rx_bps", "tx_bps", "errors", "dropped", "macs")
+
+
+def switch_record(key, sample, ports, ts=None):
+    ts = int(ts or time.time())
+    c = _conn()
+    c.execute(f"INSERT INTO switch_samples (key, ts, {','.join(_SW_COLS)}) "
+              f"VALUES (?,?,{','.join('?' * len(_SW_COLS))})",
+              (key, ts, *(sample.get(col) for col in _SW_COLS)))
+    if ports:
+        c.executemany(f"INSERT INTO switch_ports (key, ts, {','.join(_SWP_COLS)}) "
+                      f"VALUES (?,?,{','.join('?' * len(_SWP_COLS))})",
+                      [(key, ts, *(p.get(col) for col in _SWP_COLS)) for p in ports])
+    c.commit()
+
+
+def switch_series(key, window_s=86400, limit=5000):
+    since = int(time.time()) - window_s
+    rows = _conn().execute(
+        "SELECT * FROM switch_samples WHERE key=? AND ts>=? ORDER BY ts DESC LIMIT ?",
+        (key, since, limit)).fetchall()
+    return [dict(r) for r in reversed(rows)]
+
+
+def switch_port_series(key, window_s=86400, port=None, limit=50000):
+    since = int(time.time()) - window_s
+    sql, args = "SELECT * FROM switch_ports WHERE key=? AND ts>=?", [key, since]
+    if port:
+        sql += " AND port=?"
+        args.append(port)
+    sql += " ORDER BY ts DESC LIMIT ?"
+    args.append(limit)
+    return [dict(r) for r in reversed(_conn().execute(sql, args).fetchall())]
+
+
+def switch_port_baseline(key, port, window_s=7 * 86400, settle_s=3600):
+    """How a port USUALLY looks, ignoring the last hour: share of polls with a
+    link, the most common speed while up, and the median PoE draw while it drew
+    any. {} when there is too little history to judge."""
+    now = int(time.time())
+    rows = _conn().execute(
+        "SELECT up, speed, poe_w FROM switch_ports WHERE key=? AND port=? AND ts>=? AND ts<=?",
+        (key, port, now - window_s, now - settle_s)).fetchall()
+    if not rows:
+        return {}
+    ups = [r["up"] for r in rows if r["up"] is not None]
+    speeds = {}
+    for r in rows:
+        if r["up"] and r["speed"]:
+            speeds[r["speed"]] = speeds.get(r["speed"], 0) + 1
+    poes = sorted(r["poe_w"] for r in rows if r["poe_w"] and r["poe_w"] >= 0.5)
+    return {
+        "n": len(rows),
+        "up_share": (sum(1 for u in ups if u) / len(ups)) if ups else None,
+        "speed": max(speeds, key=speeds.get) if speeds else None,
+        "poe_w": poes[len(poes) // 2] if poes else None,
+        "poe_share": len(poes) / len(rows),
+    }
+
+
+def switch_keys(window_s=7 * 86400):
+    since = int(time.time()) - window_s
+    rows = _conn().execute("SELECT key, MAX(ts) AS ts FROM switch_samples WHERE ts>=? GROUP BY key",
+                           (since,)).fetchall()
+    return {r["key"]: r["ts"] for r in rows}
+
+
+def switch_prune(retention_days):
+    cutoff = int(time.time()) - int(retention_days) * 86400
+    c = _conn()
+    c.execute("DELETE FROM switch_samples WHERE ts < ?", (cutoff,))
+    c.execute("DELETE FROM switch_ports WHERE ts < ?", (cutoff,))
     c.commit()
 
 

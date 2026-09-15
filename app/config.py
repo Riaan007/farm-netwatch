@@ -85,6 +85,19 @@ DEFAULTS = {
         # A brand-new key, so _deep_merge fills it False on existing sites with
         # no config_rev bump. Turn it on per site in Settings.
         "mikrotik_manage": False,
+        # Ubiquiti EdgeSwitch / UISP switch control: switch ports on/off, PoE
+        # modes and power cycles, cable tests, reboot. Off by default like the
+        # MikroTik writes; reading ports, PoE, traffic and alerts is always on.
+        "switch_manage": False,
+    },
+    # Switch telemetry (switchmon.py): every EdgeSwitch/UISP switch with a saved
+    # login is read over its own API on the LAN — its own thread and cadence,
+    # because the 15-minute scan is too slow to catch a flapping port.
+    "switch": {
+        "enabled": True,
+        "poll_min": 5,
+        "history_days": 30,
+        "alerts": True,
     },
     # Bumped when a default changes in a way an EXISTING config must adopt —
     # _deep_merge only fills MISSING keys, so a stored False would otherwise

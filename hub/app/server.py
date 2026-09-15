@@ -26,6 +26,7 @@ import notify
 import proxycfg
 import sitehistory
 import siteapi
+import switches
 import tunnels
 import vpnfw
 import wgeasy
@@ -46,6 +47,7 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
 app.secret_key = auth.secret_key()
 app.config["PERMANENT_SESSION_LIFETIME"] = 30 * 86400
+app.register_blueprint(switches.bp)       # /api/hub/sites/<id>/switches + …/devices/<key>/switch*
 
 _OPEN_PATHS = {"/login", "/api/login", "/api/auth-state", "/api/health", "/app.css"}
 

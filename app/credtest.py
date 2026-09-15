@@ -2,6 +2,7 @@
 
 One method per device, chosen from what it is and which ports answer:
   Hikvision camera/NVR  ISAPI deviceInfo (HTTP Digest)
+  Ubiquiti EdgeSwitch   the switch's own JSON API login (what switchmon uses)
   anything with SSH     an SSH login (Ubiquiti, MikroTik, Linux, switches)
   MikroTik web          RouterOS REST (/rest, Basic)
   other web pages       only when the page itself asks for HTTP authentication
@@ -24,6 +25,7 @@ import requests
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 import airos
+import edgeswitch
 import hikvision
 
 PROBE_PORTS = (22, 80, 443, 8080, 8443)
@@ -160,6 +162,21 @@ def test_mikrotik_rest(ip, username, password, ports, timeout=6):
     return _r("unreachable", "RouterOS REST", "No web port answers")
 
 
+def test_edgeswitch(ip, username, password):
+    """One login on the switch's API — the same call the switch monitor makes."""
+    try:
+        with edgeswitch.Session(ip, username, password, timeout=(5, 12)) as s:
+            dev = s.get("/device") or {}
+        ident = dev.get("identification") or {}
+        return _r("ok", "EdgeSwitch API", "The switch accepted the login", model=ident.get("model", ""),
+                  name=ident.get("name", ""))
+    except edgeswitch.SwitchError as e:
+        if e.kind == "auth_failed":
+            return _r("auth_failed", "EdgeSwitch API",
+                      "The switch rejected this username or password (use the login of the switch's own web page)")
+        return _r("unreachable" if e.kind == "unreachable" else "untestable", "EdgeSwitch API", str(e)[:160])
+
+
 def test_web(ip, username, password, ports, timeout=6):
     for base in _bases(ports)[:1]:
         res, detail, _resp = _http_once(base.format(ip=ip) + "/", username, password, timeout)
@@ -184,6 +201,8 @@ def plan(dev, ports):
     steps = []
     if hik and web:
         steps.append("hikvision")
+    if web and edgeswitch.is_edgeswitch(dev):
+        return ["edgeswitch"]         # its web page is a login form; SSH users can differ
     if 22 in ports:
         steps.append("ssh")
     if mikrotik and web:
@@ -212,6 +231,8 @@ def test(dev, username, password):
     for step in steps:
         if step == "hikvision":
             res = test_hikvision(ip, username, password, ports)
+        elif step == "edgeswitch":
+            res = test_edgeswitch(ip, username, password)
         elif step == "ssh":
             res = test_ssh(ip, username, password)
         elif step == "mikrotik":

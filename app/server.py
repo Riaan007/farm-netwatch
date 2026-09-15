@@ -20,6 +20,7 @@ import commands
 import credtest
 import config
 import creds
+import edgeswitch
 import hikvision
 import history
 import hubvpn
@@ -28,6 +29,7 @@ import mikrotik
 import netcfg
 import radiomon
 import siteauth
+import switchmon
 import sysmon
 import tunnels
 import wifidiag
@@ -280,6 +282,8 @@ def api_setup():
         feats["airos_change_ip"] = bool(body["airos_change_ip"])
     if "mikrotik_manage" in body:
         feats["mikrotik_manage"] = bool(body["mikrotik_manage"])
+    if "switch_manage" in body:
+        feats["switch_manage"] = bool(body["switch_manage"])
     if feats:
         patch["features"] = feats
     if "watchdog" in body:
@@ -306,6 +310,7 @@ def api_devices():
     cfg = config.load()
     have = creds.keys_with_creds()
     devices = scanner.get_devices()
+    plugged = switchmon.monitor.mac_map()
     for d in devices:                      # flag only; never expose the secret here
         d["has_credentials"] = d.get("key") in have
         d["has_photo"] = os.path.exists(_photo_path(d.get("key", "")))
@@ -314,6 +319,10 @@ def api_devices():
         d["geo"] = _kreg.get("geo") or None         # {lat, lon, note, ts} — set by hand
         ct = _kreg.get("cred_test")
         d["cred_test"] = {k: v for k, v in ct.items() if k != "fp"} if ct else None
+        sp = plugged.get(edgeswitch.normalize_mac(d.get("mac"))) if d.get("mac") else None
+        d["switch_port"] = sp if sp and sp["switch_key"] != d.get("key") else None
+        if edgeswitch.is_edgeswitch(d):
+            d["is_switch"] = True
     return jsonify({
         "targets": cfg["targets"],
         "devices": devices,
@@ -328,6 +337,10 @@ def api_credentials(key):
         body = request.get_json(force=True)
         user, pw = body.get("username", "").strip(), body.get("password", "")
         saved = creds.set_(key, user, pw, body.get("notes", "").strip())
+        sw = next((d for d in scanner.get_devices() if d.get("key") == key), None)
+        if saved and sw and edgeswitch.is_edgeswitch(sw):     # read the switch with the new login now
+            threading.Thread(target=switchmon.monitor.poll_round, kwargs={"force": True, "only": key},
+                             daemon=True).start()
         # A remembered login test stays meaningful only for the login it tried.
         recent = _CRED_RECENT.pop(key, None)
         if saved and recent and recent["fp"] == creds.fingerprint(user, pw) and time.time() - recent["ts"] < 3600:
@@ -1030,11 +1043,297 @@ def api_mikrotik_console(key):
     return jsonify(res)
 
 
+# ---- Ubiquiti EdgeSwitch / UISP switches ------------------------------------------
+SWITCH_BACKUP_DIR = os.path.join(os.environ.get("NETWATCH_DATA", "/data"), "switch_backups")
+SWITCH_BACKUP_KEEP = 10
+# Actions that can take a port's device (or everything behind the port) off the
+# network. Refused outright on a port the Pi or the router is on.
+_SW_CUTTING = {"port-off", "poe-off", "poe-cycle", "cable-test"}
+
+
+def _sw_enabled():
+    return bool(config.load().get("features", {}).get("switch_manage"))
+
+
+def _switch_meta(key, model=None, serial=None, firmware=None):
+    """Model/serial/firmware the switch reports about itself. Only written when
+    something changed — the monitor calls this every poll and the registry lives
+    on the Pi's SD card."""
+    reg = scanner.registry.get(key, {})
+    if (model and reg.get("model") != model) or (serial and reg.get("serial") != serial):
+        scanner.set_device_meta(key, model=model or None, serial=serial or None)
+    if firmware and scanner.registry.get(key, {}).get("firmware") != firmware:
+        scanner.registry.setdefault(key, {})["firmware"] = firmware
+        scanner.save_registry()
+
+
+def _sw_brief(d):
+    return {"key": d.get("key"), "name": d.get("name") or d.get("device_name") or d.get("model") or "",
+            "ip": d.get("ip"), "mac": d.get("mac"), "vendor": d.get("vendor"),
+            "category": d.get("category"), "online": bool(d.get("online")), "watch": bool(d.get("watch"))}
+
+
+def _sw_view(key, dev, row, by_mac, problems):
+    """One switch as both UIs draw it: the monitor's last reading with every MAC
+    on every port resolved to the Netwatch device it belongs to."""
+    snap = row.get("snap") or {}
+    poll_s = max(1, int((config.load().get("switch") or {}).get("poll_min", 5))) * 60
+    protected, uplinks = snap.get("protected") or {}, snap.get("uplinks") or {}
+    memory = snap.get("port_memory") or {}
+    ports = []
+    for p in snap.get("ports") or []:
+        q = dict(p)
+        known, unknown = [], 0
+        for m in p.get("macs") or []:
+            d = by_mac.get(m["mac"])
+            if d and d.get("key") != key:
+                known.append(_sw_brief(d))
+            elif not d:
+                unknown += 1
+        q["devices"], q["unknown_macs"] = known, unknown
+        q.pop("macs", None)
+        if not p.get("up") and memory.get(p["id"]):
+            mem = memory[p["id"]]
+            q["last_devices"] = [_sw_brief(by_mac[m]) for m in mem.get("macs") or [] if m in by_mac][:8]
+            q["last_seen_ts"] = mem.get("ts")
+        q["protected"] = protected.get(p["id"]) or ""
+        q["uplink"] = uplinks.get(p["id"]) or 0
+        ports.append(q)
+    ts = row.get("ts")
+    name = (dev or {}).get("name") or (dev or {}).get("device_name") or (snap.get("device") or {}).get("name") or (dev or {}).get("ip") or key
+    return {
+        "key": key, "ip": (dev or {}).get("ip") or row.get("ip"), "mac": (dev or {}).get("mac"),
+        "name": name, "online": bool((dev or {}).get("online")),
+        "ok": bool(row.get("ok")), "kind": row.get("kind") or ("pending" if not row else None),
+        "error": row.get("error"), "ts": ts, "read_ts": snap.get("ts"),
+        "stale": bool(snap.get("ts")) and time.time() - snap["ts"] > 3 * poll_s,
+        "model": (snap.get("device") or {}).get("model") or row.get("model") or (dev or {}).get("model") or "",
+        "device": snap.get("device") or {}, "health": snap.get("health") or {},
+        "poe": snap.get("poe") or {}, "summary": snap.get("summary") or {},
+        "ports": ports, "lags": snap.get("lags") or [], "vlans": snap.get("vlans") or [],
+        "services": snap.get("services") or {},
+        "problems": [p for p in problems if p["key"] == key],
+        "poll_min": poll_s // 60,
+    }
+
+
+def _sw_devices():
+    devs = scanner.get_devices()
+    by_mac = {edgeswitch.normalize_mac(d.get("mac")): d for d in devs if d.get("mac")}
+    return devs, by_mac
+
+
+@app.route("/api/switches")
+def api_switches():
+    """Every Ubiquiti EdgeSwitch/UISP switch on the site with its ports, PoE,
+    traffic, what is plugged in where, and its problems — from the monitor's last
+    reading (no login happens here; POST …/switch/poll reads live)."""
+    devs, by_mac = _sw_devices()
+    snap = switchmon.monitor.snapshot()
+    out = []
+    for d in devs:
+        if not edgeswitch.is_edgeswitch(d) and d.get("key") not in snap["switches"]:
+            continue
+        out.append(_sw_view(d["key"], d, snap["switches"].get(d["key"]) or {}, by_mac, snap["problems"]))
+    out.sort(key=lambda s: (not s["online"], s["name"].lower()))
+    return jsonify({"ok": True, "switches": out, "manage": _sw_enabled(),
+                    "polling": snap["busy"], "problems": snap["problems"]})
+
+
+def _thin(rows, max_points):
+    step = max(1, -(-len(rows) // max_points))
+    return rows[::step] if step > 1 else rows
+
+
+@app.route("/api/devices/<path:key>/switch")
+def api_switch_detail(key):
+    """One switch: the live view plus history — switch-level series, a light
+    per-port series for sparklines (or one port in detail with ?port=), and the
+    port events (link down/up, speed changes, PoE lost, devices moving port)."""
+    devs, by_mac = _sw_devices()
+    dev = next((d for d in devs if d.get("key") == key), None)
+    snap = switchmon.monitor.snapshot()
+    row = snap["switches"].get(key)
+    if not dev and not row:
+        return jsonify({"ok": False, "error": "unknown switch"}), 404
+    try:
+        hours = max(1, min(int(request.args.get("hours", 24)), 24 * 30))
+    except (TypeError, ValueError):
+        hours = 24
+    view = _sw_view(key, dev, row or {}, by_mac, snap["problems"])
+    win = hours * 3600
+    view["hours"] = hours
+    view["series"] = _thin(history.switch_series(key, window_s=win), 300)
+    port = (request.args.get("port") or "").strip()[:12]
+    rows = history.switch_port_series(key, window_s=win, port=port or None)
+    by_port = {}
+    for r in rows:
+        by_port.setdefault(r["port"], []).append({k: r[k] for k in ("ts", "up", "speed", "poe_w", "rx_bps", "tx_bps", "errors", "dropped")})
+    view["port_series"] = {p: _thin(v, 300 if port else 96) for p, v in by_port.items()}
+    view["events"] = history.events(key=key, etype="switch", since=int(time.time()) - max(win, 7 * 86400), limit=150)
+    view["manage"] = _sw_enabled()
+    return jsonify({"ok": True, **view})
+
+
+@app.route("/api/devices/<path:key>/switch/poll", methods=["POST"])
+@guard
+def api_switch_poll(key):
+    """Read this switch now (uses its saved login)."""
+    switchmon.monitor.poll_round(force=True, only=key)
+    devs, by_mac = _sw_devices()
+    dev = next((d for d in devs if d.get("key") == key), None)
+    snap = switchmon.monitor.snapshot()
+    row = snap["switches"].get(key)
+    if not row:
+        return jsonify({"ok": False, "error": "not a switch Netwatch can read (is it online?)"}), 404
+    return jsonify({"ok": True, **_sw_view(key, dev, row, by_mac, snap["problems"]), "manage": _sw_enabled()})
+
+
+def _sw_audit(dev, action, result, extra=None):
+    detail = {"switch_event": "action", "action": action, "result": "ok" if result.get("ok") else "fail"}
+    if not result.get("ok") and result.get("error"):
+        detail["error"] = str(result["error"])[:200]
+    detail.update(extra or {})
+    try:
+        named = {**(dev or {}), "name": (dev or {}).get("name") or (dev or {}).get("device_name") or ""}
+        history.log_events([history.build_event("switch", named, detail)])
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@app.route("/api/devices/<path:key>/switch/action", methods=["POST"])
+@guard
+def api_switch_action(key):
+    """Change the switch: a port on/off, PoE mode, PoE power cycle, port name,
+    cable test, find-me LEDs, reboot. Needs Settings → Manage switches. Ports the
+    Pi or the router are on are refused for anything that can cut them off — the
+    check is made on a FRESH read of the MAC table, not the last poll. Every action
+    lands in the switch's history."""
+    if not _sw_enabled():
+        return jsonify({"ok": False, "error": "Switch management is turned off in Settings"}), 403
+    body = request.get_json(force=True, silent=True) or {}
+    action = str(body.get("action") or "").strip()
+    port = str(body.get("port") or "").strip()[:12]
+    dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
+    if not dev or not dev.get("ip"):
+        return jsonify({"ok": False, "error": "unknown switch"}), 404
+    c = creds.get(key)
+    ip, user, pw = dev["ip"], c["username"], c["password"]
+    if not (user or pw):
+        return jsonify({"ok": False, "error": "Save the switch's login first"}), 400
+    kind = {"port": "port-off" if body.get("enabled") is False else "port-on",
+            "poe": "poe-off" if str(body.get("mode") or "") == edgeswitch.POE_OFF else "poe-mode"}.get(action, action)
+    extra = {k: body[k] for k in ("port", "enabled", "mode", "name", "off_s", "on") if k in body}
+    if port or action in ("port", "poe", "poe-cycle", "name", "cable-test"):
+        if not re.match(r"^\d+/\d+$", port):
+            return jsonify({"ok": False, "error": "which port? (e.g. 0/3)"}), 400
+    if kind in _SW_CUTTING or kind == "reboot":
+        live = edgeswitch.read(ip, user, pw)
+        if not live.get("ok"):
+            return jsonify({"ok": False, "error": f"couldn't check the switch first: {live.get('error')}"}), 502
+        prot = switchmon.protected_ports(live)
+        if kind in _SW_CUTTING and port in prot:
+            res = {"ok": False, "error": f"Refused — {prot[port]}. Switching it off would cut this site off "
+                                         "and nobody could switch it back on remotely.", "protected": True}
+            _sw_audit(dev, kind, res, extra)
+            return jsonify(res), 409
+        ups = switchmon.uplink_ports(live)
+        if not body.get("confirm"):
+            if kind in _SW_CUTTING and port in ups:
+                return jsonify({"ok": False, "needs_confirm": True,
+                                "warning": f"Port {port} has {ups[port]} devices behind it (another switch or a "
+                                           "wireless link). All of them lose their connection."})
+            if kind == "reboot":
+                return jsonify({"ok": False, "needs_confirm": True,
+                                "warning": "Every device on this switch loses its network (and PoE power) for "
+                                           "about two minutes while it restarts."})
+    if action == "port":
+        res = edgeswitch.set_port(ip, user, pw, port, enabled=bool(body.get("enabled")))
+    elif action == "poe":
+        mode = str(body.get("mode") or "")
+        if not re.match(r"^[a-z0-9-]{2,16}$", mode):
+            return jsonify({"ok": False, "error": "bad PoE mode"}), 400
+        res = edgeswitch.set_port(ip, user, pw, port, poe=mode)
+    elif action == "poe-cycle":
+        res = edgeswitch.poe_cycle(ip, user, pw, port, body.get("off_s", 8))
+    elif action == "name":
+        res = edgeswitch.set_port(ip, user, pw, port, name=str(body.get("name") or "").strip())
+    elif action == "cable-test":
+        res = edgeswitch.cable_test(ip, user, pw, port)
+    elif action == "locate":
+        res = edgeswitch.locate(ip, user, pw, on=bool(body.get("on", True)))
+    elif action == "reboot":
+        res = edgeswitch.reboot(ip, user, pw)
+    else:
+        return jsonify({"ok": False, "error": f"unknown action {action!r}"}), 400
+    _sw_audit(dev, kind, res, extra)
+    if res.get("ok") and action != "reboot":
+        threading.Thread(target=switchmon.monitor.poll_round, kwargs={"force": True, "only": key},
+                         daemon=True).start()
+    return jsonify(res), (200 if res.get("ok") else 502)
+
+
+def _sw_backup_dir(key):
+    return os.path.join(SWITCH_BACKUP_DIR, re.sub(r"[^A-Za-z0-9_.-]", "-", key))
+
+
+def _sw_backup_list(key):
+    d = _sw_backup_dir(key)
+    try:
+        names = sorted((n for n in os.listdir(d) if n.endswith(".tar.gz")), reverse=True)
+    except OSError:
+        return []
+    return [{"name": n, "size": os.path.getsize(os.path.join(d, n)),
+             "ts": int(os.path.getmtime(os.path.join(d, n)))} for n in names]
+
+
+@app.route("/api/devices/<path:key>/switch/backups", methods=["GET", "POST"])
+@guard
+def api_switch_backups(key):
+    """GET lists the switch config backups kept on the Pi; POST takes a new one
+    (the switch's own .tar.gz, the file its web page's Backup button gives)."""
+    if request.method == "GET":
+        return jsonify({"ok": True, "backups": _sw_backup_list(key)})
+    dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
+    if not dev or not dev.get("ip"):
+        return jsonify({"ok": False, "error": "unknown switch"}), 404
+    c = creds.get(key)
+    res = edgeswitch.backup(dev["ip"], c["username"], c["password"])
+    if not res.get("ok"):
+        return jsonify({"ok": False, "error": res.get("error")}), 502
+    d = _sw_backup_dir(key)
+    os.makedirs(d, exist_ok=True)
+    name = time.strftime("%Y%m%d-%H%M%S") + ".tar.gz"
+    with open(os.path.join(d, name), "wb") as f:
+        f.write(res["content"])
+    for old in _sw_backup_list(key)[SWITCH_BACKUP_KEEP:]:
+        try:
+            os.remove(os.path.join(d, old["name"]))
+        except OSError:
+            pass
+    _sw_audit(dev, "backup", {"ok": True}, {"file": name, "bytes": len(res["content"])})
+    return jsonify({"ok": True, "name": name, "backups": _sw_backup_list(key)})
+
+
+@app.route("/api/devices/<path:key>/switch/backups/<name>")
+@guard
+def api_switch_backup_download(key, name):
+    if not re.match(r"^\d{8}-\d{6}\.tar\.gz$", name):
+        return jsonify({"ok": False, "error": "no such backup"}), 404
+    path = os.path.join(_sw_backup_dir(key), name)
+    if not os.path.exists(path):
+        return jsonify({"ok": False, "error": "no such backup"}), 404
+    dev = next((d for d in scanner.get_devices() if d.get("key") == key), None) or {}
+    label = re.sub(r"[^A-Za-z0-9_.-]", "-", dev.get("name") or dev.get("device_name") or dev.get("ip") or "switch")
+    return send_file(path, mimetype="application/gzip", as_attachment=True,
+                     download_name=f"{label}-{name}")
+
+
 @app.route("/api/problems")
 def api_problems():
     """All detected problems (IP conflict, risky ports, duplicate MAC, IP drift,
     degrading wireless links) for the dashboard's Problems panel."""
-    return jsonify({"problems": scanner.problems() + _radio_problems()})
+    return jsonify({"problems": scanner.problems() + _radio_problems() + _switch_problems()})
 
 
 def _radio_problems():
@@ -1051,6 +1350,26 @@ def _radio_problems():
             "metric": p["metric"], "peer": p.get("peer"),
             "devices": [{"key": p["key"], "ip": p.get("ip"),
                          "name": d.get("name") or p.get("device"),
+                         "vendor": d.get("vendor"), "category": d.get("category"),
+                         "mac": d.get("mac"), "online": d.get("online", True)}],
+        })
+    return out
+
+
+def _switch_problems():
+    """Switch findings (port down, speed drop, PoE lost, errors, flapping, heat,
+    PoE budget, login) in the Problems-panel shape."""
+    devs = {d["key"]: d for d in scanner.get_devices() if d.get("key")}
+    out = []
+    for p in switchmon.monitor.snapshot()["problems"]:
+        d = devs.get(p["key"], {})
+        out.append({
+            "type": "switch",
+            "severity": {"crit": "high", "warn": "medium"}.get(p["level"], "low"),
+            "ip": p.get("ip"), "detail": p["what"], "fix": p["hint"],
+            "metric": p["metric"], "port": p.get("port"), "port_name": p.get("port_name"),
+            "devices": [{"key": p["key"], "ip": p.get("ip"),
+                         "name": d.get("name") or d.get("device_name") or p.get("device"),
                          "vendor": d.get("vendor"), "category": d.get("category"),
                          "mac": d.get("mac"), "online": d.get("online", True)}],
         })
@@ -1698,6 +2017,9 @@ def main():
     scanner.start()
     listener.start()
     sysmon.monitor.start()
+    switchmon.monitor.on_identity = scanner.set_device_name
+    switchmon.monitor.on_meta = _switch_meta
+    switchmon.monitor.start(scanner.get_devices, lambda: scanner.registry, config.load)
     port = int(os.environ.get("NETWATCH_PORT", "8090"))
     app.run(host="0.0.0.0", port=port, threaded=True)
 

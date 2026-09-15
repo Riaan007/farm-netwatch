@@ -20,6 +20,16 @@ device drops offline.
 - **Uptime history** — every scan is recorded in SQLite; the device panel shows
   24h / 7d / 30d uptime and a sparkline. Great for spotting a camera that keeps
   dropping.
+- **Ubiquiti switches (EdgeSwitch / UISP)** — every switch with a saved web login is
+  read over its own API every 5 min (`switch.poll_min`): a front-panel view of every
+  port with link speed, PoE watts, traffic, errors and **which Netwatch device is
+  plugged in where**; 24 h–30 d charts per port; events when a link drops, renegotiates
+  slower, loses PoE or a device moves port; problems + ntfy alerts judged against each
+  port's own history (a port that is always up going down, 1 G→100 M, PoE lost, error
+  bursts, flapping, PoE budget, heat). **Settings → Advanced → Manage switches** (off by
+  default) unlocks port on/off, PoE mode, PoE power cycle, rename, cable test, blink
+  LEDs, restart and config backups — ports the Pi or the router are on are always
+  refused. Same view on the site's **Switches** page and the hub's site **Switches** tab.
 - **Per-device latency graph (Uptime-Kuma style)** — Netwatch samples each
   **watched/named** device's latency every ~60s into a short-retention table, so the
   hub's device row shows a smooth latency line + up/down bars with **30m / 1h / 12h /
@@ -330,7 +340,8 @@ fleet:
   so old discoveries don't bury the real picture.
 - **A site** — Overview, Devices, Problems (IP conflicts with *Clear & re-test*,
   wireless link findings), Pi health, History (timeline with repeats folded, or by
-  IP), Backups (restore, download, delete, backup key) and Remote access (device
+  IP), Switches (ports, PoE, traffic and faults of each Ubiquiti switch, with port and
+  PoE control), Backups (restore, download, delete, backup key) and Remote access (device
   tunnels, SSH to the Pi) — plus SSH Pi, AI report, Wi-Fi Doctor and Pi password.
 - A **device drawer** — identity, 24 h/7 d/30 d uptime, ping chart, ping /
   connection test / traceroute / deep scan from the site Pi, and one-click tunnels.
