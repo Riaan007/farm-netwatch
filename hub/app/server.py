@@ -934,6 +934,37 @@ def api_site_device_location(site_id, key):
     return jsonify(body), r.status_code
 
 
+@app.route("/api/hub/sites/<site_id>/devices/<path:key>/credentials/test", methods=["POST"])
+def api_site_device_credtest(site_id, key):
+    """Test a device login ON its site (credtest.py): the saved login when no
+    username/password is sent, else the typed one. Nothing is saved here — a
+    test of the saved login is remembered on the site and patched into the
+    hub's cached device so the drawer shows it straight away."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    payload = {k: str(body[k]) for k in ("username", "password") if k in body}
+    try:
+        r = requests.post(f"{siteapi.base_url(site)}/api/devices/{quote(key, safe='')}/credentials/test",
+                          json=payload, headers=siteapi.headers(site), timeout=(5, 60))
+    except requests.RequestException:
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+    if r.status_code == 404 and "unknown device" not in r.text:
+        return jsonify({"ok": False, "error": "this site's Netwatch is too old for login tests — "
+                        "update it (docker compose pull)"}), 501
+    try:
+        out = r.json()
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site refused the hub's key — see the site's Backups tab"}), 502
+    if r.ok and out.get("ok") and out.get("current") and out.get("result") in ("ok", "auth_failed"):
+        poller.update_device(site_id, key, cred_test={
+            k: out.get(k) for k in ("ts", "result", "method", "detail", "username")} | {"current": True})
+    return jsonify(out), r.status_code
+
+
 @app.route("/api/hub/sites/<site_id>/location", methods=["POST"])
 def api_site_location(site_id):
     """Set or clear a site's GPS position ({lat, lon} | {clear: true}). It lives in

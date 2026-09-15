@@ -508,6 +508,7 @@
           ${(d.ports || []).length ? `<dt>Open ports</dt><dd class="mono">${d.ports.map((p) => esc(p) + ((d.services || {})[p] ? ` <span class="dim">${esc(d.services[p].split(" ")[0])}</span>` : "")).join(", ")}</dd>` : ""}
           ${d.ip_conflict_with && d.ip_conflict_with.length ? `<dt>Shares IP with</dt><dd>${d.ip_conflict_with.map((x) => esc(x.name || x.vendor || x.mac)).join(", ")}</dd>` : ""}
         </dl></div>
+        <div class="sect"><h3>Login</h3><div id="dd-login"></div></div>
         ${CC.isMikrotik(d) ? `<div class="sect"><h3>MikroTik router</h3>
           <div class="row"><button class="btn sm pri" id="dd-mt-load">🧭 Load router info</button>${d.ip ? `<button class="btn sm" id="dd-mt-webfig">🌐 Manage in Webfig</button>` : ""}</div>
           <div id="dd-mt" style="margin-top:10px"></div>
@@ -541,6 +542,49 @@
       if (clr) clr.onclick = async () => { if (!(await CC.confirm("Remove from the map?", `${CC.devName(d)} will no longer show on the map.`, { ok: "Remove", danger: true }))) return; try { await CC.setLocation(siteId, key, { clear: true }); drawLoc(); msg("✓ Removed"); } catch (err) { msg(err.message, true); } };
     };
     drawLoc();
+
+    // Login test: runs ON the site (credtest.py) — one real login attempt, nothing saved from here.
+    const LOGIN_RES = { ok: ["ok", "✓ Login works"], auth_failed: ["bad", "✗ Login rejected"], unreachable: ["warn", "⚠ Couldn't reach the device"], untestable: ["unk", "ℹ Can't test this login automatically"] };
+    const drawLogin = () => {
+      const t = d.cred_test && d.cred_test.current ? d.cred_test : null;
+      $("#dd-login", dlg).innerHTML = `
+        <p style="margin:0 0 8px">${d.has_credentials ? `<span class="b unk nodot">🔑 Login saved on the site</span>` : `<span class="note">No login saved on the site yet.</span>`}
+          ${t ? ` <span class="b ${t.result === "ok" ? "ok" : "bad"} nodot" title="${esc(t.detail || "")}">${t.result === "ok" ? "✓ last test worked" : "✗ last test rejected"}</span> <span class="note">${esc(t.method || "")} · ${esc(t.username || "")} · ${CC.ago(t.ts)}</span>` : ""}</p>
+        ${d.has_credentials ? `<div class="row"><button class="btn sm good" id="dd-login-saved">🧪 Test saved login</button></div>` : ""}
+        <details id="dd-login-other" style="margin-top:8px" ${d.has_credentials ? "" : "open"}><summary class="note" style="cursor:pointer">${d.has_credentials ? "Test a different login" : "Test a login"}</summary>
+          <div class="grid2" style="margin-top:8px"><input class="inp" id="dd-login-user" placeholder="Username" autocomplete="off" value="${esc((t && t.username) || "")}"><input class="inp" id="dd-login-pass" type="password" placeholder="Password" autocomplete="new-password"></div>
+          <div class="row" style="margin-top:8px"><button class="btn sm good" id="dd-login-typed">🧪 Test this login</button><span class="note">Not saved — save logins on the site's Netwatch page.</span></div></details>
+        <div id="dd-login-res" style="margin-top:8px"></div>
+        <p class="note" style="margin:6px 0 0">Each test is one real login attempt on the device (Hikvision locks the account after several wrong ones).</p>`;
+      const run = (btn, body) => CC.busy(btn, async () => {
+        const res = $("#dd-login-res", dlg);
+        res.innerHTML = `<div class="note">Testing — checking which ports answer, then one login attempt (up to 20 s)…</div>`;
+        try {
+          const r = await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/credentials/test`, { method: "POST", body, timeout: 70000 });
+          const [cls, label] = LOGIN_RES[r.result] || ["unk", r.result];
+          const info = r.info || {};
+          const extra = [info.name, info.model].filter(Boolean).map(esc).join(" · ");
+          const tried = (r.tried || []).length > 1 ? `<div class="note">Tried: ${r.tried.map((x) => `${esc(x.method)} — ${esc(String(x.result).replace("_", " "))}`).join(" · ")}</div>` : "";
+          res.innerHTML = `<div class="panel pbd" style="display:grid;gap:4px"><div><span class="b ${cls} nodot">${label}</span>${r.method ? ` <span class="note">${esc(r.method)}</span>` : ""}</div>
+            <div class="muted" style="font-size:13px">${esc(r.detail || "")}${extra ? " · " + extra : ""}</div>${tried}
+            ${r.result === "ok" && !r.current ? `<div class="note">This login is not the one saved on the site${s.links && s.links.netwatch ? ` — <a href="${esc(s.links.netwatch)}" target="_blank" rel="noopener">save it there ${icon("ext")}</a>` : ""}.</div>` : ""}
+            ${r.result === "auth_failed" && r.current ? `<div class="note warn">The saved login no longer works — radio monitoring and camera names use it.</div>` : ""}</div>`;
+          if (r.current && (r.result === "ok" || r.result === "auth_failed")) {
+            d.cred_test = { ts: r.ts, result: r.result, method: r.method, detail: r.detail, username: r.username, current: true };
+            const keep = res.innerHTML; drawLogin(); $("#dd-login-res", dlg).innerHTML = keep;
+          }
+        } catch (err) { res.innerHTML = `<div class="banner bad" style="margin:0">${esc(err.message)}</div>`; }
+      });
+      const saved = $("#dd-login-saved", dlg);
+      if (saved) saved.onclick = (e) => run(e.currentTarget, {});
+      $("#dd-login-typed", dlg).onclick = (e) => {
+        const user = $("#dd-login-user", dlg).value.trim(), pass = $("#dd-login-pass", dlg).value;
+        if (!user && !pass) { $("#dd-login-res", dlg).innerHTML = `<div class="note warn">Type a username and password first.</div>`; return; }
+        run(e.currentTarget, { username: user, password: pass });
+      };
+    };
+    drawLogin();
+
     const retry = (fn) => fn().catch(() => new Promise((r) => setTimeout(r, 2500)).then(fn));
     retry(() => api(`/api/hub/sites/${siteId}/history/${enc(key)}`)).then((h) => {
       const u = h.summary || {};
