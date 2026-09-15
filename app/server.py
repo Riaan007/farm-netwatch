@@ -954,6 +954,21 @@ def api_mikrotik_report(key):
         res["manage_enabled"] = _mtk_enabled()
         for c in res.get("connected", []):
             c["vendor"] = identify.vendor_for_mac(c.get("mac", ""), online_ok=False)
+    else:
+        # The console reads over the RouterOS API. Point at the two things that
+        # actually block it on a client's router: no saved login, or the API off.
+        has_login = bool(creds.get(key).get("password") or creds.get(key).get("username"))
+        err = str(res.get("error", ""))
+        if "refused" in err.lower():
+            res["hint"] = ("The RouterOS API service (port 8728) looks turned off on this router. "
+                           "Open the Terminal tab and run  /ip service enable api  (needs the router's "
+                           "login saved), then reopen the console.")
+        elif not has_login:
+            res["hint"] = ("No admin login is saved for this router. Save its username/password on the "
+                           "device's Access tab (RouterOS ships admin with a blank password).")
+        else:
+            res["hint"] = ("Couldn't read the router — check the saved admin login and that it's reachable "
+                           "over the VPN. The Terminal tab (MAC-Telnet) may still work.")
     return jsonify(res)
 
 

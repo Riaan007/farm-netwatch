@@ -2272,7 +2272,7 @@
         async function scLoad(){
             const body=document.getElementById('sc-body'); if(!SC.report) body.innerHTML='<div class="animate-pulse h-52 bg-white/5 rounded-lg"></div>';
             try{ SC.report = await (await fetch('/api/devices/'+encodeURIComponent(SC.key)+'/mikrotik/report')).json();
-                if(!SC.report.ok){ body.innerHTML='<div class="p-3 bg-rose-500/10 border border-rose-400/40 rounded-lg text-sm text-rose-200">'+esc(SC.report.error||'failed')+'</div>'; return; }
+                if(!SC.report.ok){ body.innerHTML='<div class="p-3 bg-rose-500/10 border border-rose-400/40 rounded-lg text-sm text-rose-200">'+esc(SC.report.error||'failed')+(SC.report.hint?'<div class="mt-2 text-[12px] text-amber-200">💡 '+esc(SC.report.hint)+'</div>':'')+'</div>'; return; }
                 document.getElementById('sc-title').textContent = (SC.report.system.identity||'MikroTik')+' · '+(SC.report.system.model||'');
                 scDrawTabs(); scRender();
             }catch(e){ body.innerHTML='<div class="p-3 bg-rose-500/10 border border-rose-400/40 rounded-lg text-sm text-rose-200">Could not reach the router: '+esc(e.message||e)+'</div>'; }

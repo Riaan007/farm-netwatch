@@ -814,7 +814,8 @@
         $("#mtc-title", dlg).textContent = report.system.identity ? report.system.identity + " · " + (report.system.model || "MikroTik") : CC.devName(d);
         drawTabs(); render();
       } catch (err) {
-        $("#mtc-body", dlg).innerHTML = `<div class="panel pbd"><p class="note bad">Couldn't read the router: ${esc(err.message)}</p><p class="note">The console reads over the RouterOS API on the router's IP (learned from its MAC). If this persists, the router may be unreachable over the VPN or the saved admin login is wrong.</p></div>`;
+        const hint = err.body && err.body.hint;
+        $("#mtc-body", dlg).innerHTML = `<div class="panel pbd"><p class="note bad">Couldn't read the router: ${esc(err.message)}</p>${hint ? `<p class="note" style="color:#fbbf24">💡 ${esc(hint)}</p>` : `<p class="note">The console reads over the RouterOS API on the router's IP (learned from its MAC). If this persists, the router may be unreachable over the VPN or the saved admin login is wrong.</p>`}</div>`;
       }
     };
     drawTabs();
