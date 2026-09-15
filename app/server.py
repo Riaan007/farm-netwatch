@@ -24,7 +24,6 @@ import hikvision
 import history
 import hubvpn
 import identify
-import mikrotik
 import netcfg
 import radiomon
 import siteauth
@@ -80,11 +79,6 @@ def setup_page():
 @app.route("/wifi")
 def wifi_page():
     return redirect("/#/wifi")
-
-
-@app.route("/neighbors")
-def neighbors_page():
-    return redirect("/#/neighbors")
 
 
 @app.route("/app.css")
@@ -275,13 +269,8 @@ def api_setup():
         kuma_patch["username"] = body["kuma_username"].strip()
     if kuma_patch:
         patch["integrations"] = {"kuma": kuma_patch}
-    feats = {}
     if "airos_change_ip" in body:
-        feats["airos_change_ip"] = bool(body["airos_change_ip"])
-    if "mikrotik_manage" in body:
-        feats["mikrotik_manage"] = bool(body["mikrotik_manage"])
-    if feats:
-        patch["features"] = feats
+        patch["features"] = {"airos_change_ip": bool(body["airos_change_ip"])}
     if "watchdog" in body:
         patch["sysmon"] = {"watchdog": bool(body["watchdog"])}
     # admin password -> obfuscated creds store (only when a non-empty value is sent)
@@ -849,145 +838,6 @@ def api_airos_set_ip(key):
         scanner.registry.setdefault(key, {})["known_ip"] = new_ip
         scanner.save_registry()
         scanner.trigger("quick", hosts=[new_ip])
-    return jsonify(res)
-
-
-# ---- MikroTik / RouterOS -------------------------------------------------
-def _mtk_enabled():
-    return bool(config.load().get("features", {}).get("mikrotik_manage"))
-
-
-def _mtk_target(key):
-    """(dev, mac, ip, user, pw) for a device by key. RouterOS ships admin/blank,
-    so default the username to 'admin' when no login is saved."""
-    dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
-    c = creds.get(key)
-    mac = mikrotik.normalize_mac((dev or {}).get("mac", ""))
-    ip = (dev or {}).get("ip", "")
-    return dev, mac, ip, (c["username"] or "admin"), c["password"]
-
-
-def _mtk_audit(dev, action, result, extra=None):
-    """Write a management action to the device's history (audit trail — this is
-    config power over a client's router)."""
-    detail = {"mikrotik_action": action, "result": "ok" if result.get("ok") else "fail"}
-    if not result.get("ok") and result.get("error"):
-        detail["error"] = str(result["error"])[:200]
-    if extra:
-        detail.update(extra)
-    try:
-        history.log_events([history.build_event("mikrotik", dev or {}, detail)])
-    except Exception:
-        pass
-
-
-@app.route("/api/mikrotik/neighbors", methods=["GET", "POST"])
-def api_mikrotik_neighbors():
-    """MNDP discovery — every MikroTik that answers on the LAN, found BY MAC with
-    no login (WinBox's Neighbors tab). Flags which are already tracked devices."""
-    try:
-        secs = min(8.0, max(2.0, float(request.args.get("t", 4))))
-    except (TypeError, ValueError):
-        secs = 4.0
-    res = mikrotik.discover(timeout=secs)
-    if res.get("ok"):
-        by_mac = {identify.normalize_mac(d.get("mac", "")): d
-                  for d in scanner.get_devices() if d.get("mac")}
-        for n in res["neighbors"]:
-            dev = by_mac.get(identify.normalize_mac(n.get("mac", "")))
-            n["tracked"] = bool(dev)
-            n["key"] = dev.get("key") if dev else None
-            n["saved_name"] = (dev or {}).get("name") or (dev or {}).get("device_name") or ""
-    return jsonify(res)
-
-
-@app.route("/api/mikrotik/adopt", methods=["POST"])
-@guard
-def api_mikrotik_adopt():
-    """Scan a discovered neighbour's IP so the normal pipeline tracks + identifies
-    it and it appears in the device list."""
-    body = request.get_json(force=True)
-    ip = (body.get("ip") or "").strip()
-    if not mikrotik._valid_ip(ip):
-        return jsonify({"ok": False, "error": "need the neighbour's IP to scan it"}), 400
-    scanner.trigger("quick", hosts=[ip])
-    return jsonify({"ok": True, "scanning": True})
-
-
-@app.route("/api/devices/<path:key>/mikrotik", methods=["GET"])
-@guard
-def api_mikrotik_status(key):
-    """Structured RouterOS status. MAC-Telnet first (works with no IP), the API on
-    the discovered IP as the fallback. Records model/serial/firmware/name like the
-    Hikvision/airOS fetches so the grid shows a real name."""
-    dev, mac, ip, user, pw = _mtk_target(key)
-    if not (mac or ip):
-        return jsonify({"ok": False, "error": "unknown device MAC/IP"}), 400
-    res = mikrotik.snapshot(mac=mac, ip=ip, user=user, password=pw, prefer="mac")
-    if res.get("ok"):
-        scanner.set_device_meta(key, serial=res.get("serial") or None,
-                                model=res.get("model") or None)
-        res["display_name"] = scanner.set_device_name(key, res.get("identity"),
-                                                      model=res.get("model"))
-        if res.get("firmware"):
-            scanner.registry.setdefault(key, {})["firmware"] = res["firmware"]
-            scanner.save_registry()
-    return jsonify(res)
-
-
-@app.route("/api/devices/<path:key>/mikrotik/action", methods=["POST"])
-@guard
-def api_mikrotik_action(key):
-    """Gated management writes over the RouterOS API (needs the router's IP, which
-    discovery supplies). Requires the mikrotik_manage flag; every action is
-    written to the device history."""
-    if not _mtk_enabled():
-        return jsonify({"ok": False, "error": "MikroTik management is turned off in Settings"})
-    body = request.get_json(force=True)
-    action = (body.get("action") or "").strip()
-    dev, mac, ip, user, pw = _mtk_target(key)
-    if not mikrotik._valid_ip(ip):
-        return jsonify({"ok": False, "error": "management actions need the router's IP — "
-                        "open Router info first to discover it"}), 400
-    if action == "set-identity":
-        res = mikrotik.api_set_identity(ip, user, pw, body.get("name", ""))
-    elif action == "interface":
-        res = mikrotik.api_set_interface(ip, user, pw, body.get("id", ""),
-                                         bool(body.get("enable")))
-    elif action == "poe":
-        res = mikrotik.api_set_poe(ip, user, pw, body.get("id", ""), body.get("mode", ""))
-    elif action == "reboot":
-        res = mikrotik.api_reboot(ip, user, pw)
-    elif action == "export":
-        res = mikrotik.api_export(ip, user, pw)
-    else:
-        return jsonify({"ok": False, "error": "unknown action %r" % action}), 400
-    _mtk_audit(dev, action, res, {k: body[k] for k in ("name", "id", "mode", "enable")
-                                  if k in body})
-    if res.get("ok") and action == "set-identity" and body.get("name"):
-        scanner.set_device_name(key, body["name"].strip())
-    return jsonify(res)
-
-
-@app.route("/api/devices/<path:key>/mikrotik/console", methods=["POST"])
-@guard
-def api_mikrotik_console(key):
-    """The web terminal: run one RouterOS console command. Gated. MAC-Telnet
-    first, SSH-over-IP fallback. Router-stranding commands need an explicit
-    confirm. Logged to history."""
-    if not _mtk_enabled():
-        return jsonify({"ok": False, "error": "MikroTik management is turned off in Settings"})
-    body = request.get_json(force=True)
-    command = (body.get("command") or "").strip()
-    if not command:
-        return jsonify({"ok": False, "error": "no command"}), 400
-    warning = mikrotik.dangerous_command(command)
-    if warning and not body.get("confirm"):
-        return jsonify({"ok": False, "needs_confirm": True, "warning": warning})
-    dev, mac, ip, user, pw = _mtk_target(key)
-    res = mikrotik.run_console(mac=mac, ip=ip, user=user, password=pw,
-                               command=command, prefer="mac")
-    _mtk_audit(dev, "console", res, {"command": command[:200]})
     return jsonify(res)
 
 
