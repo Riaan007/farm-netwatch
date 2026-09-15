@@ -330,6 +330,15 @@
         .nw-busy .d { grid-column: 1 / -1; font-size: 11.5px; color: #64748b; }
         .nw-busy .bar { grid-column: 1 / -1; height: 3px; border-radius: 99px; background: rgba(148,163,184,.12); overflow: hidden; }
         .nw-busy .bar i { display: block; height: 100%; background: #fbbf24; }
+        /* login test */
+        .cred-test { border-radius: .7rem; border: 1px solid rgba(148,163,184,.2); background: rgba(15,23,42,.6); padding: .6rem .75rem; font-size: 12.5px; color: #cbd5e1; display: grid; gap: .25rem; }
+        .cred-test b { font-size: 13.5px; }
+        .cred-test.ok { border-color: rgba(52,211,153,.45); background: rgba(16,185,129,.1); } .cred-test.ok b { color: #6ee7b7; }
+        .cred-test.bad { border-color: rgba(251,113,133,.5); background: rgba(244,63,94,.1); } .cred-test.bad b { color: #fda4af; }
+        .cred-test.warn { border-color: rgba(251,191,36,.45); background: rgba(245,158,11,.1); } .cred-test.warn b { color: #fcd34d; }
+        .cred-test.run b { color: #a5f3fc; }
+        .cred-test small { color: #94a3b8; font-size: 11.5px; }
+        .cred-test .act { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .2rem; }
         /* wi-fi */
         .nw-wgrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1rem; align-items: start; }
         .nw-wcol { display: grid; gap: 1rem; align-content: start; min-width: 0; }
@@ -548,6 +557,7 @@
                     <a href="#/" data-page="devices" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
                     <a href="#/map" data-page="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg><span class="lbl">Map</span></a>
                     <a href="#/wifi" data-page="wifi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
+                    <a href="#/neighbors" data-page="neighbors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 4v3M16 4v3M8 17v3M16 17v3"/></svg><span class="lbl">Neighbors</span></a>
                     <a href="#/history" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></a>
                     <a href="#/settings" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg><span class="lbl">Settings</span></a>
                 </nav>
@@ -679,6 +689,19 @@
                 </section>
             </aside>
         </div>
+      </div>
+
+      <div id="page-neighbors" hidden>
+        <div class="nw-phead">
+            <div><div class="nw-eyebrow">Network</div><h1>MikroTik neighbors</h1><p>Every MikroTik router that answers on this LAN, found by its <b>MAC address</b> — no login and no IP needed, the same way WinBox's Neighbors tab works. Adopt one to track it, or open its manager.</p></div>
+            <div class="nw-tools">
+                <button class="nw-ib" id="neighbors-scan" onclick="loadNeighborsPage(true)" title="Send a fresh MNDP discovery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5"/></svg><span class="lbl">Search again</span></button>
+            </div>
+        </div>
+        <section class="nw-panel">
+            <div class="nw-dhead"><div><h2>Discovered routers</h2><p id="neighbors-sub">Listening for MikroTik Neighbor Discovery (MNDP) broadcasts…</p></div></div>
+            <div id="neighbors-body" class="nw-body">Searching…</div>
+        </section>
       </div>
 
       <div id="page-history" hidden>
@@ -911,6 +934,7 @@
                 <div class="nw-sbody">
                     <label class="nw-tgl"><input id="setup-watchdog" type="checkbox" data-track><b>Hardware watchdog</b><span>Reboot this Pi automatically if it hard-hangs: Netwatch feeds /dev/watchdog every 5 s and the chip reboots after ~15 s of silence. Needs the health add-on (<code>docker-compose.health.yml</code>). A clean stop disarms it safely.</span></label>
                     <label class="nw-tgl"><input id="setup-airos-setip" type="checkbox" data-track><b>Change IP for Ubiquiti airOS radios <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Edits the radio's config over SSH and <b>reboots it</b> — a wrong value can drop the link to a whole building. Needs the radio's SSH login saved. Turn off to hide the button on this site.</span></label>
+                    <label class="nw-tgl"><input id="setup-mikrotik-manage" type="checkbox" data-track><b>Manage MikroTik routers <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Unlocks the write actions (rename, enable/disable ports, PoE, reboot) and the <b>web terminal</b> on a MikroTik's Tools tab — config power over the router. Finding routers by MAC and reading their status stay available whether this is on or off.</span></label>
                 </div>
             </section>
 
@@ -1060,6 +1084,8 @@
                             <button id="setip-btn" onclick="openSetIp()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold hidden">🛠️ Change IP</button>
                             <button id="airos-wifi-btn" onclick="fetchAirosWifi()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">📡 Wi-Fi info (airOS)</button>
                             <button id="airos-btn" onclick="openAirosIp()" class="px-3 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold hidden">🛠️ Change IP (airOS)</button>
+                            <button id="mikrotik-status-btn" onclick="fetchMikrotikStatus()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">🧭 Router info (MikroTik)</button>
+                            <button id="mikrotik-manage-btn" onclick="openMikrotikManage()" class="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold hidden">🛠️ Manage / Terminal</button>
                             <button onclick="deepScanDevice()" class="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-xs font-bold">🔬 Deep scan</button>
                         </div>
                         <div id="setip-panel" class="hidden mt-3 p-3 bg-rose-500/10 border border-rose-400/30 rounded-lg">
@@ -1097,6 +1123,7 @@
                             </div>
                         </div>
                         <div id="airos-wifi-panel" class="hidden mt-3"></div>
+                        <div id="mikrotik-panel" class="hidden mt-3"></div>
                         <div id="quality-panel" class="hidden mt-3"></div>
                         <pre id="cmd-result" class="hidden mt-2 p-2 bg-[#050b16] border border-white/10 text-emerald-300/90 rounded-lg text-[11px] whitespace-pre-wrap leading-snug max-h-40 overflow-auto"></pre>
                     </div>
@@ -1190,11 +1217,13 @@
                             </div>
                             <input id="cred-notes" type="text" class="w-full p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="Notes (optional) — e.g. web admin / RTSP">
                             <div class="flex gap-2 items-center">
-                                <button onclick="saveCreds()" class="px-4 py-2 bg-cyan-600 text-white rounded-lg text-sm font-bold">Save login</button>
+                                <button onclick="saveCreds()" id="cred-save" class="px-4 py-2 bg-cyan-600 text-white rounded-lg text-sm font-bold">Save login</button>
+                                <button onclick="testCreds()" id="cred-test-btn" class="px-3 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-200 rounded-lg text-sm font-bold" title="Log in to the device with what is typed above — nothing is saved">🧪 Test login</button>
                                 <button onclick="clearCreds()" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-bold">Clear</button>
                                 <button onclick="openBulkCreds(CURRENT_KEY)" class="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm font-bold" title="Copy this login to the identical devices">👥 Copy to similar…</button>
                                 <span id="cred-status" class="text-xs"></span>
                             </div>
+                            <div id="cred-test" class="cred-test" hidden role="status" aria-live="polite"></div>
                             <p class="text-[10px] text-slate-400 leading-snug">Stored on the Pi, obfuscated at rest. Anyone who can open this dashboard can reveal it — keep port 8090 on a trusted LAN / behind the VPN.</p>
                         </div>
                     </div>
@@ -2053,6 +2082,164 @@
                  + '<button onclick="document.getElementById(\'airos-wifi-panel\').classList.add(\'hidden\')" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">Close</button></div></div>';
             panel.innerHTML = html;
         }
+
+        // --- MikroTik / RouterOS -------------------------------------------
+        function mtkUptime(s){
+            if(s === null || s === undefined || s === '') return '';
+            if(typeof s === 'string' && /[a-z]/i.test(s)) return s;   // RouterOS "1h2m46s"
+            let n = parseInt(s, 10); if(isNaN(n)) return '';
+            const d = Math.floor(n/86400); n%=86400; const h = Math.floor(n/3600); n%=3600; const m = Math.floor(n/60);
+            return ((d?d+'d ':'')+(h?h+'h ':'')+(m?m+'m':'')).trim() || '<1m';
+        }
+        function mtkBytes(v){
+            let n = parseInt(v, 10); if(isNaN(n)) return v||'0';
+            const u = ['B','KB','MB','GB','TB']; let i = 0;
+            while(n >= 1024 && i < u.length-1){ n/=1024; i++; }
+            return (i ? n.toFixed(1) : n)+' '+u[i];
+        }
+        async function loadNeighborsPage(fresh){
+            const body = document.getElementById('neighbors-body');
+            const sub = document.getElementById('neighbors-sub');
+            if(fresh) body.innerHTML = '<p class="text-sm text-slate-500">Searching for MikroTik routers…</p>';
+            try {
+                const r = await (await fetch('/api/mikrotik/neighbors?t='+(fresh?5:4))).json();
+                if(!r.ok){ body.innerHTML = '<div class="nw-empty"><b>Could not listen for MNDP</b>'+esc(r.error||'')+'</div>'; sub.textContent=''; return; }
+                const ns = r.neighbors || [];
+                sub.textContent = ns.length ? (ns.length+' router'+(ns.length===1?'':'s')+' answered on the LAN.') : 'No MikroTik routers answered.';
+                if(!ns.length){ body.innerHTML = '<div class="nw-empty"><b>No MikroTik neighbors found</b>MikroTik routers announce themselves over MNDP (UDP 5678). If you expect one, check it is on this LAN — MAC discovery is on by default in RouterOS.</div>'; return; }
+                body.innerHTML = ns.map(n => {
+                    const name = esc(n.saved_name || n.identity || 'MikroTik');
+                    const ip = esc(n.ipv4 || '');
+                    const tag = n.tracked
+                        ? '<span class="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-200">tracked</span>'
+                        : '<span class="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-200">new</span>';
+                    let acts = '';
+                    if(n.tracked && n.key){
+                        acts += '<button onclick="openMikrotikFor(\''+esc(n.key)+'\')" class="nw-btn sm pri">🧭 Manage</button>';
+                    } else {
+                        acts += '<button onclick="adoptNeighbor(\''+ip+'\', this)" class="nw-btn sm pri">Adopt &amp; track</button>';
+                    }
+                    if(ip) acts += '<a href="http://'+ip+'/" target="_blank" rel="noopener" class="nw-btn sm">🌐 Webfig ↗</a>';
+                    return '<div class="flex flex-wrap items-center gap-3 p-3 mb-2 bg-white/5 border border-white/10 rounded-lg">'
+                        + '<div class="min-w-0 flex-grow">'
+                        + '<div class="text-sm font-bold text-slate-200">'+name+tag+'</div>'
+                        + '<div class="text-[11px] text-slate-400 font-mono">'+esc(n.mac||'')+' · '+esc(n.board||'')+' · RouterOS '+esc(n.version||'')+'</div>'
+                        + '<div class="text-[11px] text-slate-500">'+(ip?('IP '+ip+' · '):'')+esc(n.interface||'')+(n.uptime?(' · up '+mtkUptime(n.uptime)):'')+'</div>'
+                        + '</div><div class="flex gap-2 flex-wrap shrink-0">'+acts+'</div></div>';
+                }).join('');
+            } catch(e){ body.innerHTML = '<div class="nw-empty"><b>Discovery failed</b>'+esc(e.message||e)+'</div>'; }
+        }
+        async function adoptNeighbor(ip, btn){
+            if(btn){ btn.disabled = true; btn.textContent = 'Scanning…'; }
+            try {
+                const r = await (await fetch('/api/mikrotik/adopt', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ip})})).json();
+                if(r.ok){ toast('Scanning '+ip+' — it will appear in Devices shortly.', 'ok'); setTimeout(() => loadNeighborsPage(true), 3500); }
+                else { toast(r.error||'Adopt failed', 'bad'); if(btn){ btn.disabled=false; btn.textContent='Adopt & track'; } }
+            } catch(e){ toast('Adopt failed', 'bad'); if(btn){ btn.disabled=false; btn.textContent='Adopt & track'; } }
+        }
+        function openMikrotikFor(key){ openModal(key); setTimeout(() => { modalTab('tools'); fetchMikrotikStatus(); }, 250); }
+
+        async function fetchMikrotikStatus(){
+            const panel = document.getElementById('mikrotik-panel');
+            document.getElementById('airos-wifi-panel').classList.add('hidden');
+            panel.classList.remove('hidden');
+            panel.innerHTML = '<p class="text-xs text-slate-500">Reading the router (MAC-Telnet, or the API over its IP)…</p>';
+            let r;
+            try { r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/mikrotik')).json(); }
+            catch(e){ panel.innerHTML = '<p class="text-xs text-rose-300">Could not reach the router.</p>'; return; }
+            if(!r.ok){ panel.innerHTML = '<div class="p-3 bg-rose-500/10 border border-rose-400/40 rounded-lg text-xs text-rose-200">'+esc(r.error||'failed')+'</div>'; return; }
+            renderMikrotikStatus(r, panel);
+        }
+        function renderMikrotikStatus(r, panel){
+            const src = r.source === 'mactelnet' ? '🔗 Connected by MAC (MAC-Telnet)' : '🌐 via IP (RouterOS API)';
+            const memUsed = (r.free_memory && r.total_memory) ? (mtkBytes(r.total_memory - r.free_memory)+' / '+mtkBytes(r.total_memory)) : '';
+            const row = (k, v) => v ? ('<div class="text-slate-400">'+k+'</div><div class="text-slate-200 font-mono">'+esc(String(v))+'</div>') : '';
+            let h = '<div class="p-3 bg-cyan-500/10 border border-cyan-400/30 rounded-lg">';
+            h += '<div class="flex items-center justify-between gap-2"><p class="text-xs font-bold text-cyan-200">🧭 '+esc(r.identity||'MikroTik')+'</p><span class="text-[10px] text-slate-400">'+src+'</span></div>';
+            h += '<div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] mt-2">';
+            h += row('Model', r.model||r.board) + row('RouterOS', r.version) + row('Firmware', r.firmware) + row('Serial', r.serial)
+               + row('Uptime', mtkUptime(r.uptime)) + row('CPU', (r.cpu!=='' && r.cpu!=null)?r.cpu+'%':'') + row('Memory used', memUsed) + row('Arch', r.arch);
+            if(r.health && (r.health.voltage || r.health.temperature))
+                h += row('Health', [r.health.voltage?r.health.voltage+' V':'', r.health.temperature?r.health.temperature+'°C':''].filter(Boolean).join(' · '));
+            h += '</div>';
+            if((r.interfaces||[]).length){
+                h += '<div class="mt-3 text-[10px] font-bold text-slate-400 uppercase">Interfaces</div><div class="mt-1 space-y-1">';
+                r.interfaces.forEach(i => {
+                    const dot = i.running ? 'bg-emerald-400' : (i.disabled ? 'bg-slate-600' : 'bg-rose-400');
+                    h += '<div class="flex items-center gap-2 text-[11px]"><span class="w-2 h-2 rounded-full '+dot+'"></span>'
+                       + '<span class="font-mono text-slate-200 w-24 truncate">'+esc(i.name)+'</span>'
+                       + '<span class="text-slate-500">'+esc(i.type||'')+(i.disabled?' · off':'')+'</span>'
+                       + '<span class="ml-auto text-slate-400 font-mono">↓'+mtkBytes(i.rx)+' ↑'+mtkBytes(i.tx)+'</span></div>';
+                });
+                h += '</div>';
+            }
+            if((r.poe||[]).length){
+                h += '<div class="mt-3 text-[10px] font-bold text-slate-400 uppercase">PoE out</div><div class="mt-1 flex flex-wrap gap-1">';
+                r.poe.forEach(p => { h += '<span class="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[10px]">'+esc(p.name)+': '+esc(p.poe_out||'?')+(p.power?(' '+esc(p.power)+'W'):'')+'</span>'; });
+                h += '</div>';
+            }
+            if((r.addresses||[]).length)
+                h += '<div class="mt-2 text-[11px] text-slate-400">Addresses: '+r.addresses.map(a => '<span class="font-mono text-slate-300">'+esc(a.address)+'</span>').join(', ')+'</div>';
+            const dev = CURRENT_KEY ? DEV_BY_KEY[CURRENT_KEY] : null;
+            h += '<div class="flex gap-2 mt-3 flex-wrap"><button onclick="fetchMikrotikStatus()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">↻ Refresh</button>';
+            if(dev && dev.ip) h += '<a href="http://'+esc(dev.ip)+'/" target="_blank" rel="noopener" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">🌐 Open Webfig ↗</a>';
+            if(FEATURES.mikrotik_manage) h += '<button onclick="openMikrotikManage()" class="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold">🛠️ Manage / Terminal</button>';
+            h += '<button onclick="document.getElementById(\'mikrotik-panel\').classList.add(\'hidden\')" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">Close</button></div></div>';
+            panel.innerHTML = h;
+        }
+        function openMikrotikManage(){
+            const panel = document.getElementById('mikrotik-panel');
+            panel.classList.remove('hidden');
+            panel.innerHTML = '<div class="p-3 bg-violet-500/10 border border-violet-400/40 rounded-lg">'
+                + '<p class="text-xs font-bold text-violet-200 mb-2">🛠️ Manage router (MikroTik)</p>'
+                + '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">'
+                + '<div class="flex gap-2"><input id="mtk-identity" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="New identity / name">'
+                + '<button onclick="mtkSetIdentity()" class="px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold whitespace-nowrap">Rename</button></div>'
+                + '<button onclick="mtkReboot()" class="px-3 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold">↻ Reboot router</button>'
+                + '</div>'
+                + '<p class="text-[10px] text-slate-400 mb-2">Structured actions use the RouterOS API over the router\'s IP. The terminal logs in <b>by MAC</b> (MAC-Telnet), with SSH-over-IP as the fallback.</p>'
+                + '<div id="mtk-term" class="bg-[#050b16] border border-white/10 rounded-lg p-2 h-44 overflow-auto text-[11px] font-mono text-emerald-300/90 whitespace-pre-wrap"></div>'
+                + '<div class="flex gap-2 mt-2"><span class="text-violet-300 font-mono text-sm self-center">&gt;</span>'
+                + '<input id="mtk-cmd" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm font-mono" placeholder="/system resource print" onkeydown="if(event.key===\'Enter\')mtkRun()">'
+                + '<button onclick="mtkRun()" class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold">Run</button></div>'
+                + '<p class="text-[10px] text-slate-500 mt-1">Runs as <b>admin</b> on the live router and is logged. Router-stranding commands ask before running.</p>'
+                + '<div class="mt-2"><button onclick="fetchMikrotikStatus()" class="text-[11px] text-cyan-300 hover:text-cyan-200 font-bold">← Back to router info</button></div>'
+                + '</div>';
+            setTimeout(() => { const c = document.getElementById('mtk-cmd'); if(c) c.focus(); }, 50);
+        }
+        async function mtkAction(body){
+            try { return await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/mikrotik/action', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json(); }
+            catch(e){ return {ok:false, error:String(e)}; }
+        }
+        async function mtkSetIdentity(){
+            const el = document.getElementById('mtk-identity'); const name = el.value.trim();
+            if(!name) return;
+            const r = await mtkAction({action:'set-identity', name});
+            toast(r.ok ? (r.msg||'Renamed') : (r.error||'Failed'), r.ok?'ok':'bad');
+            if(r.ok) el.value = '';
+        }
+        async function mtkReboot(){
+            if(!confirm('Reboot this router now? It will be offline for ~30-60s.')) return;
+            const r = await mtkAction({action:'reboot'});
+            toast(r.ok ? (r.msg||'Rebooting') : (r.error||'Failed'), r.ok?'ok':'bad');
+        }
+        function mtkTermWrite(cmd, out){
+            const term = document.getElementById('mtk-term'); if(!term) return;
+            const d = document.createElement('div');
+            d.innerHTML = '<div class="text-violet-300">&gt; '+esc(cmd)+'</div><div class="text-emerald-300/90 mb-1">'+esc(out)+'</div>';
+            term.appendChild(d); term.scrollTop = term.scrollHeight;
+        }
+        async function mtkRun(confirmDanger){
+            const input = document.getElementById('mtk-cmd'); const cmd = input.value.trim(); if(!cmd) return;
+            const body = {command: cmd}; if(confirmDanger) body.confirm = true;
+            let r;
+            try { r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/mikrotik/console', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json(); }
+            catch(e){ mtkTermWrite(cmd, 'error: '+e); return; }
+            if(r.needs_confirm){ if(confirm('⚠ '+r.warning+'\n\nRun this command anyway?')) mtkRun(true); return; }
+            if(r.ok){ mtkTermWrite(cmd, r.output || '(no output)'); input.value = ''; }
+            else mtkTermWrite(cmd, 'error: '+(r.error||'failed'));
+            input.focus();
+        }
         async function connTest(){
             const dev = CURRENT_KEY ? DEV_BY_KEY[CURRENT_KEY] : null;
             const ip = dev ? dev.ip : MODAL_IP;
@@ -2152,6 +2339,12 @@
             // Wi-Fi info is read-only, so it is NOT behind the change-IP flag.
             document.getElementById('airos-wifi-btn').classList.toggle('hidden', !isAiros);
             document.getElementById('airos-wifi-panel').classList.add('hidden');
+            // MikroTik: router info is read-only (always shown); Manage/Terminal
+            // is gated on the mikrotik_manage flag, like airOS Change IP.
+            const isMikrotik = dev && (/mikrotik|routeros/i.test(dev.vendor||'') || (dev.ports||[]).includes(8291)) && !isHik;
+            document.getElementById('mikrotik-status-btn').classList.toggle('hidden', !isMikrotik);
+            document.getElementById('mikrotik-manage-btn').classList.toggle('hidden', !(isMikrotik && FEATURES.mikrotik_manage));
+            document.getElementById('mikrotik-panel').classList.add('hidden');
 
             drawSpark([]); document.getElementById('up-24h').innerText='--'; document.getElementById('up-7d').innerText='--'; document.getElementById('up-30d').innerText='--';
             loadCreds(key);
@@ -2376,6 +2569,7 @@
             document.getElementById('cred-pass').type = 'password';
             document.getElementById('cred-notes').value = n || '';
             document.getElementById('cred-status').innerText = '';
+            showCredTest('');
         }
         async function loadCreds(key){
             const sec = document.getElementById('cred-section');
@@ -2401,12 +2595,63 @@
             try {
                 const c = await (await fetch('/api/devices/'+encodeURIComponent(key)+'/credentials')).json();
                 setCredFields(c.username, c.password, c.notes);
+                showLastCredTest(key);
                 const dev = DEV_BY_KEY[key];
                 const wants = dev && (/ubiquiti|hikvision|hangzhou/i.test(dev.vendor||'')
                                       || ['camera','nvr'].includes(dev.category));
                 markTab('access', wants && !c.username && !c.password);
             } catch(e){}
         }
+        // ---- login test: one real login attempt with what is typed (credtest.py picks how) ----
+        const CRED_TEST_LABEL = { ok: ['✓', 'ok', 'Login works'], auth_failed: ['✗', 'bad', 'Login rejected'],
+                                  unreachable: ['⚠', 'warn', "Couldn't reach the device"], untestable: ['ℹ', '', "Can't test this login automatically"] };
+        function credTyped(){
+            return { username: document.getElementById('cred-user').value.trim(), password: document.getElementById('cred-pass').value };
+        }
+        function showCredTest(html, cls){
+            const box = document.getElementById('cred-test');
+            box.className = 'cred-test ' + (cls || '');
+            box.innerHTML = html; box.hidden = !html;
+        }
+        function showLastCredTest(key){
+            const t = (DEV_BY_KEY[key] || {}).cred_test;
+            if(!t){ showCredTest(''); return; }
+            const [mark, cls, label] = CRED_TEST_LABEL[t.result] || ['•', '', t.result];
+            showCredTest(`<b>${mark} Last test ${t.result === 'ok' ? 'worked' : 'was rejected'}</b>
+                <small>${esc(t.method || '')} · ${esc(t.username || '')} · ${tsAgo(t.ts)}${t.current ? '' : ' · <span class="text-amber-300">for a different login than the one saved now</span>'}</small>`,
+                t.current ? cls : '');
+        }
+        async function testCreds(){
+            if(!CURRENT_KEY) return;
+            const key = CURRENT_KEY, typed = credTyped();
+            if(!typed.username && !typed.password){ showCredTest('<b>Type a username and password first</b>', 'warn'); return; }
+            const btn = document.getElementById('cred-test-btn');
+            btn.disabled = true;
+            showCredTest(`<b>Testing ${esc(typed.username || 'the login')}…</b><small>Checking which ports answer, then one login attempt — up to 20 seconds.</small>`, 'run');
+            let r;
+            try {
+                r = await (await fetch('/api/devices/' + encodeURIComponent(key) + '/credentials/test', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(typed) })).json();
+            } catch(e){ r = { ok: false, error: String(e) }; }
+            btn.disabled = false;
+            if(CURRENT_KEY !== key) return;               // the modal moved on to another device
+            if(!r.ok){ showCredTest(`<b>✗ Test failed</b><small>${esc(r.error || 'unknown error')}</small>`, 'bad'); return; }
+            const [mark, cls, label] = CRED_TEST_LABEL[r.result] || ['•', '', r.result];
+            const saved = DEV_BY_KEY[key] && DEV_BY_KEY[key].has_credentials;
+            const info = r.info || {};
+            const extra = [info.name, info.model].filter(Boolean).map(esc).join(' · ');
+            const tried = (r.tried || []).length > 1 ? `<small>Tried: ${r.tried.map(t => esc(t.method) + ' — ' + esc(t.result.replace('_', ' '))).join(' · ')}</small>` : '';
+            let act = '';
+            if(r.result === 'ok' && !r.current) act = `<div class="act"><button class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold" onclick="saveCreds()">${saved ? 'Save this login instead' : 'Save this login'}</button></div>`;
+            if(r.result === 'auth_failed' && r.current) act = `<small class="text-amber-300">This is the login saved now — radio monitoring, camera names and Wi-Fi info use it, so fix it here.</small>`;
+            showCredTest(`<b>${mark} ${label}</b><small>${esc(r.detail || '')}${extra ? ' · ' + extra : ''}${r.seconds >= 1 ? ' · ' + Math.round(r.seconds) + ' s' : ''}</small>${tried}${act}`, cls);
+            if((r.result === 'ok' || r.result === 'auth_failed') && r.current && DEV_BY_KEY[key])
+                DEV_BY_KEY[key].cred_test = { ts: r.ts, result: r.result, method: r.method, username: r.username, current: true };
+        }
+        ['cred-user', 'cred-pass'].forEach(id => document.getElementById(id).addEventListener('input', () => {
+            const box = document.getElementById('cred-test');
+            if(!box.hidden && !box.classList.contains('run')) showCredTest('');
+        }));
         async function unlockCreds(){
             if(window.nwAuth && await window.nwAuth.login()) loadCreds(CURRENT_KEY);
         }
@@ -2435,6 +2680,8 @@
             try {
                 const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/credentials', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) })).json();
                 flashCred(r.has_credentials ? 'Saved ✓' : 'Cleared');
+                const box = document.getElementById('cred-test');
+                if(r.has_credentials && box.classList.contains('ok')) showCredTest('<b>✓ Login works and is saved</b><small>Radio monitoring, camera names and Wi-Fi info use it from the next poll.</small>', 'ok');
                 loadDevices();   // refresh the 🔑 indicator on the grid
             } catch(e){ flashCred('Save failed', false); }
         }
@@ -2576,17 +2823,17 @@
             const h = (location.hash || '').replace(/^#\/?/, '');
             const [path, query] = h.split('?');
             const [page, sub] = (path || '').split('/');
-            const next = ['history','settings','map','wifi'].includes(page) ? page : 'devices';
+            const next = ['history','settings','map','wifi','neighbors'].includes(page) ? page : 'devices';
             if(PAGE === 'settings' && next !== 'settings' && SETTINGS_DIRTY.size && !confirm('Leave settings without saving your changes?')){
                 history.replaceState(null, '', '#/settings'); return;
             }
             const changed = next !== PAGE;
             PAGE = next;
-            ['devices','map','wifi','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            ['devices','map','wifi','neighbors','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
             if(PAGE !== 'map') mapCancelPlace(true);
             document.querySelectorAll('.nw-pages a').forEach(a => a.classList.toggle('on', a.dataset.page === PAGE));
             const siteName = (STATUS && STATUS.site && STATUS.site.name) || 'Netwatch';
-            document.title = ({devices:'', map:'Map · ', wifi:'Wi-Fi · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
+            document.title = ({devices:'', map:'Map · ', wifi:'Wi-Fi · ', neighbors:'Neighbors · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
             if(PAGE === 'map'){
                 const qp = new URLSearchParams(query || '');
                 showMapPage(qp.get('focus'), qp.get('place'));
@@ -2595,6 +2842,9 @@
                 const link = new URLSearchParams(query || '').get('link');
                 if(link) WF.open.add(link);
                 loadWifiPage(link);
+            }
+            if(PAGE === 'neighbors'){
+                loadNeighborsPage();
             }
             if(PAGE === 'history'){
                 const ip = new URLSearchParams(query || '').get('ip');
@@ -2655,6 +2905,7 @@
             }
             if(c.scan){ document.getElementById('setup-deep-on-new').checked = !!c.scan.deep_on_new; document.getElementById('setup-discovery').checked = c.scan.discovery !== false; }
             document.getElementById('setup-airos-setip').checked = !!(c.features && c.features.airos_change_ip);
+            document.getElementById('setup-mikrotik-manage').checked = !!(c.features && c.features.mikrotik_manage);
             document.getElementById('setup-watchdog').checked = !!(c.sysmon && c.sysmon.watchdog);
             document.getElementById('kuma-auto-ip').textContent = PI_IP;
             const k = (c.integrations && c.integrations.kuma) || {};
@@ -2676,7 +2927,7 @@
         function updateSaveBar(){
             const bar = document.getElementById('save-bar');
             bar.hidden = !SETTINGS_DIRTY.size;
-            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','cat-alerts':'alerts per type','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP'};
+            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','cat-alerts':'alerts per type','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management'};
             const what = new Set([...SETTINGS_DIRTY].map(id => Object.entries(names).find(([k]) => id.startsWith(k)) ).filter(Boolean).map(x => x[1]));
             document.getElementById('save-bar-what').textContent = [...what].join(', ');
         }
@@ -3563,6 +3814,7 @@
                 deep_on_new: document.getElementById('setup-deep-on-new').checked,
                 discovery: document.getElementById('setup-discovery').checked,
                 airos_change_ip: document.getElementById('setup-airos-setip').checked,
+                mikrotik_manage: document.getElementById('setup-mikrotik-manage').checked,
                 watchdog: document.getElementById('setup-watchdog').checked,
                 kuma_base_url: document.getElementById('setup-kuma-url').value,
                 kuma_auto_url: document.getElementById('setup-kuma-auto').checked,

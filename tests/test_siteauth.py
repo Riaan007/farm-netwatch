@@ -23,6 +23,7 @@ KEY = "k" * 43
 PROTECTED = [
     ("get", "/api/devices/aa:bb/credentials"),
     ("post", "/api/devices/aa:bb/credentials"),
+    ("post", "/api/devices/aa:bb/credentials/test"),
     ("post", "/api/credentials/bulk"),
     ("get", "/api/config/export"),
     ("post", "/api/config/import"),

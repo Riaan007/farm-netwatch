@@ -120,5 +120,11 @@ def set_(key, username="", password="", notes=""):
     return has(key)
 
 
+def fingerprint(username, password):
+    """Short keyed hash of a login — lets a stored test result say whether it was
+    for the login saved now, without keeping the password anywhere else."""
+    return hmac.new(_key(), f"{username}\0{password}".encode(), hashlib.sha256).hexdigest()[:16]
+
+
 def keys_with_creds():
     return set(_load().keys())
