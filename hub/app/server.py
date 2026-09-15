@@ -1071,6 +1071,29 @@ def api_site_mikrotik_status(site_id, key):
         return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
 
 
+@app.route("/api/hub/sites/<site_id>/devices/<path:key>/mikrotik/report")
+def api_site_mikrotik_report(site_id, key):
+    """Full RouterOS management-console snapshot for one device on a site."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    try:
+        r = requests.get(f"{siteapi.base_url(site)}/api/devices/{quote(key, safe='')}/mikrotik/report",
+                         headers=siteapi.headers(site),
+                         timeout=(poll["timeout_connect_s"], poll["timeout_read_s"] + 25))
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"site unreachable: {e}"}), 502
+    if r.status_code == 404:
+        return _mikrotik_too_old()
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site doesn't accept this hub's key yet"}), 502
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+
+
 @app.route("/api/hub/sites/<site_id>/devices/<path:key>/mikrotik/action", methods=["POST"])
 def api_site_mikrotik_action(site_id, key):
     """Gated MikroTik management write on a site (rename/port/PoE/reboot/export)."""

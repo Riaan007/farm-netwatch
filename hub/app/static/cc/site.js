@@ -510,11 +510,8 @@
         </dl></div>
         <div class="sect"><h3>Login</h3><div id="dd-login"></div></div>
         ${CC.isMikrotik(d) ? `<div class="sect"><h3>MikroTik router</h3>
-          <div class="row"><button class="btn sm pri" id="dd-mt-load">🧭 Load router info</button>${d.ip ? `<button class="btn sm" id="dd-mt-webfig">🌐 Manage in Webfig</button>` : ""}</div>
-          <div id="dd-mt" style="margin-top:10px"></div>
-          <div style="margin-top:10px"><div class="row" style="flex-wrap:nowrap"><input class="inp mono" id="dd-mt-cmd" placeholder="/system resource print"><button class="btn" id="dd-mt-run">Run</button></div>
-          <pre id="dd-mt-term" class="mono" style="margin:8px 0 0;max-height:180px;overflow:auto;white-space:pre-wrap;background:#050b16;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px;font-size:11px"></pre>
-          <p class="note" style="margin:6px 0 0">Router info reads by MAC (MAC-Telnet), API over its IP as the fallback. The terminal needs MikroTik management enabled in the site's Settings.</p></div>
+          <div id="dd-mt" class="note">Reading the router…</div>
+          <div class="row" style="margin-top:10px"><button class="btn pri" id="dd-mt-console">🖥️ Open MikroTik console</button><button class="btn sm" id="dd-mt-reload">↻ Refresh</button></div>
         </div>` : ""}
         <div class="sect"><h3>Availability</h3><div id="dd-up" class="note">Loading…</div>
           <div class="row" style="margin:10px 0 6px;gap:4px" id="dd-range">${["30m", "1h", "12h", "24h"].map((r) => `<button class="btn sm ${r === "1h" ? "pri" : ""}" data-r="${r}">${r}</button>`).join("")}</div><div id="dd-chart"></div></div>
@@ -599,46 +596,19 @@
     $("#dd-range", dlg).onclick = (e) => { const b = e.target.closest("[data-r]"); if (b) chart(b.dataset.r); };
     chart("1h");
     if (CC.isMikrotik(d)) {
-      const mtBytes = (v) => { let n = parseInt(v, 10); if (isNaN(n)) return esc(String(v || "0")); const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + " " + u[i]; };
-      const renderMt = (r) => {
-        const src = r.source === "mactelnet" ? "🔗 by MAC (MAC-Telnet)" : "🌐 via IP (API)";
-        const mem = (r.free_memory && r.total_memory) ? mtBytes(r.total_memory - r.free_memory) + " / " + mtBytes(r.total_memory) : "";
-        const kv = [["Model", r.model || r.board], ["RouterOS", r.version], ["Firmware", r.firmware], ["Serial", r.serial], ["Uptime", r.uptime], ["CPU", (r.cpu !== "" && r.cpu != null) ? r.cpu + "%" : ""], ["Memory", mem]];
-        if (r.health && (r.health.voltage || r.health.temperature)) kv.push(["Health", [r.health.voltage ? r.health.voltage + " V" : "", r.health.temperature ? r.health.temperature + "°C" : ""].filter(Boolean).join(" · ")]);
-        let h = `<div class="panel pbd"><p class="row" style="justify-content:space-between;margin:0 0 6px"><b>🧭 ${esc(r.identity || "MikroTik")}</b><span class="note">${src}</span></p><dl class="kv">`;
-        kv.forEach(([k, v]) => { if (v) h += `<dt>${k}</dt><dd class="mono">${esc(String(v))}</dd>`; });
-        h += `</dl>`;
-        if ((r.interfaces || []).length) { h += `<div class="note" style="margin-top:8px">Interfaces</div>` + r.interfaces.map((i) => `<div class="row" style="gap:6px;font-size:11px"><span class="b ${i.running ? "ok" : (i.disabled ? "unk" : "bad")} nodot">${esc(i.name)}</span><span class="dim">${esc(i.type || "")}</span><span style="margin-left:auto" class="mono dim">↓${mtBytes(i.rx)} ↑${mtBytes(i.tx)}</span></div>`).join(""); }
-        if ((r.poe || []).length) { h += `<div class="note" style="margin-top:8px">PoE out</div><div class="chips">` + r.poe.map((p) => `<span class="b unk nodot">${esc(p.name)}: ${esc(p.poe_out || "?")}${p.power ? " " + esc(p.power) + "W" : ""}</span>`).join("") + `</div>`; }
-        h += `</div>`;
-        $("#dd-mt", dlg).innerHTML = h;
+      const quick = () => {
+        $("#dd-mt", dlg).innerHTML = `<div class="skel" style="height:60px"></div>`;
+        api(`/api/hub/sites/${siteId}/devices/${enc(key)}/mikrotik`, { timeout: 45000 }).then((r) => {
+          const src = r.source === "mactelnet" ? "by MAC" : "via IP";
+          const bits = [r.model || r.board, r.version && ("RouterOS " + r.version), r.uptime && ("up " + r.uptime),
+            (r.cpu !== "" && r.cpu != null) && ("CPU " + r.cpu + "%"),
+            r.health && (r.health.voltage || r.health.temperature) && [r.health.voltage && r.health.voltage + "V", r.health.temperature && r.health.temperature + "°C"].filter(Boolean).join(" ")].filter(Boolean);
+          $("#dd-mt", dlg).innerHTML = `<div class="row" style="gap:6px;flex-wrap:wrap"><b>🧭 ${esc(r.identity || "MikroTik")}</b><span class="b vio nodot">${src}</span></div><div class="note mono" style="margin-top:4px">${esc(bits.join(" · "))}</div>`;
+        }).catch((err) => { $("#dd-mt", dlg).innerHTML = `<p class="note bad">${esc(err.message)}</p>`; });
       };
-      const loadBtn = $("#dd-mt-load", dlg);
-      loadBtn.onclick = () => CC.busy(loadBtn, async () => {
-        $("#dd-mt", dlg).innerHTML = `<div class="skel" style="height:80px"></div>`;
-        try { renderMt(await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/mikrotik`, { timeout: 45000 })); }
-        catch (err) { $("#dd-mt", dlg).innerHTML = `<p class="note bad">${esc(err.message)}</p>`; }
-      });
-      const wf = $("#dd-mt-webfig", dlg);
-      if (wf) wf.onclick = () => CC.busy(wf, async () => {
-        try { const j = await api(`/api/hub/sites/${siteId}/tunnel`, { method: "POST", body: { ip: d.ip, port: 80 }, timeout: 30000 }); tunnelResult(j, `${CC.devName(d)} · Webfig`, "Log in with the router's own user and password."); }
-        catch (err) { CC.toast(err.message, "bad"); }
-      });
-      const run = $("#dd-mt-run", dlg), cmd = $("#dd-mt-cmd", dlg), term = $("#dd-mt-term", dlg);
-      const runCmd = async (confirmDanger) => {
-        const c = cmd.value.trim(); if (!c) return;
-        await CC.busy(run, async () => {
-          let r;
-          try { r = await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/mikrotik/console`, { method: "POST", body: { command: c, confirm: !!confirmDanger }, timeout: 45000 }); }
-          catch (err) {
-            if (err.body && err.body.needs_confirm) { if (confirm("⚠ " + err.body.warning + "\n\nRun this command anyway?")) runCmd(true); return; }
-            term.textContent += `> ${c}\n${err.message}\n\n`; term.scrollTop = term.scrollHeight; return;
-          }
-          term.textContent += `> ${c}\n${r.output || "(no output)"}\n\n`; term.scrollTop = term.scrollHeight; cmd.value = "";
-        });
-      };
-      run.onclick = () => runCmd(false);
-      cmd.onkeydown = (e) => { if (e.key === "Enter") runCmd(false); };
+      quick();
+      $("#dd-mt-reload", dlg).onclick = quick;
+      $("#dd-mt-console", dlg).onclick = () => CC.openMikrotikConsole(siteId, key);
     }
     if (d.ip) {
       const common = [[80, "HTTP"], [443, "HTTPS"], [22, "SSH"], [554, "RTSP"]];
@@ -691,4 +661,165 @@
       <div class="beats" style="margin-top:6px">${points.slice(-80).map((p) => `<i class="${p.up == null ? "n" : p.up >= 0.99 ? "" : "x"}"></i>`).join("")}</div>
       <div class="row" style="justify-content:space-between;margin-top:6px"><span class="note">Ping min ${rtts.length ? Math.min(...rtts).toFixed(1) : "—"} · avg ${avg != null ? avg.toFixed(1) : "—"} · max ${rtts.length ? max.toFixed(1) : "—"} ms</span><span class="note">Up ${ups.length ? CC.pct((100 * ups.reduce((a, b) => a + b, 0)) / ups.length, 1) : "—"}</span></div>`;
   }
+
+  // ===== MikroTik management console =========================================
+  CC.openMikrotikConsole = (siteId, key) => {
+    const s = CC.site(siteId);
+    const d = (S.devices[siteId] || []).find((x) => x.key === key);
+    if (!s || !d) return;
+    let report = null, tab = "overview", timer = null, hist = [], histI = 0;
+
+    const B = (v) => { let n = parseInt(v, 10); if (isNaN(n)) return esc(String(v || "0")); const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; } return (i ? n.toFixed(1) : n) + " " + u[i]; };
+    const R = (v) => { let n = parseInt(v, 10); if (isNaN(n) || n <= 0) return "—"; if (n >= 1e9) return (n / 1e9).toFixed(2) + " Gb/s"; if (n >= 1e6) return (n / 1e6).toFixed(1) + " Mb/s"; if (n >= 1e3) return (n / 1e3).toFixed(0) + " Kb/s"; return n + " b/s"; };
+    const mgmtOff = () => report && !report.manage_enabled;
+    const offBanner = () => mgmtOff() ? `<div class="panel pbd" style="border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.08);margin-bottom:10px"><span class="note" style="color:#fbbf24">🔒 Management is read-only on this site. Turn on <b>Manage MikroTik routers</b> in the site's Netwatch Settings to unlock the actions below.</span></div>` : "";
+
+    const dlg = CC.dialog(`<div class="dhd"><div style="min-width:0"><div class="eyebrow">🖥️ MikroTik console · ${esc(s.name)}</div><h2 id="mtc-title" style="min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(CC.devName(d))}</h2></div>
+      <div class="row" style="gap:6px;flex:0 0 auto"><label class="note" style="display:flex;align-items:center;gap:4px" title="Live refresh every 4s"><input type="checkbox" id="mtc-auto"> live</label><button class="btn sm" id="mtc-refresh">↻</button><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div></div>
+      <div class="dbd" style="padding-top:0">
+        <div class="row" id="mtc-tabs" style="gap:2px;position:sticky;top:0;background:#0b1220;z-index:2;padding:8px 0;flex-wrap:wrap;border-bottom:1px solid rgba(255,255,255,.08)"></div>
+        <div id="mtc-body" style="margin-top:10px"><div class="skel" style="height:220px"></div></div>
+      </div>`, { cls: "modal wide", onClose: () => { if (timer) clearInterval(timer); } });
+
+    const TABS = () => {
+      const t = [["overview", "Overview"], ["ports", "Ports & PoE"], ["devices", "Devices"], ["network", "Network"], ["logs", "Logs"], ["terminal", "Terminal"]];
+      if (report && report.wireless && (report.wireless.interfaces.length || report.wireless.registrations.length)) t.splice(4, 0, ["wireless", "Wireless"]);
+      return t;
+    };
+    const drawTabs = () => { $("#mtc-tabs", dlg).innerHTML = TABS().map(([k, l]) => `<button class="btn sm ${k === tab ? "pri" : "ghost"}" data-tab="${k}">${l}</button>`).join(""); };
+    $("#mtc-tabs", dlg).onclick = (e) => { const b = e.target.closest("[data-tab]"); if (!b) return; tab = b.dataset.tab; drawTabs(); render(); };
+
+    const act = async (body, okMsg) => {
+      try { const r = await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/mikrotik/action`, { method: "POST", body, timeout: 30000 }); CC.toast(r.msg || okMsg || "Done"); setTimeout(load, 800); }
+      catch (err) { CC.toast(err.message, "bad"); }
+    };
+
+    // ---- tab renderers ------------------------------------------------------
+    const rOverview = () => {
+      const y = report.system;
+      const memPct = (y.free_memory && y.total_memory) ? Math.round(100 * (1 - y.free_memory / y.total_memory)) : null;
+      const kv = [["Model", y.model || y.board], ["RouterOS", y.version], ["Firmware", y.firmware], ["Serial", y.serial],
+      ["Uptime", y.uptime], ["Arch", y.arch], ["Board time", [y.date, y.time].filter(Boolean).join(" ")]];
+      const eth = report.ports.filter((p) => p.type === "ether");
+      const face = eth.map((p) => {
+        const col = p.disabled ? "#475569" : p.running ? "#34d399" : "#ef4444";
+        const poe = p.poe && p.poe.mode && p.poe.mode !== "off" ? (p.poe.status === "powered-on" ? "⚡" : "·") : "";
+        return `<div title="${esc(p.name)} ${p.running ? "up " + p.rate : "down"}${p.poe ? " PoE " + p.poe.mode : ""}" style="flex:1;min-width:54px;text-align:center;border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 2px;background:${col}22"><div style="font-size:10px" class="mono">${esc(p.name.replace("ether", "e"))}</div><div style="height:6px;width:6px;border-radius:50%;background:${col};margin:4px auto 0"></div><div style="font-size:10px;color:#fbbf24;height:12px">${poe}</div></div>`;
+      }).join("");
+      return offBanner() + `<div class="panel pbd"><div class="row" style="justify-content:space-between"><b>🧭 ${esc(y.identity || "MikroTik")}</b>
+          <div class="row" style="gap:6px"><span class="b ${y.cpu > 80 ? "warn" : "ok"} nodot">CPU ${esc(String(y.cpu))}%</span>${memPct != null ? `<span class="b ${memPct > 85 ? "warn" : "unk"} nodot">RAM ${memPct}%</span>` : ""}${y.health && y.health.temperature ? `<span class="b unk nodot">${esc(y.health.temperature)}°C</span>` : ""}${y.health && y.health.voltage ? `<span class="b unk nodot">${esc(y.health.voltage)}V</span>` : ""}</div></div>
+        <dl class="kv" style="margin-top:8px">${kv.map(([k, v]) => v ? `<dt>${k}</dt><dd class="mono">${esc(String(v))}</dd>` : "").join("")}
+          <dt>Memory</dt><dd class="mono">${B((y.total_memory || 0) - (y.free_memory || 0))} / ${B(y.total_memory)}</dd></dl>
+        <div class="note" style="margin-top:10px">Ports</div><div class="row" style="gap:4px;margin-top:4px">${face || '<span class="note">no ethernet ports</span>'}</div>
+        <div class="row" style="gap:6px;margin-top:12px"><button class="btn sm" data-act="rename" ${mgmtOff() ? "disabled" : ""}>✏️ Rename</button><button class="btn sm" data-act="export">📄 Export config</button><button class="btn sm danger" data-act="reboot" ${mgmtOff() ? "disabled" : ""}>↻ Reboot router</button></div>
+        <div id="mtc-export" style="margin-top:8px"></div></div>`;
+    };
+    const rPorts = () => {
+      const rows = report.ports.map((p) => {
+        const st = p.disabled ? `<span class="b unk nodot">disabled</span>` : p.running ? `<span class="b ok nodot">up ${esc(p.rate || "")}${p.full_duplex ? " FD" : ""}</span>` : `<span class="b bad nodot">down</span>`;
+        let poe = "—", poeAct = "";
+        if (p.poe) {
+          const on = p.poe.mode && p.poe.mode !== "off";
+          const pw = p.poe.power ? ` · ${esc(p.poe.power)}W` : "";
+          poe = `<span class="b ${p.poe.status === "powered-on" ? "ok" : on ? "unk" : "dim"} nodot">${esc(p.poe.mode || "off")}${p.poe.status ? " · " + esc(p.poe.status) : ""}${pw}</span>`;
+          poeAct = `<button class="btn sm" data-act="poe-cycle" data-port="${esc(p.name)}" ${mgmtOff() ? "disabled" : ""} title="Power-cycle — reboots the device on this port">⟳ cycle</button>
+            <button class="btn sm ghost" data-act="poe" data-id="${esc(p.name)}" data-mode="${on ? "off" : "auto-on"}" ${mgmtOff() ? "disabled" : ""}>${on ? "PoE off" : "PoE on"}</button>`;
+        }
+        const tgl = p.type === "ether" || p.type === "" ? "" : "";
+        return `<tr><td class="mono">${esc(p.name)}</td><td>${st}</td><td class="mono dim">↓${R(p.rx_rate)} ↑${R(p.tx_rate)}</td><td class="mono dim">${B(p.rx)}/${B(p.tx)}</td><td>${poe}</td>
+          <td class="row" style="gap:4px;justify-content:flex-end"><button class="btn sm ghost" data-act="iface" data-id="${esc(p.name)}" data-enable="${p.disabled ? "1" : "0"}" ${mgmtOff() ? "disabled" : ""}>${p.disabled ? "enable" : "disable"}</button>${poeAct}</td></tr>`;
+      }).join("");
+      return offBanner() + `<div class="panel pbd" style="overflow-x:auto"><table class="tbl" style="width:100%;font-size:12px"><thead><tr><th>Port</th><th>Link</th><th>Live</th><th>Total ↓/↑</th><th>PoE</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+        <p class="note" style="margin:8px 0 0">⟳ cycle power-cycles PoE on that port to reboot the camera/AP plugged into it. Tick <b>live</b> above for auto-refreshing rates.</p></div>`;
+    };
+    const rDevices = () => {
+      const list = report.connected;
+      return `<div class="panel pbd"><div class="row" style="justify-content:space-between;margin-bottom:8px"><b>${list.length} device${list.length === 1 ? "" : "s"} on the switch</b><input class="inp" id="mtc-dsearch" placeholder="filter ip / mac / name / port" style="max-width:240px"></div>
+        <div style="overflow-x:auto"><table class="tbl" id="mtc-dtable" style="width:100%;font-size:12px"><thead><tr><th>IP</th><th>MAC</th><th>Vendor</th><th>Hostname</th><th>Port</th><th>Seen</th></tr></thead><tbody>${list.map(mtcDevRow).join("")}</tbody></table></div>
+        <p class="note" style="margin:8px 0 0">Collected from the router's DHCP leases, ARP table and bridge host table — no scanning.</p></div>`;
+    };
+    const mtcDevRow = (c) => `<tr data-f="${esc((c.ip + " " + c.mac + " " + (c.hostname || "") + " " + (c.vendor || "") + " " + (c.port || c.iface || "")).toLowerCase())}">
+        <td class="mono">${esc(c.ip || "—")}</td><td class="mono">${esc(c.mac)}</td><td class="dim">${esc(c.vendor || "")}</td><td>${esc(c.hostname || "")}</td>
+        <td class="mono">${esc(c.port || c.iface || "—")}</td><td class="dim" style="font-size:10px">${esc((c.src || []).filter((x, i, a) => a.indexOf(x) === i).join("+"))}</td></tr>`;
+    const rNetwork = () => {
+      const addr = report.addresses.map((a) => `<tr><td class="mono">${esc(a.address)}</td><td class="mono dim">${esc(a.interface)}</td></tr>`).join("");
+      const rt = report.routes.map((r) => `<tr><td class="mono">${esc(r.dst)}</td><td class="mono">${esc(r.gateway || "")}</td><td class="dim">${esc(r.distance)}</td><td>${r.active ? '<span class="b ok nodot">active</span>' : '<span class="b dim nodot">inactive</span>'}</td></tr>`).join("");
+      const fw = report.firewall.filter.map((f) => `<tr><td class="mono">${esc(f.chain)}</td><td><span class="b ${f.action === "drop" || f.action === "reject" ? "bad" : "ok"} nodot">${esc(f.action)}</span></td><td class="dim">${esc([f.protocol, f.dst_port].filter(Boolean).join("/"))}</td><td class="dim mono">${B(f.bytes)}</td><td class="dim">${esc(f.comment || "")}</td></tr>`).join("");
+      const nat = report.firewall.nat.map((f) => `<tr><td class="mono">${esc(f.chain)}</td><td>${esc(f.action)}</td><td class="dim">${esc(f.to_addresses || f.dst_port || "")}</td><td class="dim">${esc(f.comment || "")}</td></tr>`).join("");
+      const blk = (title, head, body) => body ? `<div class="panel pbd" style="margin-bottom:10px;overflow-x:auto"><b>${title}</b><table class="tbl" style="width:100%;font-size:12px;margin-top:6px"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div>` : "";
+      return blk("IP addresses", ["Address", "Interface"], addr) + blk("Routes", ["Dst", "Gateway", "Dist", ""], rt)
+        + `<div class="panel pbd" style="margin-bottom:10px"><b>DNS</b> <span class="mono note">${esc(report.dns.servers || "—")}${report.dns.dynamic_servers ? " (+dyn " + esc(report.dns.dynamic_servers) + ")" : ""}</span></div>`
+        + blk("Firewall filter", ["Chain", "Action", "Match", "Bytes", "Comment"], fw) + blk("NAT", ["Chain", "Action", "To", "Comment"], nat);
+    };
+    const rWireless = () => {
+      const ifs = report.wireless.interfaces.map((w) => `<tr><td class="mono">${esc(w.name)}</td><td>${esc(w.ssid)}</td><td class="dim">${esc(w.band)}</td><td class="dim">${esc(w.frequency)}</td><td>${w.running ? '<span class="b ok nodot">up</span>' : '<span class="b bad nodot">down</span>'}</td></tr>`).join("");
+      const regs = report.wireless.registrations.map((r) => `<tr><td class="mono">${esc(r.mac)}</td><td class="mono dim">${esc(r.interface)}</td><td>${esc(r.signal)}</td><td class="dim">${esc(r.tx_rate)}/${esc(r.rx_rate)}</td><td class="dim">${esc(r.uptime)}</td></tr>`).join("");
+      return (ifs ? `<div class="panel pbd" style="margin-bottom:10px;overflow-x:auto"><b>Wireless interfaces</b><table class="tbl" style="width:100%;font-size:12px;margin-top:6px"><thead><tr><th>Iface</th><th>SSID</th><th>Band</th><th>Freq</th><th></th></tr></thead><tbody>${ifs}</tbody></table></div>` : "")
+        + `<div class="panel pbd" style="overflow-x:auto"><b>Connected clients (${report.wireless.registrations.length})</b><table class="tbl" style="width:100%;font-size:12px;margin-top:6px"><thead><tr><th>MAC</th><th>Iface</th><th>Signal</th><th>Tx/Rx</th><th>Uptime</th></tr></thead><tbody>${regs || '<tr><td colspan=5 class="note">none</td></tr>'}</tbody></table></div>`;
+    };
+    const rLogs = () => `<div class="panel pbd"><pre class="mono" style="margin:0;max-height:60vh;overflow:auto;white-space:pre-wrap;font-size:11px">${report.logs.map((l) => `${esc(l.time)}  ${esc(l.topics)}  ${esc(l.message)}`).join("\n") || "no log entries"}</pre></div>`;
+    const rTerminal = () => {
+      const quick = ["/system resource print", "/ip dhcp-server lease print", "/interface print stats", "/ip firewall filter print", "/log print", "/interface ethernet poe monitor [find] once"];
+      return offBanner() + `<div class="panel pbd"><pre id="mtc-term" class="mono" style="margin:0 0 8px;height:46vh;overflow:auto;white-space:pre-wrap;background:#050b16;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;font-size:12px;color:#a7f3d0">${hist.map((h) => esc(h)).join("")}</pre>
+        <div class="row" style="flex-wrap:nowrap;gap:6px"><span class="mono" style="color:#a78bfa;align-self:center">&gt;</span><input class="inp mono" id="mtc-cmd" placeholder="type a RouterOS command…" ${mgmtOff() ? "disabled" : ""} style="flex:1"><button class="btn pri" id="mtc-run" ${mgmtOff() ? "disabled" : ""}>Run</button></div>
+        <div class="row" style="gap:4px;margin-top:6px;flex-wrap:wrap">${quick.map((q) => `<button class="btn sm ghost" data-q="${esc(q)}" ${mgmtOff() ? "disabled" : ""}>${esc(q.replace(/^\//, "").split(" ").slice(0, 2).join(" "))}</button>`).join("")}</div>
+        <p class="note" style="margin:6px 0 0">Runs as <b>admin</b> on the live router by MAC (MAC-Telnet), logged. Up-arrow recalls history. Dangerous commands ask first.</p></div>`;
+    };
+
+    const render = () => {
+      const body = $("#mtc-body", dlg);
+      if (!report) return;
+      body.innerHTML = ({ overview: rOverview, ports: rPorts, devices: rDevices, network: rNetwork, wireless: rWireless, logs: rLogs, terminal: rTerminal }[tab] || rOverview)();
+      wire();
+    };
+
+    const runTerm = async (cmd, confirmDanger) => {
+      const term = $("#mtc-term", dlg); if (!term) return;
+      hist.push("> " + cmd + "\n");
+      try {
+        const r = await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/mikrotik/console`, { method: "POST", body: { command: cmd, confirm: !!confirmDanger }, timeout: 45000 });
+        hist.push((r.output || "(no output)") + "\n\n");
+      } catch (err) {
+        if (err.body && err.body.needs_confirm) { hist.pop(); if (confirm("⚠ " + err.body.warning + "\n\nRun this command anyway?")) runTerm(cmd, true); return; }
+        hist.push("error: " + err.message + "\n\n");
+      }
+      term.textContent = hist.join(""); term.scrollTop = term.scrollHeight;
+    };
+
+    const wire = () => {
+      $("#mtc-body", dlg).querySelectorAll("[data-act]").forEach((b) => b.onclick = () => {
+        const a = b.dataset.act;
+        if (a === "reboot") { CC.confirm("Reboot this router?", `${CC.devName(d)} will be offline ~30–60s.`, { ok: "Reboot", danger: true }).then((ok) => ok && act({ action: "reboot" }, "Rebooting")); }
+        else if (a === "rename") { const n = prompt("New router identity:", report.system.identity || ""); if (n) act({ action: "set-identity", name: n }, "Renamed"); }
+        else if (a === "poe-cycle") { CC.confirm("Power-cycle " + b.dataset.port + "?", "The powered device on that port reboots.", { ok: "Power-cycle" }).then((ok) => ok && act({ action: "poe-cycle", port: b.dataset.port, duration: 5 })); }
+        else if (a === "poe") { act({ action: "poe", id: b.dataset.id, mode: b.dataset.mode }); }
+        else if (a === "iface") { CC.busy(b, () => act({ action: "interface", id: b.dataset.id, enable: b.dataset.enable === "1" })); }
+        else if (a === "export") { const box = $("#mtc-export", dlg); box.innerHTML = `<div class="skel" style="height:60px"></div>`; api(`/api/hub/sites/${siteId}/devices/${enc(key)}/mikrotik/action`, { method: "POST", body: { action: "export" }, timeout: 30000 }).then((r) => { box.innerHTML = `<pre class="mono" style="max-height:40vh;overflow:auto;white-space:pre-wrap;background:#050b16;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:8px;font-size:11px">${esc(r.config || "(empty)")}</pre>`; }).catch((e) => { box.innerHTML = `<p class="note bad">${esc(e.message)}</p>`; }); }
+      });
+      const ds = $("#mtc-dsearch", dlg);
+      if (ds) ds.oninput = () => { const q = ds.value.toLowerCase(); $("#mtc-dtable tbody", dlg).querySelectorAll("tr").forEach((tr) => { tr.style.display = tr.dataset.f.includes(q) ? "" : "none"; }); };
+      const run = $("#mtc-run", dlg), cmd = $("#mtc-cmd", dlg);
+      if (run && cmd) {
+        const go = () => { const c = cmd.value.trim(); if (!c) return; hist.length > 200 && hist.splice(0, 100); runTerm(c); cmd.value = ""; histI = 0; };
+        run.onclick = go;
+        cmd.onkeydown = (e) => { if (e.key === "Enter") go(); else if (e.key === "ArrowUp") { const cmds = hist.filter((h) => h.startsWith("> ")).map((h) => h.slice(2).trim()); if (cmds.length) { histI = Math.min(histI + 1, cmds.length); cmd.value = cmds[cmds.length - histI] || ""; } } };
+        cmd.focus();
+      }
+      $("#mtc-body", dlg).querySelectorAll("[data-q]").forEach((b) => b.onclick = () => { const c = $("#mtc-cmd", dlg); if (c) { c.value = b.dataset.q; c.focus(); } });
+    };
+
+    const load = async () => {
+      try {
+        report = await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/mikrotik/report`, { timeout: 45000 });
+        $("#mtc-title", dlg).textContent = report.system.identity ? report.system.identity + " · " + (report.system.model || "MikroTik") : CC.devName(d);
+        drawTabs(); render();
+      } catch (err) {
+        $("#mtc-body", dlg).innerHTML = `<div class="panel pbd"><p class="note bad">Couldn't read the router: ${esc(err.message)}</p><p class="note">The console reads over the RouterOS API on the router's IP (learned from its MAC). If this persists, the router may be unreachable over the VPN or the saved admin login is wrong.</p></div>`;
+      }
+    };
+    drawTabs();
+    $("#mtc-refresh", dlg).onclick = load;
+    $("#mtc-auto", dlg).onchange = (e) => { if (timer) { clearInterval(timer); timer = null; } if (e.target.checked) timer = setInterval(() => { if (tab === "ports" || tab === "overview") load(); }, 4000); };
+    load();
+  };
 })();

@@ -495,6 +495,230 @@ def api_export(ip, user, password):
     return {"ok": True, "config": text}
 
 
+def _safe(api, *words):
+    """A read that returns [] instead of raising when the menu doesn't exist on
+    this model (no wireless, no switch, no PoE, …)."""
+    try:
+        return api.talk(*words)
+    except ApiError:
+        return []
+
+
+def _rows_by(rows, key):
+    out = {}
+    for r in rows:
+        k = r.get(key)
+        if k:
+            out[k] = r
+    return out
+
+
+def _b(v):
+    return v == "true"
+
+
+def api_report(ip, user="admin", password=""):
+    """The senior-admin snapshot for the management console. One API session
+    reads: system + health, every port (link status, negotiated rate, live
+    rx/tx bit-rate, PoE mode/status/power/current/voltage), IP addresses, the
+    connected-device tables (DHCP leases + ARP + bridge/switch host FDB, merged
+    per-MAC so you see which device sits on which port), routes, DNS, firewall
+    filter+NAT, wireless registrations, discovered neighbours and recent logs.
+    Read-only. Sections a model lacks come back empty rather than failing."""
+    if not _valid_ip(ip):
+        return {"ok": False, "error": "no usable IP for the router"}
+    try:
+        with RosApi(ip, user, password) as api:
+            res = _one(api.talk("/system/resource/print"))
+            rb = _one(_safe(api, "/system/routerboard/print"))
+            ident = _one(api.talk("/system/identity/print"))
+            health = _safe(api, "/system/health/print")
+            clock = _one(_safe(api, "/system/clock/print"))
+            ifaces = api.talk("/interface/print")
+            eth = _safe(api, "/interface/ethernet/print")
+            eth_names = ",".join(e["name"] for e in eth if e.get("name"))
+            ethmon = _safe(api, "/interface/ethernet/monitor", "=numbers=" + eth_names,
+                           "=once=") if eth_names else []
+            poe_cfg = _safe(api, "/interface/ethernet/poe/print")
+            poe_ids = ",".join(p[".id"] for p in poe_cfg if p.get(".id"))
+            poemon = _safe(api, "/interface/ethernet/poe/monitor", "=numbers=" + poe_ids,
+                           "=once=") if poe_ids else []
+            if_names = ",".join(i["name"] for i in ifaces if i.get("name"))
+            trafmon = _safe(api, "/interface/monitor-traffic", "=interface=" + if_names,
+                            "=once=") if if_names else []
+            addrs = api.talk("/ip/address/print")
+            leases = _safe(api, "/ip/dhcp-server/lease/print")
+            arp = _safe(api, "/ip/arp/print")
+            hosts = _safe(api, "/interface/bridge/host/print")
+            routes = _safe(api, "/ip/route/print")
+            dns = _one(_safe(api, "/ip/dns/print"))
+            fw_filter = _safe(api, "/ip/firewall/filter/print")
+            fw_nat = _safe(api, "/ip/firewall/nat/print")
+            wl = _safe(api, "/interface/wireless/print")
+            wl_reg = _safe(api, "/interface/wireless/registration-table/print")
+            neigh = _safe(api, "/ip/neighbor/print")
+            logs = _safe(api, "/log/print")
+    except (OSError, ApiError, ValueError) as e:
+        return {"ok": False, "error": "RouterOS API on %s failed: %s" % (ip, e)}
+
+    iface_by = _rows_by(ifaces, "name")
+    ethmon_by = _rows_by(ethmon, "name")
+    traf_by = _rows_by(trafmon, "name")
+    poemon_by = _rows_by(poemon, "name")     # poe monitor rows carry name, not .id
+
+    ports = []
+    for e in eth:
+        name = e.get("name", "")
+        i = iface_by.get(name, {})
+        m = ethmon_by.get(name, {})
+        t = traf_by.get(name, {})
+        pcfg = next((p for p in poe_cfg if (p.get("name") or "") == name), None)
+        poe = None
+        if pcfg:
+            pm = poemon_by.get(name, {})
+            poe = {"id": pcfg.get(".id", ""), "mode": pcfg.get("poe-out", ""),
+                   "priority": pcfg.get("poe-priority", ""),
+                   "status": pm.get("poe-out-status", ""), "power": pm.get("poe-out-power", ""),
+                   "current": pm.get("poe-out-current", ""), "voltage": pm.get("poe-out-voltage", "")}
+        ports.append({
+            "name": name, "id": e.get(".id", ""), "type": i.get("type", "ether"),
+            "running": _b(i.get("running")) or m.get("status") == "link-ok",
+            "disabled": _b(e.get("disabled")), "link": m.get("status", ""),
+            "rate": m.get("rate", ""), "full_duplex": _b(m.get("full-duplex")),
+            "auto_neg": _b(e.get("auto-negotiation")), "comment": e.get("comment") or i.get("comment", ""),
+            "switch": e.get("switch", ""), "mac": e.get("orig-mac-address") or i.get("mac-address", ""),
+            "rx": i.get("rx-byte", "0"), "tx": i.get("tx-byte", "0"),
+            "rx_rate": t.get("rx-bits-per-second", ""), "tx_rate": t.get("tx-bits-per-second", ""),
+            "poe": poe,
+        })
+    eth_set = {e.get("name") for e in eth}
+    for i in ifaces:                       # non-ethernet ifaces (bridge, wlan, pppoe…)
+        if i.get("name") in eth_set:
+            continue
+        t = traf_by.get(i.get("name"), {})
+        ports.append({
+            "name": i.get("name", ""), "id": i.get(".id", ""), "type": i.get("type", ""),
+            "running": _b(i.get("running")), "disabled": _b(i.get("disabled")), "link": "",
+            "rate": "", "full_duplex": False, "auto_neg": False, "comment": i.get("comment", ""),
+            "switch": "", "mac": i.get("mac-address", ""), "rx": i.get("rx-byte", "0"),
+            "tx": i.get("tx-byte", "0"), "rx_rate": t.get("rx-bits-per-second", ""),
+            "tx_rate": t.get("tx-bits-per-second", ""), "poe": None,
+        })
+
+    leases_n = [_norm_lease(l) for l in leases]
+    arp_n = [{"address": a.get("address", ""), "mac": a.get("mac-address", ""),
+              "interface": a.get("interface", ""), "complete": _b(a.get("complete")),
+              "dynamic": _b(a.get("dynamic"))} for a in arp]
+    hosts_n = [{"mac": h.get("mac-address", ""), "interface": h.get("on-interface", ""),
+                "bridge": h.get("bridge", ""), "dynamic": _b(h.get("dynamic")),
+                "local": _b(h.get("local"))} for h in hosts]
+
+    # Merge the three tables into one device-per-MAC list — the "what's on my
+    # switch, and where" view.
+    by_mac = {}
+
+    def slot(mac):
+        mac = (mac or "").lower()
+        return by_mac.setdefault(mac, {"mac": mac, "ip": "", "hostname": "", "port": "",
+                                       "iface": "", "dynamic": None, "src": []})
+    for l in leases_n:
+        if l["mac"]:
+            s = slot(l["mac"]); s["ip"] = s["ip"] or l["address"]; s["hostname"] = s["hostname"] or l["host"]
+            s["dynamic"] = l["dynamic"]; s["src"].append("dhcp")
+    for a in arp_n:
+        if a["mac"]:
+            s = slot(a["mac"]); s["ip"] = s["ip"] or a["address"]; s["iface"] = s["iface"] or a["interface"]
+            s["src"].append("arp")
+    for h in hosts_n:
+        if h["mac"] and not h["local"]:
+            s = slot(h["mac"]); s["port"] = s["port"] or h["interface"]; s["src"].append("bridge")
+    connected = sorted(by_mac.values(), key=lambda d: _ip_key(d["ip"]))
+
+    return {
+        "ok": True, "source": "api", "ip": ip,
+        "system": {
+            "identity": ident.get("name", ""), "board": res.get("board-name", ""),
+            "model": rb.get("model", ""), "serial": rb.get("serial-number", ""),
+            "version": res.get("version", ""), "firmware": rb.get("current-firmware", ""),
+            "uptime": res.get("uptime", ""), "cpu": res.get("cpu-load", ""),
+            "cpu_count": res.get("cpu-count", ""), "cpu_freq": res.get("cpu-frequency", ""),
+            "free_memory": res.get("free-memory", ""), "total_memory": res.get("total-memory", ""),
+            "free_hdd": res.get("free-hdd-space", ""), "total_hdd": res.get("total-hdd-space", ""),
+            "arch": res.get("architecture-name", ""), "health": _norm_health(health),
+            "time": clock.get("time", ""), "date": clock.get("date", ""),
+        },
+        "ports": ports,
+        "addresses": [{"address": a.get("address", ""), "interface": a.get("interface", ""),
+                       "disabled": _b(a.get("disabled")), "network": a.get("network", "")} for a in addrs],
+        "connected": connected,
+        "leases": leases_n, "arp": arp_n, "hosts": hosts_n,
+        "routes": [{"dst": r.get("dst-address", ""), "gateway": r.get("gateway", ""),
+                    "distance": r.get("distance", ""), "active": _b(r.get("active")),
+                    "static": _b(r.get("static")), "dynamic": _b(r.get("dynamic"))} for r in routes],
+        "dns": {"servers": dns.get("servers", ""), "dynamic_servers": dns.get("dynamic-servers", ""),
+                "cache_used": dns.get("cache-used", "")},
+        "firewall": {
+            "filter": [{"chain": f.get("chain", ""), "action": f.get("action", ""),
+                        "disabled": _b(f.get("disabled")), "comment": f.get("comment", ""),
+                        "bytes": f.get("bytes", ""), "protocol": f.get("protocol", ""),
+                        "dst_port": f.get("dst-port", ""), "src_address": f.get("src-address", ""),
+                        "dst_address": f.get("dst-address", "")} for f in fw_filter],
+            "nat": [{"chain": f.get("chain", ""), "action": f.get("action", ""),
+                     "disabled": _b(f.get("disabled")), "comment": f.get("comment", ""),
+                     "to_addresses": f.get("to-addresses", ""), "dst_port": f.get("dst-port", "")} for f in fw_nat],
+        },
+        "wireless": {
+            "interfaces": [{"name": w.get("name", ""), "ssid": w.get("ssid", ""),
+                            "band": w.get("band", ""), "frequency": w.get("frequency", ""),
+                            "mode": w.get("mode", ""), "disabled": _b(w.get("disabled")),
+                            "running": _b(w.get("running"))} for w in wl],
+            "registrations": [{"mac": r.get("mac-address", ""), "interface": r.get("interface", ""),
+                               "signal": r.get("signal-strength", ""), "tx_rate": r.get("tx-rate", ""),
+                               "rx_rate": r.get("rx-rate", ""), "uptime": r.get("uptime", "")} for r in wl_reg],
+        },
+        "neighbors": [{"address": n.get("address", ""), "mac": n.get("mac-address", ""),
+                       "identity": n.get("identity", ""), "platform": n.get("platform", ""),
+                       "board": n.get("board", ""), "interface": n.get("interface", ""),
+                       "version": n.get("version", "")} for n in neigh],
+        "logs": [{"time": l.get("time", ""), "topics": l.get("topics", ""),
+                  "message": l.get("message", "")} for l in logs[-80:]],
+    }
+
+
+def _ip_key(ip):
+    try:
+        return tuple(int(x) for x in ip.split("."))
+    except (ValueError, AttributeError):
+        return (999, 999, 999, 999)
+
+
+def api_poe_cycle(ip, user, password, port, duration=5):
+    """Power-cycle PoE on one ethernet port — reboots the powered device (camera,
+    AP, phone) on it. Uses RouterOS's own power-cycle where available, else
+    off → wait → auto-on."""
+    port = (port or "").strip()
+    if not port:
+        return {"ok": False, "error": "no port given"}
+    try:
+        dur = max(1, min(int(duration), 30))
+    except (TypeError, ValueError):
+        dur = 5
+    try:
+        with RosApi(ip, user, password) as api:
+            try:
+                api.talk("/interface/ethernet/poe/power-cycle", "=numbers=" + port,
+                         "=duration=" + str(dur) + "s")
+                return {"ok": True, "msg": "Power-cycled PoE on %s (%ss) — the device on it reboots." % (port, dur)}
+            except ApiError:
+                pass
+            api.talk("/interface/ethernet/set", "=numbers=" + port, "=poe-out=off")
+            time.sleep(min(dur, 8))
+            api.talk("/interface/ethernet/set", "=numbers=" + port, "=poe-out=auto-on")
+            return {"ok": True, "msg": "Cycled PoE on %s (off %ss, back on)." % (port, dur)}
+    except (OSError, ApiError, ValueError) as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ---------------------------------------------------------------------------
 # MAC-Telnet — WinBox-style login by MAC (works with no reachable IP)
 # ---------------------------------------------------------------------------

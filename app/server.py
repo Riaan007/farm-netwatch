@@ -938,6 +938,25 @@ def api_mikrotik_status(key):
     return jsonify(res)
 
 
+@app.route("/api/devices/<path:key>/mikrotik/report", methods=["GET"])
+@guard
+def api_mikrotik_report(key):
+    """The full management-console snapshot: ports (link/rate/PoE), the merged
+    connected-device table (which device on which port), routes, firewall, DNS,
+    wireless, neighbours and logs. Read-only, over the RouterOS API on the IP
+    discovery gave us. Connected devices get an offline vendor guess."""
+    dev, mac, ip, user, pw = _mtk_target(key)
+    if not mikrotik._valid_ip(ip):
+        return jsonify({"ok": False, "error": "the router's IP isn't known yet — "
+                        "open Router info first so discovery can learn it"}), 400
+    res = mikrotik.api_report(ip, user, pw)
+    if res.get("ok"):
+        res["manage_enabled"] = _mtk_enabled()
+        for c in res.get("connected", []):
+            c["vendor"] = identify.vendor_for_mac(c.get("mac", ""), online_ok=False)
+    return jsonify(res)
+
+
 @app.route("/api/devices/<path:key>/mikrotik/action", methods=["POST"])
 @guard
 def api_mikrotik_action(key):
@@ -959,13 +978,15 @@ def api_mikrotik_action(key):
                                          bool(body.get("enable")))
     elif action == "poe":
         res = mikrotik.api_set_poe(ip, user, pw, body.get("id", ""), body.get("mode", ""))
+    elif action == "poe-cycle":
+        res = mikrotik.api_poe_cycle(ip, user, pw, body.get("port", ""), body.get("duration", 5))
     elif action == "reboot":
         res = mikrotik.api_reboot(ip, user, pw)
     elif action == "export":
         res = mikrotik.api_export(ip, user, pw)
     else:
         return jsonify({"ok": False, "error": "unknown action %r" % action}), 400
-    _mtk_audit(dev, action, res, {k: body[k] for k in ("name", "id", "mode", "enable")
+    _mtk_audit(dev, action, res, {k: body[k] for k in ("name", "id", "mode", "enable", "port", "duration")
                                   if k in body})
     if res.get("ok") and action == "set-identity" and body.get("name"):
         scanner.set_device_name(key, body["name"].strip())
