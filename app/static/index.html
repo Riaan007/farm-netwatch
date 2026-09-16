@@ -1202,6 +1202,7 @@
                             <button id="loc-here" onclick="useMyLocation()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold" hidden>📱 Use my phone's position</button>
                             <a id="loc-view" href="#" onclick="showOnMap(event)" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold" hidden>Show on map</a>
                             <a id="loc-nav" href="#" target="_blank" rel="noopener" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold" hidden>Directions ↗</a>
+                            <a href="#" onclick="showInNetwork(event)" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold" title="Where it sits in the network diagram">Network view</a>
                             <button id="loc-clear" onclick="clearLocation()" class="px-3 py-1.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded-lg text-xs font-bold" hidden>Remove from map</button>
                             <span id="loc-result" class="text-xs"></span>
                         </div>
@@ -3629,6 +3630,7 @@
         function clearLocation(){ if(confirm('Remove this device from the map?')) postLocation({ clear: true }); }
         function pickLocationOnMap(){ const k = CURRENT_KEY; closeModal(); location.hash = '#/map?place=' + encodeURIComponent(k); }
         function showOnMap(e){ e.preventDefault(); const k = CURRENT_KEY; closeModal(); location.hash = '#/map?focus=' + encodeURIComponent(k); }
+        function showInNetwork(e){ e.preventDefault(); const k = CURRENT_KEY; closeModal(); location.hash = '#/network?view=diagram&focus=' + encodeURIComponent(k); }
         function useMyLocation(){
             const out = document.getElementById('loc-result');
             out.className = 'text-xs text-slate-400'; out.textContent = 'Getting your position…';

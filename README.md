@@ -30,6 +30,13 @@ device drops offline.
   default) unlocks port on/off, PoE mode, PoE power cycle, rename, cable test, blink
   LEDs, restart and config backups — ports the Pi or the router are on are always
   refused. Same view on the site's **Switches** page and the hub's site **Switches** tab.
+- **Network view — diagram and map of how it is connected** — the site's **Network**
+  page (and the hub's site tab **Network**) draws towers, sites and buildings as groups
+  with the equipment on each, and the Ethernet, fibre and wireless links between them —
+  as an interactive diagram (drag, connect, collapse a tower to a summary, lock, Auto-arrange,
+  search, filters, legend) or on the satellite map (click a tower for its equipment, links,
+  radio readings and its own mini diagram). Both views use the same records. Details:
+  [Network view](#network-view-diagram--map).
 - **Per-device latency graph (Uptime-Kuma style)** — Netwatch samples each
   **monitored/named** device's latency every ~60s into a short-retention table, so the
   hub's device row shows a smooth latency line + up/down bars with **30m / 1h / 12h /
@@ -548,6 +555,57 @@ already used as the `Endpoint`. Remove a device any time from the same panel.
 | site button 401 / proxy off | log into the hub once (backfills the proxy auth hash); `cat data/hub/caddy/Caddyfile`; `docker logs hub-proxy` |
 | site button times out | `docker exec hub-proxy ip addr show wg0` (should show 10.8.0.1); confirm the site card is otherwise green |
 
+## Network view (diagram + map)
+
+**Network** in the site's page header (hub: site tab **Network**) shows *where* equipment
+is, *how* it is connected and *what* belongs to each tower or site. It has two views of
+the same records — switch with **Diagram / Map** — so a change in one is in the other.
+
+- **Groups** — a tower, site, building, pole, cabinet or area, with a description and a
+  location (paste a position / Google Maps link, or **Place** it on the map). Drag
+  equipment onto a group, or pick the group in the equipment's panel. Several radios on
+  one mast simply share the tower's group with its switch, cameras and so on. The ▾
+  button collapses a group to a summary (online / offline / not monitored); links to a
+  collapsed group are merged into one line with a count, and expanding shows each end.
+- **Equipment added by hand** — for things Netwatch cannot see: an unmanaged switch, a
+  PoE injector, a fibre converter, a radio without a login. Name, type, group, notes and
+  optional ports / port notes; **no IP needed**. It is shown as **Not monitored** and is
+  never marked offline; its panel says whether the monitored devices around it answer
+  ("passing traffic") or are all down (a likely failure). If the scanner later finds it,
+  **Use discovered …** lets the real device take over its place and links.
+- **Connections** — Ethernet (solid), fibre (thick violet), wireless (dashed cyan) with
+  optional ports and a label. Drag the **+** handle of one item onto another, or use
+  **Connect**. A wireless link must join two radios (a device's equipment type can be
+  changed in its panel). Down links turn red with ✕; weak radio links amber.
+- **Suggested connections** (dotted) come only from evidence that two things are
+  physically joined: a switch or MikroTik port with one device on it, or a radio in an
+  access point's station table (matched by MAC, else by the IP the AP reports). A port
+  with several devices proposes the unmanaged switch between them (**Add the switch
+  between…**). Sharing a subnet or a location never creates a link. Confirm, dismiss or
+  **Confirm all** under **Review**, which also lists equipment without a group (with the
+  group it is wired to), other devices (phones, PCs — off the diagram until added) and
+  hidden ones.
+- **Layout** — new equipment is placed automatically in its group (rows follow the
+  network downstream from the internet router) or in **Not in a group yet**, and never
+  moves anything that was placed by hand. Growing groups push their neighbours aside.
+  **Auto-arrange** tidies everything that is not locked; lock single items, a whole group
+  (its menu) or the whole layout (**Lock layout**). Positions are saved as you drag and
+  are separate from GPS — moving a box never moves a map pin.
+- **Map** — tower/site markers with their counts and status (a dashed marker = position
+  estimated from its devices' pins), device pins, and the links between places with
+  signal and distance. The site's **Map** page shows the towers too.
+- **Icons** — every type has a built-in isometric picture; **Icons** replaces one for a
+  whole type, and an item's panel sets one for that item (PNG/JPEG/WebP/GIF, shrunk to
+  160 px; never SVG).
+
+Records live on the site Pi in `/data/topology.json` (+ `/data/topo_icons/`) and ride
+along in the config backup. Reading is open like the device list; changes need the
+site login or the hub key. API: `GET /api/topology` and `POST|DELETE
+/api/topology/{groups,equipment,nodes,links,suggestions,layout,arrange,icons,type-icons}…`
+(hub: `/api/hub/sites/<id>/topology…`). Code: `app/topology.py` (records, suggestions,
+layout), `app/topology_routes.py`, `app/static/topoview.js` (the one renderer for site
+and hub), `hub/app/topology.py`. Tests: `tests/test_topology.py`, `tests/test_hub_topology.py`.
+
 ## How it works
 
 ```
@@ -565,6 +623,7 @@ nmap scan ──> parse ──> identify (OUI + DNS + HTTP banner + ports) ─�
 | `app/history.py` | SQLite uptime samples + rollups |
 | `app/notify.py` | ntfy push |
 | `app/server.py` | Flask API + serves the UI |
+| `app/topology.py` | network view: groups, hand-added equipment, links, suggestions, layout |
 | `app/static/` | dashboard + setup wizard |
 
 ## Security

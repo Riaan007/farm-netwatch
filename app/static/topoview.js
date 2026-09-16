@@ -30,6 +30,8 @@
 .tv button,.tv input,.tv select,.tv textarea{font:inherit;color:inherit}
 .tv button{cursor:pointer}
 .tv [hidden]{display:none!important}
+.tv .tv-item .t svg,.tv .tv-sug .t svg,.tv h4 svg,.tv .tv-note svg,.tv-dlg .checks svg{display:inline-block;vertical-align:-3px}
+.tv .tv-btn svg,.tv .tv-seg svg{display:inline-block}
 .tv .tv-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .tv .tv-acts2{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;justify-content:flex-end}
 .tv .tv-bar select.tv-inp{width:auto;min-height:34px;padding:4px 8px;font-size:13px}
@@ -988,7 +990,7 @@
         ${icon}
         <g transform="translate(${f(x + 107)},${f(y + 13)})">${badge}</g>
         ${probs ? `<g transform="translate(${f(x + 43)},${f(y + 13)})"><path d="M0,-8 L8,6 L-8,6 Z" fill="#f59e0b" stroke="#fde68a" stroke-width="1"/><text y="4.5" text-anchor="middle" font-size="9.5" font-weight="900" fill="#1c1917">!</text></g>` : ""}
-        ${n.locked ? `<svg x="${f(x + 12)}" y="${f(y + 6)}" width="13" height="13" viewBox="0 0 24 24" style="color:#fbbf24">${I.lock}</svg>` : ""}
+        ${n.locked ? `<g transform="translate(${f(x + 18)},${f(y + 13)})" aria-hidden="true"><rect x="-9" y="-9" width="18" height="18" rx="5" fill="#1f2937" stroke="#fbbf24" stroke-width="1"/><svg x="-6.5" y="-6.5" width="13" height="13" viewBox="0 0 24 24" style="color:#fbbf24">${I.lock}</svg></g>` : ""}
         <text class="tv-n-name" x="${f(x + 75)}" y="${f(y + 80)}" text-anchor="middle">${esc(trunc(n.name, 21))}</text>
         <text class="tv-n-sub" x="${f(x + 75)}" y="${f(y + 95)}" text-anchor="middle">${esc(trunc(sub, 24))}</text>
         <text class="tv-n-tag" x="${f(x + 75)}" y="${f(y + 109)}" text-anchor="middle" fill="${suspect ? "#fbbf24" : ""}">${esc(trunc(nodeTag(n), 26))}</text>
