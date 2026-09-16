@@ -75,6 +75,8 @@
 .swv table.swv-t tr.port-row{cursor:pointer} .swv table.swv-t tr.port-row:hover td{background:rgba(148,163,184,.05)}
 .swv table.swv-t tr.sel td{background:rgba(34,211,238,.07)}
 .swv .swv-devs{display:flex;flex-wrap:wrap;gap:4px}
+.swv table.swv-t td.swv-now{white-space:nowrap}
+.swv button.swv-dev{border:0;cursor:pointer;color:#67e8f9}
 .swv .swv-dev{display:inline-flex;align-items:center;gap:5px;max-width:220px;border-radius:7px;padding:1px 7px;background:rgba(148,163,184,.1);font-size:12px;color:#e2e8f0;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .swv a.swv-dev:hover{background:rgba(34,211,238,.16)}
 .swv .swv-dot{width:7px;height:7px;border-radius:50%;background:var(--swv-ok);flex:none} .swv .swv-dot.off{background:var(--swv-bad)}
@@ -353,7 +355,11 @@
       const table = `<div class="swv-box"><h3>Ports</h3><div class="swv-tablewrap"><table class="swv-t"><thead><tr><th>Port</th><th>Connected</th><th>Link</th><th>PoE</th><th>Traffic ${esc(st.hours === 24 ? "24 h" : st.hours / 24 + " d")}</th><th>Now ↓ / ↑</th><th>Errors</th></tr></thead><tbody>
         ${ports.map((p) => {
           const s = portState(p, probs);
-          const devs = (p.devices || []).map((x) => devChip(x)).join("") + (p.unknown_macs ? `<span class="swv-dev swv-dim">+${plural(p.unknown_macs, "unknown device")}</span>` : "");
+          // An uplink carries dozens of devices: show a few, the port detail lists them all.
+          const all = p.devices || [], SHOW = 6;
+          const devs = all.slice(0, SHOW).map((x) => devChip(x)).join("")
+            + (all.length > SHOW ? `<button class="swv-dev" data-port="${esc(p.id)}" title="Open the port to see all of them">+${all.length - SHOW} more</button>` : "")
+            + (p.unknown_macs ? `<span class="swv-dev swv-dim">+${plural(p.unknown_macs, "unknown device")}</span>` : "");
           const last = !p.up && (p.last_devices || []).length ? `<span class="swv-note">last: ${p.last_devices.map((x) => esc(devName(x))).join(", ")}${p.last_seen_ts ? " · " + ago(p.last_seen_ts) : ""}</span>` : "";
           const errs = (p.errors || 0) + (p.dropped || 0);
           return `<tr class="port-row ${st.sel === p.id ? "sel" : ""}" data-port="${esc(p.id)}" tabindex="0">
@@ -362,7 +368,7 @@
             <td data-l="Link"><span class="swv-b ${s.cls}">${esc(p.up ? (p.speed ? (p.speed >= 1000 ? p.speed / 1000 + " Gbit" : p.speed + " Mbit") + (p.duplex === "half" ? " half" : "") : "up") : s.label)}</span></td>
             <td data-l="PoE">${p.poe_supported ? `${(p.poe_w || 0) >= 0.5 ? `<b style="color:#fde68a">${(+p.poe_w).toFixed(1)} W</b> ` : ""}<span class="swv-muted">${esc(poeLabel(p.poe_mode))}</span>` : `<span class="swv-dim">—</span>`}</td>
             <td data-l="Traffic">${spark((d.port_series || {})[p.id])}</td>
-            <td data-l="Now" class="swv-tnum">${p.up ? `↓ ${bps(p.rx_bps)}<br><span class="swv-muted">↑ ${bps(p.tx_bps)}</span>` : `<span class="swv-dim">—</span>`}</td>
+            <td data-l="Now" class="swv-tnum swv-now">${p.up ? `↓ ${bps(p.rx_bps)}<br><span class="swv-muted">↑ ${bps(p.tx_bps)}</span>` : `<span class="swv-dim">—</span>`}</td>
             <td data-l="Errors" class="swv-tnum">${errs ? `<span style="color:#fbbf24">${errs}</span>` : `<span class="swv-dim">0</span>`}</td></tr>`;
         }).join("")}</tbody></table></div><p class="swv-note" style="margin:8px 0 0">Click a port for its charts, what's plugged in${d.manage ? " and its controls" : ""}. Errors are the switch's counters since it last restarted.</p></div>`;
 
@@ -383,7 +389,8 @@
       root.querySelectorAll("[data-a=poll]").forEach((b) => (b.onclick = () => pollNow(b)));
       root.querySelectorAll("[data-a=login]").forEach((b) => (b.onclick = () => o.onLogin && o.onLogin()));
       root.querySelectorAll("[data-port]").forEach((el) => {
-        const pick = (e) => { if (e.target.closest("a")) return; select(el.dataset.port); };
+        // stopPropagation: the "+N more" button sits inside its port's row, and both would toggle.
+        const pick = (e) => { if (e.target.closest("a")) return; e.stopPropagation(); select(el.dataset.port); };
         el.onclick = pick;
         if (el.tagName === "TR") el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(el.dataset.port); } };
       });
