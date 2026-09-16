@@ -595,6 +595,7 @@
             <div class="nw-actions">
                 <nav class="nw-pages" aria-label="Pages">
                     <a href="#/" data-page="devices" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
+                    <a href="#/network" data-page="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h6v5H4zM14 4h6v5h-6zM9 15h6v5H9zM7 9v3h10V9M12 12v3"/></svg><span class="lbl">Network</span></a>
                     <a href="#/map" data-page="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg><span class="lbl">Map</span></a>
                     <a href="#/wifi" data-page="wifi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
                     <a href="#/units" data-page="units"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18v10H3zM7 11v2M11 11v2M15 11v2M19 11v2"/></svg><span class="lbl">Managed</span></a>
@@ -649,6 +650,12 @@
             <div id="filter-bar" class="nw-chips"></div>
             <div id="network-grid" class="nw-body"></div>
         </section>
+      </div>
+      <div id="page-network" hidden>
+        <div class="nw-phead">
+            <div><div class="nw-eyebrow">Network</div><h1>How it is connected</h1><p>Towers and sites, what is on each and how it all links up — as a diagram or on the map. Both views show the same records.</p></div>
+        </div>
+        <div id="topo-host" style="--tv-height: calc(100vh - 250px)"></div>
       </div>
       <div id="page-map" hidden>
         <div class="nw-phead">
@@ -1311,6 +1318,7 @@
     <script src="/static/switchview.js"></script>
     <script src="/static/routerview.js"></script>
     <script src="/static/monitorpicker.js"></script>
+    <script src="/static/topoview.js"></script>
     <script src="/static/vendor/leaflet/leaflet.js"></script>
     <script>
         let DATA = { targets: [], devices: [] };
@@ -3011,18 +3019,19 @@
             const [path, query] = h.split('?');
             const [page, sub] = (path || '').split('/');
             let page2 = (page === 'switches' || page === 'neighbors') ? 'units' : page;   // old links still work
-            const next = ['history','settings','map','wifi','units'].includes(page2) ? page2 : 'devices';
+            const next = ['history','settings','map','wifi','units','network'].includes(page2) ? page2 : 'devices';
             if(PAGE === 'settings' && next !== 'settings' && SETTINGS_DIRTY.size && !confirm('Leave settings without saving your changes?')){
                 history.replaceState(null, '', '#/settings'); return;
             }
             const changed = next !== PAGE;
             PAGE = next;
-            ['devices','map','wifi','units','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            ['devices','network','map','wifi','units','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
             if(PAGE !== 'units') unmountSwitch();
             if(PAGE !== 'map') mapCancelPlace(true);
             document.querySelectorAll('.nw-pages a').forEach(a => a.classList.toggle('on', a.dataset.page === PAGE));
             const siteName = (STATUS && STATUS.site && STATUS.site.name) || 'Netwatch';
-            document.title = ({devices:'', map:'Map · ', wifi:'Wi-Fi · ', units:'Managed units · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
+            document.title = ({devices:'', network:'Network · ', map:'Map · ', wifi:'Wi-Fi · ', units:'Managed units · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
+            if(PAGE === 'network') showNetworkPage(query);
             if(PAGE === 'map'){
                 const qp = new URLSearchParams(query || '');
                 showMapPage(qp.get('focus'), qp.get('place'));
@@ -3335,7 +3344,46 @@
         }
         function fmtLatLon(g){ return g ? `${(+g.lat).toFixed(6)}, ${(+g.lon).toFixed(6)}` : ''; }
 
-        let MAP = null, MAP_LAYER = null, MAP_PLACING = null, MAP_EDIT = false, MAP_TAB = 'on', MAP_FITTED = false, MAP_FOCUS = null;
+        let MAP = null, MAP_LAYER = null, MAP_PLACING = null, MAP_EDIT = false, MAP_TAB = 'on', MAP_FITTED = false, MAP_FOCUS = null, MAP_TOPO = null;
+
+        // ---- Network page: diagram + map of towers/sites and links (static/topoview.js) ----
+        let TOPO = null;
+        async function topoLoad(o){
+            const r = await fetch('/api/topology' + (o && o.scope === 'all' ? '?scope=all' : ''));
+            if(!r.ok) throw new Error('Could not load the network (' + r.status + ')');
+            return r.json();
+        }
+        async function topoCall(method, path, body){
+            const init = { method };
+            if(body !== undefined){ init.headers = {'Content-Type':'application/json'}; init.body = JSON.stringify(body); }
+            const r = await fetch('/api/topology' + path, init);      // auth.js asks for the Pi password on a 401
+            let j = {};
+            try { j = await r.json(); } catch(e){}
+            if(!r.ok || j.ok === false) throw new Error(j.error === 'auth_required' ? 'Log in with the Pi password to change the diagram' : (j.error || ('Not saved (' + r.status + ')')));
+            return j;
+        }
+        function showNetworkPage(query){
+            const qp = new URLSearchParams(query || '');
+            const host = document.getElementById('topo-host');
+            if(!window.TopoView){ host.innerHTML = '<div class="nw-empty"><b>The network view did not load</b>Reload the page.</div>'; return; }
+            if(TOPO){
+                if(qp.get('view')) TOPO.setView(qp.get('view'));
+                if(qp.get('focus')) TOPO.focus(qp.get('focus')); else TOPO.refresh();
+                return;
+            }
+            TOPO = TopoView.mount(host, {
+                load: topoLoad, call: topoCall,
+                iconUrl: (id) => '/api/topology/icons/' + encodeURIComponent(id),
+                openDevice: (key) => openModal(key),
+                placeDevicesHref: '#/map',
+                login: async () => !!(window.nwAuth && await window.nwAuth.login()),
+                toast: nwToast,
+                confirm: async (title, text) => confirm(title + '\n\n' + text),
+                storageKey: 'nw.topo',
+                view: qp.get('view') || undefined,
+                focus: qp.get('focus') || undefined,
+            });
+        }
         function initMap(){
             if(MAP || !window.L) return;
             const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
@@ -3349,6 +3397,7 @@
             L.control.layers({ 'Satellite': sat, 'Street map': street }, { 'Roads & place names': labels }, { position: 'topright' }).addTo(MAP);
             L.control.scale({ imperial: false }).addTo(MAP);
             MAP_LAYER = L.layerGroup().addTo(MAP);
+            if(window.TopoView) MAP_TOPO = TopoView.overlay(MAP, { load: topoLoad, networkHref: (gid) => '#/network?view=map&focus=' + encodeURIComponent(gid) });
             const site = (STATUS && STATUS.site) || {};
             if(site.lat != null && site.lon != null) MAP.setView([site.lat, site.lon], 16);
             else MAP.setView([-29.0, 24.5], 5);            // South Africa until something is placed
@@ -3364,7 +3413,9 @@
             });
         }
         function showMapPage(focusKey, placeKey){
+            const fresh = !!MAP;
             initMap();
+            if(fresh && MAP_TOPO) MAP_TOPO.refresh();
             if(!MAP){ document.getElementById('nw-map').innerHTML = '<div class="nw-empty"><b>Map library did not load</b>Reload the page.</div>'; return; }
             setTimeout(() => {
                 MAP.invalidateSize();
