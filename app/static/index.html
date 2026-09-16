@@ -1428,15 +1428,17 @@
                 const macs = (await (await fetch('/api/bridge-macs')).json()).bridge_macs || [];
                 box.innerHTML = macs.length ? macs.map(m => `
                     <div class="flex items-center justify-between gap-2 text-xs p-1.5 border rounded-lg">
-                        <span class="font-mono">${m.match(/.{2}/g).join(':')}</span>
-                        <button onclick="removeBridge('${m}')" class="px-2 py-0.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded text-[11px]">Remove — track by MAC again</button>
+                        <span class="font-mono">${esc(fmtBridgeMac(m))}</span>
+                        <button data-nw-act="bridge-remove" data-mac="${esc(m)}" class="px-2 py-0.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded text-[11px]">Remove — track by MAC again</button>
                     </div>`).join('')
                     : '<span class="text-[11px] text-slate-400">none — mark one from a "Same MAC, multiple IPs" problem card</span>';
             } catch(e){ box.innerHTML = '<span class="text-[11px] text-slate-400">unavailable</span>'; }
         }
+        function fmtBridgeMac(m){ return (String(m).match(/.{2}/g) || []).join(':'); }
         async function removeBridge(mac){
-            if(!confirm('Track '+mac.match(/.{2}/g).join(':')+' by MAC again?\n\nDo this after fixing the bridge/WiFi device itself. On the next scan its devices either re-merge into one record, or show up under their real MACs (keeping their names) if proxy-ARP is off.')) return;
-            await fetch('/api/bridge-macs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac, enable:false})});
+            if(!confirm('Track '+fmtBridgeMac(mac)+' by MAC again?\n\nDo this after fixing the bridge/WiFi device itself. On the next scan its devices either re-merge into one record, or show up under their real MACs (keeping their names) if proxy-ARP is off.')) return;
+            const r = await fetch('/api/bridge-macs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac, enable:false})});
+            if(!r.ok){ nwToast('Not changed: ' + whyNotSaved(r, await r.json().catch(() => ({}))), 'bad'); return; }
             loadBridges(); setTimeout(refresh, 2500);
         }
         async function clearConflict(ip, soft){
@@ -1449,7 +1451,8 @@
         }
         async function markBridge(mac){
             if(!confirm('Treat MAC '+mac+' as a wireless bridge / proxy-ARP relay?\n\nEvery device answering behind it will be tracked by its own IP address, so each camera shows as a separate device. A rescan starts right away.\n\n(Undo any time: Settings → Wireless bridges → Remove.)')) return;
-            await fetch('/api/bridge-macs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});
+            const r = await fetch('/api/bridge-macs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});
+            if(!r.ok){ nwToast('Not changed: ' + whyNotSaved(r, await r.json().catch(() => ({}))), 'bad'); return; }
             setTimeout(refresh, 2500);
         }
         async function renderProblems(){
@@ -1468,37 +1471,37 @@
             const chipFor = d => {
                 const dot = d.online ? 'bg-emerald-500' : 'bg-red-500';
                 const title = d.name || d.vendor || 'device';
-                return `<button onclick="openModal('${(d.key||'').replace(/'/g,"\\'")}','${d.ip||''}')"
+                return `<button data-nw-act="open-device" data-key="${esc(d.key||'')}" data-ip="${esc(d.ip||'')}"
                     class="flex items-center gap-2 px-2.5 py-1 bg-[#0b1322]/80 border border-current/20 rounded-lg text-xs hover:bg-[#111c33] text-left">
                     <span class="status-dot ${dot}"></span>
-                    <span><b>${title}</b> <span class="opacity-60">${d.category||''}</span>
-                    <span class="font-mono text-[10px] opacity-60">${d.mac||''}</span></span>
+                    <span><b>${esc(title)}</b> <span class="opacity-60">${esc(catLabel[d.category]||d.category||'')}</span>
+                    <span class="font-mono text-[10px] opacity-60">${esc(d.mac||'')}</span></span>
                 </button>`;
             };
             const rowHtml = p => {
                 const meta = PROBLEM_META[p.type] || {label:p.type};
                 const sev = SEV_STYLE[p.severity] || SEV_STYLE.low;
                 const ack = p.ack_key
-                    ? `<button onclick="ackIp('${(p.ack_key||'').replace(/'/g,"\\'")}')"
+                    ? `<button data-nw-act="ack-ip" data-key="${esc(p.ack_key)}"
                         class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold whitespace-nowrap">✓ Acknowledge new IP</button>`
                     : '';
                 const bridge = (p.type === 'same_mac_multi_ip' && p.mac)
-                    ? `<button onclick="markBridge('${p.mac}')"
+                    ? `<button data-nw-act="bridge-mark" data-mac="${esc(p.mac)}"
                         class="px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-[11px] font-bold whitespace-nowrap">🌉 It's a bridge — track clients by IP</button>`
                     : '';
                 const clearBtn = (p.type === 'ip_conflict' || p.type === 'identity_rotated')
-                    ? `<button onclick="clearConflict('${p.ip}', ${p.type === 'identity_rotated'})"
+                    ? `<button data-nw-act="conflict-clear" data-ip="${esc(p.ip||'')}" data-soft="${p.type === 'identity_rotated' ? 1 : ''}"
                         class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold whitespace-nowrap">✓ Clear & re-test</button>`
                     : '';
                 return `<div class="rounded-lg border ${sev} p-3">
                     <div class="flex items-center gap-2 flex-wrap">
-                        <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-white/10">${meta.label}</span>
-                        <span class="font-mono font-bold text-sm">${p.ip||''}</span>
-                        <span class="text-xs opacity-80">${p.detail||''}</span>
+                        <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-white/10">${esc(meta.label)}</span>
+                        <span class="font-mono font-bold text-sm">${esc(p.ip||'')}</span>
+                        <span class="text-xs opacity-80">${esc(p.detail||'')}</span>
                         <span class="ml-auto">${ack}${bridge}${clearBtn}</span>
                     </div>
                     <div class="flex flex-wrap gap-2 mt-2">${(p.devices||[]).map(chipFor).join('')}</div>
-                    ${p.fix ? `<p class="text-[11px] mt-2 opacity-70">→ ${p.fix}</p>` : ''}
+                    ${p.fix ? `<p class="text-[11px] mt-2 opacity-70">→ ${esc(p.fix)}</p>` : ''}
                 </div>`;
             };
             const driftN = PROBLEMS.filter(p => p.type==='ip_change').length;
@@ -1517,7 +1520,7 @@
                     <summary class="flex items-center gap-2 px-4 py-3 cursor-pointer select-none flex-wrap" style="list-style:none">
                         <span class="text-base">⚠️</span>
                         <h3 class="font-bold ${high ? 'text-red-300' : 'text-amber-300'} text-sm">${PROBLEMS.length} network problem${PROBLEMS.length===1?'':'s'}</h3>
-                        <span class="text-xs text-slate-400 truncate" style="max-width:60ch">${summaryTxt}</span>
+                        <span class="text-xs text-slate-400 truncate" style="max-width:60ch">${esc(summaryTxt)}</span>
                         <span class="ml-auto text-xs text-slate-500">Show / hide</span>
                     </summary>
                     <div class="px-4 pb-4">
@@ -1545,7 +1548,7 @@
 
         function buildTargetSelect(){
             const sel = document.getElementById('target-select');
-            sel.innerHTML = DATA.targets.map(t=>`<option value="${t.cidr}">${t.label} · ${t.cidr}</option>`).join('');
+            sel.innerHTML = DATA.targets.map(t=>`<option value="${esc(t.cidr)}">${esc(t.label)} · ${esc(t.cidr)}</option>`).join('');
             if(SELECTED) sel.value = SELECTED;
         }
         function onTargetChange(){ SELECTED = document.getElementById('target-select').value; renderGrid(); }
@@ -1566,6 +1569,40 @@
         try { VIEW = localStorage.getItem('nw.view') || 'cards'; SORT = localStorage.getItem('nw.sort') || 'ip'; LIST = localStorage.getItem('nw.list') || 'monitored'; } catch(e){}
         if(!['monitored','other','all'].includes(LIST)) LIST = 'monitored';
         const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        // Buttons built from data name an action in data-nw-act and carry its
+        // values in data-* attributes; these two listeners run them. Never put a
+        // value into an inline onclick="fn('${esc(x)}')": the browser decodes
+        // &#39; back to a quote before the JavaScript runs.
+        const NW_ACTS = {
+            'open-device':     el => openModal(el.dataset.key, el.dataset.ip),
+            'ack-ip':          el => ackIp(el.dataset.key),
+            'bridge-mark':     el => markBridge(el.dataset.mac),
+            'bridge-remove':   el => removeBridge(el.dataset.mac),
+            'conflict-clear':  el => clearConflict(el.dataset.ip, !!el.dataset.soft),
+            'net-addr-remove': el => netRemoveAddress(el.dataset.iface, el.dataset.cidr),
+            'net-confirm':     el => netConfirm(el.dataset.con),
+            'net-dhcp':        el => netDhcp(el.dataset.con),
+            'net-static':      el => netStatic(el.dataset.con, el),
+            'map-focus':       el => mapFocus(el.dataset.key),
+            'map-place':       el => mapStartPlace(el.dataset.key),
+            'map-move':        el => { MAP.closePopup(); mapStartPlace(el.dataset.key); },
+            'hist-ip':         el => histShowIp(el.dataset.ip),
+            'wifi-link':       el => wifiFocus(el.dataset.link),
+            'wifi-radio':      el => wifiFocusRadio(el.dataset.key),
+            'wifi-toggle':     el => wifiToggle(el.dataset.link),
+            'wifi-csv':        el => wifiCsv(el.dataset.link),
+        };
+        document.addEventListener('click', (e) => {
+            const el = e.target.closest('[data-nw-act]');
+            if(el && NW_ACTS[el.dataset.nwAct]) NW_ACTS[el.dataset.nwAct](el, e);
+        });
+        document.addEventListener('keydown', (e) => {
+            if(e.key !== 'Enter' && e.key !== ' ') return;
+            const el = e.target.closest('[role="button"][data-nw-act]');     // real buttons click by themselves
+            if(el && NW_ACTS[el.dataset.nwAct]){ e.preventDefault(); NW_ACTS[el.dataset.nwAct](el, e); }
+        });
+        // Why a change was refused (401 = the Pi login was needed and not given).
+        function whyNotSaved(r, j){ return r.status === 401 ? 'log in with the Pi password first' : ((j && j.error) || 'not saved (' + r.status + ')'); }
         const nowS = () => Math.floor(Date.now()/1000);
         // A monitored device never goes "quiet": down for a week is still down.
         function devState(d){ return d.online ? 'online' : (d.watch || (d.last_seen && nowS() - d.last_seen < QUIET_AFTER)) ? 'offline' : 'quiet'; }
@@ -2433,20 +2470,20 @@
             } catch(e){ panel.innerHTML = '<p class="text-xs text-rose-400">Error: '+e+'</p>'; }
         }
         function renderQuality(panel, q){
-            if(!q || !q.ok){ panel.innerHTML = '<p class="text-xs text-rose-400">'+((q&&q.error)||'Test failed')+'</p>'; return; }
+            if(!q || !q.ok){ panel.innerHTML = '<p class="text-xs text-rose-400">'+esc((q&&q.error)||'Test failed')+'</p>'; return; }
             const styles = { excellent:'bg-emerald-500/20 text-emerald-300', good:'bg-emerald-500/15 text-emerald-300', fair:'bg-amber-500/15 text-amber-300', poor:'bg-rose-500/15 text-rose-300', down:'bg-white/50/20 text-slate-600' };
             const label = { excellent:'Excellent', good:'Good', fair:'Fair', poor:'Poor', down:'No response' };
             const cls = styles[q.rating] || styles.down;
-            const metric = (lbl,val,unit)=>`<div class="bg-white/5 rounded-lg p-2 border text-center"><div class="text-[10px] text-slate-400 uppercase font-bold">${lbl}</div><div class="text-sm font-bold">${val==null?'--':val}${val==null?'':unit}</div></div>`;
+            const metric = (lbl,val,unit)=>`<div class="bg-white/5 rounded-lg p-2 border text-center"><div class="text-[10px] text-slate-400 uppercase font-bold">${lbl}</div><div class="text-sm font-bold">${val==null?'--':esc(val)}${val==null?'':unit}</div></div>`;
             panel.innerHTML = `
                 <div class="flex items-center justify-between mb-2">
                     <span class="text-xs font-bold text-slate-500 uppercase">Connection quality</span>
-                    <span class="px-3 py-1 rounded-full text-xs font-bold ${cls}">${label[q.rating]||q.rating}</span>
+                    <span class="px-3 py-1 rounded-full text-xs font-bold ${cls}">${esc(label[q.rating]||q.rating)}</span>
                 </div>
                 <div class="grid grid-cols-4 gap-2">
                     ${metric('Loss', q.loss, '%')}${metric('Avg', q.avg, 'ms')}${metric('Jitter', q.jitter, 'ms')}${metric('Max', q.max, 'ms')}
                 </div>
-                <p class="text-[10px] text-slate-400 mt-1">${q.recv}/${q.sent} replies${q.note ? ' · '+q.note : ''}</p>`;
+                <p class="text-[10px] text-slate-400 mt-1">${esc(q.recv)}/${esc(q.sent)} replies${q.note ? ' · '+esc(q.note) : ''}</p>`;
         }
 
         // ---- modal ----
@@ -2483,11 +2520,11 @@
             if(dev && (dev.ip_conflict || dev.ip_rotated) && (dev.ip_conflict_with||[]).length){
                 mc.classList.remove('hidden');
                 const others = dev.ip_conflict_with.map(o =>
-                    `${o.name||o.vendor||o.mac||'device'} (${o.online?'online':'offline'})`).join(', ');
+                    `${esc(o.name||o.vendor||o.mac||'device')} (${o.online?'online':'offline'})`).join(', ');
                 mc.innerHTML = dev.ip_conflict
-                    ? `⚠ <b>IP conflict on ${dev.ip}.</b> Also answering here: ${others}. `
+                    ? `⚠ <b>IP conflict on ${esc(dev.ip)}.</b> Also answering here: ${others}. `
                         + `Two devices share this address — give one a unique IP to fix the false "offline".`
-                    : `🔁 <b>Identity rotated / IP reuse on ${dev.ip}.</b> Earlier claimants: ${others}. `
+                    : `🔁 <b>Identity rotated / IP reuse on ${esc(dev.ip)}.</b> Earlier claimants: ${others}. `
                         + `They were never online together — likely a rotating private Wi-Fi MAC or DHCP reuse, not a live conflict.`;
             } else { mc.classList.add('hidden'); mc.innerHTML=''; }
             document.getElementById('modal-features-list').innerHTML = dev ? (dev.features||[]).map(f=>`<span class="px-2 py-1 bg-white/10 rounded text-[10px] font-bold text-slate-400">${featureNames[f]||f}</span>`).join('') : '';
@@ -2507,7 +2544,9 @@
                 document.getElementById('modal-extended').innerText = txt;
                 document.getElementById('edit-name').value = dev.name||'';
                 document.getElementById('edit-name').placeholder = dev.device_name ? `${dev.device_name} (${dev.device_name_src==='nvr' ? 'from the NVR' : "the device's own name"})` : 'e.g. Front Gate Camera';
-                document.getElementById('edit-category').value = dev.category||'unknown';
+                const catSel = document.getElementById('edit-category');
+                catSel.value = dev.category||'unknown';
+                if(catSel.selectedIndex < 0) catSel.value = 'unknown';
                 document.getElementById('edit-watch').checked = !!dev.watch;
                 renderMonRow(dev);
                 document.getElementById('edit-serial').value = dev.serial||'';
@@ -2570,7 +2609,11 @@
                 model: document.getElementById('edit-model').value,
                 link: document.getElementById('edit-link').value
             };
-            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+            try {
+                const r = await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+                const j = await r.json().catch(() => ({}));
+                if(!r.ok || j.ok === false){ nwToast('Not saved: ' + whyNotSaved(r, j), 'bad'); return; }
+            } catch(e){ nwToast('Not saved: the Pi did not answer', 'bad'); return; }
             closeModal(); await loadDevices();
         }
         async function forgetDevice(){
@@ -2598,7 +2641,7 @@
             const others = DATA.devices.filter(d => d.key !== dev.key)
                 .sort((a,b)=>[...a.ip.split('.').map(Number)] > [...b.ip.split('.').map(Number)] ? 1 : -1);
             sel.innerHTML = '<option value="">🔗 Not linked to another device</option>' +
-                others.map(d => `<option value="${d.key}">${(d.name||d.type||'device')} — ${d.ip}${d.mac?(' ('+d.mac+')'):''}</option>`).join('');
+                others.map(d => `<option value="${esc(d.key)}">${esc(d.name||d.type||'device')} — ${esc(d.ip)}${d.mac?(' ('+esc(d.mac)+')'):''}</option>`).join('');
             sel.value = dev.link || '';
         }
 
@@ -2622,19 +2665,21 @@
             const fd = new FormData(); fd.append('photo', inp.files[0]);
             document.getElementById('photo-status').innerText = 'Uploading…';
             try {
-                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/photo', { method:'POST', body: fd })).json();
-                if(r.ok){
+                const res = await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/photo', { method:'POST', body: fd });
+                const r = await res.json().catch(() => ({}));
+                if(res.ok && r.ok){
                     const img=document.getElementById('device-photo');
                     img.src='/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/photo?t='+Date.now();
                     img.classList.remove('hidden'); document.getElementById('photo-placeholder').classList.add('hidden'); document.getElementById('photo-remove').classList.remove('hidden');
                     document.getElementById('photo-status').innerText='Saved'; loadDevices();
-                } else document.getElementById('photo-status').innerText = r.error||'Failed';
+                } else document.getElementById('photo-status').innerText = whyNotSaved(res, r);
             } catch(e){ document.getElementById('photo-status').innerText='Failed'; }
             inp.value='';
         }
         async function removePhoto(){
             if(!CURRENT_KEY) return;
-            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/photo', { method:'DELETE' });
+            const r = await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/photo', { method:'DELETE' });
+            if(!r.ok){ document.getElementById('photo-status').innerText = whyNotSaved(r, await r.json().catch(() => ({}))); return; }
             loadPhoto(CURRENT_KEY, null); loadDevices();
         }
 
@@ -2750,8 +2795,10 @@
             });
             const st = document.getElementById('asset-status');
             try {
-                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/asset',
-                    {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({asset})})).json();
+                const res = await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/asset',
+                    {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({asset})});
+                const r = await res.json().catch(() => ({}));
+                if(!res.ok || !r.ok){ st.className = 'text-xs text-rose-400'; st.innerText = 'Not saved: ' + whyNotSaved(res, r); return; }
                 st.className = 'text-xs text-emerald-400'; st.innerText = 'Saved ✓';
                 showAssetProgress(r.completeness);
                 setTimeout(()=>{ st.innerText=''; }, 2500);
@@ -2840,7 +2887,7 @@
             let act = '';
             if(r.result === 'ok' && !r.current) act = `<div class="act"><button class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold" onclick="saveCreds()">${saved ? 'Save this login instead' : 'Save this login'}</button></div>`;
             if(r.result === 'auth_failed' && r.current) act = `<small class="text-amber-300">This is the login saved now — radio monitoring, camera names and Wi-Fi info use it, so fix it here.</small>`;
-            showCredTest(`<b>${mark} ${label}</b><small>${esc(r.detail || '')}${extra ? ' · ' + extra : ''}${r.seconds >= 1 ? ' · ' + Math.round(r.seconds) + ' s' : ''}</small>${tried}${act}`, cls);
+            showCredTest(`<b>${mark} ${esc(label)}</b><small>${esc(r.detail || '')}${extra ? ' · ' + extra : ''}${r.seconds >= 1 ? ' · ' + Math.round(r.seconds) + ' s' : ''}</small>${tried}${act}`, cls);
             if((r.result === 'ok' || r.result === 'auth_failed') && r.current && DEV_BY_KEY[key])
                 DEV_BY_KEY[key].cred_test = { ts: r.ts, result: r.result, method: r.method, username: r.username, current: true };
         }
@@ -3199,15 +3246,15 @@
         async function loadNetwork(){
             let n; try { n = await (await fetch('/api/network')).json(); } catch(e){ return; }
             // interfaces summary + iface dropdown
-            document.getElementById('net-ifaces').innerHTML = (n.interfaces||[]).map(i => `<span class="font-mono">${i.iface}</span> ${i.addrs.join(', ')}`).join(' · ') || 'no interfaces';
+            document.getElementById('net-ifaces').innerHTML = (n.interfaces||[]).map(i => `<span class="font-mono">${esc(i.iface)}</span> ${esc((i.addrs||[]).join(', '))}`).join(' · ') || 'no interfaces';
             const sel = document.getElementById('net-iface');
-            sel.innerHTML = (n.interfaces||[]).map(i => `<option value="${i.iface}">${i.iface}</option>`).join('');
+            sel.innerHTML = (n.interfaces||[]).map(i => `<option value="${esc(i.iface)}">${esc(i.iface)}</option>`).join('');
             // managed addresses
             const al = document.getElementById('net-addrs');
             al.innerHTML = (n.addresses||[]).length ? (n.addresses||[]).map(a => `
                 <div class="flex items-center justify-between gap-2 text-xs p-1.5 border rounded-lg">
-                    <span><span class="font-mono">${a.cidr}</span> on <span class="font-mono">${a.iface}</span>${a.target?' · <span class="text-emerald-400">scanned</span>':''}</span>
-                    <button onclick="netRemoveAddress('${a.iface}','${a.cidr}')" class="px-2 py-0.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded text-[11px]">Remove</button>
+                    <span><span class="font-mono">${esc(a.cidr)}</span> on <span class="font-mono">${esc(a.iface)}</span>${a.target?' · <span class="text-emerald-400">scanned</span>':''}</span>
+                    <button data-nw-act="net-addr-remove" data-iface="${esc(a.iface)}" data-cidr="${esc(a.cidr)}" class="px-2 py-0.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded text-[11px]">Remove</button>
                 </div>`).join('') : '<span class="text-[11px] text-slate-400">none</span>';
             // static control (only when NM available)
             NET_CONNS = n.connections || [];
@@ -3246,39 +3293,39 @@
                 const curMask = curPrefix ? prefixToMask(curPrefix) : '';
                 const curGw = rt.gateway || c.gateway || '';
                 const curDns = rt.dns || c.dns || '';
-                const row = (l, v) => `<span class="text-slate-500">${l}</span><span class="font-mono text-slate-200">${v || '—'}</span>`;
+                const row = (l, v) => `<span class="text-slate-500">${l}</span><span class="font-mono text-slate-200">${v ? esc(v) : '—'}</span>`;
                 const pendUi = `<div class="mt-2 flex items-center gap-2 flex-wrap p-2 bg-amber-500/10 border border-amber-400/30 rounded-lg">
                         <span class="text-amber-200 text-[11px]">New fixed IP applied — check the dashboard still loads (use the new address if it changed), then:</span>
-                        <button onclick="netConfirm('${c.name}')" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold">✅ Keep changes (<span class="cn-count" data-deadline="${pending && pending.revert_deadline_ts}">…</span>s)</button>
-                        <button onclick="netDhcp('${c.name}')" class="px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded text-[11px]">Revert now</button>
+                        <button data-nw-act="net-confirm" data-con="${esc(c.name)}" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold">✅ Keep changes (<span class="cn-count" data-deadline="${pending && pending.revert_deadline_ts}">…</span>s)</button>
+                        <button data-nw-act="net-dhcp" data-con="${esc(c.name)}" class="px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded text-[11px]">Revert now</button>
                     </div>`;
                 const editUi = `<div id="cn-edit-${i}" class="hidden mt-2 p-2 bg-[#050b16]/60 border border-white/10 rounded-lg">
                         <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-center text-[11px]">
-                            <label class="text-slate-400">IP address</label><input class="cn-ip p-1.5 bg-[#050b16] border rounded font-mono w-44" value="${curIp}">
-                            <label class="text-slate-400">Subnet mask</label><input class="cn-mask p-1.5 bg-[#050b16] border rounded font-mono w-44" placeholder="255.255.255.0" value="${curMask}">
-                            <label class="text-slate-400">Default gateway</label><input class="cn-gw p-1.5 bg-[#050b16] border rounded font-mono w-44" value="${curGw}">
-                            <label class="text-slate-400">DNS servers</label><input class="cn-dns p-1.5 bg-[#050b16] border rounded font-mono w-44" placeholder="1.1.1.1, 8.8.8.8" value="${curDns}">
+                            <label class="text-slate-400">IP address</label><input class="cn-ip p-1.5 bg-[#050b16] border rounded font-mono w-44" value="${esc(curIp)}">
+                            <label class="text-slate-400">Subnet mask</label><input class="cn-mask p-1.5 bg-[#050b16] border rounded font-mono w-44" placeholder="255.255.255.0" value="${esc(curMask)}">
+                            <label class="text-slate-400">Default gateway</label><input class="cn-gw p-1.5 bg-[#050b16] border rounded font-mono w-44" value="${esc(curGw)}">
+                            <label class="text-slate-400">DNS servers</label><input class="cn-dns p-1.5 bg-[#050b16] border rounded font-mono w-44" placeholder="1.1.1.1, 8.8.8.8" value="${esc(curDns)}">
                         </div>
                         <div class="mt-2 flex gap-2">
-                            <button onclick="netStatic('${c.name}',this)" class="px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded text-[11px] font-bold">Apply fixed IP</button>
+                            <button data-nw-act="net-static" data-con="${esc(c.name)}" class="px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded text-[11px] font-bold">Apply fixed IP</button>
                             <button onclick="document.getElementById('cn-edit-${i}').classList.add('hidden')" class="px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded text-[11px]">Cancel</button>
                         </div>
                     </div>`;
                 return `<div class="p-2.5 border rounded-lg text-xs">
                     <div class="flex items-center justify-between gap-2">
-                        <span><b>${c.name}</b> <span class="font-mono text-slate-400">${c.device}</span>${c.primary?' <span class="text-[10px] bg-cyan-500/15 text-cyan-300 px-1 rounded">primary</span>':''}</span>
+                        <span><b>${esc(c.name)}</b> <span class="font-mono text-slate-400">${esc(c.device)}</span>${c.primary?' <span class="text-[10px] bg-cyan-500/15 text-cyan-300 px-1 rounded">primary</span>':''}</span>
                         <span class="px-2 py-0.5 rounded-full ${isStatic?'bg-amber-500/15 text-amber-300':'bg-emerald-500/15 text-emerald-300'}">${isStatic?'Fixed IP':'DHCP (automatic)'}</span>
                     </div>
                     <div class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
                         ${row('IPv4 address', curIp)}
-                        ${row('Subnet mask', curMask ? `${curMask} <span class="text-slate-500">(/${curPrefix})</span>` : '')}
+                        ${curMask ? `<span class="text-slate-500">Subnet mask</span><span class="font-mono text-slate-200">${esc(curMask)} <span class="text-slate-500">(/${esc(curPrefix)})</span></span>` : row('Subnet mask', '')}
                         ${row('Default gateway', curGw)}
                         ${row('DNS servers', curDns)}
                     </div>
                     ${pend ? pendUi : `
                     <div class="mt-2 flex gap-2">
                         <button onclick="document.getElementById('cn-edit-${i}').classList.toggle('hidden')" class="px-2.5 py-1 bg-white/10 hover:bg-white/20 rounded text-[11px] font-bold">✏️ ${isStatic?'Change fixed IP…':'Use a fixed IP instead…'}</button>
-                        ${isStatic?`<button onclick="netDhcp('${c.name}')" class="px-2.5 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 rounded text-[11px] font-bold">Obtain automatically (DHCP)</button>`:''}
+                        ${isStatic?`<button data-nw-act="net-dhcp" data-con="${esc(c.name)}" class="px-2.5 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 rounded text-[11px] font-bold">Obtain automatically (DHCP)</button>`:''}
                     </div>${editUi}`}
                 </div>`;
             }).join('');
@@ -3483,8 +3530,8 @@
                 ${g.note ? `<span style="color:#94a3b8">${esc(g.note)}</span><br>` : ''}
                 <span style="color:#64748b;font-size:11.5px;font-family:ui-monospace,monospace">${fmtLatLon(g)}</span>
                 <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.55rem">
-                    <button class="nw-btn sm pri" onclick="openModal('${esc(d.key)}','${esc(d.ip)}')">Open device</button>
-                    <button class="nw-btn sm" onclick="MAP.closePopup(); mapStartPlace('${esc(d.key)}')">Move</button>
+                    <button class="nw-btn sm pri" data-nw-act="open-device" data-key="${esc(d.key)}" data-ip="${esc(d.ip)}">Open device</button>
+                    <button class="nw-btn sm" data-nw-act="map-move" data-key="${esc(d.key)}">Move</button>
                     <a class="nw-btn sm" href="https://www.google.com/maps/dir/?api=1&destination=${g.lat},${g.lon}" target="_blank" rel="noopener">Directions ↗</a>
                 </div></div>`;
         }
@@ -3493,14 +3540,14 @@
             const hint = document.getElementById('map-hint');
             if(MAP_TAB === 'on'){
                 hint.textContent = placed.length ? 'Click a device to fly to it.' : 'Nothing placed yet.';
-                box.innerHTML = sortDevices(placed).map(d => `<div class="nw-mitem" onclick="mapFocus('${esc(d.key)}')">
+                box.innerHTML = sortDevices(placed).map(d => `<div class="nw-mitem" data-nw-act="map-focus" data-key="${esc(d.key)}">
                     <span class="nw-dot ${devState(d)==='online'?'':devState(d)==='offline'?'off':'quiet'}"></span><span class="nm">${catIcon[d.category]||''} ${esc(devTitle(d))}</span><span class="text-xs font-mono text-cyan-300">${esc(d.ip)}</span>
                     <span class="sub">${esc((d.geo && d.geo.note) || [vendorShort(d.vendor), d.model].filter(Boolean).join(' · '))}</span></div>`).join('') || '<div class="nw-empty">No devices on the map match.</div>';
             } else {
                 const list = sortDevices(unplaced.filter(d => devState(d) !== 'quiet'));
                 hint.textContent = 'Click "Place", then click where the device is on the map.';
                 box.innerHTML = list.map(d => `<div class="nw-mitem" style="cursor:default">
-                    <span class="nw-dot ${devState(d)==='online'?'':'off'}"></span><span class="nm">${catIcon[d.category]||''} ${esc(devTitle(d))}</span><button class="nw-btn sm ${MAP_PLACING===d.key?'pri':''}" onclick="mapStartPlace('${esc(d.key)}')">${MAP_PLACING===d.key?'Placing…':'Place'}</button>
+                    <span class="nw-dot ${devState(d)==='online'?'':'off'}"></span><span class="nm">${catIcon[d.category]||''} ${esc(devTitle(d))}</span><button class="nw-btn sm ${MAP_PLACING===d.key?'pri':''}" data-nw-act="map-place" data-key="${esc(d.key)}">${MAP_PLACING===d.key?'Placing…':'Place'}</button>
                     <span class="sub"><span class="font-mono">${esc(d.ip)}</span> · ${esc(catLabel[d.category]||'')}</span></div>`).join('') || '<div class="nw-empty"><b>Everything is placed</b>Every device seen this week has a position.</div>';
             }
         }
@@ -3578,8 +3625,8 @@
             const note = (d && d.geo && d.geo.note) || '';
             try {
                 const r = await fetch('/api/devices/' + encodeURIComponent(key) + '/location', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lat, lon, note})});
-                const j = await r.json();
-                if(!r.ok || !j.ok) throw new Error(j.error || 'not saved');
+                const j = await r.json().catch(() => ({}));
+                if(!r.ok || !j.ok) throw new Error(whyNotSaved(r, j));
                 if(d) d.geo = j.geo;
                 nwToast(`${d ? devTitle(d) : 'Device'} ${moved ? 'moved' : 'placed'} on the map`, 'ok');
                 mapCancelPlace(true);
@@ -3613,8 +3660,8 @@
             const out = document.getElementById('loc-result');
             try {
                 const r = await fetch('/api/devices/' + encodeURIComponent(CURRENT_KEY) + '/location', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-                const j = await r.json();
-                if(!r.ok || !j.ok) throw new Error(j.error || 'not saved');
+                const j = await r.json().catch(() => ({}));
+                if(!r.ok || !j.ok) throw new Error(whyNotSaved(r, j));
                 const d = DEV_BY_KEY[CURRENT_KEY]; if(d) d.geo = j.geo;
                 renderModalLocation(d);
                 out.className = 'text-xs text-emerald-400'; out.textContent = j.geo ? '✓ Saved' : '✓ Removed from the map';
@@ -3730,7 +3777,7 @@
                 const d = DEV_BY_IP[x.ip];
                 const who = d ? devTitle(d) : 'not on the network now';
                 const types = x.types.map(t => (EV_META[t]||{icon:'•'}).icon).join(' ');
-                return `<div class="nw-busy" onclick="histShowIp('${esc(x.ip)}')" title="Show this address's events">
+                return `<div class="nw-busy" data-nw-act="hist-ip" data-ip="${esc(x.ip)}" title="Show this address's events">
                     <span class="ip">${esc(x.ip)}</span><span class="n">${x.events}</span>
                     <span class="bar"><i style="width:${Math.round(100*x.events/max)}%"></i></span>
                     <span class="d">${esc(who)} · ${x.devices} device${x.devices===1?'':'s'} · ${types}</span></div>`;
@@ -3754,7 +3801,7 @@
                 body.innerHTML = `<div class="nw-tablewrap"><table class="nw-table"><thead><tr><th>IP</th><th>Last device</th><th class="num">Devices</th><th class="num hide-m">Events</th><th>Last change</th><th class="hide-m">Now</th></tr></thead><tbody>${ips.map(r => {
                     const m = EV_META[r.last_type]||{icon:'•',label:r.last_type||''};
                     const now = DEV_BY_IP[r.ip];
-                    return `<tr onclick="histShowIp('${esc(r.ip)}')"><td class="mono" style="color:#67e8f9">${esc(r.ip)}</td><td><div class="nm">${esc(r.name||r.vendor||r.hostname||r.mac||'unknown')}</div><div class="sub">${esc(r.mac||'')}</div></td>
+                    return `<tr data-nw-act="hist-ip" data-ip="${esc(r.ip)}"><td class="mono" style="color:#67e8f9">${esc(r.ip)}</td><td><div class="nm">${esc(r.name||r.vendor||r.hostname||r.mac||'unknown')}</div><div class="sub">${esc(r.mac||'')}</div></td>
                         <td class="num">${r.device_count}${r.device_count>1?' <span class="nw-tag" title="Different devices have used this address">shared</span>':''}</td><td class="num hide-m">${r.event_count}</td>
                         <td>${m.icon} ${esc(m.label)} <span class="text-slate-500">· ${tsAgo(r.last_ts)}</span></td>
                         <td class="hide-m">${now ? (now.online ? '<span class="text-emerald-400">online</span>' : '<span class="text-rose-300">offline</span>') : '<span class="text-slate-500">—</span>'}</td></tr>`;
@@ -3791,7 +3838,7 @@
                 html += `<div class="nw-ev">
                     <span class="tm" title="${esc(tsFull(e.ts))}">${new Date(e.ts*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                     <span class="bd ${m.cls}">${m.icon} ${esc(m.label)}</span>
-                    <span class="who">${dev ? `<button class="dev" onclick="openModal('${esc(e.key)}','${esc(dev.ip)}')" title="Open this device">${esc(who)}</button>` : `<b>${esc(who)}</b>`}${e.ip ? `<button class="ipb" onclick="histShowIp('${esc(e.ip)}')" title="Only this address">${esc(e.ip)}</button>` : ''}${det ? `<span class="det" title="${esc(det)}">${esc(det)}</span>` : ''}</span>
+                    <span class="who">${dev ? `<button class="dev" data-nw-act="open-device" data-key="${esc(e.key)}" data-ip="${esc(dev.ip)}" title="Open this device">${esc(who)}</button>` : `<b>${esc(who)}</b>`}${e.ip ? `<button class="ipb" data-nw-act="hist-ip" data-ip="${esc(e.ip)}" title="Only this address">${esc(e.ip)}</button>` : ''}${det ? `<span class="det" title="${esc(det)}">${esc(det)}</span>` : ''}</span>
                     ${e.__n ? `<span class="rep" title="Repeated ${e.__n}× on ${esc(day)}, first at ${esc(new Date(e.__first*1000).toLocaleTimeString())}">×${e.__n}</span>` : '<span></span>'}
                 </div>`;
             }
@@ -4146,7 +4193,7 @@
                 ['Radios read', `${sm.radios_read||0}<small>/${sm.radios||0}</small>`, unread ? unread + " can't be read" : 'all readable', unread ? 'warn' : '', ''],
             ];
             document.getElementById('wifi-kpis').innerHTML = tiles.map(([k, v, sub, cls, link]) =>
-                `<${link ? `button onclick="wifiFocus('${esc(link)}')"` : 'div'} class="nw-kpi ${cls}"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${esc(sub)}</span></${link ? 'button' : 'div'}>`).join('');
+                `<${link ? `button data-nw-act="wifi-link" data-link="${esc(link)}"` : 'div'} class="nw-kpi ${cls}"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${esc(sub)}</span></${link ? 'button' : 'div'}>`).join('');
 
             renderWifiFixes();
             renderWifiLinks();
@@ -4162,10 +4209,10 @@
             if(!(d.links || []).length && !(d.radios || []).length){ document.getElementById('wifi-fix-panel').hidden = true; return; }
             document.getElementById('wifi-fix-panel').hidden = false;
             box.innerHTML = (show.length ? show.map(f => {
-                const target = f.link ? `wifiFocus('${esc(f.link)}')` : `wifiFocusRadio('${esc(f.radio || '')}')`;
-                return `<button class="it" onclick="${target}"><span class="lv ${f.level}"></span>
+                const target = f.link ? `data-nw-act="wifi-link" data-link="${esc(f.link)}"` : `data-nw-act="wifi-radio" data-key="${esc(f.radio || '')}"`;
+                return `<button class="it" ${target}><span class="lv ${esc(f.level)}"></span>
                     <span><b>${esc(f.title)}</b> <span class="tg">· ${esc(f.target)}</span></span>
-                    <span class="nw-where ${f.where}">${WF_WHERE[f.where] || ''}</span>
+                    <span class="nw-where ${esc(f.where)}">${WF_WHERE[f.where] || ''}</span>
                     <p>${esc(f.first)}</p></button>`;
             }).join('') : `<div class="nw-wok" style="margin:.2rem .6rem .3rem">✓ ${WF.where ? 'Nothing to do ' + (WF.where === 'site' ? 'on site' : 'from the office') : 'Nothing needs fixing'} right now.</div>`)
               + (info.length ? `<button class="more" onclick="WF.showInfo=!WF.showInfo; renderWifiFixes()">${WF.showInfo ? 'Hide' : 'Show'} ${info.length} suggestion${info.length===1?'':'s'} to watch</button>` : '');
@@ -4226,7 +4273,7 @@
             const sub = [l.sta.model, l.sta.ip, wfKm(m.distance_m)].filter(x => x && x !== '—').join(' · ');
             const top = (l.findings || []).find(f => f.level !== 'info') || (l.findings || [])[0];
             return `<div class="nw-wlink ${l.grade}${open ? ' open' : ''}" id="wf-${esc(l.id)}" data-link="${esc(l.id)}">
-                <div class="nw-wrow" role="button" tabindex="0" aria-expanded="${open}" onclick="wifiToggle('${esc(l.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();wifiToggle('${esc(l.id)}')}">
+                <div class="nw-wrow" role="button" tabindex="0" aria-expanded="${open}" data-nw-act="wifi-toggle" data-link="${esc(l.id)}">
                     <div style="min-width:0"><div class="nm"><span class="nw-grade ${l.grade}">${WF_GRADE[l.grade]}</span><b>${esc(l.sta.name)}</b></div>
                         <span class="sub">${esc(top ? top.title : sub)}${top ? ' · ' + esc(sub) : ''}</span></div>
                     <div class="nw-sig" title="How loud each radio hears the other (dBm)">${wfSigBar('AP hears', (m.signal_ap||{}).now)}${wfSigBar(l.sta.name + ' hears', (m.signal_sta||{}).now)}</div>
@@ -4239,9 +4286,9 @@
         }
 
         function wfFinding(f){
-            const steps = (f.steps || []).map(s => `<li><span>${esc(s.text)}</span><span class="nw-where ${s.where}">${WF_WHERE[s.where]}</span></li>`).join('');
-            return `<div class="nw-find ${f.level}">
-                <h4><span class="lv ${f.level}"></span>${esc(f.title)}</h4>
+            const steps = (f.steps || []).map(s => `<li><span>${esc(s.text)}</span><span class="nw-where ${esc(s.where)}">${WF_WHERE[s.where] || ''}</span></li>`).join('');
+            return `<div class="nw-find ${esc(f.level)}">
+                <h4><span class="lv ${esc(f.level)}"></span>${esc(f.title)}</h4>
                 ${(f.evidence||[]).length ? `<ul class="ev">${f.evidence.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
                 <div class="cols">
                     <div><h5>Likely causes</h5><ol>${(f.causes||[]).map(c => `<li>${esc(c)}</li>`).join('')}</ol></div>
@@ -4288,7 +4335,7 @@
                 </div>
                 <dl class="nw-wfacts">${facts.map(([k, v, sub]) => `<div><dt>${k}</dt><dd>${v}${sub ? `<small>${sub}</small>` : ''}</dd></div>`).join('')}</dl>
                 <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-                    <button class="nw-btn sm" onclick="wifiCsv('${esc(l.id)}')">Download readings (CSV)</button>
+                    <button class="nw-btn sm" data-nw-act="wifi-csv" data-link="${esc(l.id)}">Download readings (CSV)</button>
                     ${l.sta.ip ? `<a class="nw-btn sm" href="http://${esc(l.sta.ip)}" target="_blank" rel="noopener">Open ${esc(l.sta.name)} airOS</a>` : ''}
                     ${l.ap.ip ? `<a class="nw-btn sm" href="http://${esc(l.ap.ip)}" target="_blank" rel="noopener">Open ${esc(l.ap.name)} airOS</a>` : ''}
                 </div>
@@ -4302,7 +4349,7 @@
             const legend = lines.map(ln => `<span class="lg"><i style="background:${ln.color}"></i>${esc(ln.label)}</span>`).join('');
             const all = [];
             lines.forEach(ln => (ln.data || []).forEach(v => { if(v != null) all.push(v); }));
-            if((ts || []).length < 2 || all.length < 2){ el.innerHTML = `<h5>${title} ${legend}</h5><div class="none">${opts.empty || 'Not enough readings yet'}</div>`; return; }
+            if((ts || []).length < 2 || all.length < 2){ el.innerHTML = `<h5>${esc(title)} ${legend}</h5><div class="none">${esc(opts.empty || 'Not enough readings yet')}</div>`; return; }
             const W = 600, H = opts.height || 110, P = 3;
             let lo = Math.min(...all), hi = Math.max(...all);
             (opts.guides || []).forEach(g => { if(g.v >= lo - (opts.span||10) && g.v <= hi + (opts.span||10)){ lo = Math.min(lo, g.v); hi = Math.max(hi, g.v); } });
@@ -4331,7 +4378,7 @@
             const guides = (opts.guides || []).filter(g => g.v > lo && g.v < hi).map(g =>
                 `<line x1="0" x2="${W}" y1="${Y(g.v).toFixed(1)}" y2="${Y(g.v).toFixed(1)}" class="${g.bad ? 'guide-bad' : 'guide'}" vector-effect="non-scaling-stroke"/>`).join('');
             const fmtT = t => { const dt = new Date(t * 1000); return WF.hours > 48 ? dt.toLocaleDateString([], {weekday:'short', day:'numeric', month:'short'}) : dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); };
-            el.innerHTML = `<h5>${title} ${legend}</h5>
+            el.innerHTML = `<h5>${esc(title)} ${legend}</h5>
                 <div class="plot"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px">${guides}${paths}</svg><div class="hov" hidden></div><div class="tip" hidden></div></div>
                 <div class="ax"><span>${fmtT(x0)}</span><span>${wfNum(lo + pad)} – ${wfNum(hi - pad)}${opts.unit ? ' ' + opts.unit : ''}</span><span>${fmtT(x1)}</span></div>`;
             const plot = el.querySelector('.plot'), hov = el.querySelector('.hov'), tip = el.querySelector('.tip');
@@ -4410,7 +4457,7 @@
                 }
                 const bits = [r.is_ap ? 'Access point' : 'Station', r.model, r.is_ap ? r.stations + ' station' + (r.stations===1?'':'s') : '',
                               c.airtime != null ? 'air ' + wfNum(c.airtime) + '%' : '', c.noise != null ? 'noise ' + wfNum(c.noise) : ''].filter(Boolean);
-                return `<button class="nw-wradio" onclick="wifiFocusRadio('${esc(r.key)}')"><b>${esc(r.name)}</b><span class="r">${esc(r.ip || '')}</span>
+                return `<button class="nw-wradio" data-nw-act="wifi-radio" data-key="${esc(r.key)}"><b>${esc(r.name)}</b><span class="r">${esc(r.ip || '')}</span>
                     <span class="d">${bits.map(esc).join(' · ')} · read ${wfAgo(r.last_ts)}</span></button>`;
             }).join('') : '<p class="nw-help" style="padding:0 1.1rem 1rem">No radios yet.</p>';
         }
