@@ -433,8 +433,15 @@ def api_device_asset(key):
     reg = scanner.registry.get(key, {})
     category = (dev or {}).get("category") or reg.get("category") or "unknown"
     if request.method == "POST":
-        body = request.get_json(force=True)
-        values = assets.clean(category, body.get("asset") or body)
+        if not siteauth.allowed(request, session):
+            return siteauth._denied(request, session)
+        body = request.get_json(force=True, silent=True)
+        values = (body.get("asset") or body) if isinstance(body, dict) else None
+        if not isinstance(values, dict):
+            return jsonify({"ok": False, "error": "send the asset fields as a JSON object"}), 400
+        if not _device_known(key):
+            return jsonify({"ok": False, "error": "unknown device"}), 404
+        values = assets.clean(category, values)
         scanner.registry.setdefault(key, {})["asset"] = values
         scanner.save_registry()
         return jsonify({"ok": True, "asset": values,
@@ -454,12 +461,14 @@ def _coord(v, limit):
 
 
 @app.route("/api/devices/<path:key>/location", methods=["POST"])
+@guard
 def api_device_location(key):
     """Pin a device to a GPS position (decimal degrees) for the map, or clear it.
     Body: {lat, lon, note?} or {clear: true}. Stored in the registry under
-    `geo`, so it survives rescans and rides along in backups and to the hub."""
+    `geo`, so it survives rescans and rides along in backups and to the hub.
+    Needs the site login or the hub key (the hub sends it)."""
     body = request.get_json(force=True, silent=True) or {}
-    if key not in scanner.registry and not any(d.get("key") == key for d in scanner.get_devices()):
+    if not _device_known(key):
         return jsonify({"ok": False, "error": "unknown device"}), 404
     reg = scanner.registry.setdefault(key, {})
     if body.get("clear"):
@@ -692,32 +701,77 @@ def api_monitoring():
     return jsonify({"ok": True, **res})
 
 
+def _device_known(key):
+    if key in scanner.registry:
+        return True
+    with scanner.lock:
+        return key in scanner.devices
+
+
+# Operator text on a device record -> longest value accepted. Generous: the
+# limits only stop junk (a Hikvision serial is ~45 characters).
+_META_TEXT = {"name": 100, "type": 120, "serial": 100, "model": 100}
+
+
+def _device_meta_fields(key, body):
+    """The metadata in a device POST, checked. Returns (fields, error). A field
+    left out (or null) is not changed; "" clears a text field or the link."""
+    out = {}
+    for field, limit in _META_TEXT.items():
+        v = body.get(field)
+        if v is None:
+            continue
+        if not isinstance(v, str):
+            return None, f"'{field}' must be text"
+        v = v.strip()
+        if len(v) > limit:
+            return None, f"'{field}' is longer than {limit} characters"
+        out[field] = v
+    if body.get("category") is not None:
+        if not identify.is_category(body["category"]):
+            return None, "unknown category — use one of: " + ", ".join(sorted(identify.CATEGORIES))
+        out["category"] = body["category"]
+    link = body.get("link")
+    if link is not None:
+        link = link.strip() if isinstance(link, str) else None
+        if link is None or (link and (link == key or not _device_known(link))):
+            return None, "'link' must be the key of another device on this site"
+        out["link"] = link
+    return out, None
+
+
 @app.route("/api/devices/<path:key>", methods=["POST", "DELETE"])
+@guard
 def api_device_meta(key):
+    """POST changes a device's record: name, category, type, serial, model,
+    link and `watch` (the Monitored switch — older hubs send it with their key;
+    the site page uses /api/monitoring). DELETE = Forget: off every list, its
+    Kuma monitor and history deleted. Both need the site login or the hub key."""
     if request.method == "DELETE":
-        # Forget takes a device off every list (Monitored included) and deletes
-        # its Kuma monitor and history: a setting-level change, so it needs the login.
-        if not siteauth.allowed(request, session):
-            return siteauth._denied(request, session)
         removed = scanner.delete_device(key)
         return jsonify({"ok": removed}), (200 if removed else 404)
-    body = request.get_json(force=True)
-    # `watch` is the Monitored switch — a setting, so it needs the login
-    # (older hubs never send it; the site page uses /api/monitoring).
-    if body.get("watch") is not None and not siteauth.allowed(request, session):
-        return siteauth._denied(request, session)
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"ok": False, "error": "send a JSON object"}), 400
+    watch = body.get("watch")
+    if not _device_known(key):
+        return jsonify({"ok": False, "error": "unknown device"}), 404
+    if watch is not None and not isinstance(watch, bool):
+        return jsonify({"ok": False, "error": "'watch' must be true or false"}), 400
+    fields, err = _device_meta_fields(key, body)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
     reg = scanner.set_device_meta(
         key,
-        name=body.get("name"),
-        category=body.get("category"),
-        type_label=body.get("type"),
-        serial=body.get("serial"),
-        model=body.get("model"),
-        link=body.get("link"),
+        name=fields.get("name"),
+        category=fields.get("category"),
+        type_label=fields.get("type"),
+        serial=fields.get("serial"),
+        model=fields.get("model"),
+        link=fields.get("link"),
     )
-    if body.get("watch") is not None:
-        on = bool(body["watch"])
-        monitoring.set_many(scanner, on=[key] if on else [], off=[] if on else [key])
+    if watch is not None:
+        monitoring.set_many(scanner, on=[key] if watch else [], off=[] if watch else [key])
         reg = scanner.registry.get(key, reg)
     return jsonify({"ok": True, "registry": reg})
 
@@ -1569,6 +1623,8 @@ def api_bridge_macs():
     cur = set(config.load()["scan"].get("bridge_macs") or [])
     if request.method == "GET":
         return jsonify({"bridge_macs": sorted(cur)})
+    if not siteauth.allowed(request, session):     # a scan setting
+        return siteauth._denied(request, session)
     body = request.get_json(force=True)
     mac = identify.normalize_mac(body.get("mac") or "")
     if not mac:
@@ -1758,6 +1814,8 @@ def api_photo(key):
         with open(path, "rb") as f:
             mime = _img_mime(f.read(16)) or "application/octet-stream"
         return send_file(path, mimetype=mime)
+    if not siteauth.allowed(request, session):
+        return siteauth._denied(request, session)
     if request.method == "DELETE":
         try:
             os.remove(path)
@@ -1765,6 +1823,8 @@ def api_photo(key):
             pass
         return jsonify({"ok": True})
     # POST: multipart upload, field name "photo"
+    if not _device_known(key):
+        return jsonify({"ok": False, "error": "unknown device"}), 404
     f = request.files.get("photo")
     if not f:
         return jsonify({"ok": False, "error": "no file"}), 400

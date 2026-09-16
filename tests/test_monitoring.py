@@ -272,8 +272,9 @@ class Api(Base):
         self.assertIn(CAM, self.s.registry)
         self.assertEqual(self.post("/api/kuma/monitor-bulk", {"scope": "identified"}).status_code, 401)
         self.assertFalse(self.s.registry[NVR]["watch"])
-        # plain metadata stays open, and does not touch the switch
-        self.assertEqual(self.post(f"/api/devices/{NVR}", {"name": "Recorder"}).status_code, 200)
+        # the rest of the record needs the login too, and does not touch the switch
+        self.assertEqual(self.post(f"/api/devices/{NVR}", {"name": "Recorder"}).status_code, 401)
+        self.assertEqual(self.post(f"/api/devices/{NVR}", {"name": "Recorder"}, hub=True).status_code, 200)
         self.assertFalse(self.s.registry[NVR]["watch"])
 
     def test_hub_switches_many_at_once(self):

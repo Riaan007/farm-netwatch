@@ -129,6 +129,21 @@ def http_banner(ip, open_ports, online_ok=True):
     return {}
 
 
+# Every category a device record may carry: what classify() and the mDNS hints
+# produce, plus "router", which only an operator picks. The site page's
+# catLabel/catIcon key on these, and the device API accepts nothing else
+# (tests/test_device_meta.py keeps the lists in step).
+CATEGORIES = frozenset({
+    "camera", "nvr", "network", "internet-ap", "router", "printer", "nas", "voip",
+    "alarm", "solar", "media", "iot", "pc", "server", "unknown",
+})
+
+
+def is_category(value):
+    # a stored record may hold anything (a dict is unhashable, so check the type)
+    return isinstance(value, str) and value in CATEGORIES
+
+
 def features_for_ports(open_ports, deep=False):
     feats = []
     for p in open_ports:

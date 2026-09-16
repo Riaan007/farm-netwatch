@@ -435,7 +435,8 @@ class Scanner:
                     for f in ("vendor", "mac", "hostname"):
                         if not rec.get(f) and prev.get(f):
                             rec[f] = prev[f]
-                    if rec["category"] == "unknown" and prev.get("category") not in (None, "unknown"):
+                    if rec["category"] == "unknown" and identify.is_category(prev.get("category")) \
+                            and prev["category"] != "unknown":
                         rec["category"], rec["type"] = prev["category"], prev.get("type", rec["type"])
                     rec["first_seen"] = prev.get("first_seen", rec["last_seen"])
 
@@ -576,7 +577,9 @@ class Scanner:
             "vendor": vendor, "hostname": hostname,
             "ports": h["ports"], "services": h["services"], "os": h["os"],
             "banner": banner, "features": features,
-            "category": reg.get("category") or category,
+            # a saved category the site doesn't know (stored before the API
+            # checked, or from a restored bundle) is ignored, not shown
+            "category": reg["category"] if identify.is_category(reg.get("category")) else category,
             "type": reg.get("type") or type_label,
             "confidence": conf,
             "name": reg.get("name", ""),
@@ -1253,6 +1256,9 @@ class Scanner:
     def get_devices(self):
         with self.lock:
             devs = list(self.devices.values())
+        for d in devs:
+            if d.get("category") and not identify.is_category(d["category"]):
+                d["category"] = "unknown"     # an old record from before the API checked
         cmap = self._conflict_map(devs)
         cutoff = int(time.time()) - CONFLICT_WINDOW_S
         for d in devs:

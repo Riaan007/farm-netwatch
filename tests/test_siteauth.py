@@ -38,6 +38,13 @@ PROTECTED = [
     ("post", "/api/kuma/repair"),
     ("post", "/api/kuma/sync-tags"),
     ("post", "/api/devices/aa:bb/kuma"),
+    ("post", "/api/devices/aa:bb"),
+    ("delete", "/api/devices/aa:bb"),
+    ("post", "/api/devices/aa:bb/location"),
+    ("post", "/api/devices/aa:bb/asset"),
+    ("post", "/api/devices/aa:bb/photo"),
+    ("delete", "/api/devices/aa:bb/photo"),
+    ("post", "/api/bridge-macs"),
     ("post", "/api/monitoring"),
     ("post", "/api/network/address"),
     ("post", "/api/network/static"),
@@ -80,7 +87,8 @@ class SiteAuth(unittest.TestCase):
         self.assertNotIn(b"hunter22", self.call("get", "/api/devices/aa:bb/credentials").data)
 
     def test_open_endpoints_still_open(self):
-        for path in ("/api/status", "/api/devices", "/api/sysinfo", "/api/auth/state"):
+        for path in ("/api/status", "/api/devices", "/api/sysinfo", "/api/auth/state",
+                     "/api/devices/aa:bb/asset", "/api/bridge-macs"):
             self.assertEqual(self.call("get", path).status_code, 200, path)
 
     def test_config_redacts_topic_for_anonymous(self):
@@ -158,10 +166,13 @@ class SiteAuth(unittest.TestCase):
 class DeviceLocation(unittest.TestCase):
     def setUp(self):
         server.scanner.registry["aa:bb:cc:dd:ee:01"] = {"name": "Gate cam"}
+        if os.path.exists(siteauth.AUTH_PATH):
+            os.remove(siteauth.AUTH_PATH)
+        siteauth.set_hub_key(KEY)                  # the hub sets positions with its key
         self.c = server.app.test_client()
 
-    def post(self, body):
-        return self.c.post("/api/devices/aa:bb:cc:dd:ee:01/location", json=body)
+    def post(self, body, path="/api/devices/aa:bb:cc:dd:ee:01/location"):
+        return self.c.post(path, json=body, environ_base=LAN, headers={siteauth.HEADER: KEY})
 
     def test_set_validate_and_clear(self):
         r = self.post({"lat": "-33.924868", "lon": "18,424055", "note": "pole at gate"})
@@ -169,7 +180,9 @@ class DeviceLocation(unittest.TestCase):
         self.assertEqual(server.scanner.registry["aa:bb:cc:dd:ee:01"]["geo"]["lon"], 18.424055)
         for bad in ({"lat": 91, "lon": 18}, {"lat": -33, "lon": 181}, {"lat": "x", "lon": 1}, {"lat": 0, "lon": 0}):
             self.assertEqual(self.post(bad).status_code, 400, bad)
-        self.assertEqual(self.c.post("/api/devices/nope/location", json={"lat": 1, "lon": 1}).status_code, 404)
+        self.assertEqual(self.post({"lat": 1, "lon": 1}, path="/api/devices/nope/location").status_code, 404)
+        anon = self.c.post("/api/devices/aa:bb:cc:dd:ee:01/location", json={"lat": 1, "lon": 1}, environ_base=LAN)
+        self.assertEqual(anon.status_code, 401)
         self.assertEqual(self.post({"clear": True}).status_code, 200)
         self.assertNotIn("geo", server.scanner.registry["aa:bb:cc:dd:ee:01"])
 
