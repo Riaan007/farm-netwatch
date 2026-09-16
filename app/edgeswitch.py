@@ -338,8 +338,13 @@ def normalize(device, system, interfaces, statistics, vlans=None, mac_table=None
                 port_vlans.setdefault(pid, {"untagged": [], "tagged": []})
                 port_vlans[pid]["untagged" if mode == "untagged" else "tagged"].append(vid)
 
-    macs_by_port = {}
+    # The real table repeats a MAC once per address it has seen (IPv4, IPv6
+    # link-local…): one entry per MAC per port, or every device shows twice.
+    macs_by_port, seen = {}, set()
     for mac, port, vlan in _mac_entries(mac_table):
+        if (mac, port) in seen:
+            continue
+        seen.add((mac, port))
         macs_by_port.setdefault(port, []).append({"mac": mac, "vlan": vlan})
 
     ports, lags = [], []

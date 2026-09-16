@@ -71,6 +71,12 @@ class Normalize(unittest.TestCase):
             {"id": 12, "mac": "aa:bb:cc:dd:ee:02", "interfaceId": "0/8"},
             {"mac": "nope"},
         ])
+        s = _snap()
+        f = edgeswitch_mock.fixture(pi_mac=PI, gw_mac=GW)
+        dup = f["mac_table"] + [{"port": {"id": "0/3", "name": "x", "mac": "d8:b3:70:73:bc:e5"}, "vlan": 1,
+                                 "mac": "44:19:b6:10:20:30", "address": "fe80::4619:b6ff:fe10:2030"}]
+        s2 = edgeswitch.normalize(f["device"], f["system"], f["interfaces"], [], f["vlans"], dup, f["services"])
+        self.assertEqual(len(next(p for p in s2["ports"] if p["id"] == "0/3")["macs"]), 1)
         self.assertEqual(rows, [("aa:bb:cc:dd:ee:ff", "0/7", 3), ("aa:bb:cc:dd:ee:01", "0/2", None),
                                 ("aa:bb:cc:dd:ee:02", "0/8", None)])
 
