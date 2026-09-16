@@ -27,12 +27,16 @@ RETRY_S, and every SYNC_S it has the worker read Kuma's real monitor list: a
 monitor deleted or paused/resumed in Kuma's own UI is noticed and put right.
 Only an explicit "off" pauses a monitor — a device nobody has switched either
 way (e.g. from an older backup) keeps its monitor running.
+
+Every switch is written to the device's history (event type "monitoring",
+detail {monitored, by}) so "who stopped watching the gate camera?" has an answer.
 """
 import threading
 import time
 
 import config
 import creds
+import history
 import kuma
 
 RETRY_S = 1800          # a device's Kuma follow-up is retried at most this often
@@ -70,6 +74,26 @@ def _set_live(scanner, key, on):
             scanner.devices[key]["watch"] = on
 
 
+def _log(scanner, changes, by):
+    """History rows for [(key, monitored)] — best-effort, never blocks a switch."""
+    rows = []
+    for key, on in changes:
+        with scanner.lock:
+            live = dict(scanner.devices.get(key) or {})
+        reg = scanner.registry.get(key) or {}
+        dev = {"key": key, "ip": live.get("ip"), "mac": live.get("mac"),
+               "name": live.get("name") or reg.get("name"), "category": live.get("category"),
+               "vendor": live.get("vendor"), "hostname": live.get("hostname")}
+        rows.append(history.build_event("monitoring", dev, {"monitored": bool(on), "by": by}))
+    try:
+        history.log_events(rows)
+    except Exception as e:  # noqa: BLE001
+        print("[monitoring] history write failed:", e, flush=True)
+    if changes:
+        on = sum(1 for _k, v in changes if v)
+        print(f"[monitoring] by {by}: {on} on, {len(changes) - on} off", flush=True)
+
+
 def seed(scanner):
     """One-time upgrade step (see module doc). Returns how many devices it marked.
     A paused monitor is an operator's "stop" from this version, so it is skipped."""
@@ -85,15 +109,16 @@ def seed(scanner):
         scanner.save_registry()
         for key in marked:
             _set_live(scanner, key, True)
+        _log(scanner, [(k, True) for k in marked], "upgrade (had a Kuma monitor)")
     config.update({"monitoring": {"seed_pending": False}})
     print(f"[monitoring] upgrade: {len(marked)} devices with a Kuma monitor are now monitored",
           flush=True)
     return len(marked)
 
 
-def set_many(scanner, on=(), off=()):
-    """Switch monitoring on for the keys in `on` and off for those in `off`.
-    One registry write; Kuma follows in the background.
+def set_many(scanner, on=(), off=(), by=""):
+    """Switch monitoring on for the keys in `on` and off for those in `off`
+    (`by` = who, for the history). One registry write; Kuma follows in the background.
     Returns {changed: [{key, monitored}], unchanged: [...], unknown: [...], summary}."""
     on, off = list(dict.fromkeys(on or ())), list(dict.fromkeys(off or ()))
     with scanner.lock:
@@ -118,6 +143,7 @@ def set_many(scanner, on=(), off=()):
     if changed:
         for c in changed:
             _set_live(scanner, c["key"], c["monitored"])
+        _log(scanner, [(c["key"], c["monitored"]) for c in changed], by or "unknown")
         follow_kuma(scanner, [c["key"] for c in changed])
     return {"changed": changed, "unchanged": unchanged, "unknown": unknown,
             "summary": summary(scanner)}
@@ -202,10 +228,14 @@ def _out_of_step(scanner, key, reg):
     return None
 
 
-def _still_there(scanner, reg):
-    """The registry entry object is still in the registry (under any key — an
-    IP-keyed device that gains a MAC keeps the same dict under its new key)."""
-    return any(v is reg for v in list(scanner.registry.values()))
+def _current_entry(scanner, key, reg):
+    """Where a Kuma result belongs once the call is back: the entry under `key`
+    now (a restore replaces the registry wholesale), else the same dict under a
+    new key (an IP-keyed device that gained a MAC). None = the device was forgotten."""
+    cur = scanner.registry.get(key)
+    if isinstance(cur, dict):
+        return cur
+    return next((v for v in list(scanner.registry.values()) if v is reg), None)
 
 
 def _apply(scanner, keys):
@@ -231,6 +261,9 @@ def _apply(scanner, keys):
         res = kuma.set_active_many(base, user, pw, [(mid, active) for mid, active, _k, _r in toggles])
         for mid, active, key, reg in toggles:
             r = res.get(mid) or {}
+            reg = _current_entry(scanner, key, reg)
+            if reg is None:
+                continue                # forgotten meanwhile (Forget deletes the monitor)
             if r.get("ok"):
                 if active:
                     reg.pop("kuma_paused", None)
@@ -258,8 +291,8 @@ def _apply(scanner, keys):
             if not r.get("ok"):
                 print(f"[monitoring] kuma create for {key} failed: {r.get('error')}", flush=True)
                 continue
-            reg = regs[key]
-            if not _still_there(scanner, reg):
+            reg = _current_entry(scanner, key, regs[key])
+            if reg is None:
                 # forgotten while its monitor was being made: don't leave an orphan
                 try:
                     kuma.deprovision(base, user, pw, r["monitor_id"])

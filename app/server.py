@@ -697,8 +697,13 @@ def api_monitoring():
         return jsonify({"ok": False, "error": "too many devices in one request"}), 400
     if set(lists["monitor"]) & set(lists["stop"]):
         return jsonify({"ok": False, "error": "a device can't be in both lists"}), 400
-    res = monitoring.set_many(scanner, on=lists["monitor"], off=lists["stop"])
+    res = monitoring.set_many(scanner, on=lists["monitor"], off=lists["stop"], by=_who())
     return jsonify({"ok": True, **res})
+
+
+def _who():
+    """Who is changing something, for the device history."""
+    return "the hub" if siteauth.hub_ok(request) else f"site login ({request.remote_addr})"
 
 
 def _device_known(key):
@@ -771,7 +776,7 @@ def api_device_meta(key):
         link=fields.get("link"),
     )
     if watch is not None:
-        monitoring.set_many(scanner, on=[key] if watch else [], off=[] if watch else [key])
+        monitoring.set_many(scanner, on=[key] if watch else [], off=[] if watch else [key], by=_who())
         reg = scanner.registry.get(key, reg)
     return jsonify({"ok": True, "registry": reg})
 
@@ -1695,7 +1700,7 @@ def api_kuma(key):
             if not monitoring.kuma_follows():
                 return jsonify({"ok": False, "error": "Set the Kuma URL, username and password in Settings first"})
             on = action == "create"
-            res = monitoring.set_many(scanner, on=[key] if on else [], off=[] if on else [key])
+            res = monitoring.set_many(scanner, on=[key] if on else [], off=[] if on else [key], by=_who())
             if res["unknown"]:
                 return jsonify({"ok": False, "error": "unknown device"}), 404
             return jsonify({"ok": True, "monitored": on, "queued": True})
@@ -1785,7 +1790,7 @@ def api_kuma_monitor_bulk():
         return False
 
     keys = [d["key"] for d in scanner.get_devices() if wanted(d) and d.get("ip")]
-    res = monitoring.set_many(scanner, on=keys)
+    res = monitoring.set_many(scanner, on=keys, by=_who())
     n = len(res["changed"])
     return jsonify({"ok": True, "created": n, "total": len(keys),
                     **({} if n else {"message": "Nothing to add — matching devices are already monitored."})})

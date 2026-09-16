@@ -17,6 +17,7 @@ sys.path.insert(0, os.environ.get("NETWATCH_APP", "/app"))
 
 import config      # noqa: E402
 import creds       # noqa: E402
+import history     # noqa: E402
 import monitoring  # noqa: E402
 import server      # noqa: E402
 import siteauth    # noqa: E402
@@ -105,6 +106,13 @@ class SetMany(Base):
         self.assertFalse(self.s.registry[CAM]["watch"])
         self.assertFalse(self.s.devices[CAM]["watch"])
 
+    def test_every_switch_is_in_the_device_history(self):
+        monitoring.set_many(self.s, on=[NVR], off=[CAM], by="the hub")
+        evs = {e["key"]: e for e in history.events(etype="monitoring", since=int(time.time()) - 60)}
+        self.assertEqual(evs[NVR]["detail"], {"monitored": True, "by": "the hub"})
+        self.assertEqual(evs[CAM]["detail"], {"monitored": False, "by": "the hub"})
+        self.assertEqual(evs[NVR]["ip"], "10.0.0.3")
+
     def test_nothing_to_do_writes_nothing(self):
         self.s.registry[NVR]["watch"] = False
         monitoring.set_many(self.s, on=[CAM], off=[NVR])
@@ -174,6 +182,18 @@ class KumaFollows(Base):
             monitoring._apply(self.s, {"10.0.0.2"})
         dep.assert_not_called()
         self.assertEqual(self.s.registry[CAM]["kuma_monitor_id"], 78)
+
+    def test_registry_replaced_while_creating_keeps_the_monitor(self):
+        self.s.registry = {CAM: {"watch": True}}
+
+        def create(b, u, p, items, i):
+            self.s.registry = {CAM: {"watch": True, "name": "restored"}}   # a restore lands meanwhile
+            return {CAM: {"ok": True, "monitor_id": 79}}
+        self.prov.side_effect = create
+        with mock.patch.object(monitoring.kuma, "deprovision") as dep:
+            monitoring._apply(self.s, {CAM})
+        dep.assert_not_called()
+        self.assertEqual(self.s.registry[CAM]["kuma_monitor_id"], 79)
 
     def test_kuma_read_back_puts_the_registry_right(self):
         self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 1},                        # deleted in Kuma
@@ -280,6 +300,8 @@ class Api(Base):
     def test_hub_switches_many_at_once(self):
         r = self.post("/api/monitoring", {"monitor": [NVR], "stop": [CAM]}, hub=True)
         self.assertEqual(r.status_code, 200)
+        ev = history.events(key=NVR, etype="monitoring", limit=1)[0]
+        self.assertEqual(ev["detail"]["by"], "the hub")
         j = r.get_json()
         self.assertEqual(j["changed"], [{"key": NVR, "monitored": True}, {"key": CAM, "monitored": False}])
         self.assertEqual(j["summary"]["monitored"], 1)

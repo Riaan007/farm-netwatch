@@ -3695,6 +3695,7 @@
             'online':   {icon:'🟢', label:'Back online',       cls:'text-emerald-300 bg-emerald-500/15'},
             'ip_change':{icon:'🔄', label:'IP reassigned',     cls:'text-amber-300 bg-amber-500/15'},
             'replaced': {icon:'🔁', label:'Address taken over', cls:'text-orange-300 bg-orange-500/15'},
+            'monitoring':{icon:'🔔', label:'Monitoring changed', cls:'text-cyan-300 bg-cyan-500/15'},
         };
         function tsFull(ts){ return ts ? new Date(ts*1000).toLocaleString() : '—'; }
         function tsAgo(ts){ if(!ts) return ''; const s=Math.floor(Date.now()/1000-ts); if(s<60) return s+'s ago'; if(s<3600) return Math.floor(s/60)+'m ago'; if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
@@ -3738,6 +3739,7 @@
         }
         function evDetail(e){
             const d=e.detail||{}; const bits=[];
+            if(e.type==='monitoring') bits.push((d.monitored ? 'now monitored' : 'no longer monitored') + (d.by ? ' · by ' + d.by : ''));
             if(e.mac) bits.push(e.mac);
             if(e.hostname) bits.push(e.hostname);
             if(d.type_label) bits.push(d.type_label);
