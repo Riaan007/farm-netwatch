@@ -10,6 +10,7 @@ import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import urllib3
 from flask import Flask, jsonify, redirect, request, send_file, send_from_directory, session
@@ -951,6 +952,79 @@ def api_mikrotik_status(key):
     return jsonify(res)
 
 
+# ---- managed units: routers listed the same way switches are ----------------
+# Reading a router costs a live API call, so the list serves the last reading and
+# only re-reads when it is stale or ?refresh=1 — deliberately no extra poller
+# thread on a 1 GB client Pi (switchmon already has one).
+_ROUTER_CACHE = {}          # device key -> {"view": …, "ts": …}
+_ROUTER_TTL = 300
+
+
+def _is_mikrotik_dev(d):
+    text = " ".join(str(d.get(k) or "") for k in ("vendor", "model", "hostname", "os", "banner")).lower()
+    if "mikrotik" in text or "routerboard" in text or "routeros" in text:
+        return True
+    # Port 8291 on its own is NOT proof — HP printers expose it too (the same trap
+    # identify.classify() calls out), and a printer in the managed-unit list is noise.
+    return (8291 in (d.get("ports") or [])
+            and (d.get("category") or "") not in ("printer", "camera", "nvr", "nas", "voip"))
+
+
+def _router_view(dev, force=False):
+    """One router in the shape the managed-unit list draws (mirrors _sw_view)."""
+    key = dev.get("key")
+    now = time.time()
+    hit = _ROUTER_CACHE.get(key)
+    if hit and not force and now - hit["ts"] < _ROUTER_TTL:
+        v = dict(hit["view"])
+        v["online"] = bool(dev.get("online"))
+        return v
+    view = {"key": key, "ip": dev.get("ip"), "mac": dev.get("mac"), "type": "router",
+            "name": dev.get("name") or dev.get("device_name") or dev.get("ip") or key,
+            "online": bool(dev.get("online")), "problems": [], "ports": [],
+            "model": dev.get("model") or "", "read_ts": None}
+    if not mikrotik._valid_ip(dev.get("ip")):
+        view.update({"ok": False, "kind": "no_ip", "error": "no IP for this router yet"})
+        return view
+    c = creds.get(key)
+    rep = mikrotik.api_report(dev.get("ip"), c["username"] or "admin", c["password"])
+    if rep.get("ok"):
+        view.update(mikrotik.summarize(rep))
+        view.update({"ok": True, "kind": None, "read_ts": int(now)})
+        view["name"] = dev.get("name") or view.get("identity") or view["name"]
+    else:
+        err = str(rep.get("error", ""))
+        low = err.lower()
+        if "refused" in low:
+            kind = "api_off"
+        elif "login" in low or "denied" in low or "not permitted" in low:
+            kind = "auth_failed"
+        else:
+            kind = "unreachable"
+        if kind != "unreachable" and not (c["username"] or c["password"]):
+            kind = "no_login"
+        view.update({"ok": False, "kind": kind, "error": err})
+    _ROUTER_CACHE[key] = {"view": view, "ts": now}
+    return view
+
+
+@app.route("/api/routers")
+@guard
+def api_routers():
+    """Every MikroTik router on the site, shaped like /api/switches so routers and
+    switches render in one managed-unit list. Served from the last reading;
+    ?refresh=1 re-reads them."""
+    force = request.args.get("refresh") in ("1", "true", "yes")
+    devs = [d for d in scanner.get_devices() if _is_mikrotik_dev(d)]
+    out = []
+    if devs:
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            out = list(ex.map(lambda d: _router_view(d, force), devs))
+    out.sort(key=lambda r: (not r.get("online"), (r.get("name") or "").lower()))
+    return jsonify({"ok": True, "routers": out, "manage": _mtk_enabled(),
+                    "problems": [p for r in out for p in r.get("problems") or []]})
+
+
 @app.route("/api/devices/<path:key>/mikrotik/report", methods=["GET"])
 @guard
 def api_mikrotik_report(key):
@@ -965,8 +1039,21 @@ def api_mikrotik_report(key):
     res = mikrotik.api_report(ip, user, pw)
     if res.get("ok"):
         res["manage_enabled"] = _mtk_enabled()
+        # Same normalised ports/summary/poe the list cards use, so one renderer
+        # draws both. `connected` stays the full list here (the card wants a count).
+        s = mikrotik.summarize(res)
+        res["ports"], res["summary"], res["poe"] = s["ports"], s["summary"], s["poe"]
         for c in res.get("connected", []):
             c["vendor"] = identify.vendor_for_mac(c.get("mac", ""), online_ok=False)
+        # Opening a router keeps its card in the managed-unit list fresh.
+        if dev:
+            view = {"key": key, "ip": ip, "mac": dev.get("mac"), "type": "router",
+                    "name": dev.get("name") or dev.get("device_name") or ip,
+                    "online": bool(dev.get("online")), "problems": [],
+                    "ok": True, "kind": None, "read_ts": int(time.time())}
+            view.update(mikrotik.summarize(res))
+            view["name"] = dev.get("name") or view.get("identity") or view["name"]
+            _ROUTER_CACHE[key] = {"view": view, "ts": time.time()}
     else:
         # The console reads over the RouterOS API. Point at the two things that
         # actually block it on a client's router: no saved login, or the API off.

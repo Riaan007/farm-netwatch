@@ -1073,6 +1073,33 @@ def api_site_mikrotik_status(site_id, key):
         return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
 
 
+@app.route("/api/hub/sites/<site_id>/routers")
+def api_site_routers(site_id):
+    """Every MikroTik router at a site, shaped like /api/switches so the Control
+    Center can list routers and switches as one set of managed units."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    poll = hubconfig.load()["poll"]
+    try:
+        r = requests.get(siteapi.base_url(site) + "/api/routers",
+                         params={"refresh": request.args.get("refresh", "")},
+                         headers=siteapi.headers(site),
+                         timeout=(poll["timeout_connect_s"], poll["timeout_read_s"] + 25))
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"site unreachable: {e}"}), 502
+    if r.status_code == 404:
+        return jsonify({"ok": False, "legacy": True,
+                        "error": "this site's Netwatch is too old for managed routers — "
+                                 "update it (docker compose pull netwatch)"}), 501
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site doesn't accept this hub's key yet"}), 502
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+
+
 @app.route("/api/hub/sites/<site_id>/devices/<path:key>/mikrotik/report")
 def api_site_mikrotik_report(site_id, key):
     """Full RouterOS management-console snapshot for one device on a site."""

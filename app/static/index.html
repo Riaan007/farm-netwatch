@@ -557,8 +557,7 @@
                     <a href="#/" data-page="devices" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
                     <a href="#/map" data-page="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg><span class="lbl">Map</span></a>
                     <a href="#/wifi" data-page="wifi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
-                    <a href="#/switches" data-page="switches"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18v10H3zM7 11v2M11 11v2M15 11v2M19 11v2"/></svg><span class="lbl">Switches</span></a>
-                    <a href="#/neighbors" data-page="neighbors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16M8 4v3M16 4v3M8 17v3M16 17v3"/></svg><span class="lbl">Neighbors</span></a>
+                    <a href="#/units" data-page="units"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18v10H3zM7 11v2M11 11v2M15 11v2M19 11v2"/></svg><span class="lbl">Managed</span></a>
                     <a href="#/history" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></a>
                     <a href="#/settings" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg><span class="lbl">Settings</span></a>
                 </nav>
@@ -692,23 +691,20 @@
         </div>
       </div>
 
-      <div id="page-switches" hidden>
+      <div id="page-units" hidden>
         <div class="nw-phead">
-            <div><div class="nw-eyebrow">Network</div><h1>Switches</h1><p id="switches-sub">Every port on every Ubiquiti switch: what is plugged in, link speed, PoE power, traffic and faults — read from the switch itself, no need to open its web page.</p></div>
-        </div>
-        <div id="switches-list" class="nw-kpis" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))" hidden></div>
-        <div id="switch-view"></div>
-      </div>
-
-      <div id="page-neighbors" hidden>
-        <div class="nw-phead">
-            <div><div class="nw-eyebrow">Network</div><h1>MikroTik neighbors</h1><p>Every MikroTik router that answers on this LAN, found by its <b>MAC address</b> — no login and no IP needed, the same way WinBox's Neighbors tab works. Adopt one to track it, or open its manager.</p></div>
+            <div><div class="nw-eyebrow">Network</div><h1>Managed units</h1><p>Every switch and router this site manages, in one place: each port, what is plugged into it, link speed, PoE power and the controls — read from the unit itself, so you never have to open its own web page.</p></div>
             <div class="nw-tools">
-                <button class="nw-ib" id="neighbors-scan" onclick="loadNeighborsPage(true)" title="Send a fresh MNDP discovery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5"/></svg><span class="lbl">Search again</span></button>
+                <button class="nw-ib" id="units-refresh" onclick="loadUnitsPage(null, true)" title="Read every unit again now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5"/></svg><span class="lbl">Refresh</span></button>
             </div>
         </div>
-        <section class="nw-panel">
-            <div class="nw-dhead"><div><h2>Discovered routers</h2><p id="neighbors-sub">Listening for MikroTik Neighbor Discovery (MNDP) broadcasts…</p></div></div>
+        <div id="units-list" class="nw-kpis" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))" hidden></div>
+        <div id="unit-view"></div>
+        <section class="nw-panel" id="units-found" hidden style="margin-top:1rem">
+            <div class="nw-dhead">
+                <div><h2>Found, not managed yet</h2><p id="neighbors-sub">MikroTik routers answering on this LAN — found by their <b>MAC address</b>, no login or IP needed (the same way WinBox's Neighbors tab works).</p></div>
+                <div class="nw-tools"><button class="nw-btn sm" onclick="loadNeighborsPage(true)">Search again</button></div>
+            </div>
             <div id="neighbors-body" class="nw-body">Searching…</div>
         </section>
       </div>
@@ -1276,6 +1272,7 @@
 
     <script src="/static/auth.js"></script>
     <script src="/static/switchview.js"></script>
+    <script src="/static/routerview.js"></script>
     <script src="/static/vendor/leaflet/leaflet.js"></script>
     <script>
         let DATA = { targets: [], devices: [] };
@@ -2118,9 +2115,13 @@
             try {
                 const r = await (await fetch('/api/mikrotik/neighbors?t='+(fresh?5:4))).json();
                 if(!r.ok){ body.innerHTML = '<div class="nw-empty"><b>Could not listen for MNDP</b>'+esc(r.error||'')+'</div>'; sub.textContent=''; return; }
-                const ns = r.neighbors || [];
-                sub.textContent = ns.length ? (ns.length+' router'+(ns.length===1?'':'s')+' answered on the LAN.') : 'No MikroTik routers answered.';
-                if(!ns.length){ body.innerHTML = '<div class="nw-empty"><b>No MikroTik neighbors found</b>MikroTik routers announce themselves over MNDP (UDP 5678). If you expect one, check it is on this LAN — MAC discovery is on by default in RouterOS.</div>'; return; }
+                // Managed routers already have a card above — this panel is only the ones
+                // discovered by MAC that Netwatch isn't managing yet.
+                const ns = (r.neighbors || []).filter(n => !n.tracked);
+                const panel = document.getElementById('units-found');
+                if(panel) panel.hidden = !ns.length;
+                if(!ns.length){ body.innerHTML = ''; if(sub) sub.textContent = ''; return; }
+                sub.textContent = ns.length+' MikroTik'+(ns.length===1?'':'s')+' answered by MAC but '+(ns.length===1?'is':'are')+" not managed yet.";
                 body.innerHTML = ns.map(n => {
                     const name = esc(n.saved_name || n.identity || 'MikroTik');
                     const ip = esc(n.ipv4 || '');
@@ -2129,7 +2130,7 @@
                         : '<span class="ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-200">new</span>';
                     let acts = '';
                     if(n.tracked && n.key){
-                        acts += '<button onclick="openMikrotikFor(\''+esc(n.key)+'\')" class="nw-btn sm pri">🧭 Manage</button>';
+                        acts += '<button onclick="openUnitFor(\''+esc(n.key)+'\')" class="nw-btn sm pri">🧭 Manage</button>';
                     } else {
                         acts += '<button onclick="adoptNeighbor(\''+ip+'\', this)" class="nw-btn sm pri">Adopt &amp; track</button>';
                     }
@@ -2155,7 +2156,8 @@
         // shared with the hub's Control Center ------------------------------------------
         let SW_CTL = null, SW_KEY = null;
         function unmountSwitch(){ if(SW_CTL){ SW_CTL.destroy(); SW_CTL = null; SW_KEY = null; } }
-        function openSwitchFor(key){ closeModal(); location.hash = '#/switches?key=' + encodeURIComponent(key); }
+        function openSwitchFor(key){ closeModal(); location.hash = '#/units?key=' + encodeURIComponent(key); }
+        const openUnitFor = openSwitchFor;
         async function swJson(url, init){
             const r = await fetch(url, init);
             let j = {};
@@ -2163,25 +2165,45 @@
             if(!r.ok){ const err = new Error(j.error || ('HTTP ' + r.status)); err.body = j; err.status = r.status; throw err; }
             return j;
         }
-        async function loadSwitchesPage(key){
-            const list = document.getElementById('switches-list'), view = document.getElementById('switch-view');
-            let j;
-            try { j = await swJson('/api/switches'); }
-            catch(e){ view.innerHTML = '<div class="nw-empty"><b>Couldn\'t load switches</b>'+esc(e.message)+'</div>'; return; }
-            const sws = j.switches || [];
-            if(!sws.length){
+        /** Managed units = every switch AND every router, in one list. Each is drawn
+         *  by its own shared view (switchview.js / routerview.js) — the same files
+         *  the hub's Control Center uses, so both read identically. */
+        async function loadUnitsPage(key, refresh){
+            const list = document.getElementById('units-list'), view = document.getElementById('unit-view');
+            const [sr, rr] = await Promise.all([
+                swJson('/api/switches').catch(e => ({ error: e.message })),
+                swJson('/api/routers' + (refresh ? '?refresh=1' : '')).catch(e => ({ error: e.message })),
+            ]);
+            const units = (sr.switches || []).map(x => Object.assign({ _kind: 'switch' }, x))
+                   .concat((rr.routers || []).map(x => Object.assign({ _kind: 'router' }, x)));
+            loadNeighborsPage();
+            if(!units.length){
                 unmountSwitch(); list.hidden = true;
-                view.innerHTML = '<section class="nw-panel"><div class="nw-empty"><b>No Ubiquiti switch found on this network</b>Netwatch recognises EdgeSwitch and UISP switches from their web page. Once one is scanned, save its web login on the device\'s Access tab and its ports appear here.</div></section>';
+                view.innerHTML = '<section class="nw-panel"><div class="nw-empty"><b>No managed units yet</b>Netwatch manages Ubiquiti EdgeSwitch / UISP switches and MikroTik routers. Once one has been scanned, save its login on the device\'s Access tab and every port shows up here.</div></section>';
                 return;
             }
-            const pick = (key && sws.find(x => x.key === key)) ? key : (SW_KEY && sws.find(x => x.key === SW_KEY) ? SW_KEY : sws[0].key);
-            list.hidden = sws.length < 2;
-            list.innerHTML = sws.map(x => '<div' + (x.key === pick ? ' style="outline:2px solid rgba(34,211,238,.5);border-radius:14px"' : '') + '>' + SwitchView.summaryCard(x, '#/switches?key=' + encodeURIComponent(x.key)) + '</div>').join('');
+            const pick = (key && units.find(x => x.key === key)) ? key : (SW_KEY && units.find(x => x.key === SW_KEY) ? SW_KEY : units[0].key);
+            const unit = units.find(x => x.key === pick);
+            list.hidden = units.length < 2;
+            list.innerHTML = units.map(x => '<div' + (x.key === pick ? ' style="outline:2px solid rgba(34,211,238,.5);border-radius:14px"' : '') + '>'
+                + (x._kind === 'router' ? RouterView.summaryCard(x, '#/units?key=' + encodeURIComponent(x.key))
+                                        : SwitchView.summaryCard(x, '#/units?key=' + encodeURIComponent(x.key))) + '</div>').join('');
             if(SW_CTL && SW_KEY === pick){ SW_CTL.refresh(); return; }
             unmountSwitch();
             view.innerHTML = '';
-            const base = '/api/devices/' + encodeURIComponent(pick) + '/switch';
             SW_KEY = pick;
+            if(unit._kind === 'router'){
+                const rbase = '/api/devices/' + encodeURIComponent(pick) + '/mikrotik';
+                SW_CTL = RouterView.mount(view, {
+                    load: () => swJson(rbase + '/report'),
+                    action: (body) => swJson(rbase + '/action', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}),
+                    runCmd: (command, confirm) => swJson(rbase + '/console', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({command: command, confirm: !!confirm})}),
+                    onLogin: () => { openModal(pick); setTimeout(() => modalTab('access'), 250); },
+                    toast: (m, k) => nwToast(m, k || ''),
+                });
+                return;
+            }
+            const base = '/api/devices/' + encodeURIComponent(pick) + '/switch';
             SW_CTL = SwitchView.mount(view, {
                 load: (hours, port) => swJson(base + '?hours=' + (hours || 24) + (port ? '&port=' + encodeURIComponent(port) : '')),
                 poll: () => swJson(base + '/poll', {method:'POST'}),
@@ -2450,7 +2472,7 @@
             if(sp){
                 const swd = DEV_BY_KEY[sp.switch_key] || {};
                 const pno = String(sp.port).split('/').pop();
-                mpl.innerHTML = `🔌 Plugged into <a href="#/switches?key=${encodeURIComponent(sp.switch_key)}" onclick="closeModal()" class="text-cyan-300 hover:underline font-bold">${esc(devTitle(swd) || 'a switch')} · port ${esc(pno)}</a>`
+                mpl.innerHTML = `🔌 Plugged into <a href="#/units?key=${encodeURIComponent(sp.switch_key)}" onclick="closeModal()" class="text-cyan-300 hover:underline font-bold">${esc(devTitle(swd) || 'a switch')} · port ${esc(pno)}</a>`
                     + (sp.port_name && !/^port\s*\d+$/i.test(sp.port_name) ? ` <span class="text-slate-400">(${esc(sp.port_name)})</span>` : '')
                     + (sp.uplink ? ' <span class="text-slate-500">via an uplink</span>' : '');
             }
@@ -2509,7 +2531,7 @@
             document.getElementById('airos-wifi-panel').classList.add('hidden');
             // MikroTik: router info is read-only (always shown); Manage/Terminal
             // is gated on the mikrotik_manage flag, like airOS Change IP.
-            const isMikrotik = dev && (/mikrotik|routeros/i.test(dev.vendor||'') || (dev.ports||[]).includes(8291)) && !isHik;
+            const isMikrotik = dev && (/mikrotik|routerboard|routeros/i.test((dev.vendor||'')+' '+(dev.model||'')) || ((dev.ports||[]).includes(8291) && !['printer','camera','nvr','nas','voip'].includes(dev.category))) && !isHik;
             document.getElementById('mikrotik-status-btn').classList.toggle('hidden', !isMikrotik);
             document.getElementById('mikrotik-manage-btn').classList.toggle('hidden', !isMikrotik);
             document.getElementById('mikrotik-panel').classList.add('hidden');
@@ -2991,18 +3013,19 @@
             const h = (location.hash || '').replace(/^#\/?/, '');
             const [path, query] = h.split('?');
             const [page, sub] = (path || '').split('/');
-            const next = ['history','settings','map','wifi','switches','neighbors'].includes(page) ? page : 'devices';
+            let page2 = (page === 'switches' || page === 'neighbors') ? 'units' : page;   // old links still work
+            const next = ['history','settings','map','wifi','units'].includes(page2) ? page2 : 'devices';
             if(PAGE === 'settings' && next !== 'settings' && SETTINGS_DIRTY.size && !confirm('Leave settings without saving your changes?')){
                 history.replaceState(null, '', '#/settings'); return;
             }
             const changed = next !== PAGE;
             PAGE = next;
-            ['devices','map','wifi','switches','neighbors','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
-            if(PAGE !== 'switches') unmountSwitch();
+            ['devices','map','wifi','units','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            if(PAGE !== 'units') unmountSwitch();
             if(PAGE !== 'map') mapCancelPlace(true);
             document.querySelectorAll('.nw-pages a').forEach(a => a.classList.toggle('on', a.dataset.page === PAGE));
             const siteName = (STATUS && STATUS.site && STATUS.site.name) || 'Netwatch';
-            document.title = ({devices:'', map:'Map · ', wifi:'Wi-Fi · ', switches:'Switches · ', neighbors:'Neighbors · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
+            document.title = ({devices:'', map:'Map · ', wifi:'Wi-Fi · ', units:'Managed units · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
             if(PAGE === 'map'){
                 const qp = new URLSearchParams(query || '');
                 showMapPage(qp.get('focus'), qp.get('place'));
@@ -3012,11 +3035,8 @@
                 if(link) WF.open.add(link);
                 loadWifiPage(link);
             }
-            if(PAGE === 'neighbors'){
-                loadNeighborsPage();
-            }
-            if(PAGE === 'switches'){
-                loadSwitchesPage(new URLSearchParams(query || '').get('key'));
+            if(PAGE === 'units'){
+                loadUnitsPage(new URLSearchParams(query || '').get('key'));
             }
             if(PAGE === 'devices'){
                 const open = new URLSearchParams(query || '').get('open');

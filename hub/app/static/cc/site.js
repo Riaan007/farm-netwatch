@@ -6,7 +6,7 @@
   const view = () => $("#view");
   const enc = encodeURIComponent;
   const TABS = [
-    ["overview", "Overview"], ["devices", "Devices"], ["map", "Map"], ["wifi", "Wi-Fi"], ["switches", "Switches"], ["problems", "Problems"], ["health", "Pi health"],
+    ["overview", "Overview"], ["devices", "Devices"], ["map", "Map"], ["wifi", "Wi-Fi"], ["switches", "Managed"], ["problems", "Problems"], ["health", "Pi health"],
     ["history", "History"], ["backups", "Backups"], ["access", "Remote access"],
   ];
 

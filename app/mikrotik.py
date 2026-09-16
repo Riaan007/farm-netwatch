@@ -692,6 +692,57 @@ def _ip_key(ip):
         return (999, 999, 999, 999)
 
 
+def _speed_mbit(rate):
+    """'100Mbps' / '1Gbps' -> 100 / 1000, for the shared port renderer."""
+    m = re.match(r"(\d+)\s*([MG])", str(rate or ""), re.I)
+    if not m:
+        return 0
+    n = int(m.group(1))
+    return n * 1000 if m.group(2).upper() == "G" else n
+
+
+def summarize(report):
+    """Boil a full api_report() down to the card/list shape the managed-unit UI
+    draws — the same fields a switch view carries, so a router and a switch can
+    sit in one list. Ports keep api_report's shape plus up/enabled/speed/poe_w."""
+    sysinfo = report.get("system") or {}
+    ports = []
+    for p in report.get("ports") or []:
+        q = dict(p)
+        q["up"] = bool(p.get("running"))
+        q["enabled"] = not p.get("disabled")
+        q["speed"] = _speed_mbit(p.get("rate"))
+        poe = p.get("poe") or {}
+        q["poe_mode"] = poe.get("mode") or ""
+        q["poe_supported"] = bool(poe)
+        try:
+            q["poe_w"] = float(poe.get("power") or 0)
+        except (TypeError, ValueError):
+            q["poe_w"] = 0.0
+        ports.append(q)
+    eth = [p for p in ports if p.get("type") == "ether"]
+    def _n(v):
+        try:
+            return int(v or 0)
+        except (TypeError, ValueError):
+            return 0
+    return {
+        "identity": sysinfo.get("identity", ""), "model": sysinfo.get("model") or sysinfo.get("board", ""),
+        "version": sysinfo.get("version", ""), "uptime": sysinfo.get("uptime", ""),
+        "serial": sysinfo.get("serial", ""), "health": sysinfo.get("health") or {},
+        "cpu": sysinfo.get("cpu", ""), "free_memory": sysinfo.get("free_memory", ""),
+        "total_memory": sysinfo.get("total_memory", ""),
+        "ports": ports,
+        "summary": {"ports": len(eth), "up": sum(1 for p in eth if p["up"]),
+                    "rx_bps": sum(_n(p.get("rx_rate")) for p in ports),
+                    "tx_bps": sum(_n(p.get("tx_rate")) for p in ports)},
+        "poe": {"used_w": round(sum(p["poe_w"] for p in ports), 1) or None, "budget_w": None,
+                "ports": sum(1 for p in ports if p.get("poe_supported"))},
+        "connected": len(report.get("connected") or []),
+        "addresses": report.get("addresses") or [],
+    }
+
+
 def api_poe_cycle(ip, user, password, port, duration=5):
     """Power-cycle PoE on one ethernet port — reboots the powered device (camera,
     AP, phone) on it. Uses RouterOS's own power-cycle where available, else

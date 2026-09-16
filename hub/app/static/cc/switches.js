@@ -30,7 +30,20 @@
     };
   }
 
-  // ---- site tab ---------------------------------------------------------------------------
+  const rbase = (siteId, key) => `/api/hub/sites/${enc(siteId)}/devices/${enc(key)}/mikrotik`;
+  function routerOpts(s, key) {
+    const b = rbase(s.id, key);
+    return {
+      load: () => api(`${b}/report`, { timeout: 45000 }),
+      action: (body) => api(`${b}/action`, { method: "POST", body, timeout: 60000 }),
+      runCmd: (command, confirm) => api(`${b}/console`, { method: "POST", body: { command, confirm: !!confirm }, timeout: 60000 }),
+      onLogin: () => CC.openDevice(s.id, key),
+      confirm: (title, text, o) => CC.confirm(title, text || "", { ok: "Yes, go ahead", danger: !!(o && o.danger) }),
+      toast: (m, k) => CC.toast(m, k || ""),
+    };
+  }
+
+  // ---- site tab: every managed unit (switches AND routers) in one list ---------------------
   CC.switchTab = {
     enter(s, el) {
       this.leave();
@@ -42,33 +55,41 @@
     },
     update(s) {
       if (!this.el || s.id !== this.site) return;
-      const data = S.switches[s.id];
+      const sd = S.switches[s.id], rd = S.routers[s.id];
       const list = $("#sw-list", this.el), host = $("#sw-view", this.el);
       if (!list || !host) return;
-      if (!data || (!data.switches && !data.error)) {
+      if ((!sd || (!sd.switches && !sd.error)) && (!rd || (!rd.routers && !rd.error))) {
         if (!this.ctl) host.innerHTML = `<div class="skel" style="height:160px"></div>`;
         return;
       }
-      if (data.legacy) { host.innerHTML = `<div class="empty"><b>This site's Netwatch is too old for switches</b>Update the site Pi (docker compose pull) to see its switch ports here.</div>`; return; }
-      if (data.error && !data.switches) { host.innerHTML = `<div class="banner bad">${esc(data.error)}</div>`; return; }
-      const sws = data.switches || [];
-      if (!sws.length) {
+      const units = ((sd && sd.switches) || []).map((x) => Object.assign({ _kind: "switch" }, x))
+        .concat(((rd && rd.routers) || []).map((x) => Object.assign({ _kind: "router" }, x)));
+      if (!units.length) {
         list.innerHTML = "";
-        host.innerHTML = `<div class="empty"><b>No Ubiquiti switch at ${esc(s.name)}</b>EdgeSwitch / UISP switches show up here once the site has scanned one and its web login is saved on the site's Netwatch.</div>`;
+        host.innerHTML = ((sd && sd.legacy) || (rd && rd.legacy))
+          ? `<div class="empty"><b>This site's Netwatch is too old for managed units</b>Update the site Pi (docker compose pull netwatch) to manage its switches and routers here.</div>`
+          : `<div class="empty"><b>No managed units at ${esc(s.name)}</b>EdgeSwitch / UISP switches and MikroTik routers show up here once the site has scanned one and its login is saved on the site's Netwatch.</div>`;
         return;
       }
-      const pick = this.key && sws.some((x) => x.key === this.key) ? this.key : sws[0].key;
-      const sig = JSON.stringify(sws.map((x) => [x.key, x.read_ts, x.kind, (x.problems || []).length, pick]));
+      const pick = this.key && units.some((x) => x.key === this.key) ? this.key : units[0].key;
+      const unit = units.find((x) => x.key === pick);
+      const sig = JSON.stringify(units.map((x) => [x.key, x.read_ts, x.kind, (x.problems || []).length, pick]));
       if (sig !== this.sig) {
         this.sig = sig;
-        list.hidden = sws.length < 2;
-        list.innerHTML = sws.map((x) => `<div style="${x.key === pick ? "outline:2px solid rgba(34,211,238,.5);border-radius:14px" : ""}">${SwitchView.summaryCard(x, `#/site/${enc(s.id)}/switches?key=${enc(x.key)}`)}</div>`).join("");
+        list.hidden = units.length < 2;
+        list.innerHTML = units.map((x) => {
+          const href = `#/site/${enc(s.id)}/switches?key=${enc(x.key)}`;
+          const card = x._kind === "router" ? RouterView.summaryCard(x, href) : SwitchView.summaryCard(x, href);
+          return `<div style="${x.key === pick ? "outline:2px solid rgba(34,211,238,.5);border-radius:14px" : ""}">${card}</div>`;
+        }).join("");
       }
       if (this.mounted !== pick) {
         if (this.ctl) this.ctl.destroy();
         host.innerHTML = "";
         this.mounted = pick;
-        this.ctl = SwitchView.mount(host, viewOpts(s, pick, this.port));
+        this.ctl = unit._kind === "router"
+          ? RouterView.mount(host, routerOpts(s, pick))
+          : SwitchView.mount(host, viewOpts(s, pick, this.port));
       }
     },
     leave() {

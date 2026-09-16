@@ -579,5 +579,7 @@
       <div class="swv-note">${(sw.ports || []).length ? `${s.up}/${s.ports} ports up · PoE ${poe.used_w ?? "—"}${poe.budget_w ? "/" + poe.budget_w : ""} W · ↓ ${bps(s.rx_bps)}` : "no reading yet"}${sw.read_ts ? " · " + ago(sw.read_ts) : ""}</div></a>`;
   }
 
-  window.SwitchView = { mount, summaryCard, fmt: { bps, bytes, uptime, ago } };
+  // injectCss is exported so RouterView draws in the very same stylesheet — a
+  // router and a switch are both managed units and must read identically.
+  window.SwitchView = { mount, summaryCard, injectCss, fmt: { bps, bytes, uptime, ago } };
 })();

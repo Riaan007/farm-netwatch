@@ -226,7 +226,7 @@
     loaded: false, error: "", updated: 0,
     hubName: "", sites: [],            // overview cards
     devices: {}, devicesAt: {},        // site id -> devices[]
-    internet: {}, wifi: {}, wifiLinks: {}, switches: {}, kuma: {}, backups: {}, sysinfo: {},
+    internet: {}, wifi: {}, wifiLinks: {}, switches: {}, routers: {}, kuma: {}, backups: {}, sysinfo: {},
     vpn: null, remote: null,
     listeners: new Set(),
   });
@@ -299,6 +299,8 @@
   };
   /** The site's switches (from its switch monitor), [] until loaded or when it has none. */
   CC.switchesOf = (id) => (S.switches[id] && S.switches[id].switches) || [];
+  /** The site's MikroTik routers — the other half of its managed units. */
+  CC.routersOf = (id) => (S.routers[id] && S.routers[id].routers) || [];
   CC.switchProblems = (id) => CC.switchesOf(id).flatMap((sw) => (sw.problems || []).map((p) => ({ ...p, sw })));
   CC.siteState = (s) => {
     if (!s.enabled) return "paused";
@@ -361,6 +363,9 @@
         if (s.reachable && due(S.switches, s.id, 120))
           jobs.push(CC.api(`/api/hub/sites/${s.id}/switches`, { timeout: 30000 }).then((j) => { S.switches[s.id] = { ...j, __at: CC.now() }; })
             .catch((e) => { S.switches[s.id] = { ...(S.switches[s.id] || {}), error: e.message, legacy: e.status === 501, __at: CC.now() }; }));
+        if (s.reachable && due(S.routers, s.id, 120))
+          jobs.push(CC.api(`/api/hub/sites/${s.id}/routers`, { timeout: 45000 }).then((j) => { S.routers[s.id] = { ...j, __at: CC.now() }; })
+            .catch((e) => { S.routers[s.id] = { ...(S.routers[s.id] || {}), error: e.message, legacy: e.status === 501, __at: CC.now() }; }));
         if (due(S.backups, s.id, 300))
           jobs.push(CC.api(`/api/hub/sites/${s.id}/backups`).then((j) => { S.backups[s.id] = { list: j.backups || [], __at: CC.now() }; }).catch(() => {}));
         await Promise.all(jobs.map((p) => p.catch(() => {})));
