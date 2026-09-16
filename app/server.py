@@ -977,14 +977,23 @@ _MNDP_TTL = 120
 
 
 def _mndp_map():
+    """{key -> neighbour} keyed by BOTH MAC and IP. A MikroTik announces MNDP from
+    the interface's own MAC, which is often not the MAC the scanner learned from
+    ARP (Tankwa's .254 is exactly that), so the IP is the reliable second key."""
     now = time.time()
     if now - _MNDP_CACHE["ts"] < _MNDP_TTL:
         return _MNDP_CACHE["by_mac"]
     try:
         res = mikrotik.discover(timeout=3)
         if res.get("ok"):
-            _MNDP_CACHE["by_mac"] = {identify.normalize_mac(n.get("mac", "")): n
-                                     for n in res.get("neighbors") or []}
+            idx = {}
+            for n in res.get("neighbors") or []:
+                mac = identify.normalize_mac(n.get("mac", ""))
+                if mac:
+                    idx[mac] = n
+                if n.get("ipv4"):
+                    idx[n["ipv4"]] = n
+            _MNDP_CACHE["by_mac"] = idx
     except OSError:
         pass
     _MNDP_CACHE["ts"] = now          # don't retry a failed listen every request
@@ -1016,7 +1025,8 @@ def _router_view(dev, force=False):
             "model": dev.get("model") or "", "read_ts": None}
     def _from_mndp():
         """Whatever the router broadcasts about itself — no login involved."""
-        nb = _mndp_map().get(identify.normalize_mac(dev.get("mac") or ""))
+        idx = _mndp_map()
+        nb = idx.get(identify.normalize_mac(dev.get("mac") or "")) or idx.get(dev.get("ip") or "")
         if not nb:
             return
         view["mndp"] = True
