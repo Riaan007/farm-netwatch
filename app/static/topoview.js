@@ -690,10 +690,10 @@
         S.loading = false;
       }
     }
+    const graphQuery = (path) => path + (path.includes("?") ? "&" : "?") + "graph=1" + (S.scope === "all" ? "&scope=all" : "");
     async function act(method, path, body, { graph = true, okMsg } = {}) {
-      const sep = path.includes("?") ? "&" : "?";
       try {
-        const res = await opts.call(method, path + (graph ? sep + "graph=1" : ""), body);
+        const res = await opts.call(method, graph ? graphQuery(path) : path, body);
         if (res && res.graph) setGraph(res.graph);
         if (okMsg) toast(okMsg, "ok");
         return res || {};
@@ -1157,7 +1157,7 @@
     }
     async function arrangeAll() {
       if (!(await confirmBox("Auto-arrange the diagram?", "Every tower, site and piece of equipment that is not locked is placed afresh, following the connections. Locked items stay where they are.", { ok: "Auto-arrange" }))) return;
-      await act("POST", "/arrange", {}, { graph: false }).then((res) => { if (res.graph) setGraph(res.graph); S.fitted = false; render(); toast("Arranged", "ok"); }).catch(() => {});
+      await act("POST", S.scope === "all" ? "/arrange?scope=all" : "/arrange", {}, { graph: false }).then((res) => { if (res.graph) setGraph(res.graph); S.fitted = false; render(); toast("Arranged", "ok"); }).catch(() => {});
     }
     function setView(v) {
       if (v !== "diagram" && v !== "map") return;
@@ -1847,7 +1847,7 @@
       } else mapFocusLink(L);
     }
     async function send(method, path, body) {
-      const res = await opts.call(method, path + (path.includes("?") ? "&" : "?") + "graph=1", body);
+      const res = await opts.call(method, graphQuery(path), body);
       if (res && res.graph) setGraph(res.graph);
       return res || {};
     }
@@ -1887,7 +1887,7 @@
         case "edit-group": return needEdit(() => groupDialog(gr));
         case "toggle": return toggleGroup(gr.id);
         case "lock-group": return needEdit(() => act("POST", `/groups/${enc(gr.id)}`, { locked: !gr.locked }, { okMsg: gr.locked ? `${gr.name} unlocked` : `${gr.name} locked — Auto-arrange leaves it alone` }).catch(quiet));
-        case "arrange-group": return needEdit(() => act("POST", "/arrange", { scope: gr.id }, { graph: false, okMsg: `${gr.name} tidied` }).catch(quiet));
+        case "arrange-group": return needEdit(() => act("POST", S.scope === "all" ? "/arrange?scope=all" : "/arrange", { scope: gr.id }, { graph: false, okMsg: `${gr.name} tidied` }).catch(quiet));
         case "add-here": return needEdit(() => equipmentDialog(null, gr.id));
         case "delete-group": {
           const cnt = (S.idx.byGroup[gr.id] || []).length;
@@ -2531,5 +2531,5 @@
       bounds() { return graph ? graph.groups.filter((g) => g.geo).map((g) => [g.geo.lat, g.geo.lon]) : []; } };
   }
 
-  window.TopoView = { mount, overlay, injectCss, ensureSymbols, kindSvg, gicon, parseLatLon, icons: Object.keys(ICONS) };
+  window.TopoView = { mount, overlay, injectCss, ensureSymbols, kindSvg, gicon, parseLatLon, sanitize, esc, icons: Object.keys(ICONS) };
 })();

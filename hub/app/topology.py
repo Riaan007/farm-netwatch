@@ -96,7 +96,9 @@ def site_topology_write(site_id, sub):
         return err
     if not _WRITE_PATH.match(sub):
         return jsonify({"ok": False, "error": "not a network-view action"}), 404
-    params = {"graph": "1"} if request.args.get("graph") == "1" else None
+    params = {"graph": "1"} if request.args.get("graph") == "1" else {}
+    if request.args.get("scope") == "all":
+        params["scope"] = "all"
     try:
         r = requests.request(request.method, f"{siteapi.base_url(site)}/api/topology/{sub}", params=params,
                              json=request.get_json(silent=True) if request.method == "POST" else None,
@@ -108,12 +110,13 @@ def site_topology_write(site_id, sub):
         with _LOCK:
             _ICONS.pop((site_id, sub.split("/", 1)[1]), None)
     out = _reply(r)
-    if r.ok and params:
+    if r.ok:
         try:
-            graph = r.json().get("graph")
-            if graph:
+            body = r.json()
+            graph = body.get("graph") if isinstance(body, dict) else None
+            if isinstance(graph, dict):
                 with _LOCK:
-                    _CACHE[(site_id, "infra")] = (time.time(), graph)
+                    _CACHE[(site_id, params.get("scope", "infra"))] = (time.time(), graph)
         except ValueError:
             pass
     return out

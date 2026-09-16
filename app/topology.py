@@ -1013,7 +1013,7 @@ def build(d, devices, registry=None, radios=None, switches=None, routers=None, p
         if dev.get("switch_port"):
             n["switch_port"] = dev["switch_port"]
         ri = _radio_info(radios.get(k))
-        if ri:
+        if ri and (ri["ok"] or kinds[k] in WIRELESS_KINDS):   # a failed read on a switch is not radio news
             n["radio"] = ri
         nodes.append(n)
     node_ids = {n["id"] for n in nodes}
