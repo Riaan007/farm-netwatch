@@ -1794,7 +1794,7 @@
       return `${S.g.store_error ? `<div class="sec"><div class="tv-sug" style="border-color:rgba(251,113,133,.5)"><div class="t">⚠ The diagram file could not be read</div><p>${esc(S.g.store_error)}. Nothing is saved until it is fixed on the Pi.</p></div></div>` : ""}
         <div class="hd">${ico("info", 28)}<div><h3>${esc((S.g.site && S.g.site.name) || "This site")}</h3><p>${S.g.groups.length} group${S.g.groups.length === 1 ? "" : "s"} · ${n.length} items · ${confirmed} connection${confirmed === 1 ? "" : "s"}</p></div></div>
         ${bad.length ? `<div class="sec"><h4>Needs a look <span class="c">${bad.length}</span></h4><div class="tv-list">${bad.slice(0, 12).map((x) => nodeItem(x)).join("")}</div></div>` : `<div class="sec"><p class="tv-note">✓ Everything that is monitored answers.</p></div>`}
-        ${S.g.suggestions.length || (S.idx.byGroup["~"] || []).length ? `<div class="sec"><button type="button" class="tv-btn ok" data-a="review">${ico("review")} Review ${S.g.suggestions.length} suggestion${S.g.suggestions.length === 1 ? "" : "s"} · ${(S.idx.byGroup["~"] || []).length} without a group</button></div>` : ""}
+        ${reviewCta()}
         <div class="sec"><h4>How it works</h4><p class="tv-note">
           • <b>Groups</b> are towers, sites or buildings. Drag equipment onto one to put it there; the ▾ button collapses it to a summary.<br>
           • <b>Connect</b>: drag the <b>+</b> handle of one item onto another, or use Connect. Wireless links join two radios.<br>
@@ -1802,6 +1802,15 @@
           • Dotted lines are <b>suggested</b> from switch, router and radio readings; confirm or dismiss them.<br>
           • Positions are saved as you drag. <b>Lock layout</b> stops accidental moves; <b>Auto-arrange</b> tidies what is not locked.<br>
           • Moving things here never changes their GPS position on the map.</p></div>`;
+    }
+    function reviewCta() {
+      const sug = S.g.suggestions.length, ua = (S.idx.byGroup["~"] || []).length;
+      if (!sug && !ua) return "";
+      const bits = [];
+      if (sug) bits.push(`${sug} suggested connection${sug === 1 ? "" : "s"}`);
+      if (ua) bits.push(`${ua} not in a group yet`);
+      return `<div class="sec"><button type="button" class="tv-btn ok" data-a="review" style="white-space:normal;text-align:left;height:auto;padding:8px 12px">${ico("review")}<span>Review: ${esc(bits.join(" · "))}</span></button>
+        ${ua && !S.g.groups.length ? `<p class="tv-note" style="margin-top:8px">Start with <b>+ Group</b> for each tower or site, then drag the equipment into it.</p>` : ""}</div>`;
     }
     function drawMini(el, gid) {
       const members = S.idx.byGroup[gid] || [];
