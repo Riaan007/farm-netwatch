@@ -22,11 +22,12 @@ bp = Blueprint("topology", __name__)
 
 READ_TTL = 15
 ICON_TTL = 3600
+ICON_MAX = 512 * 1024
 _CACHE = {}               # (site id, scope) -> (ts, payload)
 _ICONS = {}               # (site id, icon id) -> (ts, mime, bytes)
 _LOCK = threading.Lock()
 # Everything the site's topology API accepts; nothing else is forwarded.
-_WRITE_PATH = re.compile(r"^(groups|equipment|nodes|links|suggestions|layout|arrange|icons|type-icons|dismissed)"
+_WRITE_PATH = re.compile(r"^(groups|equipment|nodes|links|suggestions|layout|arrange|icons|type-icons|dismissed|orphans)"
                          r"(/(?!\.+(?:/|$))[A-Za-z0-9:._~-]+){0,3}$")
 _IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}   # never SVG (it can carry script)
 
@@ -96,6 +97,10 @@ def site_topology_write(site_id, sub):
         return err
     if not _WRITE_PATH.match(sub):
         return jsonify({"ok": False, "error": "not a network-view action"}), 404
+    # JSON only: a cross-site form post cannot send it without a CORS preflight,
+    # so another web page cannot make an operator's browser change a diagram.
+    if request.method == "POST" and not request.is_json:
+        return jsonify({"ok": False, "error": "send JSON"}), 415
     params = {"graph": "1"} if request.args.get("graph") == "1" else {}
     if request.args.get("scope") == "all":
         params["scope"] = "all"
@@ -133,17 +138,20 @@ def site_topology_icon(site_id, iid):
     with _LOCK:
         hit = _ICONS.get(key)
     if not hit or time.time() - hit[0] > ICON_TTL:
+        body, mime = None, ""
         try:
-            r = requests.get(f"{siteapi.base_url(site)}/api/topology/icons/{quote(iid)}",
-                             headers=siteapi.headers(site), timeout=(5, 20))
+            with requests.get(f"{siteapi.base_url(site)}/api/topology/icons/{quote(iid)}",
+                              headers=siteapi.headers(site), timeout=(5, 20), stream=True) as r:
+                mime = r.headers.get("Content-Type", "").split(";")[0].strip().lower()
+                if r.ok and mime in _IMAGE_TYPES:
+                    body = r.raw.read(ICON_MAX + 1, decode_content=True)
         except requests.RequestException:
-            r = None
-        mime = (r.headers.get("Content-Type", "").split(";")[0].strip().lower() if r is not None else "")
-        if r is None or not r.ok or mime not in _IMAGE_TYPES or len(r.content) > 512 * 1024:
+            body = None
+        if body is None or len(body) > ICON_MAX:
             if not hit:
                 return jsonify({"ok": False, "error": "no such icon"}), 404
         else:
-            hit = (time.time(), mime, r.content)
+            hit = (time.time(), mime, body)
             with _LOCK:
                 if len(_ICONS) > 400:
                     _ICONS.clear()

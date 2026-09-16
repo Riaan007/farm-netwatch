@@ -7,6 +7,7 @@ Writes answer with the fresh graph when asked (?graph=1), so the browser draws
 the result of its own change without a second round trip over a farm link.
 """
 import base64
+import functools
 import time
 
 from flask import Blueprint, jsonify, request, send_file, session
@@ -23,10 +24,9 @@ bp = Blueprint("topology", __name__)
 guard = siteauth.required
 store = topology.store
 
-# Filled in by server.py (it owns the router cache and the problem feed).
+# Filled in by server.py (it owns the router cache).
 providers = {
     "routers": lambda: {},
-    "problems": lambda: [],
 }
 
 
@@ -39,6 +39,9 @@ def _hooks():
             print("topology rekey:", e, flush=True)
 
     def on_forget(keys):
+        # An explicit Forget clears the device's diagram entry and links. (A bulk
+        # prune does not call this: a tower that is down for a week keeps its
+        # drawing, and Review offers to clear what no longer exists.)
         try:
             store.mutate(topology.forget, keys)
         except Exception as e:  # noqa: BLE001
@@ -76,6 +79,21 @@ def _switches():
     return out
 
 
+def _problems():
+    """The problems a node shows: the scanner's list plus radio and switch findings.
+    Only key/type/severity/detail/fix are needed, so no device lookups."""
+    out = list(scanner.problems())
+    for p in radiomon.monitor.snapshot().get("problems") or []:
+        out.append({"type": "wifi_degraded", "severity": "high" if p.get("level") == "crit" else "medium",
+                    "detail": p.get("what") or "", "fix": p.get("hint") or "", "devices": [{"key": p.get("key")}]})
+    for p in switchmon.monitor.snapshot().get("problems") or []:
+        if p.get("level") not in ("crit", "warn"):
+            continue
+        out.append({"type": "switch", "severity": "high" if p["level"] == "crit" else "medium",
+                    "detail": p.get("what") or "", "fix": p.get("hint") or "", "devices": [{"key": p.get("key")}]})
+    return out
+
+
 def _safe(fn, default):
     try:
         return fn()
@@ -103,7 +121,7 @@ def _inputs():
         "radios": _safe(lambda: radiomon.monitor.snapshot()["radios"], {}),
         "switches": _safe(_switches, {}),
         "routers": _safe(providers["routers"], {}),
-        "problems": _safe(providers["problems"], []),
+        "problems": _safe(_problems, []),
     }
 
 
@@ -125,8 +143,12 @@ def _graph_payload(force=False, scope=None, inp=None):
                            inp["routers"], inp["problems"], now=now, scope=view_scope,
                            gateway=inp.get("gateway"))
         ch = topology.layout(d, g, force=force, scope=scope)
-        if topology.apply_layout(d, ch, force=force):
-            store._write()
+        # "Every device" is a look, not a layout: it must not hand every phone a saved spot.
+        if (view_scope == "infra" or force) and topology.apply_layout(d, ch, force=force):
+            try:
+                store._write()
+            except topology.TopologyError as e:
+                print("topology:", e, flush=True)
         ua = topology.boxes(g, d["view"])
         cfg_site = (config.load().get("site") or {})
         payload = {
@@ -147,12 +169,31 @@ def _graph_payload(force=False, scope=None, inp=None):
             "icons": dict(d["icons"]), "type_icons": dict(d["type_icons"]),
             "can_edit": siteauth.allowed(request, session),
             "scope": view_scope,
+            "store_error": store.broken,
         }
     return payload
 
 
 def _fail(e):
     return jsonify({"ok": False, "error": str(e)}), getattr(e, "status", 400)
+
+
+def _answers(fn):
+    """TopologyError → its own message; a malformed body (wrong types) → 400, not 500."""
+    @functools.wraps(fn)
+    def wrapper(*a, **kw):
+        try:
+            return fn(*a, **kw)
+        except topology.TopologyError as e:
+            return _fail(e)
+        except (TypeError, AttributeError, KeyError) as e:
+            print("topology: bad request:", repr(e), flush=True)
+            return jsonify({"ok": False, "error": "That request was not understood"}), 400
+    return wrapper
+
+
+def _str(v):
+    return v if isinstance(v, str) else ""
 
 
 def _reply(result, **extra):
@@ -185,6 +226,7 @@ def api_topology():
 # ---- groups ------------------------------------------------------------------------
 @bp.route("/api/topology/groups", methods=["POST"])
 @guard
+@_answers
 def api_group_create():
     try:
         return _reply(store.mutate(topology.create_group, _body()))
@@ -194,6 +236,7 @@ def api_group_create():
 
 @bp.route("/api/topology/groups/<gid>", methods=["POST", "DELETE"])
 @guard
+@_answers
 def api_group(gid):
     try:
         if request.method == "DELETE":
@@ -206,6 +249,7 @@ def api_group(gid):
 # ---- hand-added equipment ----------------------------------------------------------
 @bp.route("/api/topology/equipment", methods=["POST"])
 @guard
+@_answers
 def api_equipment_create():
     try:
         return _reply(store.mutate(topology.create_equipment, _body()))
@@ -215,6 +259,7 @@ def api_equipment_create():
 
 @bp.route("/api/topology/equipment/<vid>", methods=["POST", "DELETE"])
 @guard
+@_answers
 def api_equipment(vid):
     try:
         if request.method == "DELETE":
@@ -252,6 +297,7 @@ def _replace(d, vid, key, devices):
 
 @bp.route("/api/topology/equipment/<vid>/replace", methods=["POST"])
 @guard
+@_answers
 def api_equipment_replace(vid):
     body = _body()
     try:
@@ -264,6 +310,7 @@ def api_equipment_replace(vid):
 # ---- nodes + layout ---------------------------------------------------------------
 @bp.route("/api/topology/nodes/<path:nid>", methods=["POST"])
 @guard
+@_answers
 def api_node(nid):
     inp = {"devices": _devices()}
     try:
@@ -274,6 +321,7 @@ def api_node(nid):
 
 @bp.route("/api/topology/layout", methods=["POST"])
 @guard
+@_answers
 def api_layout():
     """Drag results and lock toggles, batched: {nodes, groups, unassigned, lock_all, collapse_all}."""
     inp = {"devices": _devices()}
@@ -286,10 +334,11 @@ def api_layout():
 
 @bp.route("/api/topology/arrange", methods=["POST"])
 @guard
+@_answers
 def api_arrange():
     """Auto-arrange: everything not locked (or one group's inside, {scope: gid})."""
     body = _body()
-    scope = body.get("scope") or None
+    scope = _str(body.get("scope")) or None
     if store.doc()["view"].get("lock_all"):
         return jsonify({"ok": False, "error": "The layout is locked — unlock it first"}), 409
     if scope and scope != topology.UNASSIGNED and scope not in store.doc()["groups"]:
@@ -300,6 +349,7 @@ def api_arrange():
 # ---- links ---------------------------------------------------------------------------
 @bp.route("/api/topology/links", methods=["POST"])
 @guard
+@_answers
 def api_link_create():
     inp = _inputs()
     try:
@@ -310,6 +360,7 @@ def api_link_create():
 
 @bp.route("/api/topology/links/<lid>", methods=["POST", "DELETE"])
 @guard
+@_answers
 def api_link(lid):
     try:
         if request.method == "DELETE":
@@ -332,10 +383,11 @@ def _current_suggestions(inp):
 
 @bp.route("/api/topology/suggestions/<sid>", methods=["POST"])
 @guard
+@_answers
 def api_suggestion(sid):
     """{action: accept | dismiss | restore | insert (shared port → new passive box)}"""
     body = _body()
-    action = body.get("action")
+    action = _str(body.get("action"))
     try:
         if action == "dismiss":
             return _reply(store.mutate(topology.dismiss, sid, True))
@@ -357,12 +409,14 @@ def api_suggestion(sid):
 
 @bp.route("/api/topology/suggestions/accept-all", methods=["POST"])
 @guard
+@_answers
 def api_suggestions_accept_all():
     """Confirm every proven connection at once ({medium?} narrows it)."""
     body = _body()
     inp = _inputs()
+    medium = _str(body.get("medium"))
     sugs = [s for s in _current_suggestions(inp).values() if s.get("type") == "link"
-            and (not body.get("medium") or s.get("medium") == body["medium"])]
+            and (not medium or s.get("medium") == medium)]
     devs = _dev_map(inp)
 
     def run(d):
@@ -381,8 +435,18 @@ def api_suggestions_accept_all():
         return _fail(e)
 
 
+@bp.route("/api/topology/orphans/clear", methods=["POST"])
+@guard
+@_answers
+def api_orphans_clear():
+    """Drop saved connections and diagram settings for devices that no longer exist."""
+    inp = {"devices": _devices()}
+    return _reply(store.mutate(lambda d: topology.clear_orphans(d, _known(inp, d))) or {"links_removed": 0, "nodes_removed": 0})
+
+
 @bp.route("/api/topology/dismissed/clear", methods=["POST"])
 @guard
+@_answers
 def api_dismissed_clear():
     def run(d):
         n = len(d["dismissed"])
@@ -411,6 +475,7 @@ def api_icon(iid):
 
 @bp.route("/api/topology/icons", methods=["POST"])
 @guard
+@_answers
 def api_icon_upload():
     """Multipart `file` or JSON {data: base64, name}; optional kind (every device of
     that type) or node (just that one)."""
@@ -430,7 +495,7 @@ def api_icon_upload():
     inp = {"devices": _devices()}
     try:
         return _reply(store.mutate(lambda d: topology.add_icon(
-            d, store, data, name, kind=body.get("kind") or None, node=body.get("node") or None,
+            d, store, data, _str(name), kind=_str(body.get("kind")) or None, node=_str(body.get("node")) or None,
             known=_known(inp, d))))
     except topology.TopologyError as e:
         return _fail(e)
@@ -438,6 +503,7 @@ def api_icon_upload():
 
 @bp.route("/api/topology/icons/<iid>", methods=["DELETE"])
 @guard
+@_answers
 def api_icon_delete(iid):
     try:
         return _reply(store.mutate(topology.delete_icon, store, iid))
@@ -447,9 +513,10 @@ def api_icon_delete(iid):
 
 @bp.route("/api/topology/type-icons", methods=["POST"])
 @guard
+@_answers
 def api_type_icon():
     body = _body()
     try:
-        return _reply(store.mutate(topology.set_type_icon, str(body.get("kind") or ""), body.get("icon") or ""))
+        return _reply(store.mutate(topology.set_type_icon, _str(body.get("kind")), _str(body.get("icon"))))
     except topology.TopologyError as e:
         return _fail(e)

@@ -57,7 +57,6 @@ app.register_blueprint(topology_routes.bp)
 topology_routes.providers.update(
     routers=lambda: {k: {"ts": v["view"].get("read_ts"), "ports": v["view"].get("port_macs") or {}}
                      for k, v in list(_ROUTER_CACHE.items()) if v["view"].get("ok")},
-    problems=lambda: scanner.problems() + _radio_problems() + _switch_problems(),
 )
 
 

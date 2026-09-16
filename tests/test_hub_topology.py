@@ -121,6 +121,15 @@ class HubTopology(unittest.TestCase):
         self.assertEqual(self.c.delete("/api/hub/sites/farm/topology/links/l-12345678").status_code, 200)
         self.assertEqual(FakeSite.calls[-1][0], "DELETE")
 
+    def test_writes_must_be_json(self):
+        r = self.c.post("/api/hub/sites/farm/topology/arrange", data="x=1",
+                        content_type="application/x-www-form-urlencoded")
+        self.assertEqual(r.status_code, 415)
+        r = self.c.post("/api/hub/sites/farm/topology/suggestions/accept-all", data="", content_type="text/plain")
+        self.assertEqual(r.status_code, 415)
+        self.assertEqual(FakeSite.calls, [])
+        self.assertEqual(self.c.post("/api/hub/sites/farm/topology/orphans/clear", json={}).status_code, 200)
+
     def test_only_topology_actions_are_forwarded(self):
         for bad in ("config", "groups/..", "groups/../../config", "links/.", "nodes/a%2F..", "x"):
             r = self.c.post(f"/api/hub/sites/farm/topology/{bad}", json={})

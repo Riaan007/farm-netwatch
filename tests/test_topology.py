@@ -189,6 +189,7 @@ class Discovery(unittest.TestCase):
         # resolve the shared port by adding the unmanaged switch it implies
         shared = next(x for x in graph(d)["suggestions"] if x["type"] == "shared_port")
         e = T.insert_passive(d, shared, {"name": "Yard PoE switch", "members": shared["members"]}, DEV)
+        self.assertIsNone(d["nodes"][e["id"]].get("group"))              # the switch owner has no group either
         g = graph(d)
         self.assertEqual(sum(1 for L in g["links"] if e["id"] in (L["a"], L["b"])), 4)
         self.assertFalse([x for x in g["suggestions"] if x["type"] == "shared_port"])
@@ -198,6 +199,19 @@ class Discovery(unittest.TestCase):
         vsw = next(n for n in g["nodes"] if n["id"] == e["id"])
         self.assertEqual(vsw["inferred"]["state"], "passing")     # 2 of its 3 cameras answer
 
+    def test_insert_passive_honours_an_explicit_no_group(self):
+        d = fresh()
+        grp = T.create_group(d, {"name": "Office"})
+        T.set_node(d, "aa:00:00:00:00:02", {"group": grp["id"]}, set(DEV))
+        shared = next(x for x in graph(d)["suggestions"] if x["type"] == "shared_port")
+        e = T.insert_passive(d, dict(shared), {"members": shared["members"]}, DEV)
+        self.assertEqual(d["nodes"][e["id"]].get("group"), grp["id"])    # default: the port owner's group
+        d = fresh()
+        T.set_node(d, "aa:00:00:00:00:02", {"group": T.create_group(d, {"name": "Office"})["id"]}, set(DEV))
+        shared = next(x for x in graph(d)["suggestions"] if x["type"] == "shared_port")
+        e = T.insert_passive(d, dict(shared), {"members": shared["members"], "group": "~"}, DEV)
+        self.assertIsNone(d["nodes"][e["id"]].get("group"))
+
     def test_router_bridge_table(self):
         d = fresh()
         routers = {"aa:00:00:00:00:01": {"ts": NOW, "ports": {"ether2": ["aa:00:00:00:00:02"], "wlan1": ["aa:00:00:00:00:31"],
@@ -205,6 +219,45 @@ class Discovery(unittest.TestCase):
         s = graph(d, switches={}, routers=routers)["suggestions"]
         self.assertEqual([(x["a"], x["a_port"], x["b"]) for x in s if x["medium"] == "ethernet"],
                          [("aa:00:00:00:00:01", "ether2", "aa:00:00:00:00:02")])
+
+
+class StoreSafety(unittest.TestCase):
+    def test_a_failed_edit_leaves_nothing_behind(self):
+        st = T.Store(os.path.join(tempfile.mkdtemp(), "t.json"), tempfile.mkdtemp())
+        g = st.mutate(T.create_group, {"name": "Tower A"})
+        with self.assertRaises(T.TopologyError):
+            st.mutate(T.create_equipment, {"name": "Box", "group": "g-deadbeef"})     # group gone
+        self.assertEqual(st.doc()["equipment"], {})
+        with self.assertRaises(T.TopologyError):
+            st.mutate(T.update_group, g["id"], {"name": "Renamed", "lat": "91", "lon": "18"})
+        self.assertEqual(st.doc()["groups"][g["id"]]["name"], "Tower A")
+        st.reload()
+        self.assertEqual(st.doc()["groups"][g["id"]]["name"], "Tower A")
+
+    def test_a_damaged_file_is_kept_not_overwritten(self):
+        folder = tempfile.mkdtemp()
+        path = os.path.join(folder, "t.json")
+        with open(path, "w") as f:
+            f.write('{"groups": {"g-1": {"id": "g-1", "na')            # cut off mid-write
+        st = T.Store(path, folder)
+        self.assertEqual(st.doc()["groups"], {})
+        kept = [x for x in os.listdir(folder) if x.startswith("t.json.bad-")]
+        self.assertEqual(len(kept), 1)
+        with open(os.path.join(folder, kept[0])) as f:
+            self.assertIn('"g-1"', f.read())
+        st.mutate(T.create_group, {"name": "New"})                      # a fresh file is fine now
+        self.assertEqual(len(st.doc()["groups"]), 1)
+
+    def test_an_unreadable_file_is_never_saved_over(self):
+        folder = tempfile.mkdtemp()
+        path = os.path.join(folder, "t.json")
+        os.mkdir(path)                                                  # reading a directory → IsADirectoryError
+        st = T.Store(path, folder)
+        st.doc()
+        self.assertTrue(st.broken)
+        with self.assertRaises(T.TopologyError):
+            st.mutate(T.create_group, {"name": "X"})
+        self.assertEqual(st.doc()["groups"], {})
 
 
 class Diagram(unittest.TestCase):
@@ -487,14 +540,40 @@ class Api(unittest.TestCase):
         self.assertNotIn("icon", T.store.doc()["nodes"]["aa:00:00:00:00:11"])
         self.assertNotIn("camera", T.store.doc()["type_icons"])
 
-    def test_pruning_drops_links_of_pruned_devices(self):
+    def test_pruning_keeps_the_drawing_until_orphans_are_cleared(self):
         h = self.h
         self.c.post("/api/topology/links", json={"a": "aa:00:00:00:00:02", "b": "aa:00:00:00:00:12"}, headers=h)
         removed = self.server.scanner.prune_devices(days=None, only_offline=True)
         self.assertIn("aa:00:00:00:00:12", removed)
+        # a tower that is down for a week keeps its hand-drawn links …
+        self.assertTrue([L for L in T.store.doc()["links"].values() if "aa:00:00:00:00:12" in (L["a"], L["b"])])
+        self.assertGreaterEqual(self.c.get("/api/topology").get_json()["orphan_links"], 1)
+        # … until someone clears what no longer exists
+        self.assertEqual(self.c.post("/api/topology/orphans/clear", json={}).status_code, 401)
+        r = self.c.post("/api/topology/orphans/clear", json={}, headers=h).get_json()
+        self.assertGreaterEqual(r["result"]["links_removed"], 1)
         self.assertFalse([L for L in T.store.doc()["links"].values() if "aa:00:00:00:00:12" in (L["a"], L["b"])])
         for k in removed:
             self.server.scanner.devices[k] = dict(DEV[k])
+
+    def test_malformed_bodies_are_400_not_500(self):
+        h = self.h
+        for path, body in (("/api/topology/groups", {"name": "X", "kind": ["tower"]}),
+                           ("/api/topology/links", {"a": ["x"], "b": {"y": 1}, "medium": ["wireless"]}),
+                           ("/api/topology/layout", {"nodes": [], "groups": "x"}),
+                           ("/api/topology/arrange", {"scope": ["g"]}),
+                           ("/api/topology/icons", {"data": "", "kind": ["camera"], "node": {"a": 1}}),
+                           ("/api/topology/type-icons", {"kind": "camera", "icon": ["i-00000000"]}),
+                           ("/api/topology/nodes/aa:00:00:00:00:11", {"group": ["g"], "kind": ["radio"], "icon": [1]})):
+            r = self.c.post(path, json=body, headers=h)
+            self.assertLess(r.status_code, 500, (path, r.status_code, r.get_data(as_text=True)[:200]))
+
+    def test_every_device_view_saves_no_positions(self):
+        before = {k for k, v in T.store.doc()["nodes"].items() if v.get("pos")}
+        j = self.c.get("/api/topology?scope=all").get_json()
+        self.assertIn("aa:00:00:00:00:31", {n["id"] for n in j["nodes"]})      # the phone is shown …
+        after = {k for k, v in T.store.doc()["nodes"].items() if v.get("pos")}
+        self.assertNotIn("aa:00:00:00:00:31", after - before)                  # … but gets no saved spot
 
     def test_forgetting_a_device_drops_its_links(self):
         h = self.h

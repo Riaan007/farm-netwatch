@@ -287,6 +287,7 @@
     g.nodes = (Array.isArray(g.nodes) ? g.nodes : []).filter((n) => n && typeof n.id === "string");
     g.nodes.forEach((n) => {
       n.name = STR(n.name, n.id); n.kind = STR(n.kind, "other"); n.group = STR(n.group, "~");
+      ["ip", "mac", "vendor", "model", "firmware", "hostname", "notes", "port_notes", "category", "icon"].forEach((k) => (n[k] = STR(n[k])));
       n.state = pick(n.state, ["online", "offline", "quiet", "unmonitored"], "quiet");
       n.pos = POS(n.pos); n.geo = GEO(n.geo); n.last_seen = NUM(n.last_seen); n.rtt = NUMN(n.rtt);
       n.ports = NUMN(n.ports); n.virtual = !!n.virtual; n.locked = !!n.locked;
@@ -298,7 +299,7 @@
     });
     g.groups = (Array.isArray(g.groups) ? g.groups : []).filter((x) => x && typeof x.id === "string");
     g.groups.forEach((x) => {
-      x.name = STR(x.name, x.id); x.kind = STR(x.kind, "site");
+      x.name = STR(x.name, x.id); x.kind = STR(x.kind, "site"); x.description = STR(x.description);
       x.status = pick(x.status, ["ok", "warn", "down", "unknown"], "unknown");
       x.pos = POS(x.pos); x.geo = GEO(x.geo); x.lat = NUMN(x.lat); x.lon = NUMN(x.lon);
       const c = x.counts || {};
@@ -328,10 +329,24 @@
     [["cell_w", 150], ["cell_h", 122], ["pad_x", 18], ["pad_top", 54], ["pad_bottom", 14], ["row_max", 6],
       ["empty_w", 260], ["empty_h", 124], ["collapsed_w", 200], ["collapsed_h", 124]].forEach(([k, d]) => (g.grid[k] = NUM(gr[k], d)));
     g.kinds = (Array.isArray(g.kinds) ? g.kinds : []).filter((k) => k && typeof k.id === "string").map((k) => ({ ...k, label: STR(k.label, k.id), tier: NUM(k.tier, 4), wireless: !!k.wireless }));
-    g.others = Array.isArray(g.others) ? g.others : [];
-    g.hidden = Array.isArray(g.hidden) ? g.hidden : [];
+    const brief = (list) => (Array.isArray(list) ? list : []).filter((o) => o && typeof o.id === "string")
+      .map((o) => ({ id: o.id, name: STR(o.name, o.id), ip: STR(o.ip), kind: STR(o.kind, "other"), state: STR(o.state) }));
+    g.others = brief(g.others);
+    g.hidden = brief(g.hidden);
+    const gk = g.group_kinds && typeof g.group_kinds === "object" ? g.group_kinds : {};
+    g.group_kinds = {};
+    Object.keys(gk).forEach((k) => (g.group_kinds[k] = STR(gk[k], k)));
+    const icons = g.icons && typeof g.icons === "object" ? g.icons : {};
+    g.icons = {};
+    Object.keys(icons).forEach((k) => { if (/^i-[0-9a-f]{8}$/.test(k)) g.icons[k] = { id: k, name: STR(icons[k] && icons[k].name), ts: NUM(icons[k] && icons[k].ts) }; });
+    const ti = g.type_icons && typeof g.type_icons === "object" ? g.type_icons : {};
+    g.type_icons = {};
+    Object.keys(ti).forEach((k) => { if (typeof ti[k] === "string" && g.icons[ti[k]]) g.type_icons[k] = ti[k]; });
+    g.view = { lock_all: !!(g.view && g.view.lock_all) };
+    g.store_error = STR(g.store_error);
+    g.can_edit = !!g.can_edit;
     g.dismissed = NUM(g.dismissed); g.orphan_links = NUM(g.orphan_links); g.ts = NUM(g.ts); g.rev = NUM(g.rev);
-    if (g.site) { g.site.lat = NUMN(g.site.lat); g.site.lon = NUMN(g.site.lon); }
+    if (g.site) { g.site = { name: STR(g.site.name), location: STR(g.site.location), lat: NUMN(g.site.lat), lon: NUMN(g.site.lon) }; }
     return g;
   }
 
@@ -653,7 +668,7 @@
 
     // ---- the graph ----------------------------------------------------------------------------
     function setGraph(g) {
-      if (!g || !g.nodes) return;
+      if (S.destroyed || !g || !g.nodes) return;
       S.g = sanitize(g);
       const idx = { nodes: {}, groups: {}, links: {}, byGroup: {}, adj: {} };
       g.nodes.forEach((n) => { idx.nodes[n.id] = n; (idx.byGroup[n.group] = idx.byGroup[n.group] || []).push(n); });
@@ -681,10 +696,12 @@
       S.loading = true;
       try {
         const g = await opts.load({ scope: S.scope });
+        if (S.destroyed) return;
         S.err = "";
         if (!S.drag) setGraph(g);
         else S.pending = g;
       } catch (e) {
+        if (S.destroyed) return;
         S.err = e.message || "Could not load the network";
         if (!quiet) toast(S.err, "bad");
         if (!S.g) render();
@@ -696,11 +713,12 @@
     async function act(method, path, body, { graph = true, okMsg } = {}) {
       try {
         const res = await opts.call(method, graph ? graphQuery(path) : path, body);
+        if (S.destroyed) return res || {};
         if (res && res.graph) setGraph(res.graph);
         if (okMsg) toast(okMsg, "ok");
         return res || {};
       } catch (e) {
-        toast(e.message || "That did not work", "bad");
+        if (!S.destroyed) toast(e.message || "That did not work", "bad");
         throw e;
       }
     }
@@ -827,6 +845,7 @@
 
     // ---- drawing --------------------------------------------------------------------------------
     function render() {
+      if (S.destroyed) return;
       if (!S.g) {
         const e = $("[data-empty]");
         e.hidden = false;
@@ -900,7 +919,7 @@
       const f = (v) => Math.round(v);
       if (b.ua) {
         const n = (S.idx.byGroup["~"] || []).length;
-        return `<g class="tv-g tv-ua ${S.dropTarget === "~" ? "drop" : ""} ${S.sel && S.sel.t === "ua" ? "is-sel" : ""}" data-box="~">
+        return `<g class="tv-g tv-ua ${S.dropHighlight === "~" ? "drop" : ""} ${S.sel && S.sel.t === "ua" ? "is-sel" : ""}" data-box="~">
           <rect class="tv-g-box" x="${f(b.x)}" y="${f(b.y)}" width="${f(b.w)}" height="${f(b.h)}" rx="16"/>
           <rect class="tv-g-hit" data-drag-box="~" x="${f(b.x)}" y="${f(b.y)}" width="${f(b.w)}" height="44" rx="16"/>
           <text class="tv-g-name" x="${f(b.x + 18)}" y="${f(b.y + 22)}">Not in a group yet · ${n}</text>
@@ -917,7 +936,7 @@
       const stTxt = !c.total ? "Empty" : { ok: "All online", warn: "Needs a look", down: "Down", unknown: "Not monitored" }[gr.status] || "";
       const stCol = { ok: "#34d399", warn: "#fbbf24", down: "#fb7185", unknown: "#94a3b8" }[gr.status] || "#94a3b8";
       const sel = S.sel && S.sel.t === "group" && S.sel.id === gr.id;
-      const cls = `tv-g st-${gr.status} ${sel ? "is-sel" : ""} ${S.dropTarget === gr.id ? "drop" : ""}`;
+      const cls = `tv-g st-${gr.status} ${sel ? "is-sel" : ""} ${S.dropHighlight === gr.id ? "drop" : ""}`;
       const kindLabel = (S.g.group_kinds || {})[gr.kind] || "Group";
       const maxName = Math.max(8, Math.floor((b.w - 110) / 8.2));
       const chevron = b.collapsed ? "M-4,-2 L0,2 L4,-2" : "M-4,2 L0,-2 L4,2";
@@ -1308,7 +1327,8 @@
         }
         D.ids.forEach((id) => (S.over.nodes[id] = { x: D.starts[id].x + w.x - D.w0.x, y: D.starts[id].y + w.y - D.w0.y }));
         const tgt = boxAt(w);
-        S.dropTarget = tgt && tgt !== S.idx.nodes[D.id].group ? tgt : null;
+        S.dropTarget = tgt || null;
+        S.dropHighlight = tgt && D.ids.some((id) => S.idx.nodes[id].group !== tgt) ? tgt : null;
         schedule();
       } else if (D.type === "box" && D.can) {
         const p = { x: Math.round((D.start.x + w.x - D.w0.x) / 10) * 10, y: Math.round((D.start.y + w.y - D.w0.y) / 10) * 10 };
@@ -1328,7 +1348,7 @@
       if (!D || (D.type === "pinch" && pointers.size)) return;
       S.drag = null;
       svg.classList.remove("panning");
-      if (cancelled) { S.over = { nodes: {}, groups: {}, ua: null }; S.ghost = ""; S.dropTarget = null; drawDiagram(); return; }
+      if (cancelled) { S.over = { nodes: {}, groups: {}, ua: null }; S.ghost = ""; S.dropTarget = null; S.dropHighlight = null; drawDiagram(); return; }
       if (D.type === "pinch") { drawDiagram(); return; }
       if (D.type === "pan") {
         if (!D.moved) { S.sel = null; S.multi.clear(); render(); }
@@ -1368,7 +1388,12 @@
         else if (!D.moved) { S.sel = { t: "node", id: D.from }; }
         render();
       }
-      if (S.pending && !S.drag) { const g = S.pending; S.pending = null; setGraph(g); }
+      if (S.pending && !S.drag) {
+        const g = S.pending;
+        S.pending = null;
+        // a poll that finished during a drag predates the drop the drag just saved
+        if (!(D.moved && D.can && (D.type === "node" || D.type === "box"))) setGraph(g);
+      }
     }
     svg.addEventListener("pointerup", (ev) => endDrag(ev, false));
     svg.addEventListener("pointercancel", (ev) => endDrag(ev, true));
@@ -1432,6 +1457,7 @@
     function dropNodes(D) {
       const target = S.dropTarget;
       S.dropTarget = null;
+      S.dropHighlight = null;
       const moving = new Set(D.ids);
       const claimed = {};
       const body = { nodes: {} };
@@ -1457,8 +1483,7 @@
         act("POST", "/layout", body, { okMsg: `${names.length > 1 ? names.length + " items" : names[0]} moved to ${dest}` }).catch(() => refresh(true));
       } else {
         drawDiagram();
-        opts.call("POST", "/layout", body).then(() => { if (!S.g.can_edit) refresh(true); })
-          .catch((e) => { toast(e.message, "bad"); refresh(true); });
+        send("POST", "/layout", body).catch((e) => { toast(e.message, "bad"); refresh(true); });
       }
     }
     function saveBoxPos(D) {
@@ -1761,12 +1786,13 @@
           <div class="tv-list">${oItems}</div>${others.length > 60 ? `<p class="tv-note">${others.length - 60} more — filter to find them.</p>` : ""}</div>
         ${S.g.hidden.length ? `<div class="sec"><h4>Hidden from the diagram <span class="c">${S.g.hidden.length}</span></h4><div class="tv-list">${hItems}</div></div>` : ""}
         ${S.g.dismissed ? `<div class="sec"><p class="tv-note">${S.g.dismissed} dismissed suggestion${S.g.dismissed > 1 ? "s" : ""}. <button type="button" class="tv-btn sm" data-r="undismiss" ${dis}>Bring them back</button></p></div>` : ""}
-        ${S.g.orphan_links ? `<div class="sec"><p class="tv-note">${S.g.orphan_links} saved connection${S.g.orphan_links > 1 ? "s point" : " points"} at devices that are not on the diagram right now.</p></div>` : ""}`;
+        ${S.g.orphan_links ? `<div class="sec"><p class="tv-note">${S.g.orphan_links} saved connection${S.g.orphan_links > 1 ? "s point" : " points"} at devices that are not on the diagram right now (forgotten, pruned or hidden). They come back if the device does. <button type="button" class="tv-btn sm danger" data-r="orphans" ${dis}>Remove the ones whose device is gone</button></p></div>` : ""}`;
     }
     function overviewPanel() {
       const n = S.g.nodes, bad = n.filter((x) => x.state === "offline" || (x.problems || []).length || (x.inferred && x.inferred.state === "suspect"));
       const confirmed = S.g.links.filter((L) => L.confirmed).length;
-      return `<div class="hd">${ico("info", 28)}<div><h3>${esc((S.g.site && S.g.site.name) || "This site")}</h3><p>${S.g.groups.length} group${S.g.groups.length === 1 ? "" : "s"} · ${n.length} items · ${confirmed} connection${confirmed === 1 ? "" : "s"}</p></div></div>
+      return `${S.g.store_error ? `<div class="sec"><div class="tv-sug" style="border-color:rgba(251,113,133,.5)"><div class="t">⚠ The diagram file could not be read</div><p>${esc(S.g.store_error)}. Nothing is saved until it is fixed on the Pi.</p></div></div>` : ""}
+        <div class="hd">${ico("info", 28)}<div><h3>${esc((S.g.site && S.g.site.name) || "This site")}</h3><p>${S.g.groups.length} group${S.g.groups.length === 1 ? "" : "s"} · ${n.length} items · ${confirmed} connection${confirmed === 1 ? "" : "s"}</p></div></div>
         ${bad.length ? `<div class="sec"><h4>Needs a look <span class="c">${bad.length}</span></h4><div class="tv-list">${bad.slice(0, 12).map((x) => nodeItem(x)).join("")}</div></div>` : `<div class="sec"><p class="tv-note">✓ Everything that is monitored answers.</p></div>`}
         ${S.g.suggestions.length || (S.idx.byGroup["~"] || []).length ? `<div class="sec"><button type="button" class="tv-btn ok" data-a="review">${ico("review")} Review ${S.g.suggestions.length} suggestion${S.g.suggestions.length === 1 ? "" : "s"} · ${(S.idx.byGroup["~"] || []).length} without a group</button></div>` : ""}
         <div class="sec"><h4>How it works</h4><p class="tv-note">
@@ -1875,9 +1901,10 @@
         case "open": return opts.openDevice && opts.openDevice(b.dataset.id || (n && n.id));
         case "edit": return needEdit(() => equipmentDialog(n));
         case "connect":
-          if (S.view === "diagram") { S.connect = { from: n.id }; render(); toast("Now click the other end — Esc cancels"); }
-          else needEdit(() => linkDialog({ a: n.id }));
-          return;
+          return needEdit(() => {
+            if (S.view === "diagram") { S.connect = { from: n.id }; render(); toast("Now click the other end — Esc cancels"); }
+            else linkDialog({ a: n.id });
+          });
         case "show-map": { const id = (n || gr).id; setView("map"); return focus(id); }
         case "show-diagram": { const id = (n || gr).id; setView("diagram"); return focus(id); }
         case "hide": return needEdit(() => act("POST", `/nodes/${enc(n.id)}`, { hidden: true }, { okMsg: `${n.name} hidden — bring it back from Review` }).then(() => { S.sel = null; render(); }, quiet));
@@ -1938,6 +1965,13 @@
       if (r === "show") return needEdit(() => act("POST", `/nodes/${enc(id)}`, { show: true }, { okMsg: `${(S.g.others.find((o) => o.id === id) || {}).name || "Device"} added — it waits under “Not in a group yet”` }).catch(quiet));
       if (r === "unhide") return needEdit(() => act("POST", `/nodes/${enc(id)}`, { hidden: false }, { okMsg: "Back on the diagram" }).catch(quiet));
       if (r === "undismiss") return needEdit(() => act("POST", "/dismissed/clear", {}, { okMsg: "Dismissed suggestions are back" }).catch(quiet));
+      if (r === "orphans") {
+        if (!(await confirmBox("Remove connections to devices that are gone?", "Saved connections and diagram places of devices that no longer exist on this site are deleted. Hidden devices keep theirs.", { danger: true, ok: "Remove" }))) return;
+        return needEdit(() => act("POST", "/orphans/clear", {}).then((res) => {
+          const x = res.result || {};
+          toast(`${x.links_removed || 0} connection${x.links_removed === 1 ? "" : "s"} removed`, "ok");
+        }, quiet));
+      }
     }
 
     // ---- dialogs ---------------------------------------------------------------------------------
@@ -2147,7 +2181,7 @@
           const members = [...f.querySelectorAll("[name=m]:checked")].map((c) => c.value);
           if (!members.length) throw new Error("Tick at least one device");
           const res = await send("POST", `/suggestions/${enc(s.id)}`, { action: "insert", name: f.name.value, kind: f.kind.value,
-            group: f.group.value === "~" ? "" : f.group.value, ports: f.ports.value, members });
+            group: f.group.value, ports: f.ports.value, members });
           S.sel = { t: "node", id: res.result.id };
           S.panel = null;
           render();
@@ -2461,10 +2495,11 @@
       tv.classList.toggle("side-off", !S.sel && S.panel !== "review" && window.innerWidth <= 1100);
       if (S.view === "map" && MAP) MAP.invalidateSize();
     };
-    const onVis = () => { if (!document.hidden && S.g && now() - (S.g.ts || 0) > 20) refresh(true); };
+    const onVis = () => { if (showing() && S.g && now() - (S.g.ts || 0) > 20) refresh(true); };
     window.addEventListener("resize", onResize);
     document.addEventListener("visibilitychange", onVis);
-    S.timer = setInterval(() => { if (!document.hidden && !S.drag && !dialogs.size && !S.connect) refresh(true); }, opts.refreshMs || 30000);
+    const showing = () => !document.hidden && root.isConnected && root.offsetParent !== null;
+    S.timer = setInterval(() => { if (showing() && !S.drag && !dialogs.size && !S.connect) refresh(true); }, opts.refreshMs || 30000);
     render();
     refresh();
     return {

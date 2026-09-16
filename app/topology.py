@@ -25,6 +25,7 @@ registered on an access point. Sharing a subnet, a tower or a GPS spot proves
 nothing and never creates a link. Hand-added equipment is "not monitored" —
 never "offline" because it cannot answer a ping.
 """
+import copy
 import hashlib
 import ipaddress
 import json
@@ -117,6 +118,11 @@ class TopologyError(ValueError):
         self.status = status
 
 
+def _s(v):
+    """A request field that must be a string; anything else counts as empty."""
+    return v if isinstance(v, str) else ""
+
+
 def _text(v, n):
     return _TEXT_RE.sub(" ", str(v if v is not None else "")).strip()[:n]
 
@@ -204,18 +210,34 @@ class Store:
         self.icon_dir = icon_dir
         self.lock = threading.RLock()
         self._doc = None
+        self.broken = ""          # why the file could not be read — nothing is saved over it then
 
     def doc(self):
         with self.lock:
             if self._doc is None:
+                self.broken = ""
                 try:
                     with open(self.path) as f:
                         self._doc = normalize(json.load(f))
-                except (OSError, ValueError):
+                except FileNotFoundError:
+                    self._doc = blank()
+                except ValueError:
+                    # A damaged file is kept aside, never silently replaced by an empty diagram.
+                    bad = f"{self.path}.bad-{int(time.time())}"
+                    try:
+                        os.replace(self.path, bad)
+                        print(f"topology: {self.path} was unreadable — kept as {bad}", flush=True)
+                    except OSError as e:
+                        self.broken = f"topology.json is damaged and could not be set aside ({e})"
+                    self._doc = blank()
+                except OSError as e:
+                    self.broken = f"topology.json could not be read ({e})"
                     self._doc = blank()
             return self._doc
 
     def _write(self):
+        if self.broken:
+            raise TopologyError(f"Not saved: {self.broken}", 503)
         d = self._doc
         d["rev"] = int(d.get("rev") or 0) + 1
         d["updated_ts"] = int(time.time())
@@ -226,14 +248,20 @@ class Store:
         os.replace(tmp, self.path)
 
     def mutate(self, fn, *a, **kw):
-        """Run fn(doc, …) under the lock and persist when it returns without raising.
-        A function that returns the sentinel NOCHANGE skips the write."""
+        """Run fn(doc, …) under the lock on a COPY and keep it only when fn returns
+        without raising — an edit that fails halfway leaves nothing behind. A
+        function that returns the sentinel NOCHANGE skips the write."""
         with self.lock:
-            d = self.doc()
-            out = fn(d, *a, **kw)
+            work = copy.deepcopy(self.doc())
+            out = fn(work, *a, **kw)
             if out is NOCHANGE:
                 return None
-            self._write()
+            previous, self._doc = self._doc, work
+            try:
+                self._write()
+            except Exception:
+                self._doc = previous
+                raise
             return out
 
     def replace(self, raw):
@@ -263,7 +291,7 @@ def create_group(d, body):
         raise TopologyError("Give the group a name, e.g. “Tower A” or “Farm office”")
     if len(d["groups"]) >= MAX_GROUPS:
         raise TopologyError(f"This site already has {MAX_GROUPS} groups")
-    kind = body.get("kind") if body.get("kind") in GROUP_KINDS else "tower"
+    kind = _s(body.get("kind")) if _s(body.get("kind")) in GROUP_KINDS else "tower"
     lat, lon = _latlon(body)
     gid = _new_id("g", d["groups"])
     g = {"id": gid, "name": name, "kind": kind,
@@ -287,7 +315,7 @@ def update_group(d, gid, body):
         if not name:
             raise TopologyError("A group needs a name")
         g["name"] = name
-    if "kind" in body and body.get("kind") in GROUP_KINDS:
+    if _s(body.get("kind")) in GROUP_KINDS:
         g["kind"] = body["kind"]
     if "description" in body:
         g["description"] = _multiline(body.get("description"), 600)
@@ -330,7 +358,7 @@ def _equipment_fields(e, body, creating):
             raise TopologyError("Give the equipment a name, e.g. “Gate PoE switch”")
         e["name"] = name
     if creating or "kind" in body:
-        kind = body.get("kind") or "unmanaged-switch"
+        kind = _s(body.get("kind")) or "unmanaged-switch"
         if kind not in KIND or kind == "unknown":
             raise TopologyError("Pick what kind of equipment this is")
         e["kind"] = kind
@@ -370,7 +398,7 @@ def create_equipment(d, body):
     _equipment_fields(e, body, creating=True)
     d["equipment"][vid] = e
     meta = d["nodes"].setdefault(vid, {})
-    gid = body.get("group")
+    gid = _s(body.get("group"))
     if gid and gid != UNASSIGNED:
         if gid not in d["groups"]:
             raise TopologyError("That group no longer exists", 404)
@@ -404,7 +432,8 @@ def delete_equipment(d, vid):
 # ---- per-node layout + overrides -------------------------------------------------
 def _set_group(d, nid, gid, pos=None):
     meta = d["nodes"].setdefault(nid, {})
-    gid = None if gid in (None, "", UNASSIGNED) else gid
+    gid = _s(gid)
+    gid = None if gid in ("", UNASSIGNED) else gid
     if gid and gid not in d["groups"]:
         raise TopologyError("That group no longer exists", 404)
     if meta.get("group") != gid:
@@ -449,7 +478,7 @@ def set_node(d, nid, body, known):
         else:
             meta.pop("show", None)
     if "kind" in body:
-        k = body.get("kind") or ""
+        k = _s(body.get("kind"))
         if k and k not in KIND:
             raise TopologyError("Unknown equipment type")
         if k:
@@ -457,7 +486,7 @@ def set_node(d, nid, body, known):
         else:
             meta.pop("kind", None)
     if "icon" in body:
-        iid = body.get("icon") or ""
+        iid = _s(body.get("icon"))
         if iid and iid not in d["icons"]:
             raise TopologyError("That icon no longer exists", 404)
         if iid:
@@ -471,11 +500,13 @@ def set_layout(d, body, known):
     """Batch of drag results / lock toggles: {nodes:{id:{pos,group,locked}},
     groups:{gid:{pos,locked,collapsed}}, unassigned:{pos}, lock_all}."""
     n = 0
-    for nid, v in (body.get("nodes") or {}).items():
+    nodes = body.get("nodes") if isinstance(body.get("nodes"), dict) else {}
+    groups = body.get("groups") if isinstance(body.get("groups"), dict) else {}
+    for nid, v in nodes.items():
         if nid in known and isinstance(v, dict):
             set_node(d, nid, {k: v[k] for k in ("pos", "group", "locked") if k in v}, known)
             n += 1
-    for gid, v in (body.get("groups") or {}).items():
+    for gid, v in groups.items():
         if gid in d["groups"] and isinstance(v, dict):
             update_group(d, gid, {k: v[k] for k in ("pos", "locked", "collapsed") if k in v})
             n += 1
@@ -511,7 +542,7 @@ def _node_name(nid, d, devices):
 
 def create_link(d, body, devices, radios=()):
     """devices: {key: device record} for every device that exists right now."""
-    a, b = str(body.get("a") or ""), str(body.get("b") or "")
+    a, b = _s(body.get("a")), _s(body.get("b"))
     known = set(devices) | set(d["equipment"])
     if not a or not b:
         raise TopologyError("Pick the two ends of the connection")
@@ -520,7 +551,7 @@ def create_link(d, body, devices, radios=()):
     for end in (a, b):
         if end not in known:
             raise TopologyError("One end of that connection no longer exists", 404)
-    medium = body.get("medium") or "ethernet"
+    medium = _s(body.get("medium")) or "ethernet"
     if medium not in MEDIA:
         raise TopologyError("Pick Ethernet, fibre or wireless")
     if medium == "wireless":
@@ -544,7 +575,7 @@ def create_link(d, body, devices, radios=()):
     lid = _new_id("l", d["links"])
     L = {"id": lid, "a": a, "a_port": a_port, "b": b, "b_port": b_port, "medium": medium,
          "label": _text(body.get("label"), 60), "notes": _multiline(body.get("notes"), 500),
-         "source": "discovered" if body.get("source") == "discovered" else "manual",
+         "source": "discovered" if _s(body.get("source")) == "discovered" else "manual",
          "evidence": _text(body.get("evidence"), 300), "created_ts": int(time.time())}
     d["links"][lid] = L
     for end in (a, b):          # a device you wire up is on the diagram from now on
@@ -558,7 +589,7 @@ def update_link(d, lid, body, devices, radios=()):
     if not L:
         raise TopologyError("That connection no longer exists", 404)
     if "medium" in body:
-        medium = body.get("medium")
+        medium = _s(body.get("medium"))
         if medium not in MEDIA:
             raise TopologyError("Pick Ethernet, fibre or wireless")
         if medium == "wireless":
@@ -608,14 +639,19 @@ def _sid(*parts):
     return "s-" + hashlib.sha1("|".join(str(p) for p in parts).encode()).hexdigest()[:12]
 
 
-def _connected_via_passive(d, a, b, depth=4):
-    """True when a confirmed path joins a and b directly or only through hand-added
-    equipment (an unmanaged switch has no MAC, so the switch table sees the
-    camera behind it as if it were plugged straight in)."""
+def _link_adj(d):
     adj = {}
     for L in d["links"].values():
         adj.setdefault(L["a"], set()).add(L["b"])
         adj.setdefault(L["b"], set()).add(L["a"])
+    return adj
+
+
+def _connected_via_passive(d, a, b, depth=4, adj=None):
+    """True when a confirmed path joins a and b directly or only through hand-added
+    equipment (an unmanaged switch has no MAC, so the switch table sees the
+    camera behind it as if it were plugged straight in)."""
+    adj = adj if adj is not None else _link_adj(d)
     seen, frontier = {a}, [a]
     for _ in range(depth):
         nxt = []
@@ -659,6 +695,7 @@ def suggestions(d, devices, eligible, switches=None, routers=None, radios=None, 
         out.append(s)
 
     kind_of = {k: device_kind(dev, d["nodes"].get(k), radios or {}) for k, dev in devices.items()}
+    adj = _link_adj(d)
     table = {"switch": "switch address table", "router": "router bridge table"}
 
     def wired_from(unit_key, unit_kind, ts, port_rows):
@@ -679,7 +716,7 @@ def suggestions(d, devices, eligible, switches=None, routers=None, radios=None, 
             network = [k for k in inside if kind_of.get(k) in ("radio", "ptp", "router", "wifi-router", "switch")]
             if len(macs) == 1 or (len(network) == 1 and len(macs) < UPLINK_MACS):
                 k = known[0] if len(macs) == 1 else network[0]
-                if k not in eligible or _connected_via_passive(d, unit_key, k):
+                if k not in eligible or _connected_via_passive(d, unit_key, k, adj=adj):
                     continue
                 why = (f"{device_title(devices[k])} is the only device {unit_name} sees on {port_txt}"
                        if len(macs) == 1 else
@@ -689,7 +726,7 @@ def suggestions(d, devices, eligible, switches=None, routers=None, radios=None, 
                      "a": unit_key, "a_port": str(port_id), "b": k, "b_port": "",
                      "source": unit_kind, "ts": ts, "evidence": f"{why} ({table[unit_kind]})"})
             elif inside:
-                if all(_connected_via_passive(d, unit_key, k) for k in inside):
+                if all(_connected_via_passive(d, unit_key, k, adj=adj) for k in inside):
                     continue
                 add({"id": _sid("shared", unit_key, port_id, ",".join(sorted(inside))), "type": "shared_port",
                      "medium": "ethernet", "a": unit_key, "a_port": str(port_id), "b": "", "b_port": "",
@@ -772,12 +809,17 @@ def insert_passive(d, sug, body, devices):
     passive box) it implies: unit port → new equipment → each chosen device."""
     if sug.get("type") != "shared_port":
         raise TopologyError("Only a shared-port suggestion can be resolved this way")
-    members = [k for k in (body.get("members") or sug.get("members") or []) if k in (sug.get("members") or [])]
+    asked = body.get("members") if isinstance(body.get("members"), list) else sug.get("members") or []
+    members = [k for k in asked if isinstance(k, str) and k in (sug.get("members") or [])]
     if not members:
         raise TopologyError("Tick at least one device that hangs off that port")
     unit = devices.get(sug["a"]) or {}
-    kind = body.get("kind") if body.get("kind") in KIND and body.get("kind") != "unknown" else "unmanaged-switch"
-    group = body.get("group") or (d["nodes"].get(sug["a"]) or {}).get("group")
+    kind = _s(body.get("kind")) if _s(body.get("kind")) in KIND and body.get("kind") != "unknown" else "unmanaged-switch"
+    if "group" in body:
+        group = _s(body.get("group"))
+        group = None if group in ("", UNASSIGNED) else group
+    else:
+        group = (d["nodes"].get(sug["a"]) or {}).get("group")
     e = create_equipment(d, {
         "name": _text(body.get("name"), 80)
         or f"{KIND[kind]['label']} on {device_title(unit)} port {str(sug.get('a_port')).split('/')[-1]}",
@@ -820,6 +862,20 @@ def forget(d, keys):
     for lid in gone:
         d["links"].pop(lid, None)
     return {"keys": sorted(keys), "links_removed": len(gone)} if (changed or gone) else NOCHANGE
+
+
+def clear_orphans(d, known):
+    """Remove connections and diagram settings that point at devices which are not
+    on the site any more (a bulk prune keeps them, in case the device returns)."""
+    gone_links = [lid for lid, L in d["links"].items() if L.get("a") not in known or L.get("b") not in known]
+    for lid in gone_links:
+        d["links"].pop(lid, None)
+    gone_nodes = [k for k in d["nodes"] if k not in known]
+    for k in gone_nodes:
+        d["nodes"].pop(k, None)
+    if not gone_links and not gone_nodes:
+        return NOCHANGE
+    return {"links_removed": len(gone_links), "nodes_removed": len(gone_nodes)}
 
 
 # ---- device knowledge ---------------------------------------------------------------------

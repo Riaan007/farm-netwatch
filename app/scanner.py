@@ -193,7 +193,7 @@ class Scanner:
         # back the host name it reads so radios get a display name for free.
         radiomon.monitor.on_identity = self.set_device_name
         # The network diagram follows a device that is re-keyed (IP -> MAC) or
-        # forgotten/pruned (topology_routes sets these; on_forget gets a list).
+        # forgotten (topology_routes sets these; on_forget gets a list of keys).
         self.on_rekey = None
         self.on_forget = None
         self._wake = threading.Event()
@@ -1414,7 +1414,6 @@ class Scanner:
         if victims:
             self.save_registry()
             self._save_state()
-            self._forgotten(victims)
             if monitors:        # like Forget: no orphaned (paused) monitors left in Kuma
                 threading.Thread(target=self._drop_kuma_monitors, args=(monitors,),
                                  daemon=True).start()
