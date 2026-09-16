@@ -146,7 +146,7 @@
                 <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-amber-400/10 blur-2xl"></div>
                 <div class="flex items-center gap-2 text-slate-400">
                     <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4a2 2 0 01-.6-1.4V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Watched down</p>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Monitored down</p>
                 </div>
                 <p id="stat-watched" class="text-3xl font-bold tabular-nums mt-1.5 text-amber-400">0</p>
             </div>
@@ -541,7 +541,7 @@
         }
         function latencyChart(points){
             if (!points.length || !points.some(p => p.rtt != null || p.up != null))
-                return '<p class="text-xs text-slate-600">No samples yet — watched/named devices are pinged every 60s.</p>';
+                return '<p class="text-xs text-slate-600">No samples yet — monitored and named devices are pinged every 60s.</p>';
             const W = 320, H = 64, PAD = 4;
             const rtts = points.filter(p => p.rtt != null).map(p => p.rtt);
             const maxR = Math.max(10, ...rtts), n = points.length;

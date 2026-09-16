@@ -179,6 +179,7 @@
   TABS_IMPL.overview = {
     enter(s, el) {
       el.innerHTML = `<div class="cols"><div>
+          <section class="panel"><div class="phd"><h2>${icon("bell")} Monitored devices <small id="so-mon-n"></small></h2><div class="row"><button class="btn sm" id="so-mon-pick">Choose…</button><a class="btn sm ghost" href="#/site/${enc(s.id)}/devices?list=monitored">List</a></div></div><div id="so-mon"></div></section>
           <section class="panel"><div class="phd"><h2>Needs attention</h2></div><div id="so-att"></div></section>
           <section class="panel"><div class="phd"><h2>Devices by type</h2><a class="btn sm ghost" href="#/site/${enc(s.id)}/devices">All devices</a></div><div class="pbd" id="so-types"></div></section>
           <section class="panel"><div class="phd"><h2>Uptime Kuma</h2>${s.links && s.links.kuma ? `<a class="btn sm ghost" href="${esc(s.links.kuma)}" target="_blank" rel="noopener">Open ${icon("ext")}</a>` : ""}</div><div id="so-kuma"><div class="pbd note">Loading…</div></div></section>
@@ -187,6 +188,8 @@
           <section class="panel"><div class="phd"><h2>Pi health</h2><a class="btn sm ghost" href="#/site/${enc(s.id)}/health">Details</a></div><div class="pbd" id="so-pi"><div class="skel" style="height:70px"></div></div></section>
           <section class="panel"><div class="phd"><h2>Recent changes</h2><a class="btn sm ghost" href="#/site/${enc(s.id)}/history">History</a></div><div id="so-ev"><div class="pbd note">Loading…</div></div></section>
         </div></div>`;
+      $("#so-mon-pick").onclick = () => CC.openMonitorPicker(s.id);
+      $("#so-mon").onclick = (e) => { const r = e.target.closest("[data-key]"); if (r) CC.openDevice(s.id, r.dataset.key); const b = e.target.closest("[data-preset]"); if (b) CC.openMonitorPicker(s.id, { preset: (S.devices[s.id] || []).filter((d) => CC.isInfra(d) && CC.devState(d) !== "quiet").map((d) => d.key) }); };
       this.update(s, el);
       this.fetch(s);
     },
@@ -202,6 +205,16 @@
       if (!s || !$("#so-att")) return;
       $("#so-att").innerHTML = CC.issueList(CC.siteIssues(s), { showSite: false });
       const devs = S.devices[s.id];
+      const mon = (devs || []).filter((d) => d.watch);
+      const down = mon.filter((d) => !d.online).sort((a, b) => (b.last_seen || 0) - (a.last_seen || 0));
+      const key = (devs || []).filter((d) => CC.isInfra(d) && CC.devState(d) !== "quiet" && !d.watch).length;
+      $("#so-mon-n").textContent = mon.length ? `${mon.length - down.length}/${mon.length} online` : "";
+      $("#so-mon").innerHTML = !devs ? `<div class="pbd"><div class="skel" style="height:60px"></div></div>`
+        : !mon.length ? `<div class="empty"><b>Nothing monitored yet</b>Choose the equipment you must see online or offline — the hub then lists it first and alerts you when one drops.${key ? `<div style="margin-top:12px"><button class="btn pri" data-preset>Start with the ${key} cameras, network &amp; power devices</button></div>` : ""}</div>`
+        : !down.length ? `<div class="empty"><b class="ok">All ${CC.plural(mon.length, "monitored device")} online</b>${mon.filter((d) => CC.isInfra(d)).length} cameras, recorders and network devices among them.</div>`
+        : `<ul class="alist">${down.slice(0, 6).map((d) => `<li data-key="${esc(d.key)}" style="cursor:pointer"><span class="sev bad">↓</span><div style="min-width:0"><div class="t">${esc(CC.devName(d))}</div><div class="d">${CC.cat(d).icon} ${esc(CC.cat(d).label)} · <span class="mono">${esc(d.ip || "no IP")}</span> · last seen ${CC.ago(d.last_seen)}</div></div><span class="b bad nodot">${esc(CC.downFor(d))}</span></li>`).join("")}</ul>
+          ${down.length > 6 ? `<a class="more" href="#/site/${enc(s.id)}/devices?list=monitored&state=offline" style="text-align:center;text-decoration:none">All ${down.length} offline</a>` : ""}
+          <div class="pbd note" style="border-top:1px solid var(--line)">${mon.length - down.length} other monitored device${mon.length - down.length === 1 ? " is" : "s are"} online.</div>`;
       $("#so-types").innerHTML = !devs ? `<div class="skel" style="height:60px"></div>` : `<div class="stats">${CC.GROUPS.map(([g, label]) => {
         const ds = devs.filter((d) => CC.cat(d).group === g && CC.devState(d) !== "quiet");
         if (!ds.length) return "";
@@ -257,7 +270,7 @@
 
   TABS_IMPL.devices = {
     enter(s, el) {
-      el.innerHTML = `<section class="panel" id="sd-panel"></section><p class="note">Names, categories, watch flags and saved logins are edited on the <a href="${esc((s.links && s.links.netwatch) || "#")}" target="_blank" rel="noopener">site's own Netwatch page</a>.</p>`;
+      el.innerHTML = `<section class="panel" id="sd-panel"></section><p class="note">Tick devices to monitor them (or use “Choose monitored”). Names, categories and saved logins are edited on the <a href="${esc((s.links && s.links.netwatch) || "#")}" target="_blank" rel="noopener">site's own Netwatch page</a>.</p>`;
       CC.deviceTable.mount($("#sd-panel"), { siteId: s.id });
     },
     update(s) { const el = $("#sd-panel"); if (el && el.__st) CC.deviceTable.draw(el, el.__st, s.id); },
@@ -505,8 +518,10 @@
     const d = (S.devices[siteId] || []).find((x) => x.key === key);
     if (!s || !d) return;
     const c = CC.cat(d);
-    const dlg = CC.dialog(`<div class="dhd"><div style="min-width:0"><div class="eyebrow">${c.icon} ${esc(c.label)} · ${esc(s.name)}</div><h2>${esc(CC.devName(d))}</h2><p class="row" style="gap:6px;margin-top:6px">${CC.devStateBadge(d)}${d.watch ? `<span class="b info nodot">🔔 Watched</span>` : ""}${d.ip_conflict ? `<span class="b warn nodot">IP conflict</span>` : ""}${d.has_credentials ? `<span class="b unk nodot">🔑 Login saved</span>` : ""}${CC.isMikrotik(d) ? `<span class="b vio nodot">MikroTik</span>` : ""}</p></div><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div>
+    const dlg = CC.dialog(`<div class="dhd"><div style="min-width:0"><div class="eyebrow">${c.icon} ${esc(c.label)} · ${esc(s.name)}</div><h2>${esc(CC.devName(d))}</h2><p class="row" style="gap:6px;margin-top:6px">${CC.devStateBadge(d)}<span class="b info nodot" id="dd-mon-badge" ${d.watch ? "" : "hidden"}>🔔 Monitored</span>${d.ip_conflict ? `<span class="b warn nodot">IP conflict</span>` : ""}${d.has_credentials ? `<span class="b unk nodot">🔑 Login saved</span>` : ""}${CC.isMikrotik(d) ? `<span class="b vio nodot">MikroTik</span>` : ""}</p></div><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div>
       <div class="dbd">
+        <label class="monsw ${d.watch ? "on" : ""}" id="dd-mon-row"><input type="checkbox" id="dd-mon" ${d.watch ? "checked" : ""}><span class="sw" aria-hidden="true"></span>
+          <span><b>🔔 Monitored</b><small id="dd-mon-sub"></small></span></label>
         <div class="sect"><h3>Identity</h3><dl class="kv">
           <dt>IP</dt><dd class="mono">${esc(d.ip || "—")}</dd><dt>MAC</dt><dd class="mono">${esc(d.mac || "—")}</dd>
           ${d.device_name ? `<dt>Own name</dt><dd>${esc(d.device_name)} <span class="note">(${d.device_name_src === "nvr" ? "from the NVR" : "set on the device"})</span></dd>` : ""}<dt>Vendor</dt><dd>${esc(d.vendor || "—")}</dd>${d.model ? `<dt>Model</dt><dd>${esc(d.model)}</dd>` : ""}${d.firmware ? `<dt>Firmware</dt><dd class="mono">${esc(d.firmware)}</dd>` : ""}${d.serial ? `<dt>Serial</dt><dd class="mono">${esc(d.serial)}</dd>` : ""}
@@ -529,6 +544,29 @@
       <div class="dft">${s.links && s.links.netwatch ? `<a class="btn" href="${esc(s.links.netwatch)}" target="_blank" rel="noopener">Edit on site Netwatch ${icon("ext")}</a>` : ""}<a class="btn" href="#/site/${enc(s.id)}/history?q=${enc(d.ip || d.mac || "")}" data-close>${icon("history")} History</a><button class="btn pri" data-close>Close</button></div>`, { cls: "drawer" });
 
     if (CC.switchDrawer) CC.switchDrawer(dlg, siteId, d);
+
+    // Monitored switch: the site's own list (hub key) — the hub alerts on it, Kuma follows it there.
+    const drawMon = () => {
+      $("#dd-mon-row", dlg).classList.toggle("on", !!d.watch);
+      $("#dd-mon", dlg).checked = !!d.watch;
+      $("#dd-mon-badge", dlg).hidden = !d.watch;
+      $("#dd-mon-sub", dlg).textContent = d.watch
+        ? `Listed first with its online/offline state; the hub alerts when it goes offline or comes back.${d.has_kuma ? " Uptime Kuma pings it every minute." : ""}`
+        : "Listed under Other devices, and the hub does not alert on it. Switch on to watch it.";
+    };
+    drawMon();
+    $("#dd-mon", dlg).onchange = async (e) => {
+      const on = e.target.checked, row = $("#dd-mon-row", dlg);
+      e.target.disabled = true; row.classList.add("busy");
+      try {
+        const res = await CC.setMonitored(siteId, on ? [key] : [], on ? [] : [key]);
+        if ((res.failed || []).length || (res.unknown || []).length) throw new Error("the site did not accept the change");
+        d.watch = on;
+        CC.toast(`${CC.devName(d)} ${on ? "is now monitored" : "is no longer monitored"}`, "ok");
+      } catch (err) { CC.toast(`Not changed: ${err.message}`, "bad"); }
+      e.target.disabled = false; row.classList.remove("busy");
+      drawMon();
+    };
 
     const drawLoc = () => {
       const g = d.geo;
@@ -652,7 +690,7 @@
   };
 
   function latencyChart(points) {
-    if (!points.length) return `<p class="note" style="margin:0">No samples yet — watched and named devices are pinged every minute.</p>`;
+    if (!points.length) return `<p class="note" style="margin:0">No samples yet — monitored and named devices are pinged every minute.</p>`;
     const W = 560, H = 130, pad = 4;
     const t0 = points[0].ts, t1 = points[points.length - 1].ts || t0 + 1;
     const rtts = points.map((p) => p.rtt).filter((v) => v != null);

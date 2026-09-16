@@ -240,6 +240,39 @@ table.t .sub { font-size: 12px; color: var(--dim); }
 .more { display: block; width: 100%; padding: 10px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--cyan2); font-weight: 600; cursor: pointer; }
 .more:hover { background: var(--panel); }
 
+/* ---- device lists: Monitored · Other devices · All --------------------------- */
+.listbar { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; padding: 14px 18px 2px; }
+.listbar #dv-pick { margin-left: auto; }
+.lists { display: flex; gap: 8px; flex-wrap: wrap; }
+.lists button { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 12px; min-width: 170px; padding: 8px 13px 9px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); text-align: left; cursor: pointer; }
+.lists button:hover { border-color: var(--line2); color: var(--ink); }
+.lists button.on { border-color: rgba(34, 211, 238, .6); background: var(--info-bg); color: var(--ink); box-shadow: 0 0 0 1px rgba(34, 211, 238, .18) inset; }
+.lists button.bad { border-color: rgba(251, 113, 133, .55); }
+.lists button.bad.on { background: rgba(127, 29, 29, .22); box-shadow: 0 0 0 1px rgba(251, 113, 133, .28) inset; }
+.lists b { font-size: 13.5px; white-space: nowrap; }
+.lists .v { font-size: 18px; font-weight: 750; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.lists .v i { font-style: normal; font-size: 13px; color: var(--dim); }
+.lists small { grid-column: 1 / -1; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.bulk { position: sticky; top: 52px; z-index: 5; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 18px; background: #0c1a2c; border-bottom: 1px solid rgba(34, 211, 238, .35); }
+.bulk b { margin-right: 4px; font-size: 13px; }
+table.t th.ck, table.t td.ck { width: 42px; padding-right: 0; cursor: default; }
+table.t .ck input { width: 17px; height: 17px; accent-color: var(--cyan); cursor: pointer; vertical-align: middle; }
+table.t tbody tr.sel td { background: rgba(34, 211, 238, .08); }
+table.t tbody tr.down td:nth-child(2) { box-shadow: inset 3px 0 0 var(--bad); }
+.bar.bad i { background: linear-gradient(90deg, var(--bad), var(--warn)); }
+/* the Monitored switch in the device drawer */
+.monsw { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line2); background: rgba(2, 6, 23, .35); cursor: pointer; }
+.monsw.on { border-color: rgba(34, 211, 238, .45); background: var(--info-bg); }
+.monsw.busy { opacity: .6; cursor: progress; }
+.monsw input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.monsw .sw { width: 42px; height: 24px; border-radius: 99px; background: rgba(148, 163, 184, .3); position: relative; transition: background .15s; }
+.monsw .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink); transition: transform .15s; }
+.monsw input:checked + .sw { background: #0891b2; }
+.monsw input:checked + .sw::after { transform: translateX(18px); }
+.monsw input:focus-visible + .sw { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.monsw b { display: block; font-size: 14px; }
+.monsw small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+
 /* ---- tabs ----------------------------------------------------------------- */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 0 0 16px; overflow-x: auto; }
 .tabs a { padding: 9px 13px; color: var(--muted); text-decoration: none; font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
@@ -438,6 +471,11 @@ pre.out { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(2
   .sites { grid-template-columns: 1fr; }
   table.t .hide-m { display: none; }
   .live span { display: none; }
+  .listbar { padding: 12px 14px 2px; }
+  .listbar #dv-pick { margin-left: 0; }
+  .lists { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+  .lists button { min-width: 150px; flex: none; }
+  .bulk { top: 48px; padding: 8px 14px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 

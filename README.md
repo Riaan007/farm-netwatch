@@ -31,7 +31,7 @@ device drops offline.
   LEDs, restart and config backups — ports the Pi or the router are on are always
   refused. Same view on the site's **Switches** page and the hub's site **Switches** tab.
 - **Per-device latency graph (Uptime-Kuma style)** — Netwatch samples each
-  **watched/named** device's latency every ~60s into a short-retention table, so the
+  **monitored/named** device's latency every ~60s into a short-retention table, so the
   hub's device row shows a smooth latency line + up/down bars with **30m / 1h / 12h /
   24h** ranges (replaces the old coarse uptime line and the standalone Kuma panel).
   Config: `scan.heartbeat_*`.
@@ -56,9 +56,12 @@ device drops offline.
   **Internet** badge (gateway / upstream / DNS) and a **Kuma ↗** link to the site's
   own Uptime Kuma.
 - **Offline alerts both ways (ntfy)** — the **hub** alerts (🔔 Alerts) when a farm
-  **site drops off** the hub (and recovers); each **site** alerts when its **VPN link
-  to the hub** goes down. Each is independently toggleable (hub: *Notify when a site
-  goes offline*; site Settings: *Alert when the hub link goes offline*).
+  **site drops off** the hub (and recovers) and when a **monitored device** goes
+  offline or comes back (one message per site, only after the site has missed it
+  `offline_after` scans in a row); each **site** alerts when its **VPN link to the
+  hub** goes down. Each is independently toggleable (hub: *Alert when a site goes
+  offline* / *Alert when a monitored device goes offline or comes back*; site
+  Settings: *Alert when the hub link drops*).
 - **Internet-uptime monitors (default)** — when Kuma is configured, Netwatch
   auto-creates **Gateway + 8.8.8.8 + 1.1.1.1** ping monitors and a **google.com DNS**
   monitor (tagged *Internet*), so you can tell apart "no link", "no upstream", and
@@ -106,12 +109,16 @@ device drops offline.
   camera, NVR, and router web UIs). Secrets are kept out of the polled device feed,
   obfuscated at rest, and masked in the UI with reveal/copy buttons. A 🔑 marks
   devices that have a saved login.
-- **Presence watch** — toggle 🔔 on any device (e.g. your phone) to get a push when
-  it goes **offline** *and* when it comes **back online**.
-- **Per-category alerts** — in Settings, choose per device type (camera, network,
-  printer, IoT, …) whether to alert on offline, offline+online, or not at all — so
-  important gear notifies while noisy IoT stays quiet. Precedence: a watched device
-  always alerts; otherwise the category rule applies; otherwise the global default.
+- **Monitored devices** — pick the equipment you must see online or offline
+  (**Choose monitored**, the 🔔 *Monitored* switch in a device window, or select several
+  devices and press *Monitor* / *Stop monitoring*). The device list opens on
+  **Monitored** — offline devices first, with how long they have been down — and
+  everything else sits under **Other devices** (plus **All**). A monitored device never
+  "goes quiet", is never pruned, counts as a site fault on the hub while it is down,
+  and the hub alerts when it drops or comes back. The same lists and switches are in
+  the hub's Control Center. Changing the list needs the Pi password (or the hub).
+  Upgrading: every device that already had an Uptime Kuma monitor becomes monitored,
+  once.
 - **Push alerts + remote control** — new-device/offline alerts via [ntfy](https://ntfy.sh),
   with a **Test** button to confirm delivery. You can also reply to the topic (or tap
   an alert's action buttons) to run `ping`, `port`, `tracert`, `quickscan`, or
@@ -269,8 +276,7 @@ buttons (Deep scan, Ping); with them off, alerts arrive without buttons.
   risky exposed ports (Telnet/FTP/…) · plus the existing new-device and "mystery"
   discovery flags. Fix problems on the network; Kuma handles uptime.
 
-Flag devices for Kuma one at a time (a device's **Monitor in Uptime Kuma** tick) or
-in bulk from **Settings → Integrations**: **Monitor all cameras / all identified**.
+Kuma follows the **Monitored** list: monitored devices get a ping monitor (see below).
 
 ## Uptime Kuma integration
 
@@ -296,21 +302,22 @@ To keep it running on every `up`, add `COMPOSE_PROFILES=kuma` to `.env`.
 **Auto-provisioning (per device you select).** Open `http://<pi>:3001` once to
 create the Kuma admin account. In Netwatch → Settings → **Integrations · Uptime
 Kuma**, set the base URL (`http://localhost:3001`), enter the Kuma admin
-**username + password**, and hit **Test**. Then open a device and tick
-**"Monitor in Uptime Kuma"**.
+**username + password**, and hit **Test**. From then on Kuma follows the
+**Monitored** list.
 
-Netwatch then **creates a Kuma ping monitor for you** (via Kuma's Socket.IO API)
-pointed at the device's IP, and stores the monitor ID. **Kuma pings the device
-directly every 60 s**, so you get a smooth graph and accurate uptime — Netwatch
-just keeps the monitor's IP in sync if the device's address changes, and deletes
-the monitor when you untick. (A *ping* monitor is used rather than a 30-min push,
-which would otherwise flap between scans.)
+Monitoring a device **creates a Kuma ping monitor for you** (via Kuma's Socket.IO
+API) pointed at the device's IP, and stores the monitor ID. **Kuma pings the device
+directly every 60 s**, so you get a smooth graph and accurate uptime — Netwatch just
+keeps the monitor's IP in sync if the device's address changes. (A *ping* monitor is
+used rather than a 30-min push, which would otherwise flap between scans.)
 
-Monitors are created **only for devices you tick or 🔔 watch** — never
-automatically during a scan. Watching a device creates its monitor (when the
-admin creds are set); un-watching removes it again *only* if the watch created
-it, so a monitor you ticked by hand stays. **Forgetting a device also deletes
-its auto-created monitor** — no orphans left alerting in Kuma. If you have
+Taking a device off the Monitored list **pauses** its monitor — no checks, no Kuma
+alerts, history kept — and monitoring it again resumes it. Kuma work runs in the
+background, and after each scan Netwatch retries any monitor that is out of step
+(e.g. Kuma was down), at most every 30 minutes per device. A monitor deleted by hand
+in Kuma is re-created the next time the device is monitored. **Forgetting or pruning
+a device deletes its monitor** — no orphans left in Kuma. A hand-made push-token
+monitor (the device window's *Manual / pull setup*) is left alone. If you have
 monitors left over from an older version, **Settings → "Fix monitors → ping
 (60s)"** converts them in place.
 
@@ -330,10 +337,12 @@ The `hub/` stack turns one machine (e.g. the Pi behind your DDNS name) into a
 and `http://<hub>:8091` opens the **Control Center** — one place for the whole
 fleet:
 
-- **Overview** — fleet KPIs, a card per site (state, online counts, key equipment,
-  24 h reachability, Kuma) and a *Needs attention* list worked out from live data.
-- **All devices** — every device across every site: search, filter by site / state /
-  type / MikroTik / watched, CSV export. IP search: `192.168.0.1` = that address
+- **Overview** — fleet KPIs (monitored online / offline first), a card per site (state,
+  monitored devices online, all devices, 24 h reachability, Kuma) and a *Needs
+  attention* list worked out from live data.
+- **Devices** — **Monitored** (offline first), **Other devices** and **All** across every
+  site: search, filter by site / state / type / MikroTik, CSV export, and tick rows to
+  **Monitor** / **Stop monitoring** them (per site: **Choose monitored**). IP search: `192.168.0.1` = that address
   only · `.31` = ends in .31 · `192.168.0.` = that subnet · `192.168.0.1*` = .1 and
   .10–.199 · `88.3` = 192.168.88.3 and .30–.39. Results come in address order.
   Devices not seen for 7+ days are "gone quiet" and hidden unless you ask for them,
@@ -343,7 +352,7 @@ fleet:
   IP), Switches (ports, PoE, traffic and faults of each Ubiquiti switch, with port and
   PoE control), Backups (restore, download, delete, backup key) and Remote access (device
   tunnels, SSH to the Pi) — plus SSH Pi, AI report, Wi-Fi Doctor and Pi password.
-- A **device drawer** — identity, 24 h/7 d/30 d uptime, ping chart, ping /
+- A **device drawer** — the *Monitored* switch, identity, 24 h/7 d/30 d uptime, ping chart, ping /
   connection test / traceroute / deep scan from the site Pi, and one-click tunnels.
 - **Backups**, **VPN & remote** (your phone/laptop profiles with QR, client
   isolation status, site tunnels) and **Settings** (new-site wizard, sites, hub
@@ -362,7 +371,7 @@ The browser needs internet for map tiles. For heavy commercial use Esri asks for
 ArcGIS Location Platform account.
 
 How a site's state is decided (the same rules drive every count on every page):
-*Offline* = the hub can't reach it; *Fault* = a watched device, Kuma monitor or the
+*Offline* = the hub can't reach it; *Fault* = a monitored device, Kuma monitor or the
 internet is down, or the Pi is critical; *Needs a look* = live IP conflict, Pi
 warning, Pi login/key problem, no backup in 26 h, stale device list or a degraded
 wireless link; otherwise *Healthy*. The previous card view stays at `/classic`

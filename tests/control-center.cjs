@@ -43,13 +43,18 @@ const QUIET = 7 * 86400;
   const sitesKpi = await kpi("sites online");
   sitesKpi === `${reach}/${enabled.length}` ? ok(`sites online ${sitesKpi}`) : fail(`sites online shows ${sitesKpi}, API says ${reach}/${enabled.length}`);
 
-  // KPI: devices online
-  let total = 0, online = 0, watchedDown = 0;
-  enabled.forEach((s) => { total += devs[s.id].length; online += devs[s.id].filter((d) => d.online).length; watchedDown += devs[s.id].filter((d) => d.watch && !d.online).length; });
-  const devKpi = await kpi("devices online");
-  devKpi === `${online}/${total}` ? ok(`devices online ${devKpi}`) : fail(`devices online shows ${devKpi}, API says ${online}/${total} (devices may have refreshed between reads)`);
-  const wd = await kpi("watched down");
-  wd === String(watchedDown) ? ok(`watched down ${wd}`) : fail(`watched down shows ${wd}, API says ${watchedDown}`);
+  // KPIs: monitored devices (the `watch` flag) and all devices
+  let total = 0, online = 0, mon = 0, monUp = 0;
+  enabled.forEach((s) => {
+    total += devs[s.id].length; online += devs[s.id].filter((d) => d.online).length;
+    mon += devs[s.id].filter((d) => d.watch).length; monUp += devs[s.id].filter((d) => d.watch && d.online).length;
+  });
+  const devKpi = await kpi("all devices online");
+  devKpi === `${online}/${total}` ? ok(`all devices online ${devKpi}`) : fail(`all devices online shows ${devKpi}, API says ${online}/${total} (devices may have refreshed between reads)`);
+  const monKpi = await kpi("monitored online");
+  monKpi === `${monUp}/${mon}` ? ok(`monitored online ${monKpi}`) : fail(`monitored online shows ${monKpi}, API says ${monUp}/${mon}`);
+  const md = await kpi("monitored offline");
+  md === String(mon - monUp) ? ok(`monitored offline ${md}`) : fail(`monitored offline shows ${md}, API says ${mon - monUp}`);
 
   // attention count in nav == attention list length
   const navCount = await page.$eval("#nav-att-count", (e) => (e.hidden ? 0 : +e.textContent));
@@ -65,7 +70,7 @@ const QUIET = 7 * 86400;
   }
 
   // every page renders
-  const routes = ["#/devices", "#/backups", "#/vpn", "#/settings/sites", "#/settings/alerts"];
+  const routes = ["#/devices", "#/devices?list=other", "#/devices?list=all", "#/backups", "#/vpn", "#/settings/sites", "#/settings/alerts"];
   for (const s of ov.sites) for (const t of ["", "/devices", "/problems", "/health", "/history", "/backups", "/access"]) routes.push(`#/site/${s.id}${t}`);
   for (const r of routes) {
     await page.evaluate((h) => (location.hash = h), r);
@@ -74,17 +79,30 @@ const QUIET = 7 * 86400;
     txt > 40 ? ok(`renders ${r}`) : fail(`blank page ${r}`);
   }
 
-  // site header online count and device table totals
+  // site header online count and device table totals: the Devices tab opens on the
+  // Monitored list when the site has any (a monitored device never goes quiet)
+  const now = Math.floor(Date.now() / 1000);
+  const seen = (d) => d.watch || d.online || (d.last_seen && now - d.last_seen < QUIET);
   for (const s of enabled) {
     await page.evaluate((h) => (location.hash = h), `#/site/${s.id}/devices`);
     await page.waitForTimeout(1500);
     const head = await page.$eval("#st-head", (e) => e.textContent);
     const want = `${devs[s.id].filter((d) => d.online).length}/${devs[s.id].length} online`;
     head.includes(want) ? ok(`${s.name} header ${want}`) : fail(`${s.name} header lacks "${want}"`);
-    const now = Math.floor(Date.now() / 1000);
-    const visible = devs[s.id].filter((d) => d.online || (d.last_seen && now - d.last_seen < QUIET)).length;
+    const monitored = devs[s.id].filter((d) => d.watch);
+    const list = monitored.length ? monitored : devs[s.id];
     const n = await page.$eval("#dv-n", (e) => e.textContent);
-    n.startsWith(`${visible} of ${devs[s.id].length}`) ? ok(`${s.name} table ${n}`) : fail(`${s.name} table says "${n}", expected ${visible} of ${devs[s.id].length}`);
+    const exp = `${list.filter(seen).length} of ${list.length}`;
+    n.startsWith(exp) ? ok(`${s.name} ${monitored.length ? "monitored" : "all"} table ${n}`) : fail(`${s.name} table says "${n}", expected ${exp}`);
+    const rows = await page.$$eval("#dv-body tr[data-key]", (r) => r.length);
+    rows === Math.min(150, list.filter(seen).length) ? ok(`${s.name} shows ${rows} rows`) : fail(`${s.name} shows ${rows} rows, expected ${list.filter(seen).length}`);
+    const tab = await page.$eval("#dv-lists button.on", (b) => b.dataset.list);
+    tab === (monitored.length ? "monitored" : "all") ? ok(`${s.name} opens on the ${tab} list`) : fail(`${s.name} opens on ${tab}`);
+    await page.evaluate((h) => (location.hash = h), `#/site/${s.id}/devices?list=all`);
+    await page.waitForTimeout(1200);
+    const n2 = await page.$eval("#dv-n", (e) => e.textContent);
+    const exp2 = `${devs[s.id].filter(seen).length} of ${devs[s.id].length}`;
+    n2.startsWith(exp2) ? ok(`${s.name} all-devices table ${n2}`) : fail(`${s.name} all-devices table says "${n2}", expected ${exp2}`);
   }
 
   // mobile layout: no horizontal overflow

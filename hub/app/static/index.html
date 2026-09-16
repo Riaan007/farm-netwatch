@@ -155,7 +155,7 @@
                 <div class="absolute -right-4 -top-4 w-20 h-20 rounded-full bg-amber-400/10 blur-2xl"></div>
                 <div class="flex items-center gap-2 text-slate-400">
                     <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4a2 2 0 01-.6-1.4V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Watched down</p>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.16em]">Monitored down</p>
                 </div>
                 <p id="stat-watched" class="text-3xl font-bold tabular-nums mt-1.5 text-amber-400">0</p>
             </div>
@@ -417,7 +417,7 @@
                 : `<span class="text-2xl font-bold tabular-nums ${s.devices_online === s.devices_total ? 'text-emerald-400' : 'text-slate-100'}">${s.devices_online}</span><span class="text-slate-500 text-sm">/${s.devices_total} online</span>`;
             const bar = s.devices_total === null ? ''
                 : `<div class="h-1 rounded-full bg-white/10 overflow-hidden mt-1.5"><div class="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400" style="width:${pct}%"></div></div>`;
-            const watched = s.watched_down ? `<span class="chip bg-amber-500/15 text-amber-300">🔔 ${s.watched_down} watched down</span>` : '';
+            const watched = s.watched_down ? `<span class="chip bg-amber-500/15 text-amber-300">🔔 ${s.watched_down} monitored down</span>` : '';
             const conflicts = s.conflicts ? `<span class="chip bg-orange-500/15 text-orange-300 border border-orange-400/25">⚠️ ${s.conflicts} IP conflict${s.conflicts>1?'s':''}</span>` : '';
             const rotated = s.rotated ? `<span class="chip bg-slate-500/15 text-slate-400 border border-slate-400/20" title="The same address was held by different MACs in turn (rotating private Wi-Fi MAC, DHCP reuse) — not a live conflict">🔁 ${s.rotated} IP reuse</span>` : '';
             const stale = s.stale ? '<span class="chip bg-slate-500/15 text-slate-400">stale data</span>' : '';
@@ -496,7 +496,7 @@
             if (strip) {
                 const issues = [];
                 if (reach < sites.length) issues.push(`${sites.length - reach} site${sites.length - reach > 1 ? 's' : ''} unreachable`);
-                if (watched) issues.push(`${watched} watched device${watched > 1 ? 's' : ''} down`);
+                if (watched) issues.push(`${watched} monitored device${watched > 1 ? 's' : ''} down`);
                 if (conflicts) issues.push(`${conflicts} IP conflict${conflicts > 1 ? 's' : ''}`);
                 if (kumaDown) issues.push(`${kumaDown} Kuma monitor${kumaDown > 1 ? 's' : ''} down`);
                 if (!sites.length) strip.innerHTML = '';

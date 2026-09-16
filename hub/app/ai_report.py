@@ -136,7 +136,8 @@ Write an operations analysis. Be concrete and specific: name devices, IPs and
 counts from the data. No generic filler and no repetition of raw JSON. The
 audience is the technical owner-operator.
 
-Glossary: watched = user-flagged critical device, alerts on state change;
+Glossary: watched = a MONITORED device — the operator picked it as equipment they
+must see online/offline (the hub alerts when it drops);
 IP conflict = two devices answering one IP (causes false offline readings);
 risky ports = Telnet/FTP/r-services exposed on the LAN; mystery = device the
 scanner could not identify; vpn_reachability = hub-to-site VPN uptime;
@@ -256,7 +257,7 @@ def build_pdf(facts, ai, devices, events):
     stats = [
         ("DEVICES ONLINE", f"{t['online']}/{t['devices']}",
          EMERALD if t["online"] == t["devices"] else TEXT),
-        ("WATCHED DOWN", str(t["watched_down"]), AMBER if t["watched_down"] else EMERALD),
+        ("MONITORED DOWN", str(t["watched_down"]), AMBER if t["watched_down"] else EMERALD),
         ("IP CONFLICTS", str(len(facts["ip_conflicts"])),
          AMBER if facts["ip_conflicts"] else EMERALD),
         ("VPN 24H", f"{reach.get('24h', '-')}%", TEXT),

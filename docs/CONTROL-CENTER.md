@@ -26,6 +26,14 @@ Polling pauses while the tab is hidden and runs three sites at a time.
   header comment of `core.js`).
 - **Devices:** `online`; `offline` = seen within 7 days; `gone quiet` = not seen for
   7+ days (hidden by default, counted separately).
+- **Monitored** = on the site's Monitored list (the `watch` flag): the equipment the
+  operator must see up or down. Lists open on Monitored (offline first); a monitored
+  device is never "gone quiet"; one that is down makes the site a *Fault*. Change the
+  list from the Devices tab (tick rows, or *Choose monitored* — the same picker as the
+  site page, `app/static/monitorpicker.js`) or the drawer switch →
+  `POST /api/hub/sites/<id>/monitoring` → the site's `/api/monitoring` with the hub key
+  (older sites: one `POST /api/devices/<key> {watch}` per device). The hub alerts on
+  changes (`poller._check_monitored`, state in `monitor_alerts.json`).
 - **Key equipment** = cameras, recorders, routers, switches/APs, wireless links,
   alarms, solar/power, and anything identified as MikroTik (vendor/model/banner
   mentions MikroTik, RouterBOARD or RouterOS).
@@ -46,8 +54,9 @@ A full address in History asks the site for that address's whole history
 
 ## Still done elsewhere
 
-Editing device names, categories, watch flags and saved logins happens on the
-site's own Netwatch page (linked from the site header and the device drawer).
+Editing device names, categories and saved logins happens on the site's own
+Netwatch page (linked from the site header and the device drawer); the Monitored
+list can be changed from either place.
 There is no hub-password change screen, no persistent incident/acknowledge
 workflow, and no MikroTik SSH integration yet.
 

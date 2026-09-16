@@ -24,7 +24,8 @@
     const st = CC.STATE[CC.siteState(s)];
     const c = CC.siteCounts(s);
     const issues = CC.siteIssues(s);
-    const pct = c.total ? Math.round((100 * c.online) / c.total) : 0;
+    const mon = c.mon > 0;
+    const pct = mon ? Math.round((100 * c.monUp) / c.mon) : c.total ? Math.round((100 * c.online) / c.total) : 0;
     const top = issues.filter((i) => i.sev === "bad" || i.sev === "warn").slice(0, 2);
     const href = `#/site/${encodeURIComponent(s.id)}`;
     return `<article class="scard ${st.card}">
@@ -33,12 +34,18 @@
           <div style="min-width:0"><h3><i class="dot ${st.dot}"></i><a href="${href}">${esc(s.name)}</a></h3><div class="loc">${esc(s.location || s.vpn_ip)}</div></div>
           <div style="text-align:right;flex:none">${CC.stateBadge(s)}<div class="note" style="margin-top:4px">${s.latency_ms != null ? `<span class="mono">${Math.round(s.latency_ms)} ms</span> · ` : ""}scan ${CC.ago(s.last_scan_ts)}</div></div>
         </div>
-        ${c.total == null ? `<div class="muted">No device data yet</div>` : `
+        ${c.total == null ? `<div class="muted">No device data yet</div>` : mon ? `
+        <div>
+          <div class="nums"><b class="${c.monUp === c.mon ? "ok" : "bad"}">${c.monUp}</b><span class="muted">of ${c.mon} monitored online</span>
+            ${c.mon - c.monUp ? `<a class="b bad nodot" href="${href}/devices?list=monitored&state=offline" style="text-decoration:none">${c.mon - c.monUp} down</a>` : ""}</div>
+          <div class="bar${c.monUp < c.mon ? " bad" : ""}"><i style="width:${pct}%"></i></div>
+          <div class="note" style="margin-top:6px">All devices <b>${c.online}/${c.total}</b> online${c.quiet ? ` · <span title="Not seen for 7+ days — old discoveries, visitors' phones">${c.quiet} gone quiet</span>` : ""}</div>
+        </div>` : `
         <div>
           <div class="nums"><b class="${c.online === c.total ? "ok" : ""}">${c.online}</b><span class="muted">of ${c.total} online</span>
             ${c.quiet ? `<span class="note" title="Not seen for 7+ days — old discoveries, visitors' phones">· ${c.quiet} gone quiet</span>` : ""}</div>
           <div class="bar"><i style="width:${pct}%"></i></div>
-          ${c.infra != null ? `<div class="note" style="margin-top:6px">Infrastructure <b class="${c.infraUp === c.infra ? "ok" : "warn"}">${c.infraUp}/${c.infra}</b> up · cameras, recorders, network, power</div>` : ""}
+          ${c.mon === 0 ? `<div class="note" style="margin-top:6px">🔔 No devices monitored yet · <a href="${href}/devices?list=monitored">choose them</a></div>` : ""}
         </div>`}
         ${top.length ? `<div style="display:grid;gap:4px">${top.map((i) => `<div class="note" style="color:${i.sev === "bad" ? "var(--bad)" : "var(--warn)"}">● ${esc(i.title)}</div>`).join("")}${issues.length > 2 ? `<div class="note">+ ${issues.length - 2} more</div>` : ""}</div>` : ""}
         <div>${CC.spark(s.spark)}<div class="note" style="margin-top:3px">Reachability 24 h · ${s.reach_24h != null ? s.reach_24h + "%" : "—"}</div></div>
@@ -56,14 +63,16 @@
   function fleetKpis() {
     const sites = S.sites.filter((s) => s.enabled);
     const reach = sites.filter((s) => s.reachable).length;
-    let total = 0, online = 0, offline = 0, quiet = 0, infra = 0, infraUp = 0, have = 0;
+    let total = 0, online = 0, offline = 0, quiet = 0, mon = 0, monUp = 0, have = 0;
     sites.forEach((s) => {
       const c = CC.siteCounts(s);
       if (c.total == null) return;
       have++; total += c.total; online += c.online;
-      offline += c.offline || 0; quiet += c.quiet || 0; infra += c.infra || 0; infraUp += c.infraUp || 0;
+      offline += c.offline || 0; quiet += c.quiet || 0; mon += c.mon || 0; monUp += c.monUp || 0;
     });
-    const watched = sites.reduce((a, s) => a + ((S.devices[s.id] || []).filter((d) => d.watch && !d.online).length || (S.devices[s.id] ? 0 : s.watched_down || 0)), 0);
+    const monDown = sites.flatMap((s) => (S.devices[s.id] || []).filter((d) => d.watch && !d.online).map((d) => ({ d, s })))
+      .sort((a, b) => (b.d.last_seen || 0) - (a.d.last_seen || 0));
+    const down = mon - monUp;
     const conflicts = sites.reduce((a, s) => a + (s.conflicts || 0), 0);
     const kumaDown = sites.reduce((a, s) => a + ((s.kuma && s.kuma.down) || 0), 0);
     const issues = CC.allIssues();
@@ -72,9 +81,9 @@
     return `<section class="kpis" aria-label="Fleet summary">
       ${kpi("Sites online", `${reach}<small>/${sites.length}</small>`, reach === sites.length ? "All sites reachable over the VPN" : `${sites.length - reach} unreachable`, reach === sites.length ? "is-ok" : "is-bad", "#/attention")}
       ${kpi("Needs attention", issues.length, issues.length ? `${bad} fault${bad === 1 ? "" : "s"} · ${issues.length - bad} warning${issues.length - bad === 1 ? "" : "s"}` : "Nothing waiting on you", bad ? "is-bad" : issues.length ? "is-warn" : "is-ok", "#/attention")}
-      ${kpi("Key equipment up", have ? `${infraUp}<small>/${infra}</small>` : "—", "Cameras, recorders, network & power seen this week", infra && infraUp < infra ? "is-warn" : "is-ok", "#/devices?scope=infra&state=offline")}
-      ${kpi("Devices online", have ? `${online}<small>/${total}</small>` : "—", `${offline} offline this week${quiet ? ` · ${quiet} gone quiet` : ""}`, "", "#/devices")}
-      ${kpi("Watched down", watched, watched ? "Devices you flagged to watch" : "Every watched device is up", watched ? "is-bad" : "is-ok", "#/devices?watch=1&state=offline")}
+      ${kpi("Monitored online", have ? `${monUp}<small>/${mon}</small>` : "—", !have ? "Loading…" : !mon ? "No devices monitored yet — choose them per site" : down ? `${down} down across the fleet` : "Every monitored device is up", mon ? (down ? "is-bad" : "is-ok") : "", "#/devices?list=monitored")}
+      ${kpi("Monitored offline", have ? down : "—", monDown.length ? `${esc(CC.devName(monDown[0].d))} · ${esc(monDown[0].s.name)}` : down ? "Device lists loading" : "Nothing down", down ? "is-bad" : "is-ok", "#/devices?list=monitored&state=offline")}
+      ${kpi("All devices online", have ? `${online}<small>/${total}</small>` : "—", `${offline} offline this week${quiet ? ` · ${quiet} gone quiet` : ""}`, "", "#/devices?list=all")}
       ${(() => { const wa = CC.wifiAttention(); const tot = sites.reduce((a, s) => { const x = CC.wifiOf(s.id); return a + (x.state === "ok" ? x.summary.links : 0); }, 0); const crit = wa.filter((x) => x.link.grade === "crit").length;
         return kpi("Wireless links", tot ? `${tot - wa.length}<small>/${tot}</small>` : "—", tot ? (wa.length ? `${wa.length} need attention${crit ? ` · ${crit} poor` : ""}` : "All links healthy") : "No radio links read yet", crit ? "is-bad" : wa.length ? "is-warn" : tot ? "is-ok" : "", "#/wifi"); })()}
       ${kpi("Conflicts · Kuma", `${conflicts}<small> · ${kumaDown}</small>`, `${conflicts ? CC.plural(conflicts, "IP clash", "IP clashes") : "No IP clashes"} · ${kumaDown ? kumaDown + " Kuma down" : "Kuma all up"}`, conflicts || kumaDown ? (kumaDown ? "is-bad" : "is-warn") : "is-ok", "#/attention")}
@@ -171,9 +180,11 @@
   });
 
   // ---- devices (fleet-wide) --------------------------------------------------------------
+  /** list: monitored | other | all | "" (= monitored when the scope has any, else all) */
   CC.deviceFilters = (p) => ({
     q: p.get("q") || "", site: p.get("site") || "", scope: p.get("scope") || "",
-    state: p.get("state") || "", cat: p.get("cat") || "", watch: p.get("watch") === "1",
+    state: p.get("state") || "", cat: p.get("cat") || "",
+    list: ["monitored", "other", "all"].includes(p.get("list")) ? p.get("list") : p.get("watch") === "1" ? "monitored" : "",
   });
   CC.filterDevices = (rows, f) => {
     const q = f.q.trim().toLowerCase();
@@ -189,7 +200,8 @@
       if (f.state === "quiet" && st !== "quiet") return false;
       if (f.state === "" && st === "quiet" && !q) return false;          // gone-quiet hidden unless asked
       if (f.cat && CC.cat(d).group !== f.cat) return false;
-      if (f.watch && !d.watch) return false;
+      if (f.list === "monitored" && !d.watch) return false;
+      if (f.list === "other" && d.watch) return false;
       if (ipMatch) return ipMatch(d.ip);
       if (q && ![CC.devName(d), d.device_name, d.ip, d.mac, d.vendor, d.hostname, d.model, d.category, d.type, d.__site.name].join(" ").toLowerCase().includes(q)) return false;
       return true;
@@ -197,35 +209,42 @@
   };
   CC.devStateBadge = (d) => {
     const st = CC.devState(d);
-    return st === "online" ? `<span class="b ok">Online</span>` : st === "offline" ? `<span class="b ${d.watch ? "bad" : "warn"}">Offline</span>` : `<span class="b unk" title="Not seen for 7+ days">Gone quiet</span>`;
+    if (st === "online") return `<span class="b ok">Online</span>`;
+    if (st === "quiet") return `<span class="b unk" title="Not seen for 7+ days">Gone quiet</span>`;
+    return d.watch ? `<span class="b bad" title="Monitored · last seen ${CC.esc(CC.when(d.last_seen))}">Offline${d.last_seen ? " · " + CC.dur(CC.now() - d.last_seen) : ""}</span>` : `<span class="b warn">Offline</span>`;
   };
   CC.deviceCsv = (rows, name) => {
-    const cols = ["site", "name", "category", "type", "ip", "mac", "vendor", "model", "serial", "firmware", "hostname", "state", "last_seen", "rtt_ms", "watched", "open_ports"];
+    const cols = ["site", "name", "category", "type", "ip", "mac", "vendor", "model", "serial", "firmware", "hostname", "state", "last_seen", "rtt_ms", "monitored", "open_ports"];
     const q = (v) => { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
     const lines = [cols.join(",")].concat(rows.map((d) => [d.__site.name, CC.devName(d), CC.cat(d).label, d.type, d.ip, d.mac, d.vendor, d.model, d.serial, d.firmware, d.hostname, CC.devState(d), d.last_seen ? new Date(d.last_seen * 1000).toISOString() : "", d.rtt, d.watch ? "yes" : "", (d.ports || []).join(" ")].map(q).join(",")));
     const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
     CC.download(new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv" }), `${name}-${stamp}.csv`);
   };
 
-  /** Device table shared by the fleet page and a site's Devices tab. */
+  /** Device table shared by the fleet page and a site's Devices tab: the Monitored /
+   *  Other / All lists, filters, and ticking rows to switch monitoring on or off. */
   CC.deviceTable = {
     mount(el, { siteId = null } = {}) {
       const p = CC.params();
       const f = CC.deviceFilters(p);
       if (siteId) f.site = siteId;
-      const st = { f, sort: p.get("sort") || "state", dir: 1, limit: 150, group: siteId ? "cat" : "site" };
+      const st = { f, sort: p.get("sort") || "state", dir: 1, limit: 150, group: siteId ? "cat" : "site", sel: new Map() };
       el.innerHTML = `
+        <div class="listbar"><div class="lists" id="dv-lists" role="group" aria-label="Device lists"></div>
+          <button class="btn" id="dv-pick" hidden title="Tick the devices this site must monitor">${icon("bell")} Choose monitored</button></div>
         <div class="tbar">
           <label class="search">${icon("search")}<span class="sr">Search devices</span><input class="inp" id="dv-q" type="search" placeholder="Name, IP, MAC, vendor, model…" title="${esc(CC.IP_SEARCH_HELP)}" value="${esc(f.q)}"></label>
           ${siteId ? "" : `<select class="sel" id="dv-site" aria-label="Site"><option value="">All sites</option>${S.sites.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("")}</select>`}
-          <select class="sel" id="dv-state" aria-label="State"><option value="">Seen this week</option><option value="online">Online</option><option value="offline">Offline (this week)</option><option value="quiet">Gone quiet (7+ days)</option><option value="all">Everything</option></select>
+          <select class="sel" id="dv-state" aria-label="State"><option value="">Seen this week</option><option value="online">Online</option><option value="offline">Offline</option><option value="quiet">Gone quiet (7+ days)</option><option value="all">Everything</option></select>
           <select class="sel" id="dv-cat" aria-label="Type"><option value="">All types</option>${CC.GROUPS.map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select>
           <select class="sel" id="dv-scope" aria-label="Scope"><option value="">Any device</option><option value="infra">Infrastructure only</option><option value="mikrotik">MikroTik</option></select>
-          <label class="chk"><input type="checkbox" id="dv-watch" ${f.watch ? "checked" : ""}> Watched</label>
           <span class="note" id="dv-n" style="margin-left:auto"></span>
           <button class="btn sm" id="dv-csv">${icon("down")} CSV</button>
         </div>
+        <div class="bulk" id="dv-bulk" hidden role="region" aria-label="Selected devices"><b id="dv-bulk-n"></b>
+          <button class="btn sm pri" data-bulk="on">${icon("bell")} Monitor</button><button class="btn sm" data-bulk="off">Stop monitoring</button><button class="btn sm ghost" data-bulk="clear">Clear</button></div>
         <div class="twrap"><table class="t"><thead><tr>
+          <th class="ck"><input type="checkbox" id="dv-all" aria-label="Select every device shown"></th>
           <th><button data-sort="name">Device</button></th>
           ${siteId ? "" : `<th class="hide-m"><button data-sort="site">Site</button></th>`}
           <th class="hide-m"><button data-sort="cat">Type</button></th>
@@ -240,24 +259,55 @@
       $("#dv-scope", el).value = f.scope;
       if (!siteId) $("#dv-site", el).value = f.site;
       const sync = () => {
-        f.q = $("#dv-q", el).value; f.state = $("#dv-state", el).value; f.cat = $("#dv-cat", el).value; f.scope = $("#dv-scope", el).value; f.watch = $("#dv-watch", el).checked;
+        f.q = $("#dv-q", el).value; f.state = $("#dv-state", el).value; f.cat = $("#dv-cat", el).value; f.scope = $("#dv-scope", el).value;
         if (!siteId) f.site = $("#dv-site", el).value;
         st.limit = 150; this.draw(el, st, siteId);
       };
       $("#dv-q", el).oninput = CC.debounce(sync, 150);
-      $$("select, input[type=checkbox]", el).forEach((x) => { if (x.id !== "dv-q") x.onchange = sync; });
+      $$("select", el).forEach((x) => (x.onchange = sync));
       $$("th button", el).forEach((b) => (b.onclick = () => { st.dir = st.sort === b.dataset.sort ? -st.dir : 1; st.sort = b.dataset.sort; st.userSorted = true; this.draw(el, st, siteId); }));
+      $("#dv-lists", el).onclick = (e) => { const b = e.target.closest("[data-list]"); if (!b) return; f.list = b.dataset.list; st.limit = 150; st.sel.clear(); this.draw(el, st, siteId); };
+      $("#dv-pick", el).onclick = () => CC.openMonitorPicker(siteId || f.site);
       $("#dv-more", el).onclick = () => { st.limit += 300; this.draw(el, st, siteId); };
       $("#dv-csv", el).onclick = () => CC.deviceCsv(this.rows(st, siteId), siteId ? `netwatch-${siteId}-devices` : "netwatch-devices");
-      $("#dv-body", el).onclick = (e) => { const tr = e.target.closest("tr[data-key]"); if (tr) CC.openDevice(tr.dataset.site, tr.dataset.key); };
-      $("#dv-body", el).onkeydown = (e) => { if (e.key === "Enter") { const tr = e.target.closest("tr[data-key]"); if (tr) CC.openDevice(tr.dataset.site, tr.dataset.key); } };
+      $("#dv-all", el).onchange = (e) => {
+        this.rows(st, siteId).slice(0, st.limit).forEach((d) => { const k = d.__site.id + "|" + d.key; if (e.target.checked) st.sel.set(k, { site: d.__site.id, key: d.key }); else st.sel.delete(k); });
+        $$("#dv-body td.ck input", el).forEach((cb) => (cb.checked = e.target.checked));
+        this.syncSel(el, st, siteId);
+      };
+      $("#dv-bulk", el).onclick = (e) => {
+        const b = e.target.closest("[data-bulk]"); if (!b) return;
+        if (b.dataset.bulk === "clear") { st.sel.clear(); this.draw(el, st, siteId); return; }
+        this.bulk(el, st, siteId, b.dataset.bulk === "on", b);
+      };
+      $("#dv-body", el).onclick = (e) => {
+        const ck = e.target.closest("td.ck");
+        if (ck) {
+          const cb = ck.querySelector("input"); if (!cb) return;
+          if (e.target !== cb) cb.checked = !cb.checked;
+          const tr = ck.closest("tr"), k = tr.dataset.site + "|" + tr.dataset.key;
+          if (cb.checked) st.sel.set(k, { site: tr.dataset.site, key: tr.dataset.key }); else st.sel.delete(k);
+          tr.classList.toggle("sel", cb.checked);
+          this.syncSel(el, st, siteId);
+          return;
+        }
+        if (e.target.closest("[data-pick]")) { CC.openMonitorPicker(e.target.closest("[data-pick]").dataset.pick); return; }
+        const tr = e.target.closest("tr[data-key]"); if (tr) CC.openDevice(tr.dataset.site, tr.dataset.key);
+      };
+      $("#dv-body", el).onkeydown = (e) => { if (e.key === "Enter" && !e.target.closest("td.ck")) { const tr = e.target.closest("tr[data-key]"); if (tr) CC.openDevice(tr.dataset.site, tr.dataset.key); } };
       el.__st = st;
       this.draw(el, st, siteId);
     },
+    /** Every device in the chosen site(s), before any filter. */
+    scope(st, siteId) {
+      const sites = siteId ? [CC.site(siteId)].filter(Boolean) : st.f.site ? [CC.site(st.f.site)].filter(Boolean) : S.sites;
+      return sites.flatMap((s) => (S.devices[s.id] || []).map((d) => Object.assign(d, { __site: s })));
+    },
+    /** The list actually shown: an explicit choice, else Monitored when the scope has any. */
+    list(st, siteId) { return st.f.list || (this.scope(st, siteId).some((d) => d.watch) ? "monitored" : "all"); },
     rows(st, siteId) {
-      const sites = siteId ? [CC.site(siteId)].filter(Boolean) : S.sites;
-      const all = sites.flatMap((s) => (S.devices[s.id] || []).map((d) => Object.assign(d, { __site: s })));
-      const rows = CC.filterDevices(all, st.f);
+      const all = this.scope(st, siteId);
+      const rows = CC.filterDevices(all, { ...st.f, list: this.list(st, siteId) });
       const rank = { offline: 0, online: 1, quiet: 2 };
       if (CC.ipMatcher(st.f.q) && st.sort === "state" && !st.userSorted)
         return rows.sort((a, b) => CC.ipNum(a.ip) - CC.ipNum(b.ip) || (b.online - a.online) || (b.last_seen || 0) - (a.last_seen || 0));
@@ -268,18 +318,71 @@
       }[st.sort];
       return rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : CC.ipNum(a.ip) - CC.ipNum(b.ip)) * st.dir; });
     },
+    drawLists(el, st, siteId) {
+      const scope = this.scope(st, siteId), list = this.list(st, siteId);
+      const mon = scope.filter((d) => d.watch), monDown = mon.filter((d) => !d.online).length;
+      const other = scope.filter((d) => !d.watch), otherRecent = other.filter((d) => CC.devState(d) !== "quiet");
+      const otherUp = otherRecent.filter((d) => d.online).length, quiet = other.length - otherRecent.length;
+      const tab = (id, label, v, sub, cls = "") => `<button type="button" data-list="${id}" class="${list === id ? "on" : ""} ${cls}" aria-pressed="${list === id}"><b>${label}</b><span class="v">${v}</span><small>${sub}</small></button>`;
+      $("#dv-lists", el).innerHTML =
+        tab("monitored", "🔔 Monitored", mon.length ? `${mon.length - monDown}<i>/${mon.length}</i>` : "0", !mon.length ? "none chosen yet" : monDown ? `<span class="bad">${monDown} offline</span> · ${mon.length - monDown} online` : `<span class="ok">all online</span>`, monDown ? "bad" : "")
+        + tab("other", "Other devices", other.length ? `${otherUp}<i>/${otherRecent.length}</i>` : "0", other.length ? `online this week${quiet ? ` · ${quiet} gone quiet` : ""}` : "none")
+        + tab("all", "All devices", scope.length, "everything the site found");
+      const pickSite = siteId || st.f.site;
+      $("#dv-pick", el).hidden = !pickSite;
+    },
+    /** Ticked rows the current list, filters and search still show. */
+    selected(st, siteId) {
+      return this.rows(st, siteId).filter((d) => st.sel.has(d.__site.id + "|" + d.key));
+    },
+    syncSel(el, st, siteId) {
+      const vis = this.selected(st, siteId), n = vis.length, hidden = st.sel.size - n;
+      $("#dv-bulk", el).hidden = !st.sel.size;
+      $$("#dv-bulk [data-bulk=on], #dv-bulk [data-bulk=off]", el).forEach((b) => (b.disabled = !n));
+      $("#dv-bulk-n", el).textContent = `${n} selected${siteId ? "" : ` · ${CC.plural(new Set(vis.map((d) => d.__site.id)).size, "site")}`}${hidden > 0 ? ` · ${hidden} hidden by the filters (not changed)` : ""}`;
+      const shown = this.rows(st, siteId).slice(0, st.limit);
+      const on = shown.filter((d) => st.sel.has(d.__site.id + "|" + d.key)).length;
+      const all = $("#dv-all", el);
+      all.checked = !!shown.length && on === shown.length;
+      all.indeterminate = on > 0 && on < shown.length;
+    },
+    async bulk(el, st, siteId, on, btn) {
+      const bySite = new Map();
+      this.selected(st, siteId).forEach((d) => {
+        if (!!d.watch === on) return;
+        const sid = d.__site.id;
+        if (!bySite.has(sid)) bySite.set(sid, []);
+        bySite.get(sid).push(d.key);
+      });
+      const n = [...bySite.values()].reduce((a, k) => a + k.length, 0);
+      if (!n) { CC.toast(on ? "Those devices are already monitored" : "None of those devices is monitored"); return; }
+      const legacy = [...bySite.keys()].filter(CC.siteLegacy).map((sid) => CC.site(sid).name);
+      if (!on && !(await CC.confirm(`Stop monitoring ${CC.plural(n, "device")}?`, CC.stopText(legacy), { ok: "Stop monitoring", danger: true }))) return;
+      await CC.busy(btn, async () => {
+        for (const [sid, keys] of bySite) {
+          const s = CC.site(sid);
+          try { CC.monitorToast(await CC.setMonitored(sid, on ? keys : [], on ? [] : keys), bySite.size > 1 || !siteId ? s : null); }
+          catch (e) { CC.toast(`${s ? s.name : sid}: ${e.message}`, "bad"); }
+        }
+      });
+      st.sel.clear();
+      this.draw(el, st, siteId);
+    },
     draw(el, st, siteId) {
       const body = $("#dv-body", el);
       if (!body) return;
       const sites = siteId ? [CC.site(siteId)].filter(Boolean) : S.sites;
       const loadedAll = sites.every((s) => S.devices[s.id]);
-      if (!loadedAll && !sites.some((s) => S.devices[s.id])) { body.innerHTML = `<tr><td colspan="7"><div class="skel" style="height:120px"></div></td></tr>`; return; }
+      if (!loadedAll && !sites.some((s) => S.devices[s.id])) { body.innerHTML = `<tr><td colspan="8"><div class="skel" style="height:120px"></div></td></tr>`; return; }
+      this.drawLists(el, st, siteId);
+      const list = this.list(st, siteId);
       const rows = this.rows(st, siteId);
-      const total = sites.reduce((a, s) => a + (S.devices[s.id] || []).length, 0);
-      const quiet = sites.reduce((a, s) => a + (S.devices[s.id] || []).filter((d) => CC.devState(d) === "quiet").length, 0);
-      $("#dv-n", el).textContent = `${rows.length} of ${total}${quiet && st.f.state === "" && !st.f.q.trim() ? ` · ${quiet} gone quiet hidden` : ""}`;
+      const scope = this.scope(st, siteId);
+      const inList = scope.filter((d) => list === "all" || (list === "monitored") === !!d.watch);
+      const quiet = inList.filter((d) => CC.devState(d) === "quiet").length;
+      $("#dv-n", el).textContent = `${rows.length} of ${inList.length}${quiet && st.f.state === "" && !st.f.q.trim() ? ` · ${quiet} gone quiet hidden` : ""}`;
       const shown = rows.slice(0, st.limit);
-      const cols = siteId ? 6 : 7;
+      const cols = siteId ? 7 : 8;
       let last = null, html = "";
       const ipSearch = !!CC.ipMatcher(st.f.q) && !st.userSorted;
       const groupKey = !ipSearch && (st.sort === "state" || st.sort === "name") ? (siteId ? (d) => CC.cat(d).group : (d) => d.__site.id) : null;
@@ -295,13 +398,15 @@
           if (g !== last) {
             const inGroup = rows.filter((x) => groupKey(x) === g);
             const up = inGroup.filter((x) => x.online).length;
-            html += `<tr class="grp"><td colspan="${cols}">${esc(groupLabel(g))} <span class="dim">· ${up}/${inGroup.length} online</span></td></tr>`;
+            html += `<tr class="grp"><td colspan="${cols}">${esc(groupLabel(g))} <span class="dim">· ${up}/${inGroup.length} online</span>${inGroup.length - up && list === "monitored" ? ` <span class="bad">· ${inGroup.length - up} down</span>` : ""}</td></tr>`;
             last = g;
           }
         }
         const c = CC.cat(d);
-        html += `<tr data-key="${esc(d.key)}" data-site="${esc(d.__site.id)}" tabindex="0">
-          <td><div class="nm">${esc(CC.devName(d))}${d.watch ? ` <span title="Watched" aria-label="Watched">🔔</span>` : ""}${d.ip_conflict ? ` <span class="b warn nodot" title="IP conflict">conflict</span>` : ""}${CC.isMikrotik(d) ? ` <span class="tag">MikroTik</span>` : ""}</div><div class="sub">${esc([d.vendor && d.vendor !== CC.devName(d) ? d.vendor.replace(/,?\s*(Co\.,?\s*Ltd\.?|Ltd\.?|Inc\.?)$/i, "") : "", d.model].filter(Boolean).join(" · ") || d.mac || "")}</div></td>
+        const sel = st.sel.has(d.__site.id + "|" + d.key);
+        html += `<tr data-key="${esc(d.key)}" data-site="${esc(d.__site.id)}" tabindex="0" class="${sel ? "sel" : ""} ${d.watch && !d.online ? "down" : ""}">
+          <td class="ck"><input type="checkbox" ${sel ? "checked" : ""} aria-label="Select ${esc(CC.devName(d))}"></td>
+          <td><div class="nm">${esc(CC.devName(d))}${d.watch && list === "all" ? ` <span title="Monitored" aria-label="Monitored">🔔</span>` : ""}${d.ip_conflict ? ` <span class="b warn nodot" title="IP conflict">conflict</span>` : ""}${CC.isMikrotik(d) ? ` <span class="tag">MikroTik</span>` : ""}</div><div class="sub">${esc([d.vendor && d.vendor !== CC.devName(d) ? d.vendor.replace(/,?\s*(Co\.,?\s*Ltd\.?|Ltd\.?|Inc\.?)$/i, "") : "", d.model].filter(Boolean).join(" · ") || d.mac || "")}</div></td>
           ${siteId ? "" : `<td class="hide-m">${esc(d.__site.name)}</td>`}
           <td class="hide-m">${c.icon} ${esc(c.label)}</td>
           <td class="mono">${esc(d.ip || "—")}</td>
@@ -311,20 +416,25 @@
       }
       const qq = st.f.q.trim();
       const vpnSite = CC.isFullIp(qq) && S.sites.find((s) => s.vpn_ip === qq);
-      body.innerHTML = html || `<tr><td colspan="${cols}"><div class="empty"><b>No devices match</b>${vpnSite
+      const pickSite = siteId || st.f.site;
+      const noneMonitored = list === "monitored" && !scope.some((d) => d.watch);
+      body.innerHTML = html || `<tr><td colspan="${cols}"><div class="empty">${noneMonitored
+        ? `<b>No devices are monitored${pickSite ? " at this site" : ""} yet</b>Tick the cameras, recorders, switches and links you must see online or offline — they are listed here with offline ones first, and the hub alerts you when one drops.${pickSite ? `<div style="margin-top:12px"><button class="btn pri" data-pick="${esc(pickSite)}">${icon("bell")} Choose monitored devices</button></div>` : `<div style="margin-top:8px">Open a site (or pick one above) to choose its devices.</div>`}`
+        : `<b>No devices match</b>${vpnSite
         ? `${esc(qq)} is <a href="#/site/${encodeURIComponent(vpnSite.id)}">${esc(vpnSite.name)}</a>'s VPN address — the site Pi itself, not a device on its network.`
         : CC.isFullIp(qq) && st.f.state && st.f.state !== "all" ? `Nothing at ${esc(qq)} in this state — try “Everything”.`
-        : CC.ipMatcher(qq) ? `No device address matches ${esc(qq)}${siteId ? " at this site" : ""}.` : "Try “Everything” or clear the search."}</div></td></tr>`;
+        : CC.ipMatcher(qq) ? `No device address matches ${esc(qq)}${siteId ? " at this site" : ""}.` : list !== "all" ? "Try “All devices”, “Everything” or clear the search." : "Try “Everything” or clear the search."}`}</div></td></tr>`;
       const more = $("#dv-more", el);
       more.hidden = rows.length <= st.limit;
       more.textContent = `Show more (${rows.length - st.limit} left)`;
+      this.syncSel(el, st, siteId);
     },
   };
 
   CC.route("/devices", {
     enter() {
       CC.setCrumbs([{ label: "Overview", href: "#/" }, { label: "Devices" }]);
-      view().innerHTML = `<div class="ph"><div><div class="eyebrow">Fleet inventory</div><h1>All devices</h1><p>Every device the sites have discovered. Click one for details, history, diagnostics and remote access.</p></div></div>
+      view().innerHTML = `<div class="ph"><div><div class="eyebrow">Fleet inventory</div><h1>Devices</h1><p><b>Monitored</b> devices are the equipment you must see online or offline — offline ones first. <b>Other devices</b> is everything else the sites found. Tick rows to change what is monitored; click one for details, history, diagnostics and remote access.</p></div></div>
         <section class="panel" id="dv-panel"></section>`;
       CC.deviceTable.mount($("#dv-panel"));
     },
@@ -558,11 +668,13 @@
     async alerts() {
       $("#st-body").innerHTML = `<div class="grid2" style="align-items:start">
         <section class="panel"><div class="phd"><h2>${icon("bell")} Hub alerts</h2></div><form class="pbd" id="al" style="display:grid;gap:12px">
-          <p class="muted" style="margin:0">Push notifications from the hub itself, via ntfy — separate from each site's own device alerts.</p>
+          <p class="muted" style="margin:0">Push notifications from the hub itself, via ntfy — separate from each site's own alerts.</p>
           <label class="fld">ntfy server<input class="inp mono" name="ntfy_server"></label>
           <label class="fld">Topic <span class="dim" style="font-weight:400">blank = off · use a hard-to-guess name</span><input class="inp mono" name="ntfy_topic"></label>
           <label class="chk"><input type="checkbox" name="notify_site_offline"> Alert when a site goes offline</label>
           <label class="chk"><input type="checkbox" name="notify_ip_conflict"> Alert on new IP conflicts</label>
+          <label class="chk"><input type="checkbox" name="notify_device_offline"> Alert when a monitored device goes offline or comes back</label>
+          <p class="note" style="margin:-4px 0 0 24px">One message per site, naming the devices. Pick the devices on each site's Devices tab.</p>
           <div class="note" id="al-msg" aria-live="polite"></div>
           <div class="row" style="justify-content:flex-end"><button type="button" class="btn" id="al-test">Send test</button><button class="btn pri">Save</button></div></form></section>
         <section class="panel"><div class="phd"><h2>${icon("sparkle")} AI reports</h2></div><form class="pbd" id="ai" style="display:grid;gap:12px">
@@ -575,11 +687,11 @@
       try {
         const [a, g] = await Promise.all([api("/api/hub/alerts"), api("/api/hub/ai")]);
         al.ntfy_server.value = a.ntfy_server || "https://ntfy.sh"; al.ntfy_topic.value = a.ntfy_topic || "";
-        al.notify_site_offline.checked = a.notify_site_offline !== false; al.notify_ip_conflict.checked = a.notify_ip_conflict !== false;
+        al.notify_site_offline.checked = a.notify_site_offline !== false; al.notify_ip_conflict.checked = a.notify_ip_conflict !== false; al.notify_device_offline.checked = a.notify_device_offline !== false;
         ai.model.value = g.gemini_model || ""; ai.key.placeholder = g.key_set ? `saved (…${g.key_tail}) — leave blank to keep` : "not set";
         $("#ai-clear").disabled = !g.key_set;
       } catch (e) { CC.toast(e.message, "bad"); }
-      const saveAlerts = () => api("/api/hub/alerts", { method: "POST", body: { ntfy_server: al.ntfy_server.value.trim(), ntfy_topic: al.ntfy_topic.value.trim(), notify_site_offline: al.notify_site_offline.checked, notify_ip_conflict: al.notify_ip_conflict.checked } });
+      const saveAlerts = () => api("/api/hub/alerts", { method: "POST", body: { ntfy_server: al.ntfy_server.value.trim(), ntfy_topic: al.ntfy_topic.value.trim(), notify_site_offline: al.notify_site_offline.checked, notify_ip_conflict: al.notify_ip_conflict.checked, notify_device_offline: al.notify_device_offline.checked } });
       al.onsubmit = async (e) => { e.preventDefault(); await CC.busy(e.submitter, async () => { try { await saveAlerts(); $("#al-msg").textContent = "Saved."; } catch (err) { $("#al-msg").textContent = err.message; } }); };
       $("#al-test").onclick = (e) => CC.busy(e.currentTarget, async () => { try { await saveAlerts(); await api("/api/hub/alerts/test", { method: "POST" }); $("#al-msg").textContent = "Test sent — check your phone."; } catch (err) { $("#al-msg").textContent = err.message; } });
       ai.onsubmit = async (e) => {

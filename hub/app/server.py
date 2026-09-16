@@ -11,6 +11,7 @@ import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 
 import requests
@@ -176,6 +177,8 @@ def _site_card(site):
         "is_scanning": status.get("is_scanning", False),
         "devices_total": len(devices) if devices else None,
         "devices_online": sum(1 for d in devices if d.get("online")) if devices else None,
+        # `watch` = on the site's Monitored list; watched_down keeps its old name for older pages
+        "monitored": sum(1 for d in devices if d.get("watch")) if devices else None,
         "watched_down": sum(1 for d in devices
                             if d.get("watch") and not d.get("online")) if devices else None,
         # Prefer the poller's lists (site-fed, honour Clear & re-test and the
@@ -247,7 +250,7 @@ def _pi_health_level(snap):
 
 @app.route("/api/hub/alerts", methods=["GET", "POST"])
 def api_alerts():
-    """Hub ntfy alert settings (topic/server + site-offline toggle)."""
+    """Hub ntfy alert settings (topic/server + what to alert on)."""
     if request.method == "POST":
         body = request.get_json(force=True, silent=True) or {}
         patch = {}
@@ -258,19 +261,22 @@ def api_alerts():
             patch["notify_site_offline"] = bool(body["notify_site_offline"])
         if "notify_ip_conflict" in body:
             patch["notify_ip_conflict"] = bool(body["notify_ip_conflict"])
+        if "notify_device_offline" in body:
+            patch["notify_device_offline"] = bool(body["notify_device_offline"])
         hubconfig.update({"alerts": patch})
         return jsonify({"ok": True})
     a = hubconfig.load()["alerts"]
     return jsonify({"ntfy_server": a.get("ntfy_server", "https://ntfy.sh"),
                     "ntfy_topic": a.get("ntfy_topic", ""),
                     "notify_site_offline": a.get("notify_site_offline", True),
-                    "notify_ip_conflict": a.get("notify_ip_conflict", True)})
+                    "notify_ip_conflict": a.get("notify_ip_conflict", True),
+                    "notify_device_offline": a.get("notify_device_offline", True)})
 
 
 @app.route("/api/hub/alerts/test", methods=["POST"])
 def api_alerts_test():
     ok = notify.push(hubconfig.load()["alerts"], "Hub test alert",
-                     "ntfy is wired up — you'll get site-offline alerts here.",
+                     "ntfy is wired up — site-offline and monitored-device alerts arrive here.",
                      tags=["bell"])
     return jsonify({"ok": bool(ok),
                     "error": None if ok else "No topic set, or ntfy unreachable."})
@@ -934,6 +940,84 @@ def api_site_device_location(site_id, key):
     if r.ok and body.get("ok"):
         poller.update_device(site_id, key, geo=body.get("geo"))
     return jsonify(body), r.status_code
+
+
+_MONITOR_MAX = 2000
+
+
+def _monitoring_legacy(site_id, base, hdr, lists):
+    """A site older than /api/monitoring: flip its per-device `watch` flag (the
+    same switch under its old name), only where the hub's copy differs."""
+    cached = {d.get("key"): bool(d.get("watch"))
+              for d in ((poller.snapshot(site_id).get("devices") or {}).get("devices") or [])}
+    todo = [(k, True) for k in lists["monitor"]] + [(k, False) for k in lists["stop"]]
+    out = {"ok": True, "legacy": True, "changed": [], "unchanged": [], "unknown": [], "failed": []}
+
+    def one(item):
+        key, on = item
+        if key not in cached:
+            return "unknown", key, on
+        if cached[key] == on:
+            return "unchanged", key, on
+        try:
+            r = requests.post(f"{base}/api/devices/{quote(key, safe='')}", json={"watch": on},
+                              headers=hdr, timeout=(5, 30))
+            return ("changed" if r.ok else "failed"), key, on
+        except requests.RequestException:
+            return "failed", key, on
+
+    # an old site creates the Kuma monitor inside that request — a few at a time
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for status, key, on in pool.map(one, todo):
+            out[status].append({"key": key, "monitored": on} if status == "changed" else key)
+    if out["failed"] and not out["changed"]:
+        out.update(ok=False, error=f"the site did not accept the change for {len(out['failed'])} device(s)")
+    return out
+
+
+@app.route("/api/hub/sites/<site_id>/monitoring", methods=["POST"])
+def api_site_monitoring(site_id):
+    """Put devices on, or take them off, a site's Monitored list. Body as the
+    site's /api/monitoring: {monitor: [keys], stop: [keys]}, sent with the hub
+    key. The hub's cached devices are patched so every view (and the alerting)
+    sees the change straight away."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    lists = {}
+    for field in ("monitor", "stop"):
+        v = body.get(field) or []
+        if not (isinstance(v, list) and all(isinstance(k, str) and k for k in v)):
+            return jsonify({"ok": False, "error": f"'{field}' must be a list of device keys"}), 400
+        lists[field] = list(dict.fromkeys(v))
+    n = len(lists["monitor"]) + len(lists["stop"])
+    if not n or n > _MONITOR_MAX:
+        return jsonify({"ok": False, "error": "send between 1 and 2000 devices"}), 400
+    if set(lists["monitor"]) & set(lists["stop"]):
+        return jsonify({"ok": False, "error": "a device can't be in both lists"}), 400
+    base, hdr = siteapi.base_url(site), siteapi.headers(site)
+    try:
+        r = requests.post(f"{base}/api/monitoring", json=lists, headers=hdr, timeout=(5, 20))
+    except requests.RequestException:
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+    if r.status_code == 404:
+        out = _monitoring_legacy(site_id, base, hdr, lists)
+    elif r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site refused the hub's key — see the site's Backups tab"}), 502
+    else:
+        try:
+            out = r.json()
+        except ValueError:
+            return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+        if not r.ok:
+            return jsonify({"ok": False, "error": out.get("error") or f"the site answered {r.status_code}"}), 502
+    bad = set(out.get("unknown") or []) | set(out.get("failed") or [])
+    for field, on in (("monitor", True), ("stop", False)):
+        for key in lists[field]:
+            if key not in bad:
+                poller.update_device(site_id, key, watch=on)
+    return jsonify(out), (200 if out.get("ok") else 502)
 
 
 @app.route("/api/hub/sites/<site_id>/devices/<path:key>/credentials/test", methods=["POST"])

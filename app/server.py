@@ -27,6 +27,7 @@ import history
 import hubvpn
 import identify
 import mikrotik
+import monitoring
 import netcfg
 import radiomon
 import siteauth
@@ -312,11 +313,18 @@ def api_devices():
     have = creds.keys_with_creds()
     devices = scanner.get_devices()
     plugged = switchmon.monitor.mac_map()
+    with scanner.lock:
+        missed = dict(scanner.miss)
     for d in devices:                      # flag only; never expose the secret here
+        # scans in a row that missed it: the list says offline after one, but a
+        # device only counts as down after alerts.offline_after (the hub's alerts)
+        d["missed_scans"] = missed.get(d.get("key"), 0)
         d["has_credentials"] = d.get("key") in have
         d["has_photo"] = os.path.exists(_photo_path(d.get("key", "")))
         _kreg = scanner.registry.get(d.get("key", ""), {})
         d["has_kuma"] = bool(_kreg.get("kuma_monitor_id") or _kreg.get("kuma_token"))
+        d["kuma_paused"] = bool(_kreg.get("kuma_paused"))
+        d["watch"] = monitoring.is_monitored(_kreg)   # = "Monitored" (see monitoring.py)
         d["geo"] = _kreg.get("geo") or None         # {lat, lon, note, ts} — set by hand
         ct = _kreg.get("cred_test")
         d["cred_test"] = {k: v for k, v in ct.items() if k != "fp"} if ct else None
@@ -328,6 +336,7 @@ def api_devices():
         "targets": cfg["targets"],
         "devices": devices,
         "last_scan": scanner.get_status()["last_scan"],
+        "offline_after": cfg["alerts"]["offline_after"],
     })
 
 
@@ -635,6 +644,7 @@ def api_credentials_bulk():
 
 
 @app.route("/api/devices/prune", methods=["POST"])
+@guard
 def api_devices_prune():
     """Forget stale devices. Body: {"days": N} removes offline devices not seen
     in N days; {"days": null} (or omitted) removes ALL currently-offline ones."""
@@ -648,56 +658,57 @@ def api_devices_prune():
     return jsonify({"ok": True, "removed": len(removed), "keys": removed})
 
 
-def _sync_watch_kuma(key, watch_on):
-    """Keep Kuma in step with the 🔔 watch flag: watching a device auto-creates
-    its ping monitor (when Kuma admin creds are configured); un-watching removes
-    the monitor again ONLY if the watch created it — a monitor ticked by hand
-    stays. Best-effort: the alert toggle must still work when Kuma is down."""
-    try:
-        ki = config.load()["integrations"]["kuma"]
-        base = kuma.effective_base(ki)
-        user = ki.get("username", "")
-        pw = creds.get("@kuma").get("password", "")
-        if not (base and user and pw):
-            return
-        reg = scanner.registry.get(key, {})
-        mid = reg.get("kuma_monitor_id")
-        if watch_on and not mid:
-            dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
-            if not (dev and dev.get("ip")):
-                return
-            res = kuma.provision(base, user, pw, scanner._kuma_name(dev), dev["ip"], 60,
-                                 dev.get("category"))
-            if res.get("ok"):
-                scanner.set_device_meta(key, kuma_monitor_id=res["monitor_id"],
-                                        kuma_ip=dev["ip"], kuma_by_watch=True)
-        elif not watch_on and mid and reg.get("kuma_by_watch"):
-            kuma.deprovision(base, user, pw, mid)
-            scanner.set_device_meta(key, kuma_token="", kuma_monitor_id=0,
-                                    kuma_by_watch=False)
-    except Exception as e:  # noqa: BLE001
-        print("watch-kuma sync error:", e, flush=True)
+@app.route("/api/monitoring", methods=["GET", "POST"])
+def api_monitoring():
+    """The Monitored list (monitoring.py). GET: counts. POST {monitor: [keys],
+    stop: [keys]} switches devices on/off it in one go — needs the site login or
+    the hub key, like other settings: it decides what the hub alerts on and
+    pauses/resumes Uptime Kuma monitors."""
+    if request.method == "GET":
+        return jsonify({"ok": True, **monitoring.summary(scanner)})
+    if not siteauth.allowed(request, session):
+        return siteauth._denied(request, session)
+    body = request.get_json(force=True, silent=True) or {}
+    lists = {}
+    for field in ("monitor", "stop"):
+        v = body.get(field) or []
+        if not (isinstance(v, list) and all(isinstance(k, str) and k for k in v)):
+            return jsonify({"ok": False, "error": f"'{field}' must be a list of device keys"}), 400
+        lists[field] = v
+    if len(lists["monitor"]) + len(lists["stop"]) > monitoring.MAX_KEYS:
+        return jsonify({"ok": False, "error": "too many devices in one request"}), 400
+    if set(lists["monitor"]) & set(lists["stop"]):
+        return jsonify({"ok": False, "error": "a device can't be in both lists"}), 400
+    res = monitoring.set_many(scanner, on=lists["monitor"], off=lists["stop"])
+    return jsonify({"ok": True, **res})
 
 
 @app.route("/api/devices/<path:key>", methods=["POST", "DELETE"])
 def api_device_meta(key):
     if request.method == "DELETE":
+        # Forget takes a device off every list (Monitored included) and deletes
+        # its Kuma monitor and history: a setting-level change, so it needs the login.
+        if not siteauth.allowed(request, session):
+            return siteauth._denied(request, session)
         removed = scanner.delete_device(key)
         return jsonify({"ok": removed}), (200 if removed else 404)
     body = request.get_json(force=True)
-    prev_watch = bool(scanner.registry.get(key, {}).get("watch"))
+    # `watch` is the Monitored switch — a setting, so it needs the login
+    # (older hubs never send it; the site page uses /api/monitoring).
+    if body.get("watch") is not None and not siteauth.allowed(request, session):
+        return siteauth._denied(request, session)
     reg = scanner.set_device_meta(
         key,
         name=body.get("name"),
         category=body.get("category"),
         type_label=body.get("type"),
-        watch=body.get("watch"),
         serial=body.get("serial"),
         model=body.get("model"),
         link=body.get("link"),
     )
-    if body.get("watch") is not None and bool(body["watch"]) != prev_watch:
-        _sync_watch_kuma(key, bool(body["watch"]))
+    if body.get("watch") is not None:
+        on = bool(body["watch"])
+        monitoring.set_many(scanner, on=[key] if on else [], off=[] if on else [key])
         reg = scanner.registry.get(key, reg)
     return jsonify({"ok": True, "registry": reg})
 
@@ -1601,40 +1612,28 @@ def api_device_health(key):
 def api_kuma(key):
     """Get/set the device's Uptime Kuma link.
 
-    POST {action:"create"} auto-creates the monitor (stores id + token),
-    {action:"remove"} deletes it, or {token:"..."} sets a token manually.
+    The auto monitor follows the Monitored switch (monitoring.py), so POST
+    {action:"create"} / {action:"remove"} just switch monitoring on / off (the
+    monitor is created or paused in the background); {token:"..."} sets a
+    hand-made push monitor's token. POSTs need the site login.
     """
     cfg = config.load()
     ki = cfg["integrations"]["kuma"]
     base = kuma.effective_base(ki)
 
     if request.method == "POST":
+        if not siteauth.allowed(request, session):
+            return siteauth._denied(request, session)
         body = request.get_json(force=True)
         action = body.get("action")
         if action in ("create", "remove"):
-            user = ki.get("username", "")
-            pw = creds.get("@kuma").get("password", "")
-            if not (base and user and pw):
+            if not monitoring.kuma_follows():
                 return jsonify({"ok": False, "error": "Set the Kuma URL, username and password in Settings first"})
-            if action == "create":
-                dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
-                if not dev:
-                    return jsonify({"ok": False, "error": "device not currently visible"}), 404
-                name = scanner._kuma_name(dev)
-                # Kuma pings the device directly every 60s -> smooth graph + true uptime
-                res = kuma.provision(base, user, pw, name, dev["ip"], 60, dev.get("category"))
-                if res.get("ok"):
-                    scanner.set_device_meta(key, kuma_monitor_id=res["monitor_id"],
-                                            kuma_ip=dev["ip"])
-                    return jsonify({"ok": True, "monitor_id": res["monitor_id"]})
-                return jsonify({"ok": False, "error": res.get("error", "create failed")})
-            # remove
-            mid = scanner.registry.get(key, {}).get("kuma_monitor_id")
-            if mid:
-                kuma.deprovision(base, user, pw, mid)
-            scanner.set_device_meta(key, kuma_token="", kuma_monitor_id=0,
-                                    kuma_by_watch=False)
-            return jsonify({"ok": True})
+            on = action == "create"
+            res = monitoring.set_many(scanner, on=[key] if on else [], off=[] if on else [key])
+            if res["unknown"]:
+                return jsonify({"ok": False, "error": "unknown device"}), 404
+            return jsonify({"ok": True, "monitored": on, "queued": True})
         # manual token set
         scanner.set_device_meta(key, kuma_token=body.get("token", ""))
 
@@ -1643,12 +1642,16 @@ def api_kuma(key):
     return jsonify({
         "token": token,
         "monitor_id": reg.get("kuma_monitor_id", 0),
+        "paused": bool(reg.get("kuma_paused")),
+        "monitored": monitoring.is_monitored(reg),
+        "follows": monitoring.kuma_follows(),
         "push_url": f"{base}/api/push/{token}?status=up&msg=OK&ping=0" if token else "",
         "health_url": f"{request.scheme}://{request.host}/api/devices/{key}/health",
     })
 
 
 @app.route("/api/kuma/sync-tags", methods=["POST"])
+@guard
 def api_kuma_sync_tags():
     """Tag every existing Kuma monitor with its device category (one-shot)."""
     cfg = config.load()
@@ -1670,6 +1673,7 @@ def api_kuma_sync_tags():
 
 
 @app.route("/api/kuma/repair", methods=["POST"])
+@guard
 def api_kuma_repair():
     """Convert every existing monitor to a 60s PING monitor pointed at the device's
     current IP (fixes the choppy 30-min push graphs)."""
@@ -1697,17 +1701,12 @@ def api_kuma_repair():
 
 
 @app.route("/api/kuma/monitor-bulk", methods=["POST"])
+@guard
 def api_kuma_monitor_bulk():
-    """Flag many devices for Kuma monitoring in one shot. body:
-    {scope:"category", value:"camera"} or {scope:"identified"}. Creates a 60s
-    ping monitor (tagged by category) for each matching device that isn't already
-    monitored; the monitor then follows the device's IP via _kuma_sync."""
-    cfg = config.load()
-    ki = cfg["integrations"]["kuma"]
-    base = kuma.effective_base(ki)
-    user = ki.get("username", "")
-    pw = creds.get("@kuma").get("password", "")
-    if not (base and user and pw):
+    """Monitor many devices in one shot. body: {scope:"category", value:"camera"}
+    or {scope:"identified"}. Kept for older pages: it is /api/monitoring for the
+    matching devices, and Kuma follows (a 60 s ping monitor, tagged by category)."""
+    if not monitoring.kuma_follows():
         return jsonify({"ok": False, "error": "Set the Kuma URL, username and password first"})
     body = request.get_json(force=True)
     scope = body.get("scope", "category")
@@ -1720,26 +1719,11 @@ def api_kuma_monitor_bulk():
             return bool(d.get("name") or (d.get("category") and d.get("category") != "unknown"))
         return False
 
-    devs = scanner.get_devices()
-    items, ip_by_key = [], {}
-    for d in devs:
-        if not (wanted(d) and d.get("ip")):
-            continue
-        if scanner.registry.get(d["key"], {}).get("kuma_monitor_id"):
-            continue                       # already monitored — skip
-        items.append((d["key"], scanner._kuma_name(d), d["ip"], d.get("category")))
-        ip_by_key[d["key"]] = d["ip"]
-    if not items:
-        return jsonify({"ok": True, "created": 0, "total": 0,
-                        "message": "Nothing to add — matching devices are already monitored."})
-    res = kuma.provision_many(base, user, pw, items, 60)
-    created = 0
-    for key, r in res.items():
-        if r.get("ok"):
-            scanner.set_device_meta(key, kuma_monitor_id=r["monitor_id"],
-                                    kuma_ip=ip_by_key.get(key))
-            created += 1
-    return jsonify({"ok": True, "created": created, "total": len(items)})
+    keys = [d["key"] for d in scanner.get_devices() if wanted(d) and d.get("ip")]
+    res = monitoring.set_many(scanner, on=keys)
+    n = len(res["changed"])
+    return jsonify({"ok": True, "created": n, "total": len(keys),
+                    **({} if n else {"message": "Nothing to add — matching devices are already monitored."})})
 
 
 @app.route("/api/kuma/test", methods=["POST"])
@@ -2020,6 +2004,9 @@ def api_config_import():
     applied = []
     cfg = b.get("config") or {}
     cfg.pop("auth", None)          # never carry a foreign auth section (future-proof)
+    # A bundle from before config_rev existed must run every migration on load;
+    # save() would otherwise fill in the current rev and skip them all.
+    cfg.setdefault("config_rev", 0)
     config.save(cfg)
     applied.append("settings")
     if isinstance(b.get("devices"), dict) and b["devices"]:
@@ -2041,6 +2028,7 @@ def api_config_import():
         if ok:
             hubvpn.up()
             applied.append("hub VPN link")
+    monitoring.after_restore(scanner)   # after the logins: seed an older registry, re-read Kuma
     scanner.trigger(mode="quick")
     return jsonify({"ok": True, "applied": applied})
 
@@ -2158,6 +2146,7 @@ def main():
     netcfg.recover_pending()       # revert any unconfirmed static change from before a restart
     netcfg.apply_addresses()       # (re)add managed secondary IPs
     tunnels.manager.start()
+    monitoring.seed(scanner)       # one-time: devices with a Kuma monitor become monitored
     scanner.start()
     listener.start()
     sysmon.monitor.start()

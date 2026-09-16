@@ -46,6 +46,9 @@ DEFAULTS = {
         "notify_site_offline": True,
         "offline_after_polls": 2,   # consecutive failed status polls before alerting
         "notify_ip_conflict": True,  # alert when a site gains a new IP-address conflict
+        # alert when a MONITORED device (the site's Monitored list) goes offline
+        # or comes back — grouped per site, see poller._check_monitored
+        "notify_device_offline": True,
     },
     "ai": {
         # Gemini API for the per-site AI PDF reports (hub Alerts & AI settings).

@@ -15,8 +15,8 @@ def push(alerts, title, message, priority="default", tags=None):
     if not topic:
         return None
     # ntfy headers are latin-1; drop anything it can't encode (e.g. emoji).
-    safe_title = (title or "Netwatch Hub").encode("latin-1", "ignore").decode("latin-1") \
-        or "Netwatch Hub"
+    safe_title = " ".join((title or "").split())          # no CR/LF in a header
+    safe_title = safe_title.encode("latin-1", "ignore").decode("latin-1") or "Netwatch Hub"
     headers = {"Title": safe_title, "Priority": priority}
     if tags:
         headers["Tags"] = ",".join(tags)

@@ -23,6 +23,7 @@ import history
 import hubvpn
 import identify
 import kuma
+import monitoring
 import notify
 import radiomon
 
@@ -153,13 +154,18 @@ _WRITE_LOCK = threading.Lock()
 
 
 def _write_json(path, data):
+    # Other threads change these dicts while one is saved. json's indent=2
+    # encoder is pure Python and can see them change mid-walk ("dictionary
+    # changed size during iteration"); the C encoder (no indent) holds the GIL
+    # for the whole dump, so snapshot with it and pretty-print the private copy.
+    snapshot = json.loads(json.dumps(data))
     # Serialised: two threads saving the registry at once (e.g. the names pass
     # workers) would otherwise race on the shared .tmp file and one would fail.
     with _WRITE_LOCK:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
         with open(tmp, "w") as f:
-            json.dump(data, f, indent=2)
+            json.dump(snapshot, f, indent=2)
         os.replace(tmp, path)
 
 
@@ -981,6 +987,8 @@ class Scanner:
                     self.save_registry()
                 except Exception as e:
                     print("kuma host-sync error:", e, flush=True)
+        # monitors still out of step with the Monitored switch (Kuma was down…)
+        monitoring.reconcile(self)
 
     # ---- public api ----------------------------------------------------
     def trigger(self, mode="quick", target=None, hosts=None):
@@ -1257,15 +1265,15 @@ class Scanner:
             return dict(self.status)
 
     def set_device_meta(self, key, name=None, category=None, type_label=None,
-                        watch=None, serial=None, model=None, link=None, kuma_token=None,
-                        kuma_monitor_id=None, kuma_ip=None, kuma_by_watch=None):
+                        serial=None, model=None, link=None, kuma_token=None,
+                        kuma_monitor_id=None, kuma_ip=None):
+        """Operator/device metadata. The Monitored switch (`watch`) is NOT set
+        here — monitoring.set_many() owns it, so Uptime Kuma always follows."""
         reg = self.registry.get(key, {})
         for field, val in (("name", name), ("category", category), ("type", type_label),
                            ("serial", serial), ("model", model)):
             if val is not None:
                 reg[field] = val
-        if watch is not None:
-            reg["watch"] = bool(watch)
         if link is not None:
             reg["link"] = link or ""        # "" clears the link
         if kuma_token is not None:
@@ -1274,15 +1282,13 @@ class Scanner:
             reg["kuma_monitor_id"] = kuma_monitor_id or 0
         if kuma_ip is not None:
             reg["kuma_ip"] = kuma_ip
-        if kuma_by_watch is not None:   # monitor exists because of the 🔔 watch
-            reg["kuma_by_watch"] = bool(kuma_by_watch)
         self.registry[key] = reg
         self.save_registry()
         with self.lock:
             if key in self.devices:
                 self.devices[key].update({k: v for k, v in
                                           (("name", name), ("category", category),
-                                           ("type", type_label), ("watch", watch),
+                                           ("type", type_label),
                                            ("serial", serial), ("model", model), ("link", link))
                                           if v is not None})
         return reg
@@ -1322,6 +1328,17 @@ class Scanner:
         except Exception as e:  # noqa: BLE001 — forgetting must never fail on Kuma
             print("kuma deprovision on forget error:", e, flush=True)
 
+    @staticmethod
+    def _drop_kuma_monitors(monitor_ids):
+        login = monitoring.kuma_login()
+        if not login:
+            return
+        for mid in monitor_ids:
+            try:
+                kuma.deprovision(*login, mid)
+            except Exception as e:  # noqa: BLE001 — best-effort cleanup
+                print("kuma deprovision on prune error:", e, flush=True)
+
     def delete_device(self, key):
         """Forget a device entirely: registry, live state, miss counter,
         seen-set, its uptime history — and its auto-created Kuma monitor."""
@@ -1347,7 +1364,8 @@ class Scanner:
     def prune_devices(self, days=None, only_offline=True):
         """Forget devices not seen recently. With days=None, removes every
         currently-offline device; otherwise those whose last_seen is older than
-        `days`. Returns the list of removed keys.
+        `days`. Monitored devices are never pruned — they leave only by Forget.
+        Returns the list of removed keys.
 
         Done as ONE atomic batch (single registry/state save + a single history
         delete) — a per-device loop rewrote devices.json/state.json and committed
@@ -1361,7 +1379,11 @@ class Scanner:
                     continue
                 if cutoff is not None and (d.get("last_seen") or 0) > cutoff:
                     continue
+                if monitoring.is_monitored(self.registry.get(key)):
+                    continue
                 victims.append(key)
+            monitors = [self.registry[k]["kuma_monitor_id"] for k in victims
+                        if (self.registry.get(k) or {}).get("kuma_monitor_id")]
             for key in victims:
                 self.devices.pop(key, None)
                 self.miss.pop(key, None)
@@ -1370,6 +1392,9 @@ class Scanner:
         if victims:
             self.save_registry()
             self._save_state()
+            if monitors:        # like Forget: no orphaned (paused) monitors left in Kuma
+                threading.Thread(target=self._drop_kuma_monitors, args=(monitors,),
+                                 daemon=True).start()
             try:
                 history.delete_keys(victims)
             except Exception:  # noqa: BLE001 - history cleanup is best-effort

@@ -348,6 +348,74 @@ def tag_monitors(base_url, user, pw, items):
             pass
 
 
+def monitor_states(base_url, user, pw, wait=10):
+    """{monitor_id: active} for every monitor this Kuma has — what is really
+    there, whatever Netwatch's registry says. None when it can't be read
+    (unreachable, login refused, no list within `wait` s)."""
+    import threading
+    got, listing = threading.Event(), {}
+    try:
+        sio, _ = _connect(base_url)
+    except Exception:
+        return None
+
+    @sio.on("monitorList")          # pushed right after login (see provision_internet)
+    def _ml(data):
+        if isinstance(data, dict):
+            listing.clear()
+            listing.update(data)
+        got.set()
+
+    try:
+        ok, _msg = _login(sio, user, pw)
+        if not ok or not got.wait(wait):
+            return None
+        return {int(m["id"]): bool(m.get("active")) for m in listing.values()
+                if isinstance(m, dict) and m.get("id") is not None}
+    except Exception:
+        return None
+    finally:
+        try:
+            sio.disconnect()
+        except Exception:
+            pass
+
+
+def set_active_many(base_url, user, pw, items):
+    """Pause (active False) or resume (active True) monitors in ONE admin session.
+    A paused monitor keeps its history and stops checking and alerting; editMonitor
+    (ensure_ping's IP follow) leaves it paused. items: [(monitor_id, active)].
+    Returns {monitor_id: {ok, error, gone}} — gone: Kuma no longer has it."""
+    items = [(mid, bool(active)) for mid, active in items if mid]
+    if not items:
+        return {}
+    try:
+        sio, _ = _connect(base_url)
+    except Exception as e:
+        return {mid: {"ok": False, "error": f"cannot reach Kuma: {e}"} for mid, _ in items}
+    out = {}
+    try:
+        ok, msg = _login(sio, user, pw)
+        if not ok:
+            return {mid: {"ok": False, "error": msg} for mid, _ in items}
+        for mid, active in items:
+            try:
+                r = sio.call("resumeMonitor" if active else "pauseMonitor", mid, timeout=15) or {}
+            except Exception as e:
+                out[mid] = {"ok": False, "error": str(e)[:100]}
+                continue
+            err = None if r.get("ok") else (r.get("msg") or "failed")
+            # Kuma's checkOwner answers this for a monitor deleted in its own UI
+            out[mid] = {"ok": err is None, "error": err,
+                        "gone": bool(err and "own this monitor" in err)}
+    finally:
+        try:
+            sio.disconnect()
+        except Exception:
+            pass
+    return out
+
+
 def deprovision(base_url, user, pw, monitor_id):
     try:
         sio, _ = _connect(base_url)

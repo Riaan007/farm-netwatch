@@ -211,6 +211,44 @@
         .nw-tag { display: inline-flex; align-items: center; gap: .25rem; padding: 0 .4rem; height: 18px; border-radius: .35rem; font-size: 10.5px; font-weight: 650; background: rgba(148,163,184,.12); color: #cbd5e1; white-space: nowrap; }
         .nw-feats { display: inline-flex; gap: 2px; }
         .nw-feats .feature-badge { width: 15px; height: 15px; }
+        /* device lists: Monitored · Other devices · All */
+        .nw-lists { display: flex; gap: .5rem; padding: 0 1.1rem .8rem; flex-wrap: wrap; }
+        .nw-lists button { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: baseline; column-gap: .8rem; min-width: 10.5rem; padding: .5rem .85rem .55rem; border-radius: .85rem; border: 1px solid rgba(148,163,184,.18); background: rgba(148,163,184,.05); color: #94a3b8; text-align: left; }
+        .nw-lists button:hover { border-color: rgba(148,163,184,.4); color: #e2e8f0; }
+        .nw-lists button.on { border-color: rgba(34,211,238,.65); background: rgba(34,211,238,.11); color: #f1f5f9; box-shadow: 0 0 0 1px rgba(34,211,238,.2) inset; }
+        .nw-lists button.bad { border-color: rgba(251,113,133,.6); }
+        .nw-lists button.bad.on { background: rgba(127,29,29,.22); box-shadow: 0 0 0 1px rgba(251,113,133,.3) inset; }
+        .nw-lists b { font-size: 13.5px; font-weight: 700; white-space: nowrap; }
+        .nw-lists .v { font-size: 1.15rem; font-weight: 750; font-variant-numeric: tabular-nums; color: #e2e8f0; white-space: nowrap; }
+        .nw-lists .v i { font-style: normal; font-size: .75em; color: #64748b; }
+        .nw-lists small { grid-column: 1 / -1; font-size: 11.5px; color: #64748b; white-space: nowrap; }
+        .nw-lists .dn { color: #fb7185; font-weight: 700; } .nw-lists .up { color: #34d399; font-weight: 700; }
+        .nw-sech { display: flex; align-items: center; gap: .5rem; margin: 1.2rem 0 .55rem; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; }
+        .nw-sech:first-child { margin-top: 0; }
+        .nw-sech.bad { color: #fda4af; } .nw-sech.good { color: #6ee7b7; }
+        .nw-sech .cnt { color: #64748b; letter-spacing: 0; text-transform: none; font-weight: 600; }
+        .nw-card .down { color: #fda4af; font-weight: 700; }
+        .nw-monempty { display: grid; justify-items: center; gap: .55rem; padding: 2.4rem 1rem; text-align: center; color: #94a3b8; }
+        .nw-monempty .ico { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: #67e8f9; background: rgba(34,211,238,.1); }
+        .nw-monempty .ico svg { width: 22px; height: 22px; }
+        .nw-monempty b { color: #f1f5f9; font-size: 16px; }
+        .nw-monempty p { margin: 0; max-width: 36rem; font-size: 13px; line-height: 1.5; }
+        .nw-monempty .acts { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; margin-top: .35rem; }
+        .nw-selbar { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 40; display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 1.5rem); padding: .55rem .7rem .55rem 1rem; border-radius: 1.1rem; background: rgba(11,19,34,.96); border: 1px solid rgba(34,211,238,.4); box-shadow: 0 16px 50px -10px rgba(0,0,0,.8); }
+        .nw-selbar .cnt { font-size: 13px; font-weight: 700; color: #f1f5f9; margin-right: .2rem; white-space: nowrap; }
+        .nw-selbar .sep { width: 1px; height: 22px; background: rgba(148,163,184,.25); }
+        /* the Monitored switch in the device window */
+        .nw-monrow { position: relative; display: grid; grid-template-columns: auto minmax(0,1fr); gap: .8rem; align-items: center; padding: .7rem .85rem; border-radius: .8rem; border: 1px solid rgba(148,163,184,.18); background: rgba(2,6,23,.35); cursor: pointer; }
+        .nw-monrow.on { border-color: rgba(34,211,238,.45); background: rgba(34,211,238,.08); }
+        .nw-monrow.busy { opacity: .6; cursor: progress; }
+        .nw-monrow input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+        .nw-monrow .sw { width: 42px; height: 24px; border-radius: 99px; background: rgba(148,163,184,.3); position: relative; transition: background .15s; }
+        .nw-monrow .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #e2e8f0; transition: transform .15s; }
+        .nw-monrow input:checked + .sw { background: #0891b2; }
+        .nw-monrow input:checked + .sw::after { transform: translateX(18px); }
+        .nw-monrow input:focus-visible + .sw { outline: 2px solid #22d3ee; outline-offset: 2px; }
+        .nw-monrow b { display: block; color: #f1f5f9; font-size: 14px; }
+        .nw-monrow small { display: block; color: #94a3b8; font-size: 12px; line-height: 1.45; }
         /* list */
         .nw-tablewrap { overflow-x: auto; margin: -1rem -1.1rem -1.1rem; }
         table.nw-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -473,8 +511,6 @@
         .nw-tgl b { font-size: 13px; color: #e2e8f0; font-weight: 650; }
         .nw-tgl span { font-size: 12px; color: #64748b; line-height: 1.45; }
         .nw-subh { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; margin: .2rem 0 -.3rem; }
-        .nw-catgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .45rem; }
-        .nw-catgrid > div { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .35rem .5rem .35rem .7rem; border-radius: .6rem; background: rgba(2,6,23,.35); border: 1px solid rgba(148,163,184,.1); }
         .nw-savebar { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 45; display: flex; align-items: center; gap: .75rem; padding: .6rem .7rem .6rem 1.1rem; border-radius: 999px; background: rgba(11,19,36,.96); border: 1px solid rgba(34,211,238,.45); box-shadow: 0 16px 50px -10px rgba(0,0,0,.8); font-size: 13px; color: #e2e8f0; }
         .nw-savebar b { color: #67e8f9; }
         .nw-locked { max-width: 34rem; margin: 3rem auto; text-align: center; padding: 2rem; }
@@ -515,6 +551,10 @@
             .nw-body { padding: .8rem; }
             .nw-tablewrap { margin: -.8rem; }
             .nw-cards { grid-template-columns: 1fr; }
+            .nw-lists { padding: 0 .8rem .7rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+            .nw-lists button { min-width: 9.2rem; flex: none; }
+            .nw-selbar { bottom: .5rem; width: calc(100vw - 1rem); }
+            .nw-selbar .sep { display: none; }
             .nw-table .hide-m { display: none; }
             .nw-map { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); }
             .nw-scan .menu-anchor { position: static; }
@@ -601,9 +641,11 @@
                         <button data-view="list" title="List"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="lbl">List</span></button>
                         <button data-view="map" title="IP map — every address on the subnet, including free ones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h4v4H3zM10 3h4v4h-4zM17 3h4v4h-4zM3 10h4v4H3zM10 10h4v4h-4zM17 10h4v4h-4zM3 17h4v4H3zM10 17h4v4h-4z"/></svg><span class="lbl">IP map</span></button>
                     </div>
+                    <button id="mon-pick-btn" onclick="openMonitorPicker()" class="nw-ib" title="Choose which devices are monitored"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span class="lbl">Choose monitored</span></button>
                     <button id="select-btn" onclick="toggleSelectMode()" class="nw-ib" title="Select several devices to act on at once"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="lbl" id="select-lbl">Select</span></button>
                 </div>
             </div>
+            <div id="list-tabs" class="nw-lists" role="group" aria-label="Device lists"></div>
             <div id="filter-bar" class="nw-chips"></div>
             <div id="network-grid" class="nw-body"></div>
         </section>
@@ -613,7 +655,7 @@
             <div><div class="nw-eyebrow">Map</div><h1>Where the equipment is</h1><p id="map-sub">Devices you have given a GPS position. Satellite imagery © Esri.</p></div>
             <div class="nw-tools">
                 <label class="nw-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm9 3-4.3-4.3"/></svg><span class="sr-only">Find a device</span><input id="map-q" type="search" placeholder="Find a device…" autocomplete="off"></label>
-                <select id="map-show" class="nw-sel" aria-label="Show"><option value="">All placed devices</option><option value="online">Online</option><option value="offline">Offline</option><option value="camera">Cameras &amp; NVRs</option><option value="network">Network</option></select>
+                <select id="map-show" class="nw-sel" aria-label="Show"><option value="">All placed devices</option><option value="online">Online</option><option value="offline">Offline</option><option value="camera">Cameras &amp; NVRs</option><option value="network">Network</option><option value="monitored">Monitored</option></select>
                 <label class="nw-ib" style="cursor:pointer"><input id="map-labels" type="checkbox" style="accent-color:#22d3ee"> <span class="lbl">Names</span></label>
                 <button class="nw-ib" id="map-site" onclick="mapSiteButton()" title="Where this site is — click the spot on the map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7M5 10v10h14V10M9 20v-6h6v6"/></svg><span class="lbl" id="map-site-lbl">Site location</span></button>
                 <button class="nw-ib" id="map-edit" title="Unlock the pins so you can drag them"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11h12v10H6zM9 11V8a3 3 0 0 1 6 0"/></svg><span class="lbl" id="map-edit-lbl">Move pins</span></button>
@@ -793,14 +835,14 @@
                     <label class="nw-lbl">ntfy topic <small>blank = no push alerts · pick a hard-to-guess name</small>
                         <span style="display:flex;gap:.5rem"><input id="setup-ntfy" type="text" class="nw-inp mono" data-track placeholder="farm-netwatch-xyz"><button class="nw-btn ok" onclick="testNtfy()">Send test</button></span></label>
                     <p id="ntfy-test-result" class="nw-help"></p>
-                    <p class="nw-help">Device <b>up/down</b> monitoring is Uptime Kuma's job. This topic carries new-device, IP-problem and hub-link alerts.</p>
+                    <p class="nw-help">When a <b>monitored</b> device goes offline or comes back, the central hub sends the alert (hub Settings → Alerts), and Uptime Kuma can too. This topic carries new-device, IP-problem and hub-link alerts.</p>
                     <div class="nw-f2">
                         <label class="nw-tgl"><input id="setup-notify-hub" type="checkbox" data-track><b>Alert when the hub link drops</b><span>Push a message when the VPN link to the central hub goes offline.</span></label>
                         <label class="nw-tgl"><input id="setup-allow-commands" type="checkbox" data-track><b>Allow remote commands</b><span>ping / scan / tracert by messaging the topic. <b style="color:#fda4af">Anyone who knows the topic can run them.</b> Send <code>help</code> for the list.</span></label>
                     </div>
-                    <div class="nw-subh">Alerts per device type</div>
-                    <p class="nw-help">"Default" follows the settings above. A 🔔 watched device always alerts both ways.</p>
-                    <div id="cat-alerts" class="nw-catgrid" data-track></div>
+                    <div class="nw-subh">Monitored devices</div>
+                    <p class="nw-help" id="set-mon-sum">Loading…</p>
+                    <div><button class="nw-btn" type="button" onclick="openMonitorPicker()">🔔 Choose monitored devices…</button></div>
                 </div>
             </section>
 
@@ -821,17 +863,14 @@
                         <button onclick="testKuma()" class="px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold whitespace-nowrap">Test</button>
                     </div>
                     <p id="kuma-test-result" class="text-xs mt-1"></p>
-                    <p class="text-[10px] text-slate-400 mt-1">Run it with <code>docker compose --profile kuma up -d</code>, create the Kuma admin account, and enter it above. Then open a device and tick <b>"Monitor in Uptime Kuma"</b> — Netwatch builds that monitor (tagged with its category) and pushes its status each scan. Only devices you tick are added.</p>
+                    <p class="text-[10px] text-slate-400 mt-1">Run it with <code>docker compose --profile kuma up -d</code>, create the Kuma admin account, and enter it above. From then on Kuma follows the <b>Monitored</b> list: every monitored device gets a 60-second ping monitor (tagged with its category, and following the device when DHCP moves it); a device taken off the list has its monitor paused, history kept.</p>
                     <div class="mt-2 flex flex-wrap gap-2 items-center">
-                        <button onclick="monitorBulk('category','camera')" class="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 rounded-lg text-xs font-bold">📈 Monitor all cameras</button>
-                        <button onclick="monitorBulk('identified')" class="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 rounded-lg text-xs font-bold">📈 Monitor all identified</button>
+                        <button onclick="openMonitorPicker()" class="px-3 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 rounded-lg text-xs font-bold">🔔 Choose monitored devices…</button>
                     </div>
-                    <p class="text-[10px] text-slate-400 mt-1">Bulk-create Kuma ping monitors (tagged by category). Each monitor auto-follows its device's IP, so it keeps working when DHCP moves the device. Already-monitored devices are skipped.</p>
                     <div class="mt-2 flex flex-wrap gap-2 items-center">
                         <button onclick="repairKuma()" class="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 rounded-lg text-xs font-bold">🛠️ Fix monitors → ping (60s)</button>
                         <button onclick="syncKumaTags()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">🏷️ Tag by category</button>
                     </div>
-                    <span id="kuma-bulk-result" class="text-xs"></span>
                     <span id="kuma-repair-result" class="text-xs"></span>
                     <span id="kuma-tag-result" class="text-xs ml-2"></span>
                     </div>
@@ -914,7 +953,7 @@
                         <span id="prune-result" class="text-xs"></span>
                     </div>
                     <p id="prune-preview" class="nw-help"></p>
-                    <p class="nw-help">Removes stale devices (visitors' phones, kit from another network, retired gear) from the list, registry and uptime history. <b>0 days</b> removes every device that is offline right now. Anything still on the network comes back on the next scan. Event history is kept.</p>
+                    <p class="nw-help">Removes stale devices (visitors' phones, kit from another network, retired gear) from the list, registry and uptime history. <b>0 days</b> removes every device that is offline right now. <b>Monitored devices are never removed here</b> — take them off the Monitored list first, or Forget them one at a time. Anything still on the network comes back on the next scan. Event history is kept.</p>
                 </div>
             </section>
 
@@ -952,11 +991,16 @@
     <div id="nw-toasts" class="nw-toasts" aria-live="polite"></div>
 
     <!-- Floating selection action bar -->
-    <div id="select-bar" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden z-40 bg-[#0b1322]/95 backdrop-blur border border-white/15 text-slate-100 rounded-full shadow-2xl px-5 py-3 flex items-center gap-4">
-        <span id="select-count" class="text-sm font-bold">0 selected</span>
-        <button onclick="deepScanSelected()" class="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 rounded-full text-xs font-bold uppercase">🔬 Deep scan</button>
-        <button onclick="quickScanSelected()" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-full text-xs font-bold uppercase">⚡ Quick</button>
-        <button onclick="clearSelection()" class="text-slate-400 hover:text-white text-xs">Clear</button>
+    <div id="select-bar" class="nw-selbar" hidden role="region" aria-label="Selected devices">
+        <span id="select-count" class="cnt">Tap devices to select them</span>
+        <button onclick="monitorSelected(true)" class="nw-btn sm pri" data-need>🔔 Monitor</button>
+        <button onclick="monitorSelected(false)" class="nw-btn sm" data-need>Stop monitoring</button>
+        <span class="sep" aria-hidden="true"></span>
+        <button onclick="quickScanSelected()" class="nw-btn sm" data-need>⚡ Quick scan</button>
+        <button onclick="deepScanSelected()" class="nw-btn sm" data-need>🔬 Deep scan</button>
+        <button onclick="selectAllShown()" class="nw-btn sm">Select all shown</button>
+        <button onclick="clearSelection()" class="nw-btn sm" data-need>Clear</button>
+        <button onclick="toggleSelectMode()" class="nw-btn sm" style="background:transparent;border-color:transparent">Done</button>
     </div>
 
     <!-- Bulk credentials: one login onto many devices, or copy from one device -->
@@ -1042,6 +1086,8 @@
             <div class="overflow-y-auto p-6 grow">
                 <div class="space-y-4">
                   <div id="mp-overview" class="mpane space-y-4">
+                    <label id="mon-row" class="nw-monrow"><input id="edit-watch" type="checkbox" onchange="toggleWatch()"><span class="sw" aria-hidden="true"></span>
+                        <span><b>🔔 Monitored</b><small id="mon-row-sub"></small></span></label>
                     <div class="flex items-center gap-3">
                         <img id="device-photo" class="w-20 h-20 rounded-lg object-cover border bg-white/10 hidden" alt="device photo">
                         <div id="photo-placeholder" class="w-20 h-20 rounded-lg border bg-white/5 flex items-center justify-center text-slate-600 text-3xl shrink-0">📷</div>
@@ -1183,10 +1229,6 @@
                             </select>
                             <button onclick="saveDevice()" class="px-4 py-2 bg-cyan-600 text-white rounded-lg text-sm font-bold">Save</button>
                         </div>
-                        <label class="flex items-center gap-2 mt-3 text-sm bg-amber-500/10 border border-amber-400/25 rounded-lg p-2 cursor-pointer">
-                            <input id="edit-watch" type="checkbox" class="w-4 h-4" onchange="toggleWatch()">
-                            <span>🔔 <b>Watch this device</b> — alert me when it goes offline <i>and</i> when it comes back online</span>
-                        </label>
                         <div class="mt-3 flex items-center justify-between gap-2">
                             <button onclick="openDeviceHistory()" class="text-xs text-cyan-300 hover:text-cyan-200 font-bold underline">🕓 View this IP's history</button>
                             <button onclick="forgetDevice()" class="text-xs text-red-400 hover:text-red-300 font-bold underline">🗑️ Forget this device</button>
@@ -1236,11 +1278,8 @@
 
                     <div id="kuma-section" class="pt-3 border-t border-white/10">
                         <label class="text-xs font-bold text-slate-400 uppercase block mb-2">📈 Uptime Kuma</label>
-                        <label class="flex items-center gap-2 text-sm bg-cyan-500/10 border border-cyan-400/25 rounded-lg p-2 cursor-pointer">
-                            <input id="kuma-monitor" type="checkbox" class="w-4 h-4" onchange="toggleKumaMonitor()">
-                            <span><b>Monitor in Uptime Kuma</b> — Kuma pings this device every 60s (smooth uptime graph)</span>
-                        </label>
-                        <p id="kuma-status" class="text-xs mt-1"></p>
+                        <p id="kuma-status" class="text-sm text-slate-300"></p>
+                        <p class="text-[10px] text-slate-400 mt-1">Kuma follows the <b>Monitored</b> switch on the Overview tab: monitoring a device gives it a 60-second ping monitor, and stopping pauses that monitor (its history is kept).</p>
                         <details class="mt-2">
                             <summary class="text-[11px] text-slate-400 cursor-pointer">Manual / pull setup</summary>
                             <div class="space-y-2 mt-2">
@@ -1271,6 +1310,7 @@
     <script src="/static/auth.js"></script>
     <script src="/static/switchview.js"></script>
     <script src="/static/routerview.js"></script>
+    <script src="/static/monitorpicker.js"></script>
     <script src="/static/vendor/leaflet/leaflet.js"></script>
     <script>
         let DATA = { targets: [], devices: [] };
@@ -1281,7 +1321,7 @@
         let CURRENT_KEY = null;
         let MODAL_IP = null;
         let SELECT_MODE = false;
-        let SELECTED_IPS = new Set();
+        let SELECTED_KEYS = new Set();     // select mode: device keys (an IP can be shared)
         let FEATURES = {};                 // experimental feature flags from /api/status
         let PROBLEMS = [];                 // latest /api/problems result
         let PROBLEM_KEYS = new Set();      // device keys involved in any problem (grid filter)
@@ -1410,7 +1450,7 @@
             PROBLEM_KEYS = new Set();
             PROBLEMS.forEach(p => (p.devices||[]).forEach(d => d.key && PROBLEM_KEYS.add(d.key)));
             tagProblemCards();
-            buildFilterChips(devicesInView());     // refresh the Problems chip count
+            buildFilterChips(devicesInView().filter(d => inList(d)));     // refresh the Problems chip count
 
             if(!PROBLEMS.length){ box.classList.add('hidden'); box.innerHTML=''; return; }
             box.classList.remove('hidden');
@@ -1511,10 +1551,32 @@
             printer:'#22d3ee', nas:'#60a5fa', voip:'#4ade80', alarm:'#f87171', solar:'#facc15', media:'#fb923c',
             iot:'#2dd4bf', pc:'#94a3b8', server:'#34d399', unknown:'#fbbf24' };
         let VIEW = 'cards', SORT = 'ip', QUERY = '', STATUS = null, WIFI = null, QUIET_OPEN = false;
-        try { VIEW = localStorage.getItem('nw.view') || 'cards'; SORT = localStorage.getItem('nw.sort') || 'ip'; } catch(e){}
+        // Which list the devices panel shows: the operator's Monitored devices (online/offline
+        // first), every Other device, or All. MON_INFO = /api/monitoring (does Kuma follow?).
+        let LIST = 'monitored', MON_INFO = null;
+        try { VIEW = localStorage.getItem('nw.view') || 'cards'; SORT = localStorage.getItem('nw.sort') || 'ip'; LIST = localStorage.getItem('nw.list') || 'monitored'; } catch(e){}
+        if(!['monitored','other','all'].includes(LIST)) LIST = 'monitored';
         const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         const nowS = () => Math.floor(Date.now()/1000);
-        function devState(d){ return d.online ? 'online' : (d.last_seen && nowS() - d.last_seen < QUIET_AFTER ? 'offline' : 'quiet'); }
+        // A monitored device never goes "quiet": down for a week is still down.
+        function devState(d){ return d.online ? 'online' : (d.watch || (d.last_seen && nowS() - d.last_seen < QUIET_AFTER)) ? 'offline' : 'quiet'; }
+        function inList(d, l){ l = l || LIST; return l === 'monitored' ? !!d.watch : l === 'other' ? !d.watch : true; }
+        function spanText(s){
+            const m = Math.max(1, Math.floor(s/60));
+            if(m < 60) return m + ' min';
+            const h = Math.floor(m/60); if(h < 24) return h + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
+            const dd = Math.floor(h/24); return dd + ' d' + (h % 24 ? ' ' + (h % 24) + ' h' : '');
+        }
+        function downFor(d){ return d.last_seen ? 'down ' + spanText(nowS() - d.last_seen) : 'down'; }
+        const BELL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg>';
+        const MON_GROUPS = [['cctv','Cameras & recorders'], ['net','Network & wireless'], ['power','Alarm & power'], ['other','Other devices'], ['unknown','Unidentified']];
+        function monGroup(d){
+            const c = d.category;
+            if(CAM_CATS.includes(c)) return 'cctv';
+            if(NET_CATS.includes(c) || /mikrotik|routerboard|routeros/i.test([d.vendor, d.model, d.hostname].join(' '))) return 'net';
+            if(c === 'alarm' || c === 'solar') return 'power';
+            return !c || c === 'unknown' ? (d.name ? 'other' : 'unknown') : 'other';
+        }
         function devTitle(d){ return d.name || d.device_name || d.model || (d.type && !/^unknown/i.test(d.type) ? d.type : '') || d.hostname || (d.vendor ? d.vendor.replace(/,?\s*(Co\.|Ltd|Inc|Corp|Technology|Digital).*$/i,'') : '') || 'Unknown device'; }
         function vendorShort(v){ return (v||'').replace(/,?\s*(Co\.,?\s*Ltd\.?|Ltd\.?|Inc\.?|Corp\.?|Corporation)\s*$/i,'').replace(/\s+(Digital\s+)?Technolog(y|ies)(\s+Co.*)?$/i,'').replace(/^Hangzhou\s+/i,'').trim(); }
         /* IP search, same rules as the hub Control Center:
@@ -1539,7 +1601,7 @@
                 case 'camera': return CAM_CATS.includes(d.category);
                 case 'network': return NET_CATS.includes(d.category);
                 case 'problem': return PROBLEM_KEYS.has(d.key);
-                case 'watched': return !!d.watch;
+                case 'watched': case 'monitored': return !!d.watch;
                 default: return d.category === f;
             }
         }
@@ -1565,10 +1627,10 @@
         function flagIcons(d){
             const risky = (d.ports||[]).some(p => RISKY_PORTS[p]);
             return [
-                d.watch ? '<span title="Watched — alerts when it goes offline">🔔</span>' : '',
+                d.watch && LIST === 'all' ? '<span title="Monitored">🔔</span>' : '',
                 d.geo ? '<span title="On the map">📍</span>' : '',
                 d.has_credentials ? '<span title="Login saved">🔑</span>' : '',
-                d.has_kuma ? '<span title="Monitored in Uptime Kuma">📈</span>' : '',
+                d.has_kuma ? (d.kuma_paused ? '<span title="Uptime Kuma monitor paused (not monitored)" style="opacity:.4">📈</span>' : '<span title="Uptime Kuma pings it every minute">📈</span>') : '',
                 d.link ? '<span title="Linked to another device">🔗</span>' : '',
                 d.ip_conflict ? `<span title="IP conflict — another device also answers ${esc(d.ip)}">⚠️</span>` : (d.ip_rotated ? `<span title="Address recently held by a different MAC (rotating private Wi-Fi address or DHCP reuse)">🔁</span>` : ''),
                 risky ? '<span title="Risky exposed port (Telnet/FTP/…)">🔓</span>' : '',
@@ -1576,14 +1638,16 @@
         }
         function ipCell(d, cls){
             const web = (d.features||[]).includes('W');
-            return web ? `<a class="${cls}" href="http://${esc(d.ip)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open the device's web page">${esc(d.ip)}</a>` : `<span class="${cls}">${esc(d.ip)}</span>`;
+            return web ? `<a class="${cls}" href="http://${esc(d.ip)}" target="_blank" rel="noopener" onclick="ipLinkClick(event)" title="Open the device's web page">${esc(d.ip)}</a>` : `<span class="${cls}">${esc(d.ip)}</span>`;
         }
-        function seenText(d){ return d.online ? 'online now' : 'seen ' + devAge(d.last_seen); }
+        // In select mode a tap anywhere on a device selects it — the IP link included.
+        function ipLinkClick(e){ if(SELECT_MODE) e.preventDefault(); else e.stopPropagation(); }
+        function seenText(d){ return d.online ? 'online now' : d.watch ? downFor(d) : 'seen ' + devAge(d.last_seen); }
 
         function cardHtml(d){
             const st = devState(d);
             const cls = ['nw-card', st === 'offline' ? 'off' : '', st === 'quiet' ? 'off quiet' : '', d.watch ? 'watch' : '',
-                (!isIdentified(d) && d.online) ? 'myst' : '', SELECTED_IPS.has(d.ip) ? 'sel' : ''].join(' ');
+                (!isIdentified(d) && d.online) ? 'myst' : '', SELECTED_KEYS.has(d.key) ? 'sel' : ''].join(' ');
             const acc = st === 'online' ? (catAccent[d.category] || '#64748b') : st === 'offline' ? '#fb7185' : '#475569';
             const photo = d.has_photo ? `<img class="ph" src="/api/devices/${encodeURIComponent(d.key)}/photo" loading="lazy" alt="">` : '';
             const vm = [d.model && d.model !== devTitle(d) ? d.model : '', vendorShort(d.vendor)].filter(Boolean).join(' · ') || (d.mac || '');
@@ -1591,12 +1655,12 @@
                 <div class="r1">${photo}<span class="nw-dot ${st==='online'?'':st==='offline'?'off':'quiet'}" title="${st}"></span><span class="nm">${esc(devTitle(d))}</span><span class="flags">${flagIcons(d)}</span></div>
                 <div class="r2">${ipCell(d, 'ip')}<span class="rtt">${d.online && d.rtt != null ? d.rtt + ' ms' : ''}</span></div>
                 <div class="vm" title="${esc(d.vendor||'')}">${esc(vm)}</div>
-                <div class="r3"><span class="nw-tag">${catIcon[d.category]||'•'} ${esc(catLabel[d.category]||d.category||'Unknown')}</span><span class="nw-feats">${featureBadges(d)}</span><span class="sp ${st==='offline'?'text-rose-300':''}">${seenText(d)}</span></div>
+                <div class="r3"><span class="nw-tag">${catIcon[d.category]||'•'} ${esc(catLabel[d.category]||d.category||'Unknown')}</span><span class="nw-feats">${featureBadges(d)}</span><span class="sp ${d.watch && !d.online ? 'down' : st==='offline'?'text-rose-300':''}">${seenText(d)}</span></div>
             </div>`;
         }
         function rowHtml(d){
             const st = devState(d);
-            const cls = [st === 'offline' ? 'off' : '', st === 'quiet' ? 'quiet' : '', SELECTED_IPS.has(d.ip) ? 'sel' : ''].join(' ');
+            const cls = [st === 'offline' ? 'off' : '', st === 'quiet' ? 'quiet' : '', SELECTED_KEYS.has(d.key) ? 'sel' : ''].join(' ');
             return `<tr class="${cls}" data-key="${esc(d.key)}" data-ip="${esc(d.ip)}" tabindex="0">
                 <td><span class="nw-dot ${st==='online'?'':st==='offline'?'off':'quiet'}" title="${st}"></span></td>
                 <td><div class="nm">${esc(devTitle(d))}</div><div class="sub">${esc([d.model && d.model !== devTitle(d) ? d.model : '', vendorShort(d.vendor)].filter(Boolean).join(' · '))}</div></td>
@@ -1605,14 +1669,21 @@
                 <td class="hide-m">${catIcon[d.category]||'•'} ${esc(catLabel[d.category]||d.category||'')}</td>
                 <td class="hide-m"><span class="nw-feats">${featureBadges(d)}</span></td>
                 <td class="num mono hide-m">${d.online && d.rtt != null ? d.rtt + ' ms' : ''}</td>
-                <td class="${st==='offline'?'text-rose-300':''}">${d.online ? '<span class="text-emerald-400">now</span>' : devAge(d.last_seen)}</td>
+                <td class="${st==='offline'?'text-rose-300':''}">${d.online ? '<span class="text-emerald-400">now</span>' : d.watch ? `<b>${esc(downFor(d))}</b>` : devAge(d.last_seen)}</td>
                 <td style="font-size:12px">${flagIcons(d)}</td>
             </tr>`;
         }
 
+        // The devices the panel shows right now (list tab + chip + search), in order.
+        function currentShown(){
+            const all = devicesInView().filter(d => inList(d));
+            return sortDevices(all.filter(d => matchesFilter(d, FILTER) && matchesQuery(d)
+                && (FILTER === 'all' || FILTER === 'quiet' || QUERY.trim() || devState(d) !== 'quiet')));
+        }
         function renderGrid(){
             const grid = document.getElementById('network-grid');
-            const all = devicesInView();
+            const scope = devicesInView();
+            const all = scope.filter(d => inList(d));
             const base = targetBase(SELECTED);
             if(VIEW === 'map' && !base) VIEW = 'cards';
             document.querySelectorAll('.nw-seg button[data-view]').forEach(b => {
@@ -1622,30 +1693,50 @@
             document.getElementById('dev-sort').value = SORT;
             document.getElementById('dev-sort').hidden = VIEW === 'map';
             document.getElementById('current-view-title').innerText = base ? `Devices · ${base}.0/24` : `Devices · ${SELECTED || 'network'}`;
+            renderListTabs(scope);
 
             // Every filter except "Gone quiet" counts and shows devices seen this week —
             // the same set its chip and tile count. A search looks at everything.
-            const shown = sortDevices(all.filter(d => matchesFilter(d, FILTER) && matchesQuery(d)
-                && (FILTER === 'all' || FILTER === 'quiet' || QUERY.trim() || devState(d) !== 'quiet')));
+            const shown = currentShown();
+            const mon = LIST === 'monitored';
             const filtering = FILTER !== 'all' || QUERY.trim();
-            const live = filtering ? shown : shown.filter(d => devState(d) !== 'quiet');
-            const quiet = filtering ? [] : shown.filter(d => devState(d) === 'quiet');
+            const live = filtering || mon ? shown : shown.filter(d => devState(d) !== 'quiet');
+            const quiet = filtering || mon ? [] : shown.filter(d => devState(d) === 'quiet');
             const nQuiet = all.filter(d => devState(d) === 'quiet').length;
+            const monUp = all.filter(d => d.online).length;
             document.getElementById('view-sub').textContent = filtering
-                ? `${shown.length} of ${all.length} devices match`
-                : `${live.length} seen this week${nQuiet ? ` · ${nQuiet} not seen for 7+ days` : ''}${base ? ` · ${254 - all.length} free addresses` : ''}`;
+                ? `${shown.length} of ${all.length} ${mon ? 'monitored ' : ''}devices match`
+                : mon ? (all.length ? `${all.length} monitored · ${monUp} online · ${all.length - monUp} offline — offline devices first` : 'No devices monitored yet')
+                : `${live.length} seen this week${nQuiet ? ` · ${nQuiet} not seen for 7+ days` : ''}${base && LIST === 'all' ? ` · ${254 - scope.length} free addresses` : ''}`;
 
             const quietDet = grid.querySelector('details.nw-group');
             if(quietDet) QUIET_OPEN = quietDet.open;
             const scrollY = window.scrollY;
-            if(VIEW === 'map'){ grid.innerHTML = mapHtml(base, all); }
+            if(VIEW === 'map'){ grid.innerHTML = mapHtml(base, scope); }
+            else if(mon && !all.length && !QUERY.trim()){
+                const pool = scope.filter(d => devState(d) !== 'quiet' && ['cctv','net','power'].includes(monGroup(d)));
+                grid.innerHTML = `<div class="nw-monempty"><span class="ico">${BELL_SVG}</span>
+                    <b>No devices are monitored yet</b>
+                    <p>Pick the equipment you need to see online or offline — cameras, recorders, switches, radios. Monitored devices are listed here with offline ones first, the hub alerts you when one drops, and Uptime Kuma pings them every minute.</p>
+                    <div class="acts"><button class="nw-btn pri" onclick="openMonitorPicker()">Choose devices…</button>
+                    ${pool.length ? `<button class="nw-btn" onclick="openMonitorPicker('@key')">Start with the ${pool.length} cameras &amp; network devices</button>` : ''}
+                    <button class="nw-btn" onclick="setList('all')">Show all ${scope.length} devices</button></div></div>`;
+            }
             else if(!shown.length){
-                grid.innerHTML = `<div class="nw-empty"><b>${all.length ? 'No devices match' : 'No devices discovered yet'}</b>${all.length ? 'Clear the search or pick another filter.' : 'Run a scan to find what is on this network.'}${filtering ? '<div style="margin-top:.8rem"><button class="nw-ib" onclick="resetView()">Show all devices</button></div>' : ''}</div>`;
+                grid.innerHTML = `<div class="nw-empty"><b>${all.length ? 'No devices match' : LIST === 'other' ? 'Every device here is monitored' : 'No devices discovered yet'}</b>${all.length ? 'Clear the search or pick another filter.' : LIST === 'other' ? '' : 'Run a scan to find what is on this network.'}${filtering ? '<div style="margin-top:.8rem"><button class="nw-ib" onclick="resetView()">Show all devices</button></div>' : ''}</div>`;
             }
             else if(VIEW === 'list'){
                 const head = `<thead><tr><th></th><th><button onclick="setSort('name')">Device</button></th><th><button onclick="setSort('ip')">IP</button></th><th class="hide-m">MAC</th><th class="hide-m"><button onclick="setSort('type')">Type</button></th><th class="hide-m">Services</th><th class="num hide-m">Ping</th><th><button onclick="setSort('seen')">Seen</button></th><th></th></tr></thead>`;
-                const quietRows = quiet.length ? `<tr class="grp"><td colspan="9">Not seen for 7+ days · ${quiet.length}</td></tr>` + quiet.map(rowHtml).join('') : '';
-                grid.innerHTML = `<div class="nw-tablewrap"><table class="nw-table">${head}<tbody>${live.map(rowHtml).join('')}${quietRows}</tbody></table></div>`;
+                const grp = (t, rows) => rows.length ? `<tr class="grp"><td colspan="9">${t} · ${rows.length}</td></tr>` + rows.map(rowHtml).join('') : '';
+                const body = mon
+                    ? grp('Offline', shown.filter(d => !d.online)) + grp('Online', shown.filter(d => d.online))
+                    : live.map(rowHtml).join('') + grp('Not seen for 7+ days', quiet);
+                grid.innerHTML = `<div class="nw-tablewrap"><table class="nw-table">${head}<tbody>${body}</tbody></table></div>`;
+            }
+            else if(mon){
+                const down = shown.filter(d => !d.online), up = shown.filter(d => d.online);
+                const sec = (cls, t, rows, note) => rows.length ? `<div class="nw-sech ${cls}">${t} <span class="cnt">${rows.length}${note ? ' · ' + note : ''}</span></div><div class="nw-cards">${rows.map(cardHtml).join('')}</div>` : '';
+                grid.innerHTML = sec('bad', 'Offline', down, 'needs a look') + sec(down.length ? 'good' : '', 'Online', up, down.length ? '' : 'every monitored device is up');
             }
             else {
                 grid.innerHTML = `<div class="nw-cards">${live.map(cardHtml).join('')}</div>`
@@ -1655,17 +1746,35 @@
             renderKpis();
             if(Math.abs(window.scrollY - scrollY) > 2) window.scrollTo(0, scrollY);   // a live repaint must not jump the page
         }
+        function renderListTabs(scope){
+            const box = document.getElementById('list-tabs');
+            if(!box) return;
+            const mon = scope.filter(d => d.watch), monDown = mon.filter(d => !d.online).length;
+            const other = scope.filter(d => !d.watch), otherRecent = other.filter(d => devState(d) !== 'quiet');
+            const otherUp = otherRecent.filter(d => d.online).length, otherQuiet = other.length - otherRecent.length;
+            const tab = (id, label, v, sub, cls) => `<button type="button" data-list="${id}" class="${LIST === id ? 'on' : ''} ${cls || ''}" aria-pressed="${LIST === id}"><b>${label}</b><span class="v">${v}</span><small>${sub}</small></button>`;
+            box.innerHTML = tab('monitored', '🔔 Monitored', mon.length ? `${mon.length - monDown}<i>/${mon.length}</i>` : '0',
+                    !mon.length ? 'choose what to watch' : monDown ? `<span class="dn">${monDown} offline</span> · ${mon.length - monDown} online` : `<span class="up">all online</span>`, monDown ? 'bad' : '')
+                + tab('other', 'Other devices', other.length ? `${otherUp}<i>/${otherRecent.length}</i>` : '0', other.length ? `online this week${otherQuiet ? ` · ${otherQuiet} gone quiet` : ''}` : 'none')
+                + tab('all', 'All devices', scope.length, 'everything found here');
+        }
+        document.getElementById('list-tabs').addEventListener('click', (e) => { const b = e.target.closest('[data-list]'); if(b) setList(b.dataset.list); });
+        function setList(l){
+            LIST = l; FILTER = 'all';
+            try { localStorage.setItem('nw.list', l); } catch(e){}
+            renderGrid();
+        }
         function mapHtml(base, all){
             const byIp = {}; all.forEach(d => { byIp[d.ip] = d; });
             const q = QUERY.trim();
             let cells = '';
             for(let i=1;i<=254;i++){
                 const ip = base+'.'+i, d = byIp[ip];
-                const match = d ? (matchesFilter(d, FILTER) && matchesQuery(d)) : (FILTER === 'all' && (!q || (ipMatcher(q) ? ipMatcher(q)(ip) : false)));
+                const match = d ? (inList(d) && matchesFilter(d, FILTER) && matchesQuery(d)) : (FILTER === 'all' && LIST === 'all' && (!q || (ipMatcher(q) ? ipMatcher(q)(ip) : false)));
                 const dim = match ? '' : ' style="opacity:.18"';
                 if(!d){ cells += `<div class="nw-cell" data-ip="${ip}"${dim} title="${ip} — free"><b>.${i}</b></div>`; continue; }
                 const st = devState(d);
-                const cls = ['nw-cell dev', st==='offline'?'off':'', st==='quiet'?'quiet':'', (!isIdentified(d) && d.online)?'myst':'', d.ip_conflict?'conf':'', SELECTED_IPS.has(ip)?'sel':''].join(' ');
+                const cls = ['nw-cell dev', st==='offline'?'off':'', st==='quiet'?'quiet':'', (!isIdentified(d) && d.online)?'myst':'', d.ip_conflict?'conf':'', SELECTED_KEYS.has(d.key)?'sel':''].join(' ');
                 const acc = catAccent[d.category] || '#64748b';
                 cells += `<div class="${cls}" data-key="${esc(d.key)}" data-ip="${ip}" style="--accb:${acc}66;--accbg:${acc}1f${match?'':';opacity:.18'}" title="${esc(devTitle(d))} · ${ip} · ${st}"><b>.${i}</b><span>${catIcon[d.category]||''} ${esc(devTitle(d))}</span></div>`;
             }
@@ -1681,7 +1790,7 @@
         function buildFilterChips(devs){
             const bar = document.getElementById('filter-bar');
             if(!bar) return;
-            const chip = (f, inner, title) => `<button class="nw-chip ${FILTER===f?'on':''}" onclick="filterGrid('${f}')" ${title?`title="${esc(title)}"`:''}>${inner}</button>`;
+            const chip = (f, inner, title) => `<button class="nw-chip ${FILTER===f?'on':''}" data-filter="${esc(f)}" ${title?`title="${esc(title)}"`:''}>${inner}</button>`;
             const grp = (f, icon, label, cats) => {
                 const g = devs.filter(d => cats.includes(d.category) && devState(d) !== 'quiet');
                 if(!g.length) return '';
@@ -1694,46 +1803,54 @@
             const offlineN = devs.filter(d => devState(d)==='offline').length;
             const quietN = devs.filter(d => devState(d)==='quiet').length;
             const mysteryN = recentDevs.filter(d => !isIdentified(d)).length;
-            const watchN = recentDevs.filter(d => d.watch).length;
-            const inView = new Set(devs.map(d => d.key));
             const problemN = recentDevs.filter(d => PROBLEM_KEYS.has(d.key)).length;
+            if(LIST === 'monitored' && !devs.length){ bar.innerHTML = ''; bar.hidden = true; return; }
+            bar.hidden = false;
             let html = chip('all', `All <span class="n">${devs.length}</span>`);
             html += grp('camera', '📷', 'Cameras', CAM_CATS) + grp('network', '📶', 'Network', NET_CATS);
             Object.keys(catCount).sort((a,b) => catCount[b]-catCount[a]).forEach(c => { html += chip(c, `${catIcon[c]||'•'} ${esc(catLabel[c]||c)} <span class="n">${catCount[c]}</span>`); });
             if(mysteryN) html += chip('unidentified', `❓ Mystery <span class="n">${mysteryN}</span>`, 'Devices Netwatch could not identify');
-            if(watchN) html += chip('watched', `🔔 Watched <span class="n">${watchN}</span>`);
-            if(offlineN) html += chip('offline', `🔴 Offline <span class="n">${offlineN}</span>`, 'Offline, seen within the last 7 days');
+            if(offlineN) html += chip('offline', `🔴 Offline <span class="n">${offlineN}</span>`, LIST === 'monitored' ? 'Monitored devices that are down' : 'Offline, seen within the last 7 days');
             if(quietN) html += chip('quiet', `💤 Gone quiet <span class="n">${quietN}</span>`, 'Not seen for 7+ days');
             if(problemN) html += chip('problem', `⚠️ In a problem <span class="n">${problemN}</span>`, 'Devices involved in a problem Netwatch found');
             bar.innerHTML = html;
         }
         function filterGrid(f){ FILTER = (FILTER===f && f!=='all') ? 'all' : f; renderGrid(); }
+        document.getElementById('filter-bar').addEventListener('click', (e) => { const b = e.target.closest('[data-filter]'); if(b) filterGrid(b.dataset.filter); });
         function resetView(){ FILTER = 'all'; QUERY = ''; document.getElementById('dev-q').value = ''; renderGrid(); }
         function setView(v){ VIEW = v; try { localStorage.setItem('nw.view', v); } catch(e){} renderGrid(); }
         function setSort(v){ SORT = v; try { localStorage.setItem('nw.sort', v); } catch(e){} renderGrid(); }
         function applyFilter(){ /* kept for older callers; views render from renderGrid() */ }
+        function showList(l, f){
+            LIST = l; FILTER = f || 'all';
+            try { localStorage.setItem('nw.list', l); } catch(e){}
+            renderGrid();
+            document.getElementById('devices-panel').scrollIntoView({behavior:'smooth', block:'start'});
+        }
 
         function renderKpis(){
             const box = document.getElementById('kpis');
             if(!box) return;
             const devs = devicesInView();
+            const mon = devs.filter(d => d.watch), monUp = mon.filter(d => d.online).length;
+            const monDown = mon.filter(d => !d.online).sort((a,b) => (b.last_seen||0) - (a.last_seen||0));
+            const other = devs.filter(d => !d.watch), otherRecent = other.filter(d => devState(d) !== 'quiet');
+            const otherUp = otherRecent.filter(d => d.online).length, otherQuiet = other.length - otherRecent.length;
             const recent = devs.filter(d => devState(d) !== 'quiet');
-            const on = recent.filter(d => d.online).length;
-            const off = recent.length - on;
-            const quiet = devs.length - recent.length;
-            const cams = recent.filter(d => CAM_CATS.includes(d.category)), camUp = cams.filter(d => d.online).length;
-            const nets = recent.filter(d => NET_CATS.includes(d.category)), netUp = nets.filter(d => d.online).length;
             const myst = recent.filter(d => !isIdentified(d)).length;
             const mystOn = recent.filter(d => d.online && !isIdentified(d)).length;
-            const watchDown = devs.filter(d => d.watch && !d.online).length;
             const probs = PROBLEMS.length, highProbs = PROBLEMS.filter(p => p.severity === 'high').length;
-            const tile = (f, k, v, s, cls, extra='') => `<button class="nw-kpi ${cls} ${f && FILTER===f ? 'active' : ''}" ${f ? `onclick="filterGrid('${f}')"` : ''}>${`<span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span>`}${extra}</button>`;
-            const pct = recent.length ? Math.round(100*on/recent.length) : 0;
-            let html = tile('online', 'Online', `${on}<small>/${recent.length}</small>`, quiet ? `${quiet} not seen 7+ days` : 'seen this week', '', `<span class="bar"><i style="width:${pct}%"></i></span>`);
-            html += tile('offline', 'Offline', off, watchDown ? `${watchDown} watched device${watchDown===1?'':'s'} down` : off ? 'seen this week' : 'nothing down', watchDown ? 'bad' : off ? 'warn' : 'good');
-            if(cams.length) html += tile('camera', 'Cameras', `${camUp}<small>/${cams.length}</small>`, camUp === cams.length ? 'all recording devices up' : `${cams.length-camUp} offline`, camUp === cams.length ? 'good' : 'bad');
-            if(nets.length) html += tile('network', 'Network', `${netUp}<small>/${nets.length}</small>`, netUp === nets.length ? 'switches, APs, links up' : `${nets.length-netUp} offline`, netUp === nets.length ? 'good' : 'bad');
-            html += tile('unidentified', 'Mystery', myst, myst ? `not identified · ${mystOn} online` : 'everything identified', myst ? 'warn' : '');
+            const tile = (act, k, v, s, cls, extra, active) => `<button class="nw-kpi ${cls} ${active ? 'active' : ''}" onclick="${act}"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span>${extra || ''}</button>`;
+            let html;
+            if(mon.length){
+                const pct = Math.round(100 * monUp / mon.length);
+                html = tile(`showList('monitored')`, 'Monitored online', `${monUp}<small>/${mon.length}</small>`, monDown.length ? `${monDown.length} offline — see the list` : 'every monitored device is up', monDown.length ? 'bad' : 'good', `<span class="bar"><i style="width:${pct}%"></i></span>`, LIST === 'monitored' && FILTER === 'all');
+                html += tile(`showList('monitored','offline')`, 'Monitored offline', monDown.length, monDown.length ? `${esc(devTitle(monDown[0]))} · ${esc(downFor(monDown[0]))}` : 'nothing down', monDown.length ? 'bad' : 'good', '', LIST === 'monitored' && FILTER === 'offline');
+            } else {
+                html = tile(`openMonitorPicker()`, 'Monitored', '0', 'choose the devices to watch →', 'accent', '', false);
+            }
+            html += tile(`showList('other')`, 'Other devices', `${otherUp}<small>/${otherRecent.length}</small>`, `online this week${otherQuiet ? ` · ${otherQuiet} gone quiet` : ''}`, '', '', LIST === 'other' && FILTER === 'all');
+            html += tile(`showList('all','unidentified')`, 'Mystery', myst, myst ? `not identified · ${mystOn} online` : 'everything identified', myst ? 'warn' : '', '', LIST === 'all' && FILTER === 'unidentified');
             html += `<button class="nw-kpi ${highProbs ? 'bad' : probs ? 'warn' : 'good'}" onclick="openProblems()"><span class="k">Problems</span><span class="v">${probs}</span><span class="s">${probs ? (highProbs ? `${highProbs} need fixing` : 'minor — worth a look') : 'no network problems'}</span></button>`;
             if(WIFI && WIFI.radios) html += `<a class="nw-kpi ${WIFI.crit ? 'bad' : WIFI.warn ? 'warn' : ''}" href="#/wifi" style="text-decoration:none"><span class="k">Wireless links</span><span class="v">${WIFI.links}</span><span class="s">${WIFI.crit ? WIFI.crit+' critical' : WIFI.warn ? WIFI.warn+' warning' : WIFI.unread ? WIFI.unread+' radios unread' : 'all healthy'}</span></a>`;
             const st = STATUS || {};
@@ -1765,13 +1882,13 @@
             const dev = key ? DEV_BY_KEY[key] : DEV_BY_IP[ip];
             if(SELECT_MODE){
                 if(!dev) return;
-                SELECTED_IPS.has(ip) ? SELECTED_IPS.delete(ip) : SELECTED_IPS.add(ip);
-                el.classList.toggle('sel', SELECTED_IPS.has(ip));
+                SELECTED_KEYS.has(dev.key) ? SELECTED_KEYS.delete(dev.key) : SELECTED_KEYS.add(dev.key);
+                el.classList.toggle('sel', SELECTED_KEYS.has(dev.key));
                 updateSelectBar();
             } else openModal(dev ? dev.key : null, ip);
         }
         document.getElementById('network-grid').addEventListener('click', (e) => {
-            if(e.target.closest('a')) return;
+            if(e.target.closest('a') && !SELECT_MODE) return;
             const el = e.target.closest('[data-ip]'); if(el) onDeviceActivate(el);
         });
         document.getElementById('network-grid').addEventListener('keydown', (e) => {
@@ -1793,14 +1910,23 @@
             document.getElementById('select-lbl').innerText = SELECT_MODE ? 'Selecting…' : 'Select';
             if(!SELECT_MODE) clearSelection(); else updateSelectBar();
         }
-        function clearSelection(){ SELECTED_IPS.clear(); renderGrid(); updateSelectBar(); }
+        function clearSelection(){ SELECTED_KEYS.clear(); renderGrid(); updateSelectBar(); }
         function updateSelectBar(){
-            const n = SELECTED_IPS.size;
-            document.getElementById('select-count').innerText = n + ' selected';
-            document.getElementById('select-bar').classList.toggle('hidden', !(SELECT_MODE && n>0));
+            const n = SELECTED_KEYS.size;
+            document.getElementById('select-count').innerText = n ? `${n} selected` : 'Tap devices to select them';
+            document.getElementById('select-bar').hidden = !SELECT_MODE;
+            document.querySelectorAll('#select-bar [data-need]').forEach(b => { b.disabled = !n; });
+        }
+        // Only what is on screen: in the card view "Not seen for 7+ days" is a closed group.
+        function selectAllShown(){
+            const filtering = FILTER !== 'all' || QUERY.trim();
+            const det = document.querySelector('#network-grid details.nw-group');
+            const hideQuiet = VIEW === 'cards' && LIST !== 'monitored' && !filtering && !(det && det.open);
+            currentShown().forEach(d => { if(!(hideQuiet && devState(d) === 'quiet')) SELECTED_KEYS.add(d.key); });
+            renderGrid(); updateSelectBar();
         }
         async function scanSelected(mode){
-            const hosts = [...SELECTED_IPS]; if(!hosts.length) return;
+            const hosts = [...new Set([...SELECTED_KEYS].map(k => (DEV_BY_KEY[k] || {}).ip).filter(Boolean))]; if(!hosts.length) return;
             await fetch('/api/trigger',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,hosts})});
             const label = mode==='deep' ? 'Deep' : 'Quick';
             setLive(true, label+' scanning '+hosts.length+' selected device(s)…');
@@ -1808,6 +1934,72 @@
         }
         function deepScanSelected(){ scanSelected('deep'); }
         function quickScanSelected(){ scanSelected('quick'); }
+
+        // ---- Monitored devices (see app/monitoring.py) ----
+        async function loadMonitoring(){
+            try { MON_INFO = await (await fetch('/api/monitoring')).json(); } catch(e){}
+            renderSetMonSum();
+        }
+        /* POST /api/monitoring; returns the reply or throws with a readable message.
+           A 401 first shows the Pi login (auth.js) and retries once. */
+        async function postMonitoring(monitor, stop){
+            let r;
+            try {
+                r = await fetch('/api/monitoring', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({monitor, stop})});
+            } catch(e){ throw new Error('Could not reach the Pi.'); }
+            const j = await r.json().catch(() => ({}));
+            if(r.status === 401) throw new Error('Changing monitoring needs the Pi password — log in and try again.');
+            if(!r.ok || !j.ok) throw new Error(j.error || `The Pi answered ${r.status}.`);
+            (j.changed || []).forEach(c => { const d = DEV_BY_KEY[c.key]; if(d) d.watch = c.monitored; });
+            if(j.summary) MON_INFO = {...(MON_INFO || {}), ...j.summary};
+            renderGrid(); renderSetMonSum();
+            return j;
+        }
+        function monitoringToast(j){
+            const ch = j.changed || [], on = ch.filter(c => c.monitored).length, off = ch.length - on;
+            nwToast([on ? `${on} device${on===1?'':'s'} now monitored` : '', off ? `${off} no longer monitored` : ''].filter(Boolean).join(' · ') || 'Nothing to change', 'ok');
+        }
+        async function setMonitored(monitor, stop){
+            try { monitoringToast(await postMonitoring(monitor, stop)); return true; }
+            catch(e){ nwToast('Not changed: ' + e.message, 'bad'); return false; }
+        }
+        async function monitorSelected(on){
+            const keys = [...SELECTED_KEYS].filter(k => DEV_BY_KEY[k]);
+            if(!keys.length) return;
+            const todo = keys.filter(k => !!(DEV_BY_KEY[k] || {}).watch !== on);
+            if(!todo.length){ nwToast(on ? 'Those devices are already monitored' : 'None of those devices is monitored', 'ok'); return; }
+            if(!on && !confirm(`Stop monitoring ${todo.length} device${todo.length===1?'':'s'}?\n\nThey move to Other devices. The hub stops alerting on them, and their Uptime Kuma monitors are paused (history kept).`)) return;
+            if(await setMonitored(on ? todo : [], on ? [] : todo)) toggleSelectMode();
+        }
+        async function openMonitorPicker(pick){
+            if(!window.MonitorPicker){ nwToast('The device picker did not load — reload the page', 'bad'); return; }
+            // Changing the list needs the Pi login: ask before the operator spends time ticking.
+            if(window.nwAuth){
+                let st = null; try { st = await window.nwAuth.state(); } catch(e){}
+                if(st && !st.logged_in && !st.hub && !(await window.nwAuth.login())) return;
+            }
+            const pool = pick === '@key' ? DATA.devices.filter(d => devState(d) !== 'quiet' && ['cctv','net','power'].includes(monGroup(d))) : [];
+            const res = await MonitorPicker.open({
+                site: (STATUS && STATUS.site && STATUS.site.name) || '',
+                devices: DATA.devices,
+                name: devTitle,
+                type: d => ({ icon: catIcon[d.category] || '•', label: catLabel[d.category] || d.category || 'Unknown', group: monGroup(d) }),
+                groups: MON_GROUPS,
+                pick: pick === '@key' ? null : pick,
+                note: MON_INFO && MON_INFO.kuma_follows ? 'Uptime Kuma follows this list: a monitored device gets a 60-second ping monitor, and one taken off the list has its monitor paused.' : '',
+                save: (c) => postMonitoring(c.monitor, c.stop),
+                preset: pool.map(d => d.key),
+            });
+            if(res){ monitoringToast(res); if(LIST !== 'monitored' && (res.changed || []).some(c => c.monitored)) setList('monitored'); }
+        }
+        function renderSetMonSum(){
+            const el = document.getElementById('set-mon-sum');
+            if(!el) return;
+            const m = MON_INFO;
+            el.innerHTML = !m ? 'Unknown.' : !m.monitored
+                ? 'No devices are monitored yet. Choose the equipment you need to see online or offline — the hub then alerts when one of them drops.'
+                : `<b>${m.monitored}</b> device${m.monitored===1?' is':'s are'} monitored — ${m.online} online, ${m.offline ? `<b style="color:#fda4af">${m.offline} offline</b>` : '0 offline'}. ${m.kuma_follows ? 'Uptime Kuma follows the list.' : 'Uptime Kuma is not set up here, so only the hub alerts.'}`;
+        }
 
         // ---- per-device diagnostics ----
         async function runCommand(action){
@@ -2256,6 +2448,7 @@
             document.getElementById('cmd-result').classList.add('hidden');
             document.getElementById('quality-panel').classList.add('hidden');
             const dev = key ? DEV_BY_KEY[key] : null;
+            document.getElementById('mon-row').hidden = !dev;
             document.getElementById('modal').classList.remove('hidden');
             document.getElementById('modal-ip').innerText = dev ? dev.ip : ip;
             document.getElementById('modal-ip-link').href = `http://${dev?dev.ip:ip}`;
@@ -2307,6 +2500,7 @@
                 document.getElementById('edit-name').placeholder = dev.device_name ? `${dev.device_name} (${dev.device_name_src==='nvr' ? 'from the NVR' : "the device's own name"})` : 'e.g. Front Gate Camera';
                 document.getElementById('edit-category').value = dev.category||'unknown';
                 document.getElementById('edit-watch').checked = !!dev.watch;
+                renderMonRow(dev);
                 document.getElementById('edit-serial').value = dev.serial||'';
                 document.getElementById('edit-model').value = dev.model||'';
                 populateLinkOptions(dev);
@@ -2438,35 +2632,24 @@
         // ---- Uptime Kuma ----
         async function loadKuma(key, dev){
             const sec = document.getElementById('kuma-section');
-            // available for any real device; auto-create (in Settings) stays scoped to watched/named
             if(!key || !dev){ sec.style.display = 'none'; return; }
             sec.style.display = '';
             document.getElementById('kuma-token').value = '';
             document.getElementById('kuma-pushurl').innerText = '';
+            const st = document.getElementById('kuma-status');
             try {
                 const k = await (await fetch('/api/devices/'+encodeURIComponent(key)+'/kuma')).json();
+                if(key !== CURRENT_KEY) return;
                 document.getElementById('kuma-health').value = k.health_url || '';
                 document.getElementById('kuma-token').value = k.token || '';
                 document.getElementById('kuma-pushurl').innerText = k.push_url ? ('Push URL: ' + k.push_url) : '';
-                document.getElementById('kuma-monitor').checked = (k.monitor_id || 0) > 0;
-                const st = document.getElementById('kuma-status');
-                st.className = 'text-xs mt-1 text-slate-500';
-                st.innerText = (k.monitor_id || 0) > 0 ? ('Auto-managed · Kuma monitor #' + k.monitor_id) : '';
-            } catch(e){}
-        }
-        async function toggleKumaMonitor(){
-            if(!CURRENT_KEY) return;
-            const cb = document.getElementById('kuma-monitor');
-            const st = document.getElementById('kuma-status');
-            const action = cb.checked ? 'create' : 'remove';
-            st.className = 'text-xs mt-1 text-slate-500';
-            st.innerText = cb.checked ? 'Creating monitor in Kuma…' : 'Removing monitor…';
-            try {
-                const r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/kuma', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action }) })).json();
-                if(r.ok){ st.className='text-xs mt-1 text-emerald-400'; st.innerText = action==='create' ? ('✓ Monitor #'+r.monitor_id+' created — Kuma is now tracking it') : '✓ Monitor removed'; }
-                else { st.className='text-xs mt-1 text-rose-400'; st.innerText = '⚠ '+(r.error||'failed'); cb.checked = !cb.checked; }
-                loadKuma(CURRENT_KEY, DEV_BY_KEY[CURRENT_KEY]); loadDevices();
-            } catch(e){ st.className='text-xs mt-1 text-rose-400'; st.innerText='Error: '+e; cb.checked = !cb.checked; }
+                const mid = k.monitor_id || 0;
+                st.textContent = mid > 0
+                    ? (k.paused ? `Monitor #${mid} is paused — this device is not monitored (its history is kept).` : `Monitor #${mid} pings this device every 60 seconds.`)
+                    : k.token ? "A hand-made push monitor receives this device's status after every scan."
+                    : !k.follows ? 'Uptime Kuma is not set up on this Pi (Settings → Uptime Kuma).'
+                    : k.monitored ? 'Its Kuma monitor is being created…' : 'No Kuma monitor — switch Monitored on to add one.';
+            } catch(e){ st.textContent = ''; }
         }
         async function saveKuma(){
             if(!CURRENT_KEY) return;
@@ -2474,11 +2657,26 @@
             await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/kuma', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token }) });
             loadKuma(CURRENT_KEY, DEV_BY_KEY[CURRENT_KEY]); loadDevices();
         }
+        function renderMonRow(dev){
+            const on = !!(dev && dev.watch);
+            document.getElementById('mon-row').classList.toggle('on', on);
+            document.getElementById('mon-row-sub').textContent = on
+                ? `On the Monitored list: shown first with its online/offline state, and the hub alerts when it goes offline or comes back.${MON_INFO && MON_INFO.kuma_follows ? ' Uptime Kuma pings it every minute.' : ''}`
+                : 'Not monitored — listed under Other devices. Switch on to keep an eye on it and get alerts when it drops.';
+        }
         async function toggleWatch(){
-            if(!CURRENT_KEY) return;
-            const watch = document.getElementById('edit-watch').checked;
-            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ watch }) });
-            loadDevices();   // refresh the 🔔 indicator
+            const key = CURRENT_KEY;
+            if(!key) return;
+            const cb = document.getElementById('edit-watch'), row = document.getElementById('mon-row');
+            const on = cb.checked;
+            cb.disabled = true; row.classList.add('busy');
+            const ok = await setMonitored(on ? [key] : [], on ? [] : [key]);
+            cb.disabled = false; row.classList.remove('busy');
+            if(key !== CURRENT_KEY) return;
+            if(!ok) cb.checked = !on;
+            renderMonRow(DEV_BY_KEY[key]);
+            loadKuma(key, DEV_BY_KEY[key]);
+            if(ok) setTimeout(() => { if(CURRENT_KEY === key) loadKuma(key, DEV_BY_KEY[key]); }, 5000);   // Kuma follows in the background
         }
 
         // ---- device modal tabs ----
@@ -2896,7 +3094,7 @@
                 document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic || '';
                 document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands === true;
                 document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline !== false;
-                renderCatAlerts(c.alerts.categories);
+                renderSetMonSum();
             }
             if(c.scan){ document.getElementById('setup-deep-on-new').checked = !!c.scan.deep_on_new; document.getElementById('setup-discovery').checked = c.scan.discovery !== false; }
             document.getElementById('setup-airos-setip').checked = !!(c.features && c.features.airos_change_ip);
@@ -2923,15 +3121,14 @@
         function updateSaveBar(){
             const bar = document.getElementById('save-bar');
             bar.hidden = !SETTINGS_DIRTY.size;
-            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','cat-alerts':'alerts per type','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management'};
+            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management'};
             const what = new Set([...SETTINGS_DIRTY].map(id => Object.entries(names).find(([k]) => id.startsWith(k)) ).filter(Boolean).map(x => x[1]));
             document.getElementById('save-bar-what').textContent = [...what].join(', ');
         }
         function onSettingsEdit(e){
             const el = e.target.closest('[data-track]');
             if(!el || !SETTINGS_LOADED) return;
-            const id = el.id || (el.closest('#cat-alerts') ? 'cat-alerts' : '');
-            if(id){ SETTINGS_DIRTY.add(e.target.closest('#cat-alerts') ? 'cat-alerts' : id); updateSaveBar(); }
+            if(el.id){ SETTINGS_DIRTY.add(el.id); updateSaveBar(); }
         }
         document.getElementById('page-settings').addEventListener('input', onSettingsEdit);
         document.getElementById('page-settings').addEventListener('change', onSettingsEdit);
@@ -2981,8 +3178,9 @@
             const v = document.getElementById('prune-days').value;
             const days = v === '' ? null : parseInt(v, 10);
             const now = Date.now()/1000;
-            const n = DATA.devices.filter(d => !d.online && (!days || !d.last_seen || now - d.last_seen >= days*86400)).length;
-            document.getElementById('prune-preview').textContent = `${n} device${n===1?'':'s'} would be removed right now.`;
+            const old = DATA.devices.filter(d => !d.online && (!days || !d.last_seen || now - d.last_seen >= days*86400));
+            const n = old.filter(d => !d.watch).length, kept = old.length - n;
+            document.getElementById('prune-preview').textContent = `${n} device${n===1?'':'s'} would be removed right now.` + (kept ? ` ${kept} monitored device${kept===1?' is':'s are'} kept.` : '');
         }
         document.getElementById('prune-days').addEventListener('input', updatePrunePreview);
 
@@ -3627,52 +3825,6 @@
             refreshHubStatus();
         }
 
-        const CAT_ALERT_ORDER = ['camera','nvr','alarm','network','internet-ap','router','printer','nas','voip','solar','media','iot','pc','server','unknown'];
-        function catRuleToVal(rule){
-            if(!rule) return 'default';
-            const off=!!rule.offline, on=!!rule.online;
-            if(!off && !on) return 'off';
-            if(off && !on) return 'offline';
-            return 'both';
-        }
-        function renderCatAlerts(cats){
-            cats = cats || {};
-            const opt=(v,sel,label)=>`<option value="${v}" ${sel===v?'selected':''}>${label}</option>`;
-            document.getElementById('cat-alerts').innerHTML = CAT_ALERT_ORDER.map(c=>{
-                const sel = catRuleToVal(cats[c]);
-                return `<div class="flex items-center justify-between gap-2">
-                    <span class="text-sm">${catIcon[c]||'•'} ${catLabel[c]||c}</span>
-                    <select data-cat="${c}" class="cat-sel p-1.5 bg-[#050b16] border rounded-lg text-xs">
-                        ${opt('default',sel,'Default')}${opt('off',sel,'Off')}${opt('offline',sel,'Offline')}${opt('both',sel,'Offline + Online')}
-                    </select></div>`;
-            }).join('');
-        }
-        function collectCatAlerts(){
-            const map={};
-            document.querySelectorAll('#cat-alerts .cat-sel').forEach(s=>{
-                const c=s.dataset.cat, v=s.value;
-                if(v==='off') map[c]={offline:false,online:false};
-                else if(v==='offline') map[c]={offline:true,online:false};
-                else if(v==='both') map[c]={offline:true,online:true};
-            });
-            return map;
-        }
-
-        async function monitorBulk(scope, value){
-            const res = document.getElementById('kuma-bulk-result');
-            res.className = 'text-xs text-slate-500';
-            res.innerText = 'Creating Kuma monitors…';
-            try {
-                const r = await (await fetch('/api/kuma/monitor-bulk',{method:'POST',
-                    headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({scope, value})})).json();
-                res.className = 'text-xs ' + (r.ok ? 'text-emerald-400' : 'text-rose-400');
-                res.innerText = r.ok
-                    ? (r.created ? `✓ added ${r.created} monitor(s)` : (r.message || '✓ nothing to add'))
-                    : ('⚠ ' + (r.error || 'failed'));
-                if(r.ok && r.created) loadDevices();
-            } catch(e){ res.className='text-xs text-rose-400'; res.innerText='Error: '+e; }
-        }
         async function repairKuma(){
             const res = document.getElementById('kuma-repair-result');
             res.className = 'text-xs text-slate-500'; res.innerText = 'Converting monitors to 60s ping…';
@@ -3806,7 +3958,6 @@
                 ntfy_topic: document.getElementById('setup-ntfy').value,
                 allow_commands: document.getElementById('setup-allow-commands').checked,
                 notify_hub_offline: document.getElementById('setup-notify-hub').checked,
-                categories: collectCatAlerts(),
                 deep_on_new: document.getElementById('setup-deep-on-new').checked,
                 discovery: document.getElementById('setup-discovery').checked,
                 airos_change_ip: document.getElementById('setup-airos-setip').checked,
@@ -3846,6 +3997,7 @@
         // Esc closes whichever modal is open
         document.addEventListener('keydown', (e) => {
             if(e.key !== 'Escape') return;
+            if(document.querySelector('dialog[open]')) return;     // a <dialog> (device picker) closes itself
             // Bulk logins sits above the device modal (z-70) — close it first.
             if(!document.getElementById('bulkcred-modal').classList.contains('hidden')) closeBulkCreds();
             else if(!document.getElementById('modal').classList.contains('hidden')) closeModal();
@@ -4237,7 +4389,7 @@
         }
         setInterval(() => { if(PAGE === 'wifi' && !document.hidden) loadWifiPage(); }, 120000);
 
-        function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge(); }
+        function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge(); loadMonitoring(); }
 
         // ---- Pi self-health strip ----
         function healthClass(v, warn, crit){
@@ -4356,7 +4508,7 @@
             const link = document.getElementById('kuma-link');
             if(ku){ link.href = location.protocol+'//'+location.hostname+':'+port; link.hidden = false; }
         }).catch(()=>{});
-        renderKpis(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge();
+        renderKpis(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge(); loadMonitoring();
         route();
         tick();
     </script>

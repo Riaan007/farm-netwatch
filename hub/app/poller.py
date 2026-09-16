@@ -12,6 +12,10 @@ cadence per site:
 Each successful devices payload is persisted to /data/snapshots/<site>.json so
 the dashboard still renders (marked stale) across hub restarts and site
 outages. One site_samples row is written per status poll.
+
+Alerts (ntfy, hub Settings -> Alerts): a site dropping off the VPN, a new live
+IP conflict, and a MONITORED device going offline or coming back
+(_check_monitored — the devices on each site's Monitored list).
 """
 import concurrent.futures
 import json
@@ -31,6 +35,8 @@ import sitehistory
 import siteapi
 
 SNAP_DIR = os.path.join(os.environ.get("HUB_DATA", "/data"), "snapshots")
+MON_STATE_PATH = os.path.join(os.environ.get("HUB_DATA", "/data"), "monitor_alerts.json")
+MON_LIST_MAX = 8           # devices named in one alert; the rest are counted
 
 _CLASSES = ("status", "devices", "kuma", "sysinfo", "backup")
 SYSINFO_INTERVAL_S = 300
@@ -48,6 +54,28 @@ def _ip_sortkey(ip):
         return (9999,)
 
 
+def _one_line(text, limit=60):
+    """Device and site names come from the network: no newlines in an alert."""
+    return " ".join(str(text or "").split())[:limit]
+
+
+def _dev_label(d):
+    return _one_line(d.get("name") or d.get("device_name") or d.get("model") or d.get("hostname")
+                     or d.get("vendor") or d.get("ip")) or "device"
+
+
+def _span(seconds):
+    """3 min · 2 h 5 min · 3 d 4 h"""
+    m = max(1, int(seconds) // 60)
+    if m < 60:
+        return f"{m} min"
+    h, m = divmod(m, 60)
+    if h < 24:
+        return f"{h} h {m} min" if m else f"{h} h"
+    d, h = divmod(h, 24)
+    return f"{d} d {h} h" if h else f"{d} d"
+
+
 class Poller:
     def __init__(self):
         self._wake = threading.Event()
@@ -56,6 +84,8 @@ class Poller:
         self._overrides = {}   # (site_id, key) -> (fields, ts): edits made through the hub
         self._due = {}         # site_id -> {class: next_due_ts}
         self._last_prune = 0
+        self._mon = None       # monitored-device alert state (lazy, see _check_monitored)
+        self._mon_lock = threading.Lock()
 
     # ---- public API used by the web layer --------------------------------
     def update_device(self, site_id, key, **fields):
@@ -375,10 +405,115 @@ class Poller:
             snap["devices"] = payload
             snap["devices_fetched"] = fetched
             snap["stale"] = False
+            reachable = snap.get("reachable", False)
         try:
             self._save_snapshot(sid, payload, fetched)
         except OSError as e:
             print(f"[poller] snapshot save failed for {sid}: {e}", flush=True)
+        if reachable:
+            try:
+                self._check_monitored(sid, site, payload)
+            except Exception as e:  # noqa: BLE001 - alerting must never break polling
+                print(f"[poller] monitored-device check failed for {sid}: {e}", flush=True)
+
+    # ---- monitored-device alerts --------------------------------------------
+    def _mon_state(self):
+        if self._mon is None:
+            try:
+                with open(MON_STATE_PATH) as f:
+                    self._mon = json.load(f)
+            except (OSError, ValueError):
+                self._mon = {}
+        return self._mon
+
+    def _mon_save(self):
+        known = {s["id"] for s in hubconfig.load().get("sites", [])}
+        self._mon = {k: v for k, v in self._mon.items() if k in known}
+        tmp = MON_STATE_PATH + ".tmp"
+        try:
+            os.makedirs(os.path.dirname(MON_STATE_PATH), exist_ok=True)
+            with open(tmp, "w") as f:
+                json.dump(self._mon, f)
+            os.replace(tmp, MON_STATE_PATH)
+        except OSError as e:
+            print(f"[poller] monitored-device alert state not saved: {e}", flush=True)
+
+    def _site_label(self, sid, site):
+        with self._lock:
+            st = (self._snap.get(sid) or {}).get("status") or {}
+        return _one_line((st.get("site") or {}).get("name") or site.get("name")) or sid
+
+    def _confirmed_down(self, sid, d, offline_after, now):
+        """A site lists a device offline after ONE missed scan; it only counts as
+        down after `offline_after` misses in a row (the site's own event rule).
+        Sites that predate `missed_scans`: offline for 2.5 scan intervals."""
+        if d.get("online"):
+            return False
+        if offline_after and d.get("missed_scans") is not None:
+            return d["missed_scans"] >= offline_after
+        with self._lock:
+            st = (self._snap.get(sid) or {}).get("status") or {}
+        interval = max(1, int(st.get("scan_interval_min") or 15)) * 60
+        return now - int(d.get("last_seen") or 0) >= 2.5 * interval
+
+    def _check_monitored(self, sid, site, payload):
+        """ntfy when a MONITORED device (on the site's Monitored list, the `watch`
+        flag) goes offline or comes back: one message per site per device poll,
+        however many devices changed. Only changes are news — the first look at a
+        site, and a device that is already down when it gets monitored, are
+        recorded silently; a device taken off the list is dropped silently. The
+        state (who is down since when) is kept in monitor_alerts.json, so a hub
+        restart neither repeats nor loses an alert. Called only with a fresh list
+        from a reachable site: a site dropping off is the site-offline alert.
+        A device is down once the site has missed it enough scans in a row
+        (_confirmed_down), so one dropped scan never pages anyone."""
+        now = int(time.time())
+        devices = payload.get("devices") or []
+        mon = {d["key"]: d for d in devices if d.get("watch") and d.get("key")}
+        down = {k for k, d in mon.items() if self._confirmed_down(sid, d, payload.get("offline_after"), now)}
+        with self._mon_lock:
+            state = self._mon_state()
+            prev = state.get(sid)
+            was_mon = set((prev or {}).get("mon") or [])
+            was_down = {k: int(v) for k, v in ((prev or {}).get("down") or {}).items()}
+            went = [k for k in down if prev is not None and k in was_mon and k not in was_down]
+            back = [k for k in was_down if k in mon and mon[k].get("online")]
+            # still offline but no longer "confirmed" (offline_after was raised): not news either way
+            down |= {k for k in was_down if k in mon and not mon[k].get("online")}
+            since = {k: was_down.get(k) or int(mon[k].get("last_seen") or now) for k in down}
+            new = {"mon": sorted(mon), "down": since}
+            if new != prev:
+                state[sid] = new
+                self._mon_save()
+        if not (went or back):
+            return
+        alerts = hubconfig.load().get("alerts", {})
+        if not alerts.get("notify_device_offline", True) or not site.get("alerts_enabled", True):
+            return
+        name = self._site_label(sid, site)
+        order = lambda k: _ip_sortkey(mon[k].get("ip"))  # noqa: E731
+
+        def lines(keys, text):
+            out = [f"• {_dev_label(mon[k])} ({mon[k].get('ip') or 'no IP'}) — {text(k)}"
+                   for k in sorted(keys, key=order)[:MON_LIST_MAX]]
+            if len(keys) > MON_LIST_MAX:
+                out.append(f"… and {len(keys) - MON_LIST_MAX} more")
+            return "\n".join(out)
+
+        if went:
+            title = (f"{name}: {_dev_label(mon[went[0]])} is offline" if len(went) == 1
+                     else f"{name}: {len(went)} monitored devices offline")
+            print(f"[poller] {sid}: monitored offline: {', '.join(sorted(went))}", flush=True)
+            notify.push(alerts, title,
+                        lines(went, lambda k: f"last seen {_span(now - since[k])} ago"),
+                        priority="high", tags=["red_circle"])
+        if back:
+            title = (f"{name}: {_dev_label(mon[back[0]])} is back online" if len(back) == 1
+                     else f"{name}: {len(back)} monitored devices back online")
+            print(f"[poller] {sid}: monitored back: {', '.join(sorted(back))}", flush=True)
+            notify.push(alerts, title,
+                        lines(back, lambda k: f"was offline {_span(now - was_down[k])}"),
+                        tags=["white_check_mark"])
 
 
 poller = Poller()

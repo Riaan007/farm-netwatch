@@ -99,10 +99,16 @@ DEFAULTS = {
         "history_days": 30,
         "alerts": True,
     },
+    # Monitored devices (monitoring.py). seed_pending is a one-shot upgrade
+    # marker: set by the rev-3 migration, cleared once monitoring.seed() has
+    # turned every device with a Kuma monitor into a monitored device.
+    "monitoring": {
+        "seed_pending": False,
+    },
     # Bumped when a default changes in a way an EXISTING config must adopt —
     # _deep_merge only fills MISSING keys, so a stored False would otherwise
     # pin the old default forever. See _migrate().
-    "config_rev": 2,
+    "config_rev": 3,
     # Wireless telemetry from Ubiquiti radios (radiomon.py). Read-only SSH, only
     # ever touches radios that have a saved login. It rides along with the scan
     # but keeps its own cadence — polling a radio every scan would be pointless
@@ -179,6 +185,11 @@ def _migrate(cfg, stored_rev):
         # True written out, so the new default alone would change nothing. An
         # operator who wants them back ticks the box in Settings once.
         cfg.setdefault("alerts", {})["allow_commands"] = False
+    if rev < 3:
+        # One "Monitored" switch replaced the 🔔 watch flag and the separate
+        # "Monitor in Uptime Kuma" tick. The registry is not reachable from here,
+        # so leave a marker for monitoring.seed() to act on.
+        cfg.setdefault("monitoring", {})["seed_pending"] = True
     cfg["config_rev"] = DEFAULTS["config_rev"]
     return cfg, True
 

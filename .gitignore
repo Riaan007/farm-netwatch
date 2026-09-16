@@ -7,3 +7,5 @@ hub/app/static/app.css
 app/data/oui.tsv
 # copied from app/static/switchview.js at image build (hub/Dockerfile)
 hub/app/static/cc/switchview.js
+hub/app/static/cc/routerview.js
+hub/app/static/cc/monitorpicker.js

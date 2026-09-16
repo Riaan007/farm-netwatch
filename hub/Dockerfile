@@ -36,6 +36,7 @@ COPY hub/app/ /app/
 # One switch renderer for both apps: the site's copy is the source.
 COPY app/static/switchview.js /app/static/cc/switchview.js
 COPY app/static/routerview.js /app/static/cc/routerview.js
+COPY app/static/monitorpicker.js /app/static/cc/monitorpicker.js
 COPY --from=cssbuilder /build/static/app.css /app/static/app.css
 EXPOSE 8091
 VOLUME ["/data"]

@@ -7,16 +7,19 @@
  *  site state   paused   = site disabled in the hub
  *               offline  = hub can't reach it (VPN / Pi / Netwatch down)
  *               stale    = reachable, but the device list is out of date
- *               fault    = watched device down, Kuma monitor down, internet down,
+ *               fault    = monitored device down, Kuma monitor down, internet down,
  *                          Pi health critical
  *               warn     = live IP conflict, Pi health warning, Pi login/key
  *                          problem, no backup in 26 h, a wireless link or radio
  *                          the site's own link diagnosis grades Needs attention
  *                          (a Poor link makes it a fault)
  *               ok       = none of the above
- *  devices      "offline" counts only devices seen in the last 7 days; older
- *               ones are "gone quiet" (old discoveries, visitors' phones) and
- *               are listed separately, never mixed into the fault picture.
+ *  devices      MONITORED = on the site's Monitored list (the `watch` flag): the
+ *               equipment the operator must see up or down. Listed first, offline
+ *               ones on top; a monitored device never goes quiet.
+ *               Any other device: "offline" counts only devices seen in the last
+ *               7 days; older ones are "gone quiet" (old discoveries, visitors'
+ *               phones) and are listed separately, never mixed into the fault picture.
  */
 (function () {
   "use strict";
@@ -218,8 +221,13 @@
   CC.isMikrotik = (d) => /mikrotik|routerboard|routeros/i.test([d.vendor, d.model, d.hostname, d.name, d.banner, d.os].join(" "));
   CC.devName = (d) =>
     d.name || d.device_name || d.model || (d.hostname && !/^(localhost|unknown)$/i.test(d.hostname) ? d.hostname : "") || (d.type && !/^unknown/i.test(d.type) ? d.type : "") || (d.vendor ? d.vendor.replace(/,?\s*(Co\.|Ltd|Inc|Corp|Technology|Digital).*$/i, "") : "") || "Unknown device";
-  /** online | offline (seen in the last 7 days) | quiet (not seen for 7+ days) */
-  CC.devState = (d) => (d.online ? "online" : d.last_seen && CC.now() - d.last_seen < QUIET_AFTER ? "offline" : "quiet");
+  CC.isMonitored = (d) => !!d.watch;
+  /** online | offline (monitored, or seen in the last 7 days) | quiet (not seen for 7+ days) */
+  CC.devState = (d) => (d.online ? "online" : d.watch || (d.last_seen && CC.now() - d.last_seen < QUIET_AFTER) ? "offline" : "quiet");
+  /** "down 2d 3h" for an offline device (from its last sighting). */
+  CC.downFor = (d) => (d.last_seen ? "down " + CC.dur(CC.now() - d.last_seen) : "down");
+  /** Picker grouping: the CC groups, with MikroTiks counted as network kit. */
+  CC.monGroup = (d) => (CC.isMikrotik(d) ? "net" : CC.cat(d).group);
 
   // ---- state ---------------------------------------------------------------------------
   const S = (CC.state = {
@@ -253,12 +261,12 @@
       return out;
     }
     const devs = S.devices[s.id] || [];
-    const watchedDown = devs.filter((d) => d.watch && !d.online);
-    if (watchedDown.length) {
-      watchedDown.slice(0, 4).forEach((d) => add("bad", `${CC.devName(d)} is down`, `Watched ${CC.cat(d).label.toLowerCase()} · ${d.ip || "no IP"} · last seen ${CC.ago(d.last_seen)}`, link("devices") + "?q=" + encodeURIComponent(d.ip || "")));
-      if (watchedDown.length > 4) add("bad", `${watchedDown.length - 4} more watched devices down`, "", link("devices"));
-    } else if (s.watched_down) {
-      add("bad", CC.plural(s.watched_down, "watched device") + " down", "Device list still loading", link("devices"));
+    const monDown = devs.filter((d) => d.watch && !d.online).sort((a, b) => (b.last_seen || 0) - (a.last_seen || 0));
+    if (monDown.length) {
+      monDown.slice(0, 4).forEach((d) => add("bad", `${CC.devName(d)} is down`, `Monitored ${CC.cat(d).label.toLowerCase()} · ${d.ip || "no IP"} · ${CC.downFor(d)}`, link("devices") + "?list=monitored&q=" + encodeURIComponent(d.ip || "")));
+      if (monDown.length > 4) add("bad", `${monDown.length - 4} more monitored devices down`, "", link("devices") + "?list=monitored&state=offline");
+    } else if (s.watched_down && !S.devices[s.id]) {
+      add("bad", CC.plural(s.watched_down, "monitored device") + " down", "Device list still loading", link("devices"));
     }
     const net = S.internet[s.id];
     if (net && net.checked_ts && !net.ok) {
@@ -324,14 +332,58 @@
   };
   CC.siteCounts = (s) => {
     const devs = S.devices[s.id];
-    if (!devs) return { total: s.devices_total, online: s.devices_online, offline: null, quiet: null, infra: null, infraUp: null };
-    let online = 0, offline = 0, quiet = 0, infra = 0, infraUp = 0;
+    if (!devs) return { total: s.devices_total, online: s.devices_online, offline: null, quiet: null, mon: s.monitored ?? null, monUp: s.monitored != null && s.watched_down != null ? s.monitored - s.watched_down : null };
+    let online = 0, offline = 0, quiet = 0, mon = 0, monUp = 0;
     devs.forEach((d) => {
       const st = CC.devState(d);
       if (st === "online") online++; else if (st === "offline") offline++; else quiet++;
-      if (CC.isInfra(d) && st !== "quiet") { infra++; if (st === "online") infraUp++; }
+      if (d.watch) { mon++; if (d.online) monUp++; }
     });
-    return { total: devs.length, online, offline, quiet, infra, infraUp };
+    return { total: devs.length, online, offline, quiet, mon, monUp };
+  };
+
+  // ---- the Monitored list --------------------------------------------------------------
+  /** Put devices on / take them off a site's Monitored list; patches the local copy. Throws ApiError. */
+  CC.setMonitored = async (siteId, monitor = [], stop = []) => {
+    // an older site switches device by device and may create Kuma monitors on the way
+    const j = await CC.api(`/api/hub/sites/${encodeURIComponent(siteId)}/monitoring`, { method: "POST", body: { monitor, stop }, timeout: 180000 });
+    const bad = new Set([...(j.unknown || []), ...(j.failed || [])]);
+    const byKey = new Map((S.devices[siteId] || []).map((d) => [d.key, d]));
+    monitor.forEach((k) => { if (!bad.has(k) && byKey.has(k)) byKey.get(k).watch = true; });
+    stop.forEach((k) => { if (!bad.has(k) && byKey.has(k)) byKey.get(k).watch = false; });
+    emit();
+    return j;
+  };
+  /** A site whose Netwatch predates the Monitored list (its device feed has no kuma_paused). */
+  CC.siteLegacy = (id) => { const d = (S.devices[id] || [])[0]; return !!d && !("kuma_paused" in d); };
+  CC.stopText = (legacySites = []) => "They move to Other devices and the hub stops alerting on them. "
+    + (legacySites.length
+      ? `${legacySites.join(", ")} still run${legacySites.length === 1 ? "s" : ""} an older Netwatch: there, a Kuma monitor the old 🔔 watch created is deleted and any other keeps running — update the site to have monitors paused instead.`
+      : "Their Uptime Kuma monitors are paused (history kept).");
+  CC.monitorToast = (res, site) => {
+    const ch = res.changed || [], on = ch.filter((c) => c.monitored).length, off = ch.length - on;
+    const msg = [on ? `${CC.plural(on, "device")} now monitored` : "", off ? `${off} no longer monitored` : ""].filter(Boolean).join(" · ") || "Nothing to change";
+    CC.toast(`${site ? site.name + ": " : ""}${msg}${(res.failed || []).length ? ` · ${res.failed.length} failed` : ""}`, (res.failed || []).length ? "bad" : "ok");
+  };
+  /** The shared picker (monitorpicker.js, also used by the site's own page). */
+  CC.openMonitorPicker = async (siteId, { pick, preset } = {}) => {
+    const s = CC.site(siteId);
+    if (!s) return null;
+    if (!window.MonitorPicker) { CC.toast("The device picker did not load — reload the page", "bad"); return null; }
+    if (!S.devices[siteId]) { CC.toast("The device list is still loading", "bad"); return null; }
+    const res = await window.MonitorPicker.open({
+      site: s.name,
+      devices: S.devices[siteId],
+      name: CC.devName,
+      type: (d) => { const c = CC.cat(d); return { icon: c.icon, label: c.label, group: CC.monGroup(d) }; },
+      groups: CC.GROUPS,
+      pick, preset,
+      note: s.reachable ? "" : "This site is offline right now — saving will fail until the hub can reach it.",
+      confirm: (title, text) => CC.confirm(title, text, { ok: "Discard", danger: true }),
+      save: async (c) => { try { return await CC.setMonitored(siteId, c.monitor, c.stop); } catch (e) { throw new Error(e.message); } },
+    });
+    if (res) CC.monitorToast(res, s);
+    return res;
   };
 
   // ---- loading -----------------------------------------------------------------------

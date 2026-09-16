@@ -2,13 +2,16 @@
  * Wraps window.fetch: when the API answers 401 {error:"auth_required"}, show a
  * password dialog and, once logged in, re-send the SAME request. The dashboard's
  * many fetch() call sites stay unchanged. Styles are inline on purpose — Tailwind
- * only compiles classes it finds in the HTML files. */
+ * only compiles classes it finds in the HTML files. The prompt is a modal
+ * <dialog> so it also sits above another open <dialog> (the device picker). */
 (function () {
     const origFetch = window.fetch.bind(window);
     let prompt = null;   // one dialog for many concurrent 401s
 
     const css = `
-    #nw-auth{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px}
+    #nw-auth{position:fixed;inset:0;z-index:200;width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;background:transparent;padding:16px;box-sizing:border-box}
+    #nw-auth[open]{display:flex;align-items:center;justify-content:center}
+    #nw-auth::backdrop{background:rgba(0,0,0,.72);backdrop-filter:blur(4px)}
     #nw-auth .card{width:100%;max-width:380px;background:#0b1424;border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:22px;color:#e2e8f0;font:14px system-ui,sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.5)}
     #nw-auth h2{margin:0 0 6px;font-size:18px;font-weight:700}
     #nw-auth p{margin:0 0 14px;color:#94a3b8;line-height:1.45}
@@ -29,10 +32,8 @@
                 st.id = 'nw-auth-css'; st.textContent = css;
                 document.head.appendChild(st);
             }
-            const wrap = document.createElement('div');
+            const wrap = document.createElement('dialog');
             wrap.id = 'nw-auth';
-            wrap.setAttribute('role', 'dialog');
-            wrap.setAttribute('aria-modal', 'true');
             wrap.setAttribute('aria-labelledby', 'nw-auth-title');
             if (info.password_set === false) {
                 wrap.innerHTML = `<div class="card"><h2 id="nw-auth-title">&#128274; Pi password needed</h2>
@@ -48,9 +49,9 @@
                     <div class="row"><button type="button" data-x>Cancel</button><button class="pri" type="submit">Log in</button></div></form>`;
             }
             document.body.appendChild(wrap);
-            const done = ok => { wrap.remove(); document.removeEventListener('keydown', onKey); prompt = null; resolve(ok); };
-            const onKey = e => { if (e.key === 'Escape') done(false); };
-            document.addEventListener('keydown', onKey);
+            const done = ok => { if (wrap.open) wrap.close(); wrap.remove(); prompt = null; resolve(ok); };
+            wrap.addEventListener('cancel', e => { e.preventDefault(); done(false); });   // Esc
+            wrap.showModal();
             wrap.querySelector('[data-x]').onclick = () => done(false);
             wrap.addEventListener('click', e => { if (e.target === wrap) done(false); });
             const form = wrap.querySelector('form');
