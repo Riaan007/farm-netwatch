@@ -346,6 +346,32 @@
             server: "bg-slate-400/20 text-slate-200", unknown: "bg-slate-500/10 text-slate-400",
         };
 
+        // Everything the site reports is text — a client's own Pi could send
+        // anything — so escape it before it goes into HTML. A value a button needs
+        // goes in a data-* attribute (the listener below), never into an inline
+        // onclick: the browser turns &#39; back into a quote before that JavaScript
+        // runs. (csvContent() has its own CSV-quoting esc.)
+        const escHtml = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+        const HUB_ACTS = {
+            'history':  el => toggleHistory(el, encodeURIComponent(el.dataset.key), el.dataset.ip),
+            'connect':  el => openConnect(el.dataset.ip),
+            'beats':    el => loadBeats(el.dataset.key, el.dataset.cid, el.dataset.r),
+            'diag':     el => diag(el.dataset.kind, el.dataset.ip, el.dataset.rid, el),
+            'restore':  el => restoreFromHub(el.dataset.name),
+            'del-backup': el => deleteBackup(el.dataset.name),
+            'conflict-clear': el => clearConflict(el.dataset.ip, !!el.dataset.soft),
+            'tunnel':   el => openTunnel(parseInt(el.dataset.port, 10)),
+            'copy':     el => copyText(el.dataset.text, el),
+            'close-tunnel': el => closeTunnel(el.dataset.id),
+            'hist-ip':  el => histShowIp(el.dataset.ip),
+            'events-ip': el => loadEvents(el.dataset.ip),
+        };
+        document.addEventListener('click', (e) => {
+            const el = e.target.closest('[data-hub-act]');
+            if (el && has(HUB_ACTS, el.dataset.hubAct)) HUB_ACTS[el.dataset.hubAct](el);
+        });
+
         function fmtAgo(ts){
             if (!ts) return '—';
             const s = Math.max(0, Math.floor(Date.now()/1000 - ts));
@@ -436,7 +462,7 @@
                     const on = list.filter(d => d.online).length;
                     const label = devState.group === 'status'
                         ? (k === 'online' ? '🟢 Online' : '🔴 Offline')
-                        : `${catIcon[k] || '•'} ${k}`;
+                        : `${has(catIcon, k) ? catIcon[k] : '•'} ${escHtml(k)}`;
                     return `<tr class="bg-white/[0.03] border-y border-white/5">
                         <td colspan="6" class="px-5 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
                             ${label} <span class="font-normal normal-case text-slate-500">· ${on}/${list.length} online</span>
@@ -470,17 +496,17 @@
             const stale = conflictIPset.has(d.ip);
             const sub = (d.hostname && d.hostname !== name)
                 ? `<div class="text-[10px] ${stale ? 'text-amber-400' : 'text-slate-500'} font-mono truncate max-w-[240px]"
-                        title="hostname (reverse DNS)${stale ? ' — may be stale: this IP has an address conflict' : ''}">${d.hostname}${stale ? ' ⚠' : ''}</div>`
+                        title="hostname (reverse DNS)${stale ? ' — may be stale: this IP has an address conflict' : ''}">${escHtml(d.hostname)}${stale ? ' ⚠' : ''}</div>`
                 : '';
             return `
-            <tr class="border-b border-white/5 hover:bg-cyan-400/5 transition-colors cursor-pointer" onclick="toggleHistory(this, '${encodeURIComponent(d.key)}', '${d.ip || ''}')">
-                <td class="px-5 py-2.5"><div class="flex items-center gap-2">${dot}<div class="min-w-0"><span class="font-medium text-slate-200">${name}${watch}${conflict}</span>${sub}</div></div></td>
-                <td class="px-3 py-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${catChip[cat] || catChip.unknown}">${catIcon[cat] || '•'} ${cat}</span></td>
-                <td class="px-3 py-2.5 font-mono text-xs text-slate-300">${d.ip || '—'}</td>
-                <td class="px-3 py-2.5 font-mono text-xs text-slate-400">${d.rtt != null ? d.rtt + ' ms' : '—'}</td>
+            <tr class="border-b border-white/5 hover:bg-cyan-400/5 transition-colors cursor-pointer" data-hub-act="history" data-key="${escHtml(d.key)}" data-ip="${escHtml(d.ip || '')}">
+                <td class="px-5 py-2.5"><div class="flex items-center gap-2">${dot}<div class="min-w-0"><span class="font-medium text-slate-200">${escHtml(name)}${watch}${conflict}</span>${sub}</div></div></td>
+                <td class="px-3 py-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${has(catChip, cat) ? catChip[cat] : catChip.unknown}">${has(catIcon, cat) ? catIcon[cat] : '•'} ${escHtml(cat)}</span></td>
+                <td class="px-3 py-2.5 font-mono text-xs text-slate-300">${escHtml(d.ip || '—')}</td>
+                <td class="px-3 py-2.5 font-mono text-xs text-slate-400">${d.rtt != null ? escHtml(d.rtt) + ' ms' : '—'}</td>
                 <td class="px-3 py-2.5 text-xs text-slate-500">${d.online ? 'now' : fmtAgo(d.last_seen)}</td>
                 <td class="px-3 py-2.5 text-right whitespace-nowrap">
-                    ${d.ip ? `<button onclick="event.stopPropagation(); openConnect('${d.ip}')" class="px-2 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 rounded-md text-[11px] font-bold">Connect</button>` : ''}
+                    ${d.ip ? `<button data-hub-act="connect" data-ip="${escHtml(d.ip)}" class="px-2 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 rounded-md text-[11px] font-bold">Connect</button>` : ''}
                     <span class="text-slate-600 text-xs ml-1">▾</span>
                 </td>
             </tr>`;
@@ -497,21 +523,21 @@
             const diagBlock = ip ? `
                 <div class="mt-3 pt-3 border-t border-white/10 flex flex-wrap gap-2 items-center">
                     <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider mr-1">Diagnostics</span>
-                    <button onclick="diag('ping','${ip}','${rid}',this)" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-xs font-bold">📡 Ping</button>
-                    <button onclick="diag('quality','${ip}','${rid}',this)" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-xs font-bold">📶 Connection test</button>
-                    <button onclick="diag('deep','${ip}','${rid}',this)" class="px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-xs font-bold">🔬 Deep scan</button>
+                    <button data-hub-act="diag" data-kind="ping" data-ip="${escHtml(ip)}" data-rid="${rid}" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-xs font-bold">📡 Ping</button>
+                    <button data-hub-act="diag" data-kind="quality" data-ip="${escHtml(ip)}" data-rid="${rid}" class="px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-xs font-bold">📶 Connection test</button>
+                    <button data-hub-act="diag" data-kind="deep" data-ip="${escHtml(ip)}" data-rid="${rid}" class="px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-xs font-bold">🔬 Deep scan</button>
                 </div>
                 <div id="${rid}" class="mt-2"></div>` : '';
             const cid = 'chart-' + Math.random().toString(36).slice(2, 8);
             const r = await fetch(`/api/hub/sites/${siteId}/history/${key}`);
             const h = r.ok ? await r.json() : {};
             const sum = h.summary || {};
-            const pct = v => v == null ? '--' : v + '%';
+            const pct = v => v == null ? '--' : escHtml(v) + '%';
             const chartBlock = `
                 <div class="flex items-center justify-between mb-1">
                     <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Latency &amp; uptime</span>
                     <div id="${cid}-rng" class="flex bg-white/5 rounded-lg p-0.5 text-[11px] font-bold">
-                        ${['30m','1h','12h','24h'].map(rr => `<button data-r="${rr}" onclick="loadBeats('${key}','${cid}','${rr}')" class="px-2 py-0.5 rounded-md ${rr==='1h'?'bg-cyan-500/20 text-cyan-200 shadow':'text-slate-500'}">${rr}</button>`).join('')}
+                        ${['30m','1h','12h','24h'].map(rr => `<button data-r="${rr}" data-hub-act="beats" data-key="${escHtml(key)}" data-cid="${cid}" class="px-2 py-0.5 rounded-md ${rr==='1h'?'bg-cyan-500/20 text-cyan-200 shadow':'text-slate-500'}">${rr}</button>`).join('')}
                     </div>
                 </div>
                 <div id="${cid}"><p class="text-xs text-slate-600">loading…</p></div>`;
@@ -579,7 +605,7 @@
                 btn.textContent = 'Starting…';
                 try {
                     await fetch(`/api/hub/sites/${siteId}/trigger`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'deep', hosts:[ip]})});
-                    out.innerHTML = `<p class="text-xs text-slate-400">🔬 Deep scan started on ${ip} (all 65535 ports + service/version + OS). Takes a few minutes; the device list updates after the next refresh.</p>`;
+                    out.innerHTML = `<p class="text-xs text-slate-400">🔬 Deep scan started on ${escHtml(ip)} (all 65535 ports + service/version + OS). Takes a few minutes; the device list updates after the next refresh.</p>`;
                     setTimeout(refresh, 4000);
                 } catch(e){ out.innerHTML = '<p class="text-xs text-rose-400">Failed to start deep scan.</p>'; }
                 btn.textContent = orig; btn.disabled = false;
@@ -587,29 +613,29 @@
             }
             const action = kind === 'quality' ? 'quality' : 'ping';
             btn.textContent = (kind === 'quality' ? 'Testing…' : 'Pinging…');
-            out.innerHTML = `<p class="text-xs text-slate-400">Running ${kind} on ${ip} via the site…</p>`;
+            out.innerHTML = `<p class="text-xs text-slate-400">Running ${escHtml(kind)} on ${escHtml(ip)} via the site…</p>`;
             try {
                 const r = await (await fetch(`/api/hub/sites/${siteId}/command`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action, ip})})).json();
                 if (kind === 'quality') renderQuality(out, r.quality);
-                else out.innerHTML = `<pre class="text-[11px] bg-[#050b16] border border-white/10 text-emerald-300/90 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap">${(r.result || r.error || '(no output)').replace(/</g,'&lt;')}</pre>`;
+                else out.innerHTML = `<pre class="text-[11px] bg-[#050b16] border border-white/10 text-emerald-300/90 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap">${escHtml(r.result || r.error || '(no output)')}</pre>`;
             } catch(e){ out.innerHTML = '<p class="text-xs text-rose-400">Site unreachable.</p>'; }
             btn.textContent = orig; btn.disabled = false;
         }
         function renderQuality(panel, q){
-            if(!q || !q.ok){ panel.innerHTML = '<p class="text-xs text-rose-400">'+((q&&q.error)||'Test failed')+'</p>'; return; }
+            if(!q || !q.ok){ panel.innerHTML = '<p class="text-xs text-rose-400">'+escHtml((q&&q.error)||'Test failed')+'</p>'; return; }
             const styles = { excellent:'bg-emerald-500/20 text-emerald-300', good:'bg-emerald-500/15 text-emerald-300', fair:'bg-amber-500/15 text-amber-300', poor:'bg-rose-500/15 text-rose-300', down:'bg-slate-500/20 text-slate-300' };
             const label = { excellent:'Excellent', good:'Good', fair:'Fair', poor:'Poor', down:'No response' };
-            const cls = styles[q.rating] || styles.down;
-            const metric = (lbl,val,unit)=>`<div class="bg-white/5 rounded-lg p-2 border border-white/10 text-center"><div class="text-[10px] text-slate-500 uppercase font-bold">${lbl}</div><div class="text-sm font-bold text-slate-100">${val==null?'--':val}${val==null?'':unit}</div></div>`;
+            const cls = has(styles, q.rating) ? styles[q.rating] : styles.down;
+            const metric = (lbl,val,unit)=>`<div class="bg-white/5 rounded-lg p-2 border border-white/10 text-center"><div class="text-[10px] text-slate-500 uppercase font-bold">${lbl}</div><div class="text-sm font-bold text-slate-100">${val==null?'--':escHtml(val)}${val==null?'':unit}</div></div>`;
             panel.innerHTML = `
                 <div class="flex items-center justify-between mb-2">
                     <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Connection quality</span>
-                    <span class="px-3 py-1 rounded-full text-xs font-bold ${cls}">${label[q.rating]||q.rating}</span>
+                    <span class="px-3 py-1 rounded-full text-xs font-bold ${cls}">${escHtml(has(label, q.rating) ? label[q.rating] : q.rating)}</span>
                 </div>
                 <div class="grid grid-cols-4 gap-2">
                     ${metric('Loss', q.loss, '%')}${metric('Avg', q.avg, 'ms')}${metric('Jitter', q.jitter, 'ms')}${metric('Max', q.max, 'ms')}
                 </div>
-                <p class="text-[10px] text-slate-500 mt-1">${q.recv}/${q.sent} replies${q.note ? ' · '+q.note : ''}</p>`;
+                <p class="text-[10px] text-slate-500 mt-1">${escHtml(q.recv)}/${escHtml(q.sent)} replies${q.note ? ' · '+escHtml(q.note) : ''}</p>`;
         }
 
         async function refresh(){
@@ -669,14 +695,14 @@
                 ? ` <span class="${minDays<=5?'text-rose-400 font-bold':minDays<=14?'text-amber-400 font-bold':'text-slate-500'}" title="Predicted from the last 14 days of growth">full in ~${Math.round(minDays)}d</span>` : '';
             const ck = s.clock || {};
             const clockSeg = (ck.offset_s != null && Math.abs(ck.offset_s) >= 120)
-                ? `<span>⏱ <b class="${Math.abs(ck.offset_s)>=600?'text-rose-400':'text-amber-400'}" title="vs ${ck.server}">clock off ${Math.round(ck.offset_s)}s</b></span>` : '';
+                ? `<span>⏱ <b class="${Math.abs(ck.offset_s)>=600?'text-rose-400':'text-amber-400'}" title="vs ${escHtml(ck.server)}">clock off ${Math.round(ck.offset_s)}s</b></span>` : '';
             const sm = s.smart || {};
             const smDevs = sm.devices || [];
             const smartSeg = (sm.available && smDevs.length)
-                ? `<span title="${smDevs.map(d=>(d.dev||'')+' '+(d.model||'')+': '+(d.healthy?'OK':'FAILING')+(d.notes?' ('+d.notes+')':'')).join(' | ').replace(/"/g,'&quot;')}">SSD ${smDevs.every(d=>d.healthy)?'<b class="text-emerald-400">✓</b>':'<b class="text-rose-400">⚠ FAILING</b>'}</span>` : '';
+                ? `<span title="${escHtml(smDevs.map(d=>(d.dev||'')+' '+(d.model||'')+': '+(d.healthy?'OK':'FAILING')+(d.notes?' ('+d.notes+')':'')).join(' | '))}">SSD ${smDevs.every(d=>d.healthy)?'<b class="text-emerald-400">✓</b>':'<b class="text-rose-400">⚠ FAILING</b>'}</span>` : '';
             const co = s.containers || {};
             const contSeg = co.available
-                ? `<span title="${(co.containers||[]).map(c=>c.name+': '+c.state).join(' | ').replace(/"/g,'&quot;')}">🐳 <b class="tabular-nums text-slate-300">${(co.containers||[]).length}</b>${(co.flapping||[]).length?` <b class="text-amber-400">⚠ ${co.flapping.join(', ')}</b>`:' <b class="text-emerald-400">✓</b>'}</span>` : '';
+                ? `<span title="${escHtml((co.containers||[]).map(c=>c.name+': '+c.state).join(' | '))}">🐳 <b class="tabular-nums text-slate-300">${(co.containers||[]).length}</b>${(co.flapping||[]).length?` <b class="text-amber-400">⚠ ${escHtml(co.flapping.join(', '))}</b>`:' <b class="text-emerald-400">✓</b>'}</span>` : '';
             const sto = s.storage || {};
             const stoFs = sto.filesystems || [];
             const stoBad = stoFs.some(f=>f.ro || (f.write_test && f.write_test.ok === false));
@@ -685,19 +711,19 @@
             const card = (sto.cards||[])[0];
             let stoSeg = '';
             if (stoBad) stoSeg = '<span>💳 <b class="text-rose-400">STORAGE FAILING (read-only)</b></span>';
-            else if (extErr) stoSeg = `<span title="ext4 recorded filesystem errors — corruption has started">💳 <b class="text-rose-400">${extErr} fs errors</b></span>`;
+            else if (extErr) stoSeg = `<span title="ext4 recorded filesystem errors — corruption has started">💳 <b class="text-rose-400">${escHtml(extErr)} fs errors</b></span>`;
             else if ((sto.io_errors_new||0) > 0) stoSeg = `<span title="storage I/O errors in the kernel log">💳 <b class="text-amber-400">I/O errors</b></span>`;
             else if (stoSlow) stoSeg = '<span title="write+fsync latency over 5s — the card controller is struggling">💳 <b class="text-amber-400">slow writes</b></span>';
-            else if (card) stoSeg = `<span title="${card.dev} ${card.name||''} manufactured ${card.date||'?'}${card.age_years!=null?' — '+card.age_years+' years old':''} · write test ${((stoFs[0]||{}).write_test||{}).fsync_ms||'?'} ms">💳 SD ${card.age_years > 5 ? '<b class="text-amber-400">'+Math.round(card.age_years)+'y old</b>' : '<b class="text-emerald-400">✓</b>'}</span>`;
+            else if (card) stoSeg = `<span title="${escHtml(`${card.dev} ${card.name||''} manufactured ${card.date||'?'}${card.age_years!=null?' — '+card.age_years+' years old':''} · write test ${((stoFs[0]||{}).write_test||{}).fsync_ms||'?'} ms`)}">💳 SD ${card.age_years > 5 ? '<b class="text-amber-400">'+Math.round(card.age_years)+'y old</b>' : '<b class="text-emerald-400">✓</b>'}</span>`;
             const wd = s.watchdog || {};
             const wdSeg = wd.active ? '<span class="text-emerald-400/80" title="Hardware watchdog armed — a hard-hung Pi reboots itself after ~15s">🐶 WD</span>'
-                        : (wd.enabled && wd.note) ? `<span class="text-slate-500" title="${(wd.note||'').replace(/"/g,'&quot;')}">🐶 host-owned</span>` : '';
+                        : (wd.enabled && wd.note) ? `<span class="text-slate-500" title="${escHtml(wd.note)}">🐶 host-owned</span>` : '';
             return `<span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">🩺 Pi health</span>`
-                + `<span class="text-slate-500">${(s.model||'').replace('Raspberry Pi','Pi')}</span>`
-                + `<span>🌡 <b class="${healthClass(s.temp_c, 75, 82)} tabular-nums">${s.temp_c != null ? s.temp_c+'°C' : '—'}</b></span>`
-                + `<span>CPU <b class="${healthClass(s.cpu_pct, 80, 95)} tabular-nums">${s.cpu_pct != null ? s.cpu_pct+'%' : '—'}</b> <span class="text-slate-500 tabular-nums">(load ${(s.load||[]).map(x=>x.toFixed(1)).join(' ')})</span></span>`
-                + `<span>RAM <b class="${healthClass((s.mem||{}).used_pct, 90, 97)} tabular-nums">${(s.mem||{}).used_pct != null ? s.mem.used_pct+'%' : '—'}</b></span>`
-                + (worstDisk ? `<span>💾 <b class="${healthClass(worstDisk.used_pct, 85, 95)} tabular-nums">${worstDisk.used_pct}%</b> <span class="text-slate-500">(${worstDisk.free_gb} GB free)</span>${fullSeg}</span>` : '')
+                + `<span class="text-slate-500">${escHtml(String(s.model||'').replace('Raspberry Pi','Pi'))}</span>`
+                + `<span>🌡 <b class="${healthClass(s.temp_c, 75, 82)} tabular-nums">${s.temp_c != null ? escHtml(s.temp_c)+'°C' : '—'}</b></span>`
+                + `<span>CPU <b class="${healthClass(s.cpu_pct, 80, 95)} tabular-nums">${s.cpu_pct != null ? escHtml(s.cpu_pct)+'%' : '—'}</b> <span class="text-slate-500 tabular-nums">(load ${(s.load||[]).map(x=>Number(x).toFixed(1)).join(' ')})</span></span>`
+                + `<span>RAM <b class="${healthClass((s.mem||{}).used_pct, 90, 97)} tabular-nums">${(s.mem||{}).used_pct != null ? escHtml(s.mem.used_pct)+'%' : '—'}</b></span>`
+                + (worstDisk ? `<span>💾 <b class="${healthClass(worstDisk.used_pct, 85, 95)} tabular-nums">${escHtml(worstDisk.used_pct)}%</b> <span class="text-slate-500">(${escHtml(worstDisk.free_gb)} GB free)</span>${fullSeg}</span>` : '')
                 + `<span class="text-slate-500">up <span class="tabular-nums">${fmtUp(s.uptime_s)}</span></span>`
                 + (smartSeg ? smartSeg : '') + (stoSeg ? stoSeg : '') + (contSeg ? contSeg : '') + (clockSeg ? clockSeg : '')
                 + (uv ? `<span>${uv}</span>` : '') + (wdSeg ? wdSeg : '');
@@ -724,9 +750,9 @@
                 <div class="flex items-center justify-between gap-2 py-1.5 ${i ? 'border-t border-white/5' : ''}">
                     <span class="text-slate-300 tabular-nums">${new Date(b.ts*1000).toLocaleString()} <span class="text-slate-600">· ${(b.bytes/1024).toFixed(0)} kB${b.encrypted ? ' · 🔒 encrypted' : ' · ⚠ not encrypted'}${i===0 ? ' · latest' : ''}</span></span>
                     <span class="flex gap-1.5">
-                        <a href="/api/hub/sites/${siteId}/backups/${b.name}" class="btn btn-ghost btn-sm">Download</a>
-                        <button onclick="restoreFromHub('${b.name}')" class="btn btn-success btn-sm">Restore</button>
-                        <button onclick="deleteBackup('${b.name}')" class="btn btn-danger btn-sm" title="Delete this backup from the hub">🗑</button>
+                        <a href="/api/hub/sites/${escHtml(siteId)}/backups/${escHtml(encodeURIComponent(b.name))}" class="btn btn-ghost btn-sm">Download</a>
+                        <button data-hub-act="restore" data-name="${escHtml(b.name)}" class="btn btn-success btn-sm">Restore</button>
+                        <button data-hub-act="del-backup" data-name="${escHtml(b.name)}" class="btn btn-danger btn-sm" title="Delete this backup from the hub">🗑</button>
                     </span>
                 </div>`).join('');
         }
@@ -788,7 +814,7 @@
             if(!confirm(`Delete backup ${name} from the hub?\n\nThis only removes the stored copy on the hub — the site itself is not touched. It cannot be undone (the next daily backup starts a fresh copy).`)) return;
             const msg = document.getElementById('backup-msg');
             try {
-                const j = await (await fetch(`/api/hub/sites/${siteId}/backups/${name}`, {method:'DELETE'})).json();
+                const j = await (await fetch(`/api/hub/sites/${siteId}/backups/${encodeURIComponent(name)}`, {method:'DELETE'})).json();
                 msg.textContent = j.ok ? '✓ Deleted' : (j.error || 'failed');
                 msg.className = 'text-xs ' + (j.ok ? 'text-emerald-400' : 'text-rose-400');
             } catch(e){ msg.textContent = 'failed'; msg.className = 'text-xs text-rose-400'; }
@@ -830,15 +856,15 @@
                 const sub = d.online ? 'online' : 'offline ' + fmtAgo(d.last_seen);
                 return `<div class="flex items-center gap-2 px-3 py-1.5 bg-[#0b1322] border ${border} rounded-lg text-xs">
                     <span class="status-dot ${dot}"></span>
-                    <span class="text-slate-300"><b>${d.name || d.vendor || 'device'}</b> <span class="text-slate-500">${d.category||''}</span><br>
-                    <span class="font-mono text-[10px] text-slate-500">${d.mac||'no-mac'} · ${sub}</span></span>
+                    <span class="text-slate-300"><b>${escHtml(d.name || d.vendor || 'device')}</b> <span class="text-slate-500">${escHtml(d.category||'')}</span><br>
+                    <span class="font-mono text-[10px] text-slate-500">${escHtml(d.mac||'no-mac')} · ${sub}</span></span>
                 </div>`;
             };
             const rowsFor = (cs, border, ipColor, soft) => cs.map(c => `
                         <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-                            <span class="font-mono font-bold ${ipColor} w-36 shrink-0">${c.ip}</span>
-                            <div class="flex flex-wrap gap-2">${c.devices.map(d=>chipFor(d, border)).join('')}</div>
-                            <button onclick="clearConflict('${c.ip}', ${soft})" class="btn ${soft?'btn-ghost':'btn-success'} btn-sm sm:ml-auto shrink-0">✓ Clear &amp; re-test</button>
+                            <span class="font-mono font-bold ${ipColor} w-36 shrink-0">${escHtml(c.ip)}</span>
+                            <div class="flex flex-wrap gap-2">${(c.devices||[]).map(d=>chipFor(d, border)).join('')}</div>
+                            <button data-hub-act="conflict-clear" data-ip="${escHtml(c.ip)}" data-soft="${soft ? 1 : ''}" class="btn ${soft?'btn-ghost':'btn-success'} btn-sm sm:ml-auto shrink-0">✓ Clear &amp; re-test</button>
                         </div>`).join('');
             const liveHtml = !liveList.length ? '' : `
                 <div class="rounded-2xl border border-amber-400/35 bg-amber-500/[0.08] backdrop-blur p-4">
@@ -944,8 +970,8 @@
                 let h = '<div class="p-3 rounded-xl bg-white/5 border border-white/10">'
                       + '<p class="text-xs font-bold uppercase '+tone+'">'+wdEsc(a.overall||'')+'</p>'
                       + '<p class="mt-1 text-slate-200">'+wdEsc(a.summary)+'</p>'
-                      + '<p class="text-[11px] text-slate-500 mt-2">'+j.radio_count+' radio(s) read · '
-                      + j.finding_count+' finding(s) from the site\'s own rules · '+wdEsc(a.model||'')+'</p></div>';
+                      + '<p class="text-[11px] text-slate-500 mt-2">'+wdEsc(j.radio_count)+' radio(s) read · '
+                      + wdEsc(j.finding_count)+' finding(s) from the site\'s own rules · '+wdEsc(a.model||'')+'</p></div>';
                 if((a.links||[]).length){
                     h += '<div><h3 class="text-xs font-bold text-slate-500 uppercase mb-2">Links needing attention</h3><div class="space-y-2">'
                        + a.links.map(l => {
@@ -1048,7 +1074,7 @@
         let cnIp = null;
         const COMMON = [{p:22,l:'SSH'},{p:80,l:'HTTP'},{p:443,l:'HTTPS'},{p:8080,l:'HTTP-alt'},{p:3389,l:'RDP'},{p:554,l:'RTSP'}];
         function portChip(p, label){
-            return `<button onclick="openTunnel(${p})" class="px-2.5 py-1 bg-white/5 hover:bg-cyan-500/15 border border-white/10 text-slate-300 rounded-lg text-xs font-mono">${p}${label?` <span class="text-slate-500">${label}</span>`:''}</button>`;
+            return `<button data-hub-act="tunnel" data-port="${escHtml(p)}" class="px-2.5 py-1 bg-white/5 hover:bg-cyan-500/15 border border-white/10 text-slate-300 rounded-lg text-xs font-mono">${escHtml(p)}${label?` <span class="text-slate-500">${escHtml(label)}</span>`:''}</button>`;
         }
         function openConnect(ip){
             cnIp = ip;
@@ -1080,17 +1106,17 @@
         }
         function showResult(j){
             const box = document.getElementById('cn-result');
-            const hp = `${j.host}:${j.port}`;
-            let body = `<div class="font-bold text-slate-100 mb-1">Tunnel open → ${j.ip}:${j.device_port}</div>`;
-            if(j.scheme){
+            const hp = escHtml(`${j.host}:${j.port}`), host = escHtml(j.host), port = escHtml(j.port);
+            let body = `<div class="font-bold text-slate-100 mb-1">Tunnel open → ${escHtml(j.ip)}:${escHtml(j.device_port)}</div>`;
+            if(/^https?$/.test(j.scheme)){
                 body += `<a href="${j.scheme}://${hp}" target="_blank" class="text-cyan-300 underline font-mono">${j.scheme}://${hp}</a><div class="text-[11px] text-slate-500 mt-1">Opens the device's web page.</div>`;
             } else if(j.device_port == 22){
-                body += `<a href="ssh://${j.host}:${j.port}" class="text-cyan-300 underline font-mono">ssh://${j.host}:${j.port}</a> <span class="font-mono text-slate-500">(${hp})</span>
-                    <div class="text-[11px] text-slate-500 mt-1">Click opens PuTTY if it's set as the <code>ssh://</code> handler, or use the host:port manually (Host <span class="font-mono text-slate-300">${j.host}</span>, Port <span class="font-mono text-slate-300">${j.port}</span>).</div>`;
+                body += `<a href="ssh://${host}:${port}" class="text-cyan-300 underline font-mono">ssh://${host}:${port}</a> <span class="font-mono text-slate-500">(${hp})</span>
+                    <div class="text-[11px] text-slate-500 mt-1">Click opens PuTTY if it's set as the <code>ssh://</code> handler, or use the host:port manually (Host <span class="font-mono text-slate-300">${host}</span>, Port <span class="font-mono text-slate-300">${port}</span>).</div>`;
             } else {
-                body += `<div class="font-mono text-slate-200">${hp}</div><div class="text-[11px] text-slate-500 mt-1">Use this in PuTTY/SSH — e.g. <span class="font-mono text-slate-300">ssh -p ${j.port} user@${j.host}</span></div>`;
+                body += `<div class="font-mono text-slate-200">${hp}</div><div class="text-[11px] text-slate-500 mt-1">Use this in PuTTY/SSH — e.g. <span class="font-mono text-slate-300">ssh -p ${port} user@${host}</span></div>`;
             }
-            body += `<button onclick="copyText('${hp}', this)" class="mt-2 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-md text-[11px]">Copy host:port</button>`;
+            body += `<button data-hub-act="copy" data-text="${hp}" class="mt-2 px-2 py-1 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-md text-[11px]">Copy host:port</button>`;
             box.innerHTML = body; box.classList.remove('hidden');
         }
         // The hub is served over plain HTTP on the LAN, so navigator.clipboard
@@ -1117,19 +1143,19 @@
                 const ts = j.tunnels || [];
                 if(!ts.length){ el.innerHTML = 'none'; return; }
                 el.innerHTML = ts.map(t => {
-                    const hp = `${location.hostname}:${t.hub_port}`;
-                    const tgt = t.scheme ? `<a href="${t.scheme}://${hp}" target="_blank" class="text-cyan-300 underline">${hp}</a>`
+                    const hp = escHtml(`${location.hostname}:${t.hub_port}`);
+                    const tgt = /^https?$/.test(t.scheme) ? `<a href="${t.scheme}://${hp}" target="_blank" class="text-cyan-300 underline">${hp}</a>`
                               : t.port == 22 ? `<a href="ssh://${hp}" class="text-cyan-300 underline" title="opens PuTTY if registered as the ssh:// handler">${hp}</a>`
                               : `<span class="font-mono">${hp}</span>`;
                     return `<div class="flex items-center justify-between gap-2 p-1.5 border border-white/10 rounded-lg">
-                        <span>${t.ip}:${t.port} → ${tgt} <span class="text-slate-500">(${t.conns} conn)</span></span>
-                        <button onclick="closeTunnel('${t.id}')" class="btn btn-danger btn-sm">Close</button>
+                        <span>${escHtml(t.ip)}:${escHtml(t.port)} → ${tgt} <span class="text-slate-500">(${escHtml(t.conns)} conn)</span></span>
+                        <button data-hub-act="close-tunnel" data-id="${escHtml(t.id)}" class="btn btn-danger btn-sm">Close</button>
                     </div>`;
                 }).join('');
             }catch(e){ el.innerHTML = '<span class="text-rose-400">failed to load</span>'; }
         }
         async function closeTunnel(tid){
-            await fetch(`/api/hub/sites/${siteId}/tunnel/${tid}`, {method:'DELETE'});
+            await fetch(`/api/hub/sites/${siteId}/tunnel/${encodeURIComponent(tid)}`, {method:'DELETE'});
             loadActive();
         }
 
@@ -1154,7 +1180,7 @@
         }
         async function loadEvents(ip){
             const type=document.getElementById('hist-type').value;
-            let url=`/api/hub/sites/${siteId}/events?limit=500`; if(type) url+='&type='+type; if(ip) url+='&ip='+encodeURIComponent(ip);
+            let url=`/api/hub/sites/${siteId}/events?limit=500`; if(type) url+='&type='+encodeURIComponent(type); if(ip) url+='&ip='+encodeURIComponent(ip);
             document.getElementById('hist-body').innerHTML='Loading…';
             try { HIST_EVENTS=(await (await fetch(url)).json()).events||[]; } catch(e){ HIST_EVENTS=[]; }
             HIST_TAB='timeline';
@@ -1183,12 +1209,12 @@
                 let ips=HIST_IPS.filter(r=>!q||(r.ip||'').toLowerCase().includes(q)||(r.name||'').toLowerCase().includes(q)||(r.vendor||'').toLowerCase().includes(q));
                 if(!ips.length){ body.innerHTML='<p class="text-slate-500">No history yet.</p>'; return; }
                 body.innerHTML=ips.map(r=>{
-                    const m=EV_META[r.last_type]||{icon:'•',label:r.last_type||''};
+                    const m=has(EV_META, r.last_type) ? EV_META[r.last_type] : {icon:'•',label:r.last_type||''};
                     const who=r.name||r.vendor||r.hostname||r.mac||'unknown';
-                    return `<button onclick="histShowIp('${r.ip}')" class="w-full text-left p-3 mb-2 border border-white/10 rounded-lg hover:bg-white/5 flex items-center justify-between gap-3">
-                        <div><span class="font-mono font-bold text-slate-200">${r.ip}</span> <span class="text-slate-500">— ${who}</span>
-                        <div class="text-[11px] text-slate-500">${r.device_count} device(s) · ${r.event_count} event(s) here</div></div>
-                        <div class="text-right shrink-0"><div class="text-xs">${m.icon} ${m.label}</div><div class="text-[11px] text-slate-500">${tsAgo(r.last_ts)}</div></div>
+                    return `<button data-hub-act="hist-ip" data-ip="${escHtml(r.ip)}" class="w-full text-left p-3 mb-2 border border-white/10 rounded-lg hover:bg-white/5 flex items-center justify-between gap-3">
+                        <div><span class="font-mono font-bold text-slate-200">${escHtml(r.ip)}</span> <span class="text-slate-500">— ${escHtml(who)}</span>
+                        <div class="text-[11px] text-slate-500">${escHtml(r.device_count)} device(s) · ${escHtml(r.event_count)} event(s) here</div></div>
+                        <div class="text-right shrink-0"><div class="text-xs">${m.icon} ${escHtml(m.label)}</div><div class="text-[11px] text-slate-500">${tsAgo(r.last_ts)}</div></div>
                     </button>`;
                 }).join('');
                 return;
@@ -1196,19 +1222,19 @@
             let evs=HIST_EVENTS.filter(e=>!q||[e.ip,e.name,e.vendor,e.hostname,e.mac].some(x=>(x||'').toLowerCase().includes(q)));
             if(!evs.length){ body.innerHTML='<p class="text-slate-500">No matching events yet. They appear as devices join, go offline, return, or change IP.</p>'; return; }
             body.innerHTML=evs.map(e=>{
-                const m=EV_META[e.type]||{icon:'•',label:e.type,cls:''};
+                const m=has(EV_META, e.type) ? EV_META[e.type] : {icon:'•',label:e.type,cls:''};
                 const who=e.name||e.vendor||e.hostname||e.mac||'Unknown device';
                 const det=evDetail(e);
                 return `<div class="p-3 mb-2 border border-white/10 rounded-lg">
                     <div class="flex items-center justify-between gap-3">
                         <div class="flex items-center gap-2 min-w-0">
-                            <span class="text-xs font-bold px-2 py-0.5 rounded-full ${m.cls}">${m.icon} ${m.label}</span>
-                            <span class="font-semibold text-slate-200 truncate">${who}</span>
-                            <button onclick="loadEvents('${e.ip}')" class="font-mono text-xs text-cyan-300 hover:underline shrink-0">${e.ip||''}</button>
+                            <span class="text-xs font-bold px-2 py-0.5 rounded-full ${m.cls}">${m.icon} ${escHtml(m.label)}</span>
+                            <span class="font-semibold text-slate-200 truncate">${escHtml(who)}</span>
+                            <button data-hub-act="events-ip" data-ip="${escHtml(e.ip||'')}" class="font-mono text-xs text-cyan-300 hover:underline shrink-0">${escHtml(e.ip||'')}</button>
                         </div>
                         <span class="text-[11px] text-slate-500 shrink-0" title="${tsFull(e.ts)}">${tsAgo(e.ts)}</span>
                     </div>
-                    ${det?`<div class="text-[11px] text-slate-500 mt-1">${det}</div>`:''}
+                    ${det?`<div class="text-[11px] text-slate-500 mt-1">${escHtml(det)}</div>`:''}
                 </div>`;
             }).join('');
         }

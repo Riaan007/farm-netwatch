@@ -383,6 +383,24 @@
 
     <script>
         let editing = null;     // site id while editing, else null
+        let SITES = [];         // the site list as last loaded (Edit looks its site up here)
+
+        // Whatever a site reports (its name, location, counts) and whatever sits in
+        // hub.json is text: escape it before it goes into HTML. A value a button
+        // needs goes in a data-* attribute (the listener below), never into an
+        // inline onclick — the browser turns &#39; back into a quote before that
+        // JavaScript runs.
+        const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const webUrl = (u) => /^https?:\/\//i.test(String(u || '')) ? String(u) : '#';
+        document.addEventListener('click', (e) => {
+            const el = e.target.closest('[data-hub-act]');
+            if (!el) return;
+            const d = el.dataset;
+            if (d.hubAct === 'rm-del') rmDel(d.id, d.name);
+            else if (d.hubAct === 'enroll') enrollCmd(d.id);
+            else if (d.hubAct === 'edit-site') { const site = SITES.find(x => x.id === d.id); if (site) editSite(site); }
+            else if (d.hubAct === 'delete-site') deleteSite(d.id, d.vpn === '1');
+        });
 
         function fmtAgo(ts){
             if (!ts) return '—';
@@ -414,12 +432,12 @@
                 : '<div class="h-[3px] w-full bg-gradient-to-r from-red-500/90 via-rose-500/60 to-rose-500/10 offline-blink"></div>';
             const pct = s.devices_total ? Math.round(100 * s.devices_online / s.devices_total) : 0;
             const counts = s.devices_total === null ? '<span class="text-slate-600 text-sm">no data yet</span>'
-                : `<span class="text-2xl font-bold tabular-nums ${s.devices_online === s.devices_total ? 'text-emerald-400' : 'text-slate-100'}">${s.devices_online}</span><span class="text-slate-500 text-sm">/${s.devices_total} online</span>`;
+                : `<span class="text-2xl font-bold tabular-nums ${s.devices_online === s.devices_total ? 'text-emerald-400' : 'text-slate-100'}">${esc(s.devices_online)}</span><span class="text-slate-500 text-sm">/${esc(s.devices_total)} online</span>`;
             const bar = s.devices_total === null ? ''
                 : `<div class="h-1 rounded-full bg-white/10 overflow-hidden mt-1.5"><div class="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400" style="width:${pct}%"></div></div>`;
-            const watched = s.watched_down ? `<span class="chip bg-amber-500/15 text-amber-300">🔔 ${s.watched_down} monitored down</span>` : '';
-            const conflicts = s.conflicts ? `<span class="chip bg-orange-500/15 text-orange-300 border border-orange-400/25">⚠️ ${s.conflicts} IP conflict${s.conflicts>1?'s':''}</span>` : '';
-            const rotated = s.rotated ? `<span class="chip bg-slate-500/15 text-slate-400 border border-slate-400/20" title="The same address was held by different MACs in turn (rotating private Wi-Fi MAC, DHCP reuse) — not a live conflict">🔁 ${s.rotated} IP reuse</span>` : '';
+            const watched = s.watched_down ? `<span class="chip bg-amber-500/15 text-amber-300">🔔 ${esc(s.watched_down)} monitored down</span>` : '';
+            const conflicts = s.conflicts ? `<span class="chip bg-orange-500/15 text-orange-300 border border-orange-400/25">⚠️ ${esc(s.conflicts)} IP conflict${s.conflicts>1?'s':''}</span>` : '';
+            const rotated = s.rotated ? `<span class="chip bg-slate-500/15 text-slate-400 border border-slate-400/20" title="The same address was held by different MACs in turn (rotating private Wi-Fi MAC, DHCP reuse) — not a live conflict">🔁 ${esc(s.rotated)} IP reuse</span>` : '';
             const stale = s.stale ? '<span class="chip bg-slate-500/15 text-slate-400">stale data</span>' : '';
             const piHealth = s.pi_health === 'crit'
                 ? '<span class="chip bg-red-500/15 text-red-300 border border-red-400/30">🩺 Pi CRITICAL</span>'
@@ -434,22 +452,22 @@
                         ? '<span class="chip bg-slate-500/15 text-slate-400 border border-slate-400/20" title="This Pi runs a Netwatch image without the login — saved passwords are readable by anyone on its network. Update: docker compose pull">🔓 no Pi login</span>' : '';
             let kuma = '';
             if (s.kuma) {
-                const down = s.kuma.down ? `<span class="text-rose-400 font-bold">↓${s.kuma.down}</span>` : '';
-                kuma = `<span class="text-[11px] text-slate-500">Kuma <span class="text-emerald-400 font-bold">↑${s.kuma.up}</span> ${down}</span>`;
+                const down = s.kuma.down ? `<span class="text-rose-400 font-bold">↓${esc(s.kuma.down)}</span>` : '';
+                kuma = `<span class="text-[11px] text-slate-500">Kuma <span class="text-emerald-400 font-bold">↑${esc(s.kuma.up)}</span> ${down}</span>`;
             } else if (s.kuma_state === 'no-status-page') {
                 kuma = '<span class="text-[11px] text-slate-600">Kuma: no status page</span>';
             } else if (s.kuma_state === 'unreachable') {
                 kuma = '<span class="text-[11px] text-rose-400/80">Kuma unreachable</span>';
             }
-            const latency = s.latency_ms !== null && s.latency_ms !== undefined ? `<span class="chip bg-cyan-500/10 text-cyan-300 font-mono normal-case">${s.latency_ms} ms</span>` : '';
+            const latency = s.latency_ms !== null && s.latency_ms !== undefined ? `<span class="chip bg-cyan-500/10 text-cyan-300 font-mono normal-case">${esc(s.latency_ms)} ms</span>` : '';
             return `
             <div class="${s.reachable ? 'panel panel-hover' : 'panel card-down'} overflow-hidden flex flex-col">
                 ${topline}
                 <div class="p-5 flex flex-col gap-3 grow">
                     <div class="flex justify-between items-start gap-2">
                         <div class="min-w-0">
-                            <div class="flex items-center gap-2">${dot}<h3 class="font-bold text-lg text-slate-100 truncate">${s.name}</h3></div>
-                            <p class="text-xs text-slate-500 truncate">${s.location || '&nbsp;'}</p>
+                            <div class="flex items-center gap-2">${dot}<h3 class="font-bold text-lg text-slate-100 truncate">${esc(s.name)}</h3></div>
+                            <p class="text-xs text-slate-500 truncate">${s.location ? esc(s.location) : '&nbsp;'}</p>
                         </div>
                         <div class="text-right shrink-0 flex flex-col items-end gap-1">${latency}<p class="text-[11px] text-slate-500">scan ${fmtAgo(s.last_scan_ts)}</p></div>
                     </div>
@@ -457,13 +475,13 @@
                         <div class="flex items-baseline gap-1.5 flex-wrap">${counts} ${watched} ${conflicts} ${rotated} ${piHealth} ${apiAuth} ${stale}</div>
                         ${bar}
                     </div>
-                    <div>${sparkBars(s.spark)}<p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Site reachability · last 24h ${s.reach_24h !== null ? '· ' + s.reach_24h + '%' : ''}</p></div>
+                    <div>${sparkBars(s.spark)}<p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Site reachability · last 24h ${s.reach_24h !== null ? '· ' + esc(s.reach_24h) + '%' : ''}</p></div>
                     <div class="flex justify-between items-center pt-3 border-t border-white/10 mt-auto">
                         ${kuma || '<span></span>'}
                         <div class="flex gap-1.5">
-                            <a href="/site/${s.id}" class="btn btn-primary btn-sm">Details</a>
-                            <a href="${s.links.netwatch}" target="_blank" class="btn btn-ghost btn-sm">Netwatch ↗&#xFE0E;</a>
-                            ${s.links.kuma ? `<a href="${s.links.kuma}" target="_blank" class="btn btn-success btn-sm">Kuma ↗&#xFE0E;</a>` : ''}
+                            <a href="/site/${esc(encodeURIComponent(s.id))}" class="btn btn-primary btn-sm">Details</a>
+                            <a href="${esc(webUrl(s.links.netwatch))}" target="_blank" class="btn btn-ghost btn-sm">Netwatch ↗&#xFE0E;</a>
+                            ${s.links.kuma ? `<a href="${esc(webUrl(s.links.kuma))}" target="_blank" class="btn btn-success btn-sm">Kuma ↗&#xFE0E;</a>` : ''}
                         </div>
                     </div>
                 </div>
@@ -521,7 +539,7 @@
             try {
                 const data = await fetch('/api/hub/sites').then(r=>r.json());
                 await Promise.all(data.sites.map(s =>
-                    fetch(`/api/hub/sites/${s.id}/poll`, {method:'POST'})));
+                    fetch(`/api/hub/sites/${encodeURIComponent(s.id)}/poll`, {method:'POST'})));
             } finally {
                 setTimeout(() => { refresh(); if (btn) btn.disabled = false; }, 2500);
             }
@@ -547,8 +565,8 @@
                 const j = await (await fetch('/api/hub/remote')).json();
                 const cs = j.clients || [];
                 el.innerHTML = cs.length ? cs.map(c => `<div class="flex items-center justify-between gap-2 p-1.5 border border-white/10 rounded-lg">
-                    <span class="text-slate-300"><b>${c.name}</b> <span class="font-mono text-slate-500">${c.address||''}</span></span>
-                    <button onclick="rmDel('${c.id}','${c.name}')" class="btn btn-danger btn-sm">Remove</button>
+                    <span class="text-slate-300"><b>${esc(c.name)}</b> <span class="font-mono text-slate-500">${esc(c.address||'')}</span></span>
+                    <button data-hub-act="rm-del" data-id="${esc(c.id)}" data-name="${esc(c.name)}" class="btn btn-danger btn-sm">Remove</button>
                 </div>`).join('') : 'none yet';
             } catch(e){ el.textContent = 'failed to load'; }
         }
@@ -574,7 +592,7 @@
         }
         async function rmDel(id, name){
             if(!confirm('Remove remote device "'+name+'"? Its VPN access stops working.')) return;
-            await fetch('/api/hub/remote/'+id, {method:'DELETE'});
+            await fetch('/api/hub/remote/'+encodeURIComponent(id), {method:'DELETE'});
             rmLoad();
         }
 
@@ -638,16 +656,17 @@
 
         async function loadSites(){
             const data = await fetch('/api/hub/sites').then(r=>r.json());
-            document.getElementById('site-list').innerHTML = data.sites.map(s => `
+            SITES = data.sites || [];
+            document.getElementById('site-list').innerHTML = SITES.map(s => `
                 <div class="flex items-center justify-between gap-2 p-3 bg-white/5 rounded-lg border border-white/10">
                     <div class="min-w-0">
-                        <p class="font-bold text-sm text-slate-200 truncate">${s.name || s.id} <span class="font-mono font-normal text-xs text-slate-500">${s.vpn_ip}:${s.netwatch_port}</span></p>
-                        <p class="text-[10px] text-slate-500 font-mono truncate">${s.id}${s.kuma_url ? ' · kuma: ' + s.kuma_url + ' /' + s.kuma_status_slug : ''}${s.enabled ? '' : ' · paused'}</p>
+                        <p class="font-bold text-sm text-slate-200 truncate">${esc(s.name || s.id)} <span class="font-mono font-normal text-xs text-slate-500">${esc(s.vpn_ip)}:${esc(s.netwatch_port)}</span></p>
+                        <p class="text-[10px] text-slate-500 font-mono truncate">${esc(s.id)}${s.kuma_url ? ' · kuma: ' + esc(s.kuma_url) + ' /' + esc(s.kuma_status_slug) : ''}${s.enabled ? '' : ' · paused'}</p>
                     </div>
                     <div class="flex gap-1 shrink-0">
-                        ${s.wg_client_id ? `<button onclick="enrollCmd('${s.id}')" class="btn btn-success btn-sm" title="Show the command to run on the farm Pi">Setup cmd</button>` : ''}
-                        <button onclick='editSite(${JSON.stringify(s)})' class="btn btn-ghost btn-sm">Edit</button>
-                        <button onclick="deleteSite('${s.id}', ${s.wg_client_id ? 'true' : 'false'})" class="btn btn-danger btn-sm">Delete</button>
+                        ${s.wg_client_id ? `<button data-hub-act="enroll" data-id="${esc(s.id)}" class="btn btn-success btn-sm" title="Show the command to run on the farm Pi">Setup cmd</button>` : ''}
+                        <button data-hub-act="edit-site" data-id="${esc(s.id)}" class="btn btn-ghost btn-sm">Edit</button>
+                        <button data-hub-act="delete-site" data-id="${esc(s.id)}" data-vpn="${s.wg_client_id ? 1 : ''}" class="btn btn-danger btn-sm">Delete</button>
                     </div>
                 </div>`).join('');
         }
@@ -691,7 +710,7 @@
                 kuma_status_slug: document.getElementById('f-slug').value,
                 enabled: document.getElementById('f-enabled').checked,
             };
-            const url = editing ? `/api/hub/sites/${editing}` : '/api/hub/sites';
+            const url = editing ? `/api/hub/sites/${encodeURIComponent(editing)}` : '/api/hub/sites';
             const res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json());
             if (!res.ok) {
                 const err = document.getElementById('form-error');
@@ -705,7 +724,7 @@
         async function deleteSite(id, hasVpn){
             const extra = hasVpn ? ' Its VPN client on the hub is removed too — the farm Pi loses its tunnel.' : '';
             if (!confirm(`Remove site "${id}" from the hub? (The site itself keeps running.)${extra}`)) return;
-            await fetch(`/api/hub/sites/${id}`, {method:'DELETE'});
+            await fetch(`/api/hub/sites/${encodeURIComponent(id)}`, {method:'DELETE'});
             loadSites(); refresh();
         }
 
@@ -769,7 +788,7 @@
         }
 
         async function enrollCmd(id){
-            const res = await fetch(`/api/hub/sites/${id}/enroll`).then(r => r.json());
+            const res = await fetch(`/api/hub/sites/${encodeURIComponent(id)}/enroll`).then(r => r.json());
             if (!res.ok) { alert(res.error || 'No enrollment script for this site'); return; }
             showEnroll(id, res.vpn_ip, res.script, res.conf);
         }
