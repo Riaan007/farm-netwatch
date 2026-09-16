@@ -291,6 +291,13 @@ class Diagram(unittest.TestCase):
         self.assertEqual(g["aa:00:00:00:00:11"], "camera")
         self.assertEqual(T.device_kind({"category": "network", "vendor": "Ruijie", "model": ""}), "switch")
         self.assertEqual(T.device_kind({"category": "internet-ap", "vendor": "Cudy"}), "router")
+        # the scanner's generic "Access Point / Switch" label is no evidence of a switch
+        ap = {"category": "network", "vendor": "Ubiquiti Networks", "type": "Access Point / Switch"}
+        self.assertEqual(T.device_kind(ap), "radio")
+        self.assertEqual(T.device_kind({**ap, "name": "WiFI network"}), "radio")
+        self.assertEqual(T.device_kind({"category": "network", "vendor": "Ruijie Networks", "name": "9 Port Switch",
+                                        "type": "Access Point / Switch"}), "switch")
+        self.assertEqual(T.device_kind({"category": "network", "vendor": "Ruijie Networks", "type": "Access Point / Switch"}), "switch")
 
     def test_group_summary_and_location(self):
         d = fresh()

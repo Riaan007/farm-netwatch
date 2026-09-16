@@ -105,7 +105,10 @@ UPLINK_MACS = 6                  # switchmon.uplink_ports() uses the same line
 _TEXT_RE = re.compile(r"[\x00-\x1f\x7f]")
 _RADIO_DISH = re.compile(r"(powerbeam|nanobeam|litebeam|airfiber|gigabeam|isobeam|pbe-|nbe-|lbe-|\baf-?\d|\bwave\b|ptp|prism|rocket)", re.I)
 _RADIO_ANY = re.compile(r"(liteap|lap-|nanostation|nsm\d|airmax|bullet|loco|sector|epmp|cambium|mimosa|force ?\d{3})", re.I)
-_AP_MODEL = re.compile(r"(\buap\b|\bu6\b|\bu7\b|unifi|ac lite|ac pro|ac lr|nanohd|flexhd|\beap\d|\bcap\b|access point|\bwap\b)", re.I)
+_AP_MODEL = re.compile(r"(\buap\b|\bu6\b|\bu7\b|unifi|ac lite|ac pro|ac lr|nanohd|flexhd|\beap\d|\bcap\b|access point|\bwap\b|wi-?fi|\bwlan\b|hotspot)", re.I)
+# identify.classify()'s catch-all labels say nothing about what a box really is
+_GENERIC_TYPES = {"access point / switch", "router / gateway", "ip camera", "nvr / recorder", "unknown device",
+                  "iot device", "server / host", "computer / host"}
 _SWITCH_MODEL = re.compile(r"(switch|\bes-\d|\bep-s|uisp-s|\busw|\bcrs\d|\bcss\d|\bgs\d{3}|tl-sg|\bsg\d{3}|rg-es|rg-nbs)", re.I)
 _WIRELESS_IFACE = re.compile(r"^(wlan|wifi|cap|wl|ath)", re.I)
 
@@ -895,7 +898,9 @@ def device_kind(dev, meta=None, radios=()):
     if meta.get("kind") in KIND:
         return meta["kind"]
     cat = dev.get("category") or "unknown"
-    text = " ".join(str(dev.get(k) or "") for k in ("name", "device_name", "model", "type", "hostname"))
+    typ = str(dev.get("type") or "")
+    text = " ".join([str(dev.get(k) or "") for k in ("name", "device_name", "model", "hostname")]
+                    + ([typ] if typ.lower() not in _GENERIC_TYPES else []))
     title = str((dev.get("banner") or {}).get("title") or "")
     vendor = str(dev.get("vendor") or "").lower()
     role = str(dev.get("radio_role") or "").lower()
