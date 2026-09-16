@@ -56,7 +56,11 @@ def _devices():
     out = []
     for d in scanner.get_devices():
         d = dict(d)
-        d["geo"] = (reg.get(d.get("key"), {}) or {}).get("geo") or None
+        entry = reg.get(d.get("key"), {}) or {}
+        d["geo"] = entry.get("geo") or None
+        role = (entry.get("asset") or {}).get("radio_role")
+        if role:                       # the asset form's "Role" makes it a radio everywhere
+            d["radio_role"] = role
         if edgeswitch.is_edgeswitch(d):
             d["is_switch"] = True
         out.append(d)

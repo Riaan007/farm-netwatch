@@ -122,6 +122,10 @@ class Records(unittest.TestCase):
         # a hand-added dish counts as a radio
         v = T.create_equipment(d, {"name": "Borehole dish", "kind": "ptp"})
         T.create_link(d, {"a": v["id"], "b": "aa:00:00:00:00:05", "medium": "wireless"}, DEV, RADIOS)
+        # the asset form's radio role counts (the routes merge it into the device)
+        T.create_link(d, {"a": "aa:00:00:00:00:02", "b": "aa:00:00:00:00:04", "medium": "wireless"},
+                      {**DEV, "aa:00:00:00:00:02": {**DEV["aa:00:00:00:00:02"], "is_switch": False,
+                                                    "radio_role": "PtP master"}}, RADIOS)
         # an operator can say a device IS a radio
         T.set_node(d, "aa:00:00:00:00:21", {"kind": "radio"}, set(DEV))
         T.create_link(d, {"a": "aa:00:00:00:00:21", "b": "aa:00:00:00:00:06", "medium": "wireless"}, DEV, RADIOS)
