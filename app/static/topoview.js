@@ -31,7 +31,8 @@
 .tv button{cursor:pointer}
 .tv [hidden]{display:none!important}
 .tv .tv-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.tv .tv-bar .sp{flex:1 1 auto}
+.tv .tv-acts2{display:flex;flex-wrap:wrap;gap:6px;margin-left:auto;justify-content:flex-end}
+.tv .tv-bar select.tv-inp{width:auto;min-height:34px;padding:4px 8px;font-size:13px}
 .tv .tv-seg{display:inline-flex;border:1px solid var(--tv-line2);border-radius:10px;overflow:hidden;flex:none}
 .tv .tv-seg button{border:0;background:transparent;padding:6px 12px;font-size:13px;font-weight:650;color:var(--tv-muted);display:inline-flex;align-items:center;gap:6px}
 .tv .tv-seg button+button{border-left:1px solid var(--tv-line)}
@@ -120,7 +121,7 @@
 @media (max-width:1100px){.tv .tv-main{grid-template-columns:minmax(0,1fr)}
   .tv .tv-side{position:fixed;left:8px;right:8px;bottom:8px;top:auto;max-height:58vh;min-height:0;z-index:45;background:#0a1120;box-shadow:0 -10px 40px rgba(0,0,0,.6)}
   .tv.side-off .tv-side{display:none}}
-@media (max-width:640px){.tv{--tv-h:calc(100vh - 190px)} .tv .tv-bar .lbl{display:none} .tv .tv-search{flex:1 1 100%}
+@media (max-width:640px){.tv{--tv-h:calc(100vh - 190px)} .tv .tv-bar .lbl{display:none} .tv .tv-bar .lbl.keep{display:inline} .tv .tv-search{flex:1 1 100%}
   .tv .tv-legend{max-width:calc(100% - 20px)}}
 /* the SVG */
 .tv-svg text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -148,6 +149,7 @@
 .tv-svg .tv-n.off .ico{filter:grayscale(.75) brightness(.8)}
 .tv-svg .tv-n.quiet .ico{filter:grayscale(1) brightness(.6);opacity:.7}
 .tv-svg .tv-n.unm .ico{opacity:.92}
+.tv-svg .tv-n-name,.tv-svg .tv-n-sub,.tv-svg .tv-n-tag,.tv-svg .tv-g-sub{paint-order:stroke;stroke:#070c17;stroke-width:3.2px;stroke-linejoin:round}
 .tv-svg .tv-n-name{fill:#f1f5f9;font-size:12px;font-weight:650}
 .tv-svg .tv-n-sub{fill:#94a3b8;font-size:10.5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .tv-svg .tv-n-tag{font-size:10px;font-weight:650}
@@ -531,9 +533,9 @@
       <div class="tv-bar">
         <div class="tv-seg" role="group" aria-label="View"><button type="button" data-view="diagram">${ico("diagram")}<span class="lbl">Diagram</span></button><button type="button" data-view="map">${ico("map")}<span class="lbl">Map</span></button></div>
         <label class="tv-search">${ico("search")}<input type="search" data-q placeholder="Find equipment, IP or MAC…" aria-label="Find equipment" autocomplete="off"></label>
-        <select class="tv-inp" data-f="status" aria-label="Which equipment to highlight" style="width:auto">
+        <select class="tv-inp" data-f="status" aria-label="Which equipment to highlight">
           <option value="all">All equipment</option><option value="bad">Problems &amp; offline</option><option value="online">Online</option><option value="unm">Not monitored</option></select>
-        <select class="tv-inp" data-f="kinds" aria-label="Equipment type" style="width:auto">
+        <select class="tv-inp" data-f="kinds" aria-label="Equipment type">
           <option value="all">All types</option><option value="net">Network &amp; radios</option><option value="cctv">Cameras &amp; recorders</option><option value="power">Power &amp; other</option></select>
         <details class="tv-pop" style="position:relative"><summary class="tv-btn" style="list-style:none">${ico("filter")}<span class="lbl">Show</span></summary>
           <div data-pop style="position:absolute;z-index:30;top:40px;left:0;min-width:250px;background:#0b1324;border:1px solid var(--tv-line2);border-radius:12px;padding:10px 12px;display:grid;gap:6px;box-shadow:0 18px 40px rgba(0,0,0,.6)">
@@ -547,14 +549,15 @@
             <label><input type="checkbox" data-o="review"> "Not in a group yet" area</label>
             <label><input type="checkbox" data-o="scope"> Every device on the network (phones, PCs…)</label>
           </div></details>
-        <span class="sp"></span>
-        <button type="button" class="tv-btn" data-a="add-group" title="Add a tower, site or building">${ico("plus")}<span class="lbl">Group</span></button>
-        <button type="button" class="tv-btn" data-a="add-equip" title="Add equipment Netwatch cannot find, e.g. an unmanaged switch">${ico("plus")}<span class="lbl">Equipment</span></button>
+        <div class="tv-acts2">
+        <button type="button" class="tv-btn" data-a="add-group" title="Add a tower, site or building">${ico("plus")}<span class="lbl keep">Group</span></button>
+        <button type="button" class="tv-btn" data-a="add-equip" title="Add equipment Netwatch cannot find, e.g. an unmanaged switch">${ico("plus")}<span class="lbl keep">Equipment</span></button>
         <button type="button" class="tv-btn" data-a="add-link" title="Connect two pieces of equipment">${ico("link")}<span class="lbl">Connect</span></button>
         <button type="button" class="tv-btn" data-a="arrange" title="Tidy everything that is not locked">${ico("wand")}<span class="lbl">Auto-arrange</span></button>
         <button type="button" class="tv-btn" data-a="lock" title="Lock the layout so nothing can be dragged by accident">${ico("unlock")}<span class="lbl">Lock layout</span></button>
         <button type="button" class="tv-btn" data-a="review" title="Suggested connections and equipment not in a group yet">${ico("review")}<span class="lbl">Review</span><span class="n" data-rn hidden></span></button>
         <button type="button" class="tv-btn" data-a="icons" title="Equipment pictures">${ico("image")}<span class="lbl">Icons</span></button>
+        </div>
       </div>
       <div class="tv-main">
         <div class="tv-stage">
@@ -675,9 +678,9 @@
       if (!n) return null;
       const b = S.boxes[n.group];
       if (!b) return null;
-      if (b.collapsed && !S.over.nodes[id]) return { key: "g:" + b.id, x: b.x, y: b.y, w: b.w, h: b.h, box: true };
+      if (b.collapsed && !S.over.nodes[id]) return { key: "g:" + b.id, x: b.x, y: b.y, w: b.w, h: b.h, box: true, grp: "g:" + b.id };
       const a = absPos(n);
-      return a ? { key: id, x: a.x, y: a.y, w: CW(), h: CH(), node: true } : null;
+      return a ? { key: id, x: a.x, y: a.y, w: CW(), h: CH(), node: true, grp: n.group } : null;
     }
     function anchors(e) {
       if (e.box) return { cx: e.x + e.w / 2, cy: e.y + e.h / 2, top: [e.x + e.w / 2, e.y], bottom: [e.x + e.w / 2, e.y + e.h], left: [e.x, e.y + e.h / 2], right: [e.x + e.w, e.y + e.h / 2] };
@@ -687,8 +690,9 @@
     function curve(A, B, bend) {
       const a = anchors(A), b = anchors(B);
       const dx = b.cx - a.cx, dy = b.cy - a.cy;
+      const sameGroup = A.grp && A.grp === B.grp;
       let p, q, c1, c2;
-      if (Math.abs(dy) > Math.abs(dx) * 0.7) {
+      if (sameGroup ? Math.abs(dy) > 20 : Math.abs(dy) > Math.abs(dx) * 0.7) {
         [p, q] = dy > 0 ? [a.bottom, b.top] : [a.top, b.bottom];
         const c = Math.max(28, Math.abs(q[1] - p[1]) * 0.45) * Math.sign(q[1] - p[1] || 1);
         c1 = [p[0] + bend, p[1] + c]; c2 = [q[0] + bend, q[1] - c];
@@ -703,7 +707,8 @@
           u * u * u * p[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * q[1]];
       };
       const f = (v) => v.toFixed(1);
-      return { d: `M${f(p[0])},${f(p[1])} C${f(c1[0])},${f(c1[1])} ${f(c2[0])},${f(c2[1])} ${f(q[0])},${f(q[1])}`, at, p, q };
+      return { d: `M${f(p[0])},${f(p[1])} C${f(c1[0])},${f(c1[1])} ${f(c2[0])},${f(c2[1])} ${f(q[0])},${f(q[1])}`, at, p, q,
+        len: Math.hypot(q[0] - p[0], q[1] - p[1]) };
     }
     function computeEdges() {
       const out = [], agg = {};
@@ -786,6 +791,13 @@
       if (nothing) e.innerHTML = `<div><b>Nothing to draw yet</b>Add a tower or site with <b>+ Group</b>, or wait for the next scan to find equipment.</div>`;
       svg.classList.toggle("edit", canEdit() && !locked());
       if (!S.fitted && (S.g.nodes.length || S.g.groups.length)) { fitView(false); S.fitted = true; }
+      else if (!S.checkedView && Object.keys(S.boxes).length) {
+        S.checkedView = true;
+        const r = svg.getBoundingClientRect();
+        const a = toWorld(r.left, r.top), z = toWorld(r.right, r.bottom);
+        const seen = Object.values(S.boxes).some((b) => b.x < z.x && b.x + b.w > a.x && b.y < z.y && b.y + b.h > a.y);
+        if (!seen && r.width) fitView(false);
+      }
       applyTransform();
       LG.innerHTML = Object.values(S.boxes).map(groupSvg).join("");
       LE.innerHTML = S.edges.map(edgeSvg).join("");
@@ -834,7 +846,7 @@
       if (c.quiet) bits.push(`${c.quiet} not seen 7+ d`);
       if (c.unmonitored) bits.push(`${c.unmonitored} not monitored`);
       if (c.problems) bits.push(`${c.problems} problem${c.problems > 1 ? "s" : ""}`);
-      const stTxt = { ok: "All online", warn: "Needs a look", down: "Down", unknown: "Not monitored" }[gr.status] || "";
+      const stTxt = !c.total ? "Empty" : { ok: "All online", warn: "Needs a look", down: "Down", unknown: "Not monitored" }[gr.status] || "";
       const stCol = { ok: "#34d399", warn: "#fbbf24", down: "#fb7185", unknown: "#94a3b8" }[gr.status] || "#94a3b8";
       const sel = S.sel && S.sel.t === "group" && S.sel.id === gr.id;
       const cls = `tv-g st-${gr.status} ${sel ? "sel" : ""} ${S.dropTarget === gr.id ? "drop" : ""}`;
@@ -954,7 +966,8 @@
       const related = relatedSet();
       const selected = S.sel && S.sel.t === "link" && e.links.some((L) => L.id === S.sel.id);
       const dim = related && !e.links.some((L) => related.has(L.id));
-      const label = S.labels || look.agg || !look.confirmed || look.status === "down" ? edgeLabel(e, look) : "";
+      const roomy = c.len > 90;
+      const label = (S.labels && roomy) || look.agg || (!look.confirmed && roomy) ? edgeLabel(e, look) : "";
       const mid = c.at(0.5);
       let s = `<g class="tv-edge ${dim ? "dim" : ""} ${selected ? "sel" : ""}" data-edge="${esc(e.id)}">
         <path class="${cls}" d="${c.d}"/>${look.medium === "fibre" ? `<path class="tv-e fib2" d="${c.d}"/>` : ""}
@@ -967,7 +980,7 @@
       if (look.status === "down" && !label) {
         s += `<g transform="translate(${mid[0].toFixed(1)},${mid[1].toFixed(1)})" pointer-events="none"><circle r="8" fill="#0b1324" stroke="#fb7185"/><path d="M-3,-3 L3,3 M3,-3 L-3,3" stroke="#fb7185" stroke-width="1.8"/></g>`;
       }
-      if (!look.agg && S.labels && S.k >= 0.6) {
+      if (!look.agg && S.labels && S.k >= 0.6 && c.len > 130) {
         const L = e.links[0];
         const endA = e.A.key === L.a ? L.a_port : L.b_port;
         const endB = e.A.key === L.a ? L.b_port : L.a_port;
@@ -1256,7 +1269,10 @@
       else if (D.type === "pick") { if (D.node) pickConnect(D.node); }
       else if (D.type === "node") {
         if (!D.moved || !D.can) {
-          if (D.moved && !D.can) toast(locked() ? "The layout is locked — unlock it to move things" : canEdit() ? "That position is locked" : "Log in to move things", "");
+          if (D.moved && !D.can) {
+            if (!canEdit() && opts.login) needEdit(() => toast("Logged in — drag it again"));
+            else toast(locked() ? "The layout is locked — unlock it to move things" : "That position is locked", "");
+          }
           if (D.shift) {
             if (S.multi.has(D.id)) S.multi.delete(D.id); else S.multi.add(D.id);
             if (S.sel && S.sel.t === "node" && S.sel.id !== D.id) S.multi.add(S.sel.id);
@@ -1268,7 +1284,10 @@
       } else if (D.type === "edge") selectEdge(D.id);
       else if (D.type === "box") {
         if (!D.moved || !D.can) {
-          if (D.moved && !D.can) toast(locked() ? "The layout is locked" : canEdit() ? "That group is locked" : "Log in to move things");
+          if (D.moved && !D.can) {
+            if (!canEdit() && opts.login) needEdit(() => toast("Logged in — drag it again"));
+            else toast(locked() ? "The layout is locked — unlock it to move things" : "That group is locked");
+          }
           S.sel = D.id === "~" ? { t: "ua", id: "~" } : { t: "group", id: D.id };
           S.over.groups = {}; S.over.ua = null;
           S.panel = D.id === "~" ? "review" : null;
@@ -1361,7 +1380,8 @@
         act("POST", "/layout", body, { okMsg: `${names.length > 1 ? names.length + " items" : names[0]} moved to ${dest}` }).catch(() => refresh(true));
       } else {
         drawDiagram();
-        opts.call("POST", "/layout", body).catch((e) => { toast(e.message, "bad"); refresh(true); });
+        opts.call("POST", "/layout", body).then(() => { if (!S.g.can_edit) refresh(true); })
+          .catch((e) => { toast(e.message, "bad"); refresh(true); });
       }
     }
     function saveBoxPos(D) {
@@ -1370,7 +1390,7 @@
       if (!p) return drawDiagram();
       if (D.id === "~") S.g.unassigned.pos = p; else S.idx.groups[D.id].pos = p;
       drawDiagram();
-      opts.call("POST", "/layout", D.id === "~" ? { unassigned: { pos: p } } : { groups: { [D.id]: { pos: p } } })
+      send("POST", "/layout", D.id === "~" ? { unassigned: { pos: p } } : { groups: { [D.id]: { pos: p } } })
         .catch((e) => { toast(e.message, "bad"); refresh(true); });
     }
     const localCollapse = {};
@@ -1381,7 +1401,7 @@
       const gr = S.idx.groups[id];
       if (!gr) return;
       gr.collapsed = !gr.collapsed;
-      if (canEdit()) opts.call("POST", `/groups/${encodeURIComponent(id)}`, { collapsed: gr.collapsed }).catch(() => {});
+      if (canEdit()) send("POST", `/groups/${encodeURIComponent(id)}`, { collapsed: gr.collapsed }).catch(() => refresh(true));
       else localCollapse[id] = gr.collapsed;
       render();
     }
@@ -1588,7 +1608,7 @@
       const { inside, outside } = groupLinks(gr.id);
       const c = gr.counts || {};
       const edit = canEdit();
-      const stTxt = { ok: ["ok", "✓ All online"], warn: ["warn", "! Needs a look"], down: ["bad", "✕ Down"], unknown: ["", "Not monitored"] }[gr.status] || ["", ""];
+      const stTxt = !members.length ? ["", "Empty"] : { ok: ["ok", "✓ All online"], warn: ["warn", "! Needs a look"], down: ["bad", "✕ Down"], unknown: ["", "Not monitored"] }[gr.status] || ["", ""];
       const loc = gr.geo
         ? `<span class="mono">${gr.geo.lat.toFixed(6)}, ${gr.geo.lon.toFixed(6)}</span>${gr.geo_approx ? ` <span class="tv-b">approximate — middle of its devices' pins</span>` : ""}`
         : `<span class="dim">No location yet</span>`;
@@ -1624,7 +1644,7 @@
           ${metric("Offline", (c.offline || 0) + (c.quiet || 0), (c.offline || c.quiet) ? "bad" : "")}
           ${metric("Not monitored", c.unmonitored || 0)}
           ${metric("Problems", c.problems || 0, c.problems ? "warn" : "")}</div></div>
-        <div class="sec"><details ${S.miniOpen === false ? "" : "open"} data-mini-toggle><summary class="tv-note" style="cursor:pointer;margin-bottom:8px">Layout inside ${esc(gr.name)}</summary><div class="tv-mini" data-mini="${esc(gr.id)}"></div></details></div>
+        ${members.length ? `<div class="sec"><details ${S.miniOpen === false ? "" : "open"} data-mini-toggle><summary class="tv-note" style="cursor:pointer;margin-bottom:8px">Layout inside ${esc(gr.name)}</summary><div class="tv-mini" data-mini="${esc(gr.id)}"></div></details></div>` : ""}
         <div class="sec"><h4>Equipment <span class="c">${members.length}</span></h4>${members.length ? `<div class="tv-list">${members.map((n) => nodeItem(n, !n.virtual && opts.openDevice ? `<button type="button" class="tv-btn sm" data-p="open" data-id="${esc(n.id)}" title="Open the device window">Open</button>` : "")).join("")}</div>` : `<p class="tv-note">Nothing here yet — drag equipment onto this ${esc(((S.g.group_kinds || {})[gr.kind] || "group").toLowerCase())} in the diagram, or pick it as the group in a device's panel.</p>`}</div>
         <div class="sec"><h4>Connections inside <span class="c">${inside.length}</span></h4>${inside.length ? `<div class="tv-list">${inside.map(inItem).join("")}</div>` : `<p class="tv-note">None yet.</p>`}</div>
         <div class="sec"><h4>Links to other places <span class="c">${outside.length}</span></h4>${outside.length ? `<div class="tv-list">${outside.map(extItem).join("")}</div>` : `<p class="tv-note">No links out of this group yet.</p>`}</div>
@@ -1883,13 +1903,20 @@
       setTimeout(() => { const f = form.querySelector("input:not([type=hidden]):not([disabled]),select,textarea"); if (f) f.focus(); }, 30);
       return { wrap, form, close, err };
     }
+    /** A free spot near the middle of the view: rings outward, above/below before sideways. */
     function freeSpot(w, h) {
       const r = svg.getBoundingClientRect();
       const c = toWorld(r.left + r.width / 2, r.top + r.height / 2);
-      let x = Math.round((c.x - w / 2) / 10) * 10, y = Math.round((c.y - h / 2) / 10) * 10;
+      const x0 = Math.round((c.x - w / 2) / 10) * 10, y0 = Math.round((c.y - h / 2) / 10) * 10;
       const hit = (x, y) => Object.values(S.boxes).some((b) => !(x + w + 30 <= b.x || b.x + b.w + 30 <= x || y + h + 30 <= b.y || b.y + b.h + 30 <= y));
-      for (let i = 0; i < 80 && hit(x, y); i++) x += 60;
-      return { x, y };
+      if (!hit(x0, y0)) return { x: x0, y: y0 };
+      for (let ring = 1; ring < 60; ring++) {
+        for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0], [-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          const x = x0 + dx * ring * (w + 40), y = y0 + dy * ring * (h + 40);
+          if (!hit(x, y)) return { x, y };
+        }
+      }
+      return { x: x0, y: y0 };
     }
     function groupDialog(gr) {
       const kinds = Object.entries(S.g.group_kinds || {}).map(([k, l]) => `<option value="${k}" ${(gr ? gr.kind : "tower") === k ? "selected" : ""}>${esc(l)}</option>`).join("");
@@ -1925,6 +1952,11 @@
           S.sel = { t: "group", id: res.result.id };
           S.panel = null;
           render();
+          if (S.view === "diagram" && S.boxes[res.result.id]) {
+            const b = S.boxes[res.result.id];
+            centerOn(b.x + b.w / 2, b.y + b.h / 2);
+            drawDiagram();
+          }
           toast(`${name} added — drag equipment into it`, "ok");
           if (pickAfter) setTimeout(() => startPlacing(res.result.id), 60);
           return res.result.id;

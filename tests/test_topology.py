@@ -302,6 +302,53 @@ class Diagram(unittest.TestCase):
         # moving on the diagram never touches GPS
         self.assertNotIn("geo", d["nodes"]["aa:00:00:00:00:21"])
 
+    def test_a_growing_group_pushes_its_neighbour_aside(self):
+        d = fresh()
+        a = T.create_group(d, {"name": "Office", "pos": {"x": 0, "y": 0}})
+        b = T.create_group(d, {"name": "Tower", "pos": {"x": 300, "y": 0}})
+        T.apply_layout(d, T.layout(d, graph(d, radios={}, switches={})))
+        self.assertEqual(d["groups"][b["id"]]["pos"], {"x": 300, "y": 0})       # nothing to move yet
+        known = set(DEV)
+        for k in ("aa:00:00:00:00:11", "aa:00:00:00:00:12", "aa:00:00:00:00:13", "aa:00:00:00:00:21"):
+            T.set_node(d, k, {"group": a["id"]}, known)
+        g = graph(d, radios={}, switches={})
+        T.apply_layout(d, T.layout(d, g))
+        g = graph(d, radios={}, switches={})
+        T.boxes(g, d["view"])
+        ra, rb = [(x["pos"]["x"], x["pos"]["y"], x["size"]["w"], x["size"]["h"]) for x in g["groups"]]
+        self.assertFalse(T._overlaps(ra, rb, gap=0), (ra, rb))
+        self.assertGreater(d["groups"][b["id"]]["pos"]["x"], 300)
+        # a locked neighbour stays put; the grown group is the one that yields
+        T.update_group(d, b["id"], {"locked": True, "pos": {"x": 200, "y": 0}})
+        g = graph(d, radios={}, switches={})
+        T.apply_layout(d, T.layout(d, g))
+        self.assertEqual(d["groups"][b["id"]]["pos"], {"x": 200.0, "y": 0.0})
+        g = graph(d, radios={}, switches={})
+        T.boxes(g, d["view"])
+        ra, rb = [(x["pos"]["x"], x["pos"]["y"], x["size"]["w"], x["size"]["h"]) for x in g["groups"]]
+        self.assertFalse(T._overlaps(ra, rb, gap=0), (ra, rb))
+
+    def test_many_newcomers_fill_rows(self):
+        d = fresh()
+        grp = T.create_group(d, {"name": "Tower"})
+        known = set(DEV)
+        T.set_node(d, "aa:00:00:00:00:02", {"group": grp["id"], "pos": {"x": 18, "y": 54}}, known)   # hand-placed
+        cams = [k for k, v in DEV.items() if v["category"] == "camera" and k != "aa:00:00:00:00:41"]
+        for k in cams:
+            T.set_node(d, k, {"group": grp["id"]}, known)
+        g = graph(d, radios={}, switches={})
+        T.apply_layout(d, T.layout(d, g))
+        rows = {d["nodes"][k]["pos"]["y"] for k in cams}
+        self.assertEqual(len(rows), 1, rows)                   # three cameras share one row
+        self.assertEqual(d["nodes"]["aa:00:00:00:00:02"]["pos"], {"x": 18, "y": 54})
+        # auto-placed members make room when more arrive; the hand-placed switch never moves
+        T.set_node(d, "aa:00:00:00:00:21", {"group": grp["id"]}, known)
+        g = graph(d, radios={}, switches={})
+        T.apply_layout(d, T.layout(d, g))
+        pos = [tuple(d["nodes"][k]["pos"].values()) for k in cams + ["aa:00:00:00:00:21", "aa:00:00:00:00:02"]]
+        self.assertEqual(len(pos), len(set(pos)))
+        self.assertEqual(d["nodes"]["aa:00:00:00:00:02"]["pos"], {"x": 18, "y": 54})
+
     def test_core_is_the_gateway_or_an_isp_box(self):
         d = fresh()
         self.assertEqual(T.build(d, DEVICES, {}, now=NOW, gateway="192.168.0.21")["core"], "aa:00:00:00:00:21")
@@ -435,6 +482,15 @@ class Api(unittest.TestCase):
         self.assertEqual(self.c.delete(f"/api/topology/icons/{iid}", headers=h).status_code, 200)
         self.assertNotIn("icon", T.store.doc()["nodes"]["aa:00:00:00:00:11"])
         self.assertNotIn("camera", T.store.doc()["type_icons"])
+
+    def test_pruning_drops_links_of_pruned_devices(self):
+        h = self.h
+        self.c.post("/api/topology/links", json={"a": "aa:00:00:00:00:02", "b": "aa:00:00:00:00:12"}, headers=h)
+        removed = self.server.scanner.prune_devices(days=None, only_offline=True)
+        self.assertIn("aa:00:00:00:00:12", removed)
+        self.assertFalse([L for L in T.store.doc()["links"].values() if "aa:00:00:00:00:12" in (L["a"], L["b"])])
+        for k in removed:
+            self.server.scanner.devices[k] = dict(DEV[k])
 
     def test_forgetting_a_device_drops_its_links(self):
         h = self.h

@@ -98,6 +98,7 @@ GAP_X, GAP_Y = 96, 76
 COLLAPSED_W, COLLAPSED_H = 200, 124
 EMPTY_W, EMPTY_H = 260, 124
 UNASSIGNED_ROW = 8
+UA_MIN_W = 520                   # the review area is drawn at least this wide (topoview.js too)
 UPLINK_MACS = 6                  # switchmon.uplink_ports() uses the same line
 
 _TEXT_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -271,8 +272,8 @@ def create_group(d, body):
          "created_ts": int(time.time())}
     p = _pos(body.get("pos"))
     if p:
-        g["pos"] = p
-        g["manual"] = True
+        g["pos"] = p              # where the operator was looking — still free to be nudged
+        g["manual"] = False
     d["groups"][gid] = g
     return g
 
@@ -1247,15 +1248,24 @@ def _tier(m):
 
 
 def _place_members(members, adj, external, force, row_max=ROW_MAX, gdepth=None):
-    """Positions for one container. Returns {node id: pos} for nodes that move."""
+    """Positions for one container. Returns {node id: pos} for nodes that move.
+
+    Hand-moved (manual) and locked members are fixed. Auto-placed members are
+    "soft": when new equipment joins the container they are laid out again with
+    it, so the group stays tidy — until someone arranges it by hand. A container
+    arranged entirely by hand only gets its newcomers, next to what they connect to."""
     out = {}
-    fixed = [m for m in members if m.get("pos") and (not force or m.get("locked"))]
+    if force:
+        fixed = [m for m in members if m.get("pos") and m.get("locked")]
+    else:
+        if all(m.get("pos") for m in members):
+            return out
+        fixed = [m for m in members if m.get("pos") and (m.get("manual") or m.get("locked"))]
     fixed_ids = {m["id"] for m in fixed}
     movable = [m for m in members if m["id"] not in fixed_ids]
-    if not movable:
-        return out
     taken = {_cell(m["pos"]) for m in fixed}
-    if force or not fixed:
+    soft = [m for m in movable if m.get("pos")]
+    if force or soft or not fixed:
         rows = _ideal_rows(members, adj, external, gdepth) if row_max == ROW_MAX else _grid_rows(members, row_max)
         movable_ids = {m["id"] for m in movable}
         for r, row in enumerate(rows):
@@ -1264,12 +1274,16 @@ def _place_members(members, adj, external, force, row_max=ROW_MAX, gdepth=None):
                     continue
                 rr, cc = _free_cell(taken, r, c)
                 taken.add((rr, cc))
-                out[i] = _cell_pos(rr, cc)
+                p = _cell_pos(rr, cc)
+                cur = next(m for m in movable if m["id"] == i).get("pos")
+                if cur != p:
+                    out[i] = p
         return out
-    # Incremental: a newcomer goes next to the equipment it is connected to —
-    # under what feeds it, above what it feeds — or on a new bottom row.
+    # Everything already there was arranged by hand: newcomers go next to what they
+    # connect to (under what feeds them, above what they feed), the rest fill a new row.
     by_id = {m["id"]: m for m in members}
     bottom = max(r for r, _ in taken) if taken else -1
+    spare_row = None
     for m in sorted(movable, key=lambda m: (_tier(m), (m.get("name") or "").lower(), m["id"])):
         near = [by_id[j] for j in adj.get(m["id"], ()) if j in by_id and by_id[j].get("pos")]
         if near:
@@ -1281,9 +1295,15 @@ def _place_members(members, adj, external, force, row_max=ROW_MAX, gdepth=None):
             o = near[0]
             r, c = _cell(o["pos"])
             r = r + 1 if upstream(o) else max(0, r - 1)
+            rr, cc = _free_cell(taken, r, c)
         else:
-            r, c = bottom + 1, 0
-        rr, cc = _free_cell(taken, r, c)
+            if spare_row is None:
+                spare_row = bottom + 1
+            cc = next((c for c in range(row_max) if (spare_row, c) not in taken), None)
+            if cc is None:
+                spare_row += 1
+                cc = 0
+            rr = spare_row
         taken.add((rr, cc))
         bottom = max(bottom, rr)
         out[m["id"]] = _cell_pos(rr, cc)
@@ -1347,10 +1367,8 @@ def layout(d, graph, force=False, scope=None):
             if n["id"] in moved:
                 n["pos"] = moved[n["id"]]
         changes["nodes"].update(moved)
-    if scope:
-        return changes
 
-    # 2. the containers on the canvas
+    # 2. the containers on the canvas (a scoped tidy-up leaves them where they are)
     groups = graph["groups"]
     gby = {g["id"]: g for g in groups}
     size = {g["id"]: container_size(by_group.get(g["id"], []), g.get("collapsed")) for g in groups}
@@ -1370,7 +1388,9 @@ def layout(d, graph, force=False, scope=None):
         return (gid != core_group, not has_router, -len(gadj.get(gid, ())), g.get("created_ts") or 0,
                 (g.get("name") or "").lower(), gid)
 
-    if force:
+    if scope:
+        fixed = [g for g in groups if g.get("pos")]
+    elif force:
         fixed = [g for g in groups if g.get("pos") and g.get("locked")]
     else:
         fixed = [g for g in groups if g.get("pos")]
@@ -1380,7 +1400,8 @@ def layout(d, graph, force=False, scope=None):
     ua_members = by_group.get(UNASSIGNED, [])
     ua_pos = d["view"].get("unassigned_pos")
     ua_size = container_size(ua_members) if ua_members else (0, 0)
-    ua_rect = (ua_pos["x"], ua_pos["y"], *ua_size) if (ua_pos and ua_members and not force) else None
+    ua_size = (max(ua_size[0], UA_MIN_W), ua_size[1]) if ua_members else ua_size
+    ua_rect = (ua_pos["x"], ua_pos["y"], *ua_size) if (ua_pos and ua_members and not (force and not scope)) else None
 
     def drop(gid, x, y):
         w, h = size[gid]
@@ -1394,7 +1415,7 @@ def layout(d, graph, force=False, scope=None):
         gby[gid]["pos"] = {"x": rect[0], "y": rect[1]}
         changes["groups"][gid] = gby[gid]["pos"]
 
-    if force:
+    if force and not scope:
         # Bands: each connected set of towers flows left to right from its core
         # group (the one with the router), unconnected groups share a last band.
         seen, bands, singles = set(), [], []
@@ -1443,11 +1464,48 @@ def layout(d, graph, force=False, scope=None):
                 right = max([r[0] + r[2] for r in rects] or [-GAP_X])
                 drop(gid, right + GAP_X, 0.0)
 
-    # 3. the review area sits under everything
+    # 3. groups never overlap: when one grows (equipment added, expanded), the
+    # group it would cover moves right or down — whichever is the shorter move.
+    rect = {g["id"]: [g["pos"]["x"], g["pos"]["y"], *size[g["id"]]] for g in groups if g.get("pos")}
+    order = sorted(rect, key=lambda gid: (rect[gid][1], rect[gid][0], gid))
+    for _ in range(4):
+        changed = False
+        for i, gid in enumerate(order):
+            for other in order[:i]:
+                a, b = rect[gid], rect[other]
+                if not _overlaps(a, b, gap=30):
+                    continue
+                # the one that yields: never a locked group, preferably not one the
+                # operator just placed by hand, else the later one in reading order
+                cands = sorted((x for x in (gid, other) if not gby[x].get("locked")),
+                               key=lambda x: (bool(gby[x].get("manual")), x != gid))
+                if not cands:
+                    continue                    # two locked groups: the operator's call
+                mover = cands[0]
+                anchor = other if mover == gid else gid
+                m_, n_ = rect[mover], rect[anchor]
+                dx = n_[0] + n_[2] + GAP_X - m_[0]
+                dy = n_[1] + n_[3] + GAP_Y - m_[1]
+                if 0 < dx <= dy or dy <= 0:
+                    m_[0] += max(dx, 0)
+                else:
+                    m_[1] += dy
+                changed = True
+        if not changed:
+            break
+    rects = []
+    for gid, r in rect.items():
+        p = {"x": float(round(r[0])), "y": float(round(r[1]))}
+        if p != gby[gid]["pos"]:
+            gby[gid]["pos"] = p
+            changes["groups"][gid] = p
+        rects.append(tuple(r))
+
+    # 4. the review area sits under everything
     if ua_members:
         bottom = max([r[1] + r[3] for r in rects] or [-GAP_Y])
         want = {"x": 0.0, "y": float(bottom + GAP_Y + 20)}
-        if force or not ua_pos:
+        if (force and not scope) or not ua_pos:
             changes["unassigned"] = want
         else:
             cur = (ua_pos["x"], ua_pos["y"], *ua_size)
@@ -1491,7 +1549,7 @@ def boxes(graph, view):
         g["size_collapsed"] = {"w": COLLAPSED_W, "h": COLLAPSED_H}
     ua = by_group.get(UNASSIGNED, [])
     w, h = container_size(ua, False)
-    return {"pos": view.get("unassigned_pos") or {"x": 0, "y": 0}, "size": {"w": w, "h": h},
+    return {"pos": view.get("unassigned_pos") or {"x": 0, "y": 0}, "size": {"w": max(w, UA_MIN_W), "h": h},
             "count": len(ua)}
 
 
