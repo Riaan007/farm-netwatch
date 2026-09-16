@@ -970,6 +970,37 @@ def _is_mikrotik_dev(d):
             and (d.get("category") or "") not in ("printer", "camera", "nvr", "nas", "voip"))
 
 
+# MNDP costs no login at all, so a router we cannot log into still shows its real
+# name, model, RouterOS version and uptime instead of an empty "Login needed" card.
+_MNDP_CACHE = {"ts": 0.0, "by_mac": {}}
+_MNDP_TTL = 120
+
+
+def _mndp_map():
+    now = time.time()
+    if now - _MNDP_CACHE["ts"] < _MNDP_TTL:
+        return _MNDP_CACHE["by_mac"]
+    try:
+        res = mikrotik.discover(timeout=3)
+        if res.get("ok"):
+            _MNDP_CACHE["by_mac"] = {identify.normalize_mac(n.get("mac", "")): n
+                                     for n in res.get("neighbors") or []}
+    except OSError:
+        pass
+    _MNDP_CACHE["ts"] = now          # don't retry a failed listen every request
+    return _MNDP_CACHE["by_mac"]
+
+
+def _fmt_secs(s):
+    try:
+        s = int(s)
+    except (TypeError, ValueError):
+        return ""
+    d, s = divmod(s, 86400)
+    h, m = divmod(s, 3600)[0], divmod(s % 3600, 60)[0]
+    return (f"{d}d {h}h" if d else (f"{h}h {m}m" if h else f"{m}m"))
+
+
 def _router_view(dev, force=False):
     """One router in the shape the managed-unit list draws (mirrors _sw_view)."""
     key = dev.get("key")
@@ -983,8 +1014,23 @@ def _router_view(dev, force=False):
             "name": dev.get("name") or dev.get("device_name") or dev.get("ip") or key,
             "online": bool(dev.get("online")), "problems": [], "ports": [],
             "model": dev.get("model") or "", "read_ts": None}
+    def _from_mndp():
+        """Whatever the router broadcasts about itself — no login involved."""
+        nb = _mndp_map().get(identify.normalize_mac(dev.get("mac") or ""))
+        if not nb:
+            return
+        view["mndp"] = True
+        view["model"] = view.get("model") or nb.get("board") or ""
+        view["version"] = view.get("version") or nb.get("version") or ""
+        view["identity"] = view.get("identity") or nb.get("identity") or ""
+        if nb.get("uptime") and not view.get("uptime"):
+            view["uptime"] = _fmt_secs(nb["uptime"])
+        if not dev.get("name") and nb.get("identity"):
+            view["name"] = nb["identity"]
+
     if not mikrotik._valid_ip(dev.get("ip")):
         view.update({"ok": False, "kind": "no_ip", "error": "no IP for this router yet"})
+        _from_mndp()
         return view
     c = creds.get(key)
     rep = mikrotik.api_report(dev.get("ip"), c["username"] or "admin", c["password"])
@@ -1004,6 +1050,7 @@ def _router_view(dev, force=False):
         if kind != "unreachable" and not (c["username"] or c["password"]):
             kind = "no_login"
         view.update({"ok": False, "kind": kind, "error": err})
+        _from_mndp()
     _ROUTER_CACHE[key] = {"view": view, "ts": now}
     return view
 

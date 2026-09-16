@@ -131,9 +131,13 @@
     const s = r.summary || {}, poe = r.poe || {};
     const leds = (r.ports || []).filter((p) => p.type === "ether")
       .map((p) => `<i class="swv-led ${portState(p).led}" title="${esc(p.name)}"></i>`).join("");
+    // A router we can't log into still announces itself over MNDP, so show what it
+    // says about itself rather than an empty card.
+    const known = [r.version && "RouterOS " + r.version, r.uptime && "up " + r.uptime,
+                   r.mndp && "answers by MAC"].filter(Boolean).join(" · ");
     const line = (r.ports || []).length
       ? `${s.up}/${s.ports} ports up${poe.ports ? ` · ${poe.ports} PoE` : ""} · ↓ ${bps(s.rx_bps)}`
-      : (KIND[r.kind] ? KIND[r.kind][1] : "no reading yet");
+      : (known || (KIND[r.kind] ? KIND[r.kind][1] : "no reading yet"));
     return `<a class="swv swv-box" href="${esc(href)}" style="display:grid;gap:6px;text-decoration:none;color:inherit">
       <div class="swv-row" style="justify-content:space-between"><b>🧭 ${esc(r.name)}</b>${stateBadge(r)}</div>
       <div class="swv-muted" style="font-size:13px">${esc([r.model, r.ip].filter(Boolean).join(" · "))}</div>
