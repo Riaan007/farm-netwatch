@@ -2,7 +2,8 @@
 
 Serves the /api/v1.0 calls app/edgeswitch.py uses, shaped like the answers the
 switch's own web page reads, over plain HTTP (the client falls back to it when
-443 is closed). Login ubnt/ubnt; anything else gets the switch's 403.
+443 is closed). Login ubnt/ubnt; a wrong login gets the switch's JSON 401, and any POST/PUT
+without an Origin/Referer header gets its HTML 403 (the real switch does both).
 
   python tests/edgeswitch_mock.py [port]          # standalone
   from edgeswitch_mock import fixture              # in unit tests
@@ -153,13 +154,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, st[key])
         return self._send(404, {"error": "no route"})
 
+    def _same_origin(self):
+        """Like the real switch: a write without Origin/Referer is a lighttpd 403."""
+        if self.headers.get("Origin") or self.headers.get("Referer"):
+            return True
+        self._send(403, raw=b"<html><title>403 - Forbidden</title></html>", ctype="text/html")
+        return False
+
     def do_POST(self):
         st, p = self.state, self.path.split("?")[0]
+        if not self._same_origin():
+            return None
         if p == "/api/v1.0/user/login":
             b = self._body() or {}
             if b.get("username") == "ubnt" and b.get("password") == "ubnt":
                 return self._send(200, {"statusCode": 200}, headers={"x-auth-token": TOKEN})
-            return self._send(403, raw=b"<html><title>403 - Forbidden</title></html>", ctype="text/html")
+            return self._send(401, {"statusCode": 401, "error": 1,
+                                    "detail": "User account invalid (does not exist or invalid password)"})
         if not self._authed():
             return None
         route = p[len("/api/v1.0/"):]
@@ -173,7 +184,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         st, p = self.state, self.path.split("?")[0]
-        if not self._authed():
+        if not self._same_origin() or not self._authed():
             return None
         if p == "/api/v1.0/interfaces":
             for new in self._body() or []:

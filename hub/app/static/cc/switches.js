@@ -128,7 +128,8 @@
     const port = host && (host.ports || []).find((p) => p.id === sp.port);
     const hostName = host ? host.name : "a switch";
     const probs = host ? (host.problems || []).filter((p) => p.port === sp.port) : [];
-    const canCycle = host && port && !port.protected && port.poe_mode && port.poe_mode !== "off" && (port.poe_w || 0) >= 0.5;
+    // Passive 24 V ports report no watts at all, so "PoE on with a link" is the test.
+    const canCycle = host && (S.switches[siteId] || {}).manage && port && !port.protected && port.poe_mode && port.poe_mode !== "off" && port.up;
     sect.innerHTML = `<h3>Plugged into</h3>
       <p style="margin:0 0 6px"><a href="#/site/${enc(siteId)}/switches?key=${enc(sp.switch_key)}&port=${enc(sp.port)}" data-close><b>${esc(hostName)} · port ${esc(portNo(sp.port))}</b></a>${sp.port_name && !/^port\s*\d+$/i.test(sp.port_name) ? ` <span class="muted">(${esc(sp.port_name)})</span>` : ""}${sp.uplink ? ` <span class="note">through an uplink — the device is further down the line</span>` : ""}</p>
       ${port ? `<p class="note" style="margin:0 0 6px">${port.up ? `Link ${port.speed ? port.speed + " Mbit/s" : "up"}` : "No link"}${(port.poe_w || 0) >= 0.5 ? ` · drawing ${(+port.poe_w).toFixed(1)} W PoE` : ""}${port.up ? ` · ↓ ${SwitchView.fmt.bps(port.rx_bps)} ↑ ${SwitchView.fmt.bps(port.tx_bps)}` : ""}</p>` : ""}
@@ -138,7 +139,7 @@
     const btn = sect.querySelector("#dd-sw-cycle");
     if (btn) btn.onclick = () => CC.busy(btn, async () => {
       const msg = sect.querySelector("#dd-sw-msg");
-      if (!(await CC.confirm(`Power cycle ${CC.devName(d)}?`, `PoE on ${hostName} port ${portNo(sp.port)} goes off for 8 seconds and comes back on. The device restarts — cameras and radios take 1–2 minutes to come back.`, { ok: "Power cycle", danger: true }))) return;
+      if (!(await CC.confirm(`Power cycle ${CC.devName(d)}?`, `PoE on ${hostName} port ${portNo(sp.port)} goes off for 8 seconds and comes back on.${port && port.uplink ? ` ${port.uplink} devices are behind this port and lose their connection too.` : ""} The device restarts — cameras and radios take 1–2 minutes to come back.`, { ok: "Power cycle", danger: true }))) return;
       msg.textContent = "Switching PoE off and on…"; msg.className = "note";
       try {
         await api(`${base(siteId, sp.switch_key)}/action`, { method: "POST", body: { action: "poe-cycle", port: sp.port, off_s: 8 }, timeout: 100000 });

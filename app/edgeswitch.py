@@ -16,7 +16,11 @@ web page itself:
        /device/locate/start|stop;  GET /system/backup (tar.gz)
   GET  /public/device     model WITHOUT a login
 
-A rejected login answers 403 (an HTML error page); a missing/expired token 401.
+The switch refuses any POST that does not say which page it came from: without
+an Origin/Referer header even the login gets lighttpd's HTML 403 before the
+credentials are looked at (found live on Bennie's ES-8-150W, 2026-09-16). With
+the header, a wrong login is a JSON 401 "User account invalid" — the only real
+"wrong password" answer — and a missing/expired token is also 401.
 Found by reading the switch's own web code (2026-09-15). Firmware drifts, so
 every field is read through candidate lists and the raw answers stay available.
 
@@ -128,9 +132,15 @@ class Session:
     def _bases(self):
         return [f"https://{self.ip}", f"http://{self.ip}"]
 
+    def _page_headers(self, base):
+        # What the switch's own page sends. Without them every POST is a 403.
+        self.http.headers["Origin"] = base
+        self.http.headers["Referer"] = base + "/"
+
     def login(self):
         last = None
         for base in self._bases():
+            self._page_headers(base)
             try:
                 r = self.http.post(base + API + "/user/login",
                                    json={"username": self.username, "password": self.password},
@@ -143,9 +153,12 @@ class Session:
                 self.base = base
                 self.http.headers["x-auth-token"] = tok
                 return self
-            if r.status_code in (401, 403):
+            if r.status_code == 401:
                 raise SwitchError("the switch rejected the saved username/password",
                                   "auth_failed", r.status_code)
+            if r.status_code == 403:
+                raise SwitchError("the switch refused the login request (HTTP 403) — its web "
+                                  "server blocked it before checking the password", "error", 403)
             raise SwitchError(f"login failed (HTTP {r.status_code})", "error", r.status_code)
         raise SwitchError(f"switch not reachable: {last}", "unreachable")
 
@@ -389,6 +402,11 @@ def normalize(device, system, interfaces, statistics, vlans=None, mac_table=None
     model = ident.get("model") or ""
     budget = poe_budget_w(model, ident.get("product") or "")
     poe_used = round(sum(p["poe_w"] or 0 for p in ports), 1)
+    # Passive PoE (24v/48v…) is switched on but never measured: no poePower at all
+    # on those ports (ES-8-150W at Bennie, 2026-09-16). Count them separately so the
+    # budget isn't shown as "0 W used" while six radios run off the switch.
+    poe_on = [p for p in ports if p["up"] and p["poe_mode"] not in ("", "off")]
+    unmeasured = sum(1 for p in poe_on if p["poe_w"] is None)
     svc = services if isinstance(services, dict) else {}
     snap = {
         "ok": True, "ts": int(time.time()),
@@ -403,8 +421,9 @@ def normalize(device, system, interfaces, statistics, vlans=None, mac_table=None
         },
         "health": health,
         "poe": {"budget_w": budget, "used_w": poe_used,
-                "pct": round(100 * poe_used / budget) if budget else None,
-                "powered": sum(1 for p in ports if (p["poe_w"] or 0) >= 0.5)},
+                "pct": round(100 * poe_used / budget) if budget and not unmeasured else None,
+                "powered": sum(1 for p in poe_on if p["poe_w"] is None or p["poe_w"] >= 0.5),
+                "unmeasured": unmeasured},
         "ports": ports, "lags": lags, "vlans": vlan_list,
         "services": {
             "ssh": _get(svc, "sshServer.enabled"), "telnet": _get(svc, "telnetServer.enabled"),

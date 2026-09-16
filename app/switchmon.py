@@ -39,7 +39,9 @@ TICK_S = 30
 NO_LOGIN_RECHECK_S = 6 * 3600
 
 LIMITS = {
-    "temp":        {"warn": 70.0, "crit": 80.0},     # °C inside the switch
+    # °C on the switch's own sensors. Bennie's ES-8-150W reads 67-69 °C on its
+    # board sensors on a cool night, so the usual 70 °C would alarm every day.
+    "temp":        {"warn": 80.0, "crit": 90.0},
     "cpu":         {"warn": 90.0, "crit": 98.0},     # %
     "ram":         {"warn": 90.0, "crit": 97.0},     # %
     "poe_budget":  {"warn": 80.0, "crit": 92.0},     # % of the PoE budget in use
@@ -219,7 +221,7 @@ class SwitchMonitor:
                 # A rejected login is not retried every poll — a switch that counts
                 # failures could lock the account. Retry when the saved login
                 # changes, or every few hours.
-                if last.get("kind") == "auth_failed" and not only and \
+                if last.get("kind") == "auth_failed" and not only and not last.get("from_history") and \
                         last.get("cred_fp") == self._cred_fp(key) and now - (last.get("ts") or 0) < NO_LOGIN_RECHECK_S:
                     polled.add(key)
                     found += self._evaluate_unreadable(key, dev)

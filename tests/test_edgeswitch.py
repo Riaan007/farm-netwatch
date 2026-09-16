@@ -49,6 +49,8 @@ class Normalize(unittest.TestCase):
         self.assertFalse(p4["up"])
         self.assertIsNone(p4["speed"])
         self.assertEqual(s["poe"]["budget_w"], 150)
+        self.assertEqual(s["poe"]["unmeasured"], 0)
+        self.assertEqual(s["poe"]["powered"], 3)
         self.assertEqual(s["summary"]["up"], 6)
         self.assertEqual(s["health"]["temp"], 52.5)
         self.assertEqual(s["services"]["snmp_community"], "public")
@@ -114,6 +116,16 @@ class AgainstMock(unittest.TestCase):
         s = edgeswitch.read("127.0.0.1", "ubnt", "wrong")
         self.assertFalse(s["ok"])
         self.assertEqual(s["kind"], "auth_failed")
+
+    def test_post_without_origin_is_not_a_wrong_password(self):
+        import requests
+        r = requests.post(f"http://127.0.0.1:{self.port}/api/v1.0/user/login",
+                          json={"username": "ubnt", "password": "ubnt"}, timeout=5)
+        self.assertEqual(r.status_code, 403)          # what the real switch does
+        s = edgeswitch.Session("127.0.0.1", "ubnt", "ubnt")
+        s.login()                                     # the client sends Origin/Referer
+        self.assertTrue(s.http.headers.get("x-auth-token"))
+        s.logout()
 
     def test_set_port_keeps_other_fields(self):
         r = edgeswitch.set_port("127.0.0.1", "ubnt", "ubnt", "0/7", enabled=False, name="Spare")
