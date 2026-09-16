@@ -37,6 +37,7 @@ COPY hub/app/ /app/
 COPY app/static/switchview.js /app/static/cc/switchview.js
 COPY app/static/routerview.js /app/static/cc/routerview.js
 COPY app/static/monitorpicker.js /app/static/cc/monitorpicker.js
+COPY app/static/topoview.js /app/static/cc/topoview.js
 COPY --from=cssbuilder /build/static/app.css /app/static/app.css
 EXPOSE 8091
 VOLUME ["/data"]

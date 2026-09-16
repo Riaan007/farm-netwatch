@@ -95,6 +95,8 @@
     return { base: [sat, places], control: L.control.layers({ Satellite: sat, "Street map": street }, { "Place names": places, Roads: roads }, { position: "topright" }) };
   }
 
+  CC.mapTiles = tiles;
+
   class FleetMap {
     constructor(el, { mini = false, siteId = null } = {}) {
       this.el = el; this.mini = mini; this.fixedSite = siteId;
@@ -136,6 +138,12 @@
       else { this.map.on("focus", () => this.map.scrollWheelZoom.enable()); this.map.on("blur", () => this.map.scrollWheelZoom.disable()); }
       this.sitesLayer = L.layerGroup().addTo(this.map);
       this.devLayer = L.layerGroup().addTo(this.map);
+      // One site's map also shows its towers and the links between them (the Network tab's records).
+      if (this.fixedSite && window.TopoView) {
+        const sid = this.fixedSite;
+        this.topo = TopoView.overlay(this.map, { load: () => api(`/api/hub/sites/${enc(sid)}/topology`, { timeout: 45000 }),
+          networkHref: (gid) => `#/site/${enc(sid)}/network?view=map&focus=${enc(gid)}` });
+      }
       this.map.on("click", (e) => { if (this.placing) this.savePlace(e.latlng.lat, e.latlng.lng); });
       el.addEventListener("click", (e) => {
         if (e.target.closest("[data-back]")) return this.focus(null);
@@ -167,6 +175,7 @@
       return this;
     }
     destroy() {
+      if (this.topo) { this.topo.remove(); this.topo = null; }
       if (this.map) { this.map.remove(); this.map = null; }
       if (this.keyh) document.removeEventListener("keydown", this.keyh);
       document.body.classList.remove("placing");

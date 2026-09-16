@@ -9,3 +9,4 @@ app/data/oui.tsv
 hub/app/static/cc/switchview.js
 hub/app/static/cc/routerview.js
 hub/app/static/cc/monitorpicker.js
+hub/app/static/cc/topoview.js

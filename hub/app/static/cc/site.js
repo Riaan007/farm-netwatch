@@ -1,12 +1,12 @@
 /* Netwatch Control Center — one site's workspace + the device drawer.
- * Tabs: overview · devices · problems · health · history · backups · access. */
+ * Tabs: overview · devices · network · map · wi-fi · managed · problems · health · history · backups · access. */
 (function () {
   "use strict";
   const { $, $$, esc, icon, api, state: S } = CC;
   const view = () => $("#view");
   const enc = encodeURIComponent;
   const TABS = [
-    ["overview", "Overview"], ["devices", "Devices"], ["map", "Map"], ["wifi", "Wi-Fi"], ["switches", "Managed"], ["problems", "Problems"], ["health", "Pi health"],
+    ["overview", "Overview"], ["devices", "Devices"], ["network", "Network"], ["map", "Map"], ["wifi", "Wi-Fi"], ["switches", "Managed"], ["problems", "Problems"], ["health", "Pi health"],
     ["history", "History"], ["backups", "Backups"], ["access", "Remote access"],
   ];
 
@@ -276,6 +276,12 @@
     update(s) { const el = $("#sd-panel"); if (el && el.__st) CC.deviceTable.draw(el, el.__st, s.id); },
   };
 
+  TABS_IMPL.network = {
+    enter: (s, el) => CC.topoTab.enter(s, el),
+    update: (s) => CC.topoTab.update(s),
+    leave: () => CC.topoTab.leave(),
+  };
+
   TABS_IMPL.map = {
     enter(s, el) { el.innerHTML = `<div id="sm-host"></div>`; CC.mapView.mount($("#sm-host"), { siteId: s.id }); },
     update() { CC.mapView.softDraw(); },
@@ -541,7 +547,7 @@
         ${d.ip ? `<div class="sect"><h3>Diagnostics <span class="dim" style="text-transform:none;letter-spacing:0;font-weight:400">run from the site Pi</span></h3><div class="row"><button class="btn sm" data-dx="ping">Ping</button><button class="btn sm" data-dx="quality">Connection test</button><button class="btn sm" data-dx="tracert">Traceroute</button><button class="btn sm" data-dx="deep">Deep scan</button></div><div id="dd-out" style="margin-top:10px"></div></div>
         <div class="sect"><h3>Remote access</h3><div class="chips" id="dd-ports"></div><p class="note" style="margin:8px 0 0">Opens a tunnel through the site Pi — only this computer can use it.</p></div>` : ""}
       </div>
-      <div class="dft">${s.links && s.links.netwatch ? `<a class="btn" href="${esc(s.links.netwatch)}" target="_blank" rel="noopener">Edit on site Netwatch ${icon("ext")}</a>` : ""}<a class="btn" href="#/site/${enc(s.id)}/history?q=${enc(d.ip || d.mac || "")}" data-close>${icon("history")} History</a><button class="btn pri" data-close>Close</button></div>`, { cls: "drawer" });
+      <div class="dft">${s.links && s.links.netwatch ? `<a class="btn" href="${esc(s.links.netwatch)}" target="_blank" rel="noopener">Edit on site Netwatch ${icon("ext")}</a>` : ""}<a class="btn" href="#/site/${enc(s.id)}/network?focus=${enc(d.key)}" data-close title="Where it sits in the network diagram">Network</a><a class="btn" href="#/site/${enc(s.id)}/history?q=${enc(d.ip || d.mac || "")}" data-close>${icon("history")} History</a><button class="btn pri" data-close>Close</button></div>`, { cls: "drawer" });
 
     if (CC.switchDrawer) CC.switchDrawer(dlg, siteId, d);
 

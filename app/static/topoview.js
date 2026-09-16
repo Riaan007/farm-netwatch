@@ -100,7 +100,7 @@
 .tv .tv-list{display:grid;gap:2px;margin:0 -6px}
 .tv .tv-item{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:2px 8px;align-items:center;padding:6px;border-radius:9px;border:0;background:transparent;text-align:left;width:100%}
 .tv .tv-item:hover{background:rgba(34,211,238,.06)}
-.tv .tv-item .ic{grid-row:span 2;width:30px;height:26px}
+.tv .tv-item .tv-ic{grid-row:span 2;width:30px;height:26px;flex:none}
 .tv .tv-item .t{font-weight:650;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tv .tv-item .s{font-size:11.5px;color:var(--tv-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;grid-column:2}
 .tv .tv-item .r{grid-row:span 2;display:flex;gap:4px;align-items:center}
@@ -115,6 +115,7 @@
 .tv .tv-metric{border:1px solid var(--tv-line);border-radius:9px;padding:6px 8px;background:rgba(2,6,23,.35)}
 .tv .tv-metric .l{font-size:10.5px;color:var(--tv-dim);text-transform:uppercase;letter-spacing:.06em}
 .tv .tv-metric .v{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.tv .tv-metric .v.ok{color:var(--tv-ok)} .tv .tv-metric .v.warn{color:var(--tv-warn)} .tv .tv-metric .v.bad{color:var(--tv-bad)}
 .tv .tv-mini{height:240px;border:1px solid var(--tv-line);border-radius:10px;background:#060b15;overflow:hidden}
 .tv .tv-mini svg{width:100%;height:100%;display:block}
 .tv .tv-grpmk{display:flex}
@@ -128,7 +129,7 @@
 .tv-svg .tv-g-box{fill:rgba(148,163,184,.045);stroke:rgba(148,163,184,.28);stroke-width:1.2}
 .tv-svg .tv-g.st-down .tv-g-box{stroke:rgba(251,113,133,.7)}
 .tv-svg .tv-g.st-warn .tv-g-box{stroke:rgba(251,191,36,.6)}
-.tv-svg .tv-g.sel .tv-g-box{stroke:#22d3ee;stroke-width:2}
+.tv-svg .tv-g.is-sel .tv-g-box{stroke:#22d3ee;stroke-width:2}
 .tv-svg .tv-g.drop .tv-g-box{stroke:#22d3ee;stroke-width:2.5;fill:rgba(34,211,238,.08)}
 .tv-svg .tv-g-hd{fill:rgba(148,163,184,.09)}
 .tv-svg .tv-g-name{fill:#f1f5f9;font-size:14px;font-weight:700}
@@ -143,7 +144,7 @@
 .tv-svg .tv-n{cursor:pointer;outline:none}
 .tv-svg .tv-n .plate{fill:transparent;stroke:transparent;stroke-width:1.5}
 .tv-svg .tv-n:hover .plate,.tv-svg .tv-n:focus-visible .plate{fill:rgba(148,163,184,.07);stroke:rgba(148,163,184,.25)}
-.tv-svg .tv-n.sel .plate{fill:rgba(34,211,238,.1);stroke:#22d3ee}
+.tv-svg .tv-n.is-sel .plate{fill:rgba(34,211,238,.1);stroke:#22d3ee}
 .tv-svg .tv-n.hit .plate{stroke:#fbbf24;stroke-width:2}
 .tv-svg .tv-n.dim{opacity:.22}
 .tv-svg .tv-n.off .ico{filter:grayscale(.75) brightness(.8)}
@@ -156,13 +157,13 @@
 .tv-svg .tv-n.off .tv-n-tag{fill:#fb7185} .tv-svg .tv-n.quiet .tv-n-tag{fill:#94a3b8}
 .tv-svg .tv-n.unm .tv-n-tag{fill:#cbd5e1} .tv-svg .tv-n.on .tv-n-tag{fill:#6ee7b7}
 .tv-svg .tv-handle{opacity:0;cursor:crosshair}
-.tv-svg.edit .tv-n:hover .tv-handle,.tv-svg.edit .tv-n.sel .tv-handle{opacity:1}
+.tv-svg.edit .tv-n:hover .tv-handle,.tv-svg.edit .tv-n.is-sel .tv-handle{opacity:1}
 .tv-svg .tv-handle circle{fill:#0e7490;stroke:#67e8f9;stroke-width:1.5}
 .tv-svg .tv-handle path{stroke:#fff;stroke-width:1.8}
 .tv-svg .tv-e{fill:none;stroke-linecap:round}
 .tv-svg .tv-e-hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer}
 .tv-svg .tv-edge.dim{opacity:.12}
-.tv-svg .tv-edge.sel .tv-e{filter:drop-shadow(0 0 4px rgba(34,211,238,.9))}
+.tv-svg .tv-edge.is-sel .tv-e{filter:drop-shadow(0 0 4px rgba(34,211,238,.9))}
 .tv-svg .tv-e.eth{stroke:#94a3b8;stroke-width:2.2}
 .tv-svg .tv-e.fib{stroke:#a78bfa;stroke-width:5}
 .tv-svg .tv-e.fib2{stroke:#0b1020;stroke-width:1.6}
@@ -187,9 +188,11 @@
 /* map */
 .tv-mk{position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 8px));display:inline-flex;align-items:center;gap:6px;padding:4px 10px 4px 5px;border-radius:99px;background:rgba(8,14,28,.94);border:2px solid #e2e8f0;color:#f8fafc;font:600 12.5px system-ui,sans-serif;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.55);cursor:pointer}
 .tv-mk::after{content:"";position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);border:7px solid transparent;border-top-color:inherit;border-bottom:0}
+.tv-mk.below{transform:translate(-50%,10px)}
+.tv-mk.below::after{bottom:auto;top:-9px;border:7px solid transparent;border-bottom-color:inherit;border-top:0}
 .tv-mk.approx{border-style:dashed}
 .tv-mk.st-ok{border-color:#34d399} .tv-mk.st-warn{border-color:#fbbf24} .tv-mk.st-down{border-color:#fb7185} .tv-mk.st-unknown{border-color:#94a3b8}
-.tv-mk.sel{box-shadow:0 0 0 3px #22d3ee,0 6px 18px rgba(0,0,0,.55)}
+.tv-mk.is-sel{box-shadow:0 0 0 3px #22d3ee,0 6px 18px rgba(0,0,0,.55)}
 .tv-mk .gi{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#0f172a}
 .tv-mk .gi svg{width:18px;height:18px}
 .tv-mk .cnt{font-weight:700;font-size:11.5px;padding:0 6px;border-radius:99px;background:rgba(148,163,184,.18)}
@@ -197,7 +200,7 @@
 .tv-mkwrap{width:0!important;height:0!important;background:none;border:0}
 .tv-pin{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#0f172a;border:2px solid #34d399;box-shadow:0 3px 10px rgba(0,0,0,.6);transform:translate(-50%,-50%);position:absolute}
 .tv-pin svg{width:18px;height:16px}
-.tv-pin.off{border-color:#fb7185} .tv-pin.quiet{border-color:#64748b} .tv-pin.sel{box-shadow:0 0 0 3px #22d3ee}
+.tv-pin.off{border-color:#fb7185} .tv-pin.quiet{border-color:#64748b} .tv-pin.is-sel{box-shadow:0 0 0 3px #22d3ee}
 .leaflet-tooltip.tv-tip{background:rgba(6,10,19,.92);color:#f1f5f9;border:1px solid rgba(148,163,184,.35);border-radius:6px;font-size:11.5px;font-weight:600;padding:2px 7px;box-shadow:none}
 .leaflet-tooltip.tv-tip::before{display:none}
 /* dialogs (an overlay, not <dialog>: the site's login prompt must stay on top) */
@@ -265,6 +268,67 @@
     m = t.match(/^(-?\d+(?:[.,]\d+)?)\s*[,; ]\s*(-?\d+(?:[.,]\d+)?)$/) || t.match(/^(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)$/);
     if (m) return ok(+m[1].replace(",", "."), +m[2].replace(",", "."));
     return null;
+  }
+
+  // ---- a site's reply is data: numbers are numbers, states are known words --------------------
+  const NUM = (v, d = 0) => (v === null || v === undefined || v === "" || !isFinite(+v) ? d : +v);
+  const NUMN = (v) => (v === null || v === undefined || v === "" || !isFinite(+v) ? null : +v);
+  const POS = (p) => (p && isFinite(+p.x) && isFinite(+p.y) ? { x: +p.x, y: +p.y } : null);
+  const GEO = (p) => (p && isFinite(+p.lat) && isFinite(+p.lon) ? { ...p, lat: +p.lat, lon: +p.lon, ts: NUMN(p.ts) } : null);
+  const STR = (v, d = "") => (v === null || v === undefined ? d : String(v));
+  const pick = (v, allowed, d) => (allowed.includes(v) ? v : d);
+  function sanitize(g) {
+    if (!g || typeof g !== "object") return g;
+    const numObj = (o, keys) => { if (o) keys.forEach((k) => { if (k in o) o[k] = NUMN(o[k]); }); return o; };
+    g.nodes = (Array.isArray(g.nodes) ? g.nodes : []).filter((n) => n && typeof n.id === "string");
+    g.nodes.forEach((n) => {
+      n.name = STR(n.name, n.id); n.kind = STR(n.kind, "other"); n.group = STR(n.group, "~");
+      n.state = pick(n.state, ["online", "offline", "quiet", "unmonitored"], "quiet");
+      n.pos = POS(n.pos); n.geo = GEO(n.geo); n.last_seen = NUM(n.last_seen); n.rtt = NUMN(n.rtt);
+      n.ports = NUMN(n.ports); n.virtual = !!n.virtual; n.locked = !!n.locked;
+      n.problems = (Array.isArray(n.problems) ? n.problems : []).map((x) => ({ detail: STR(x && x.detail), fix: STR(x && x.fix), type: STR(x && x.type) }));
+      if (n.inferred) n.inferred = { state: pick(n.inferred.state, ["suspect", "passing"], "passing"), online: NUM(n.inferred.online), total: NUM(n.inferred.total) };
+      if (n.radio) numObj(n.radio, ["ts", "signal", "noise", "airtime", "cap_dl", "cap_ul", "tx_rate", "rx_rate", "stations"]);
+      if (n.switch_port) n.switch_port = { ...n.switch_port, uplink: !!n.switch_port.uplink };
+      if (n.suggested_group) n.suggested_group = { group: STR(n.suggested_group.group), via: STR(n.suggested_group.via), confirmed: !!n.suggested_group.confirmed };
+    });
+    g.groups = (Array.isArray(g.groups) ? g.groups : []).filter((x) => x && typeof x.id === "string");
+    g.groups.forEach((x) => {
+      x.name = STR(x.name, x.id); x.kind = STR(x.kind, "site");
+      x.status = pick(x.status, ["ok", "warn", "down", "unknown"], "unknown");
+      x.pos = POS(x.pos); x.geo = GEO(x.geo); x.lat = NUMN(x.lat); x.lon = NUMN(x.lon);
+      const c = x.counts || {};
+      x.counts = {};
+      ["total", "online", "offline", "quiet", "unmonitored", "problems"].forEach((k) => (x.counts[k] = NUM(c[k])));
+      x.size = { w: NUM(x.size && x.size.w, 260), h: NUM(x.size && x.size.h, 124) };
+    });
+    g.links = (Array.isArray(g.links) ? g.links : []).filter((L) => L && typeof L.id === "string" && typeof L.a === "string" && typeof L.b === "string");
+    g.links.forEach((L) => {
+      L.medium = pick(L.medium, ["ethernet", "fibre", "wireless"], "ethernet");
+      L.status = pick(L.status, ["up", "down", "degraded", "unknown"], "unknown");
+      L.confirmed = !!L.confirmed;
+      ["a_port", "b_port", "label", "notes", "evidence", "source"].forEach((k) => (L[k] = STR(L[k])));
+      if (L.metrics) numObj(L.metrics, ["ts", "signal", "remote_signal", "score_dl", "score_ul", "distance", "latency", "tx", "rx"]);
+    });
+    g.suggestions = (Array.isArray(g.suggestions) ? g.suggestions : []).filter((x) => x && typeof x.id === "string");
+    g.suggestions.forEach((x) => {
+      x.medium = pick(x.medium, ["ethernet", "fibre", "wireless"], "ethernet");
+      x.members = Array.isArray(x.members) ? x.members.map(String) : [];
+      x.unknown = NUM(x.unknown);
+      ["a", "b", "a_port", "b_port", "evidence", "type"].forEach((k) => (x[k] = STR(x[k])));
+    });
+    const ua = g.unassigned || {};
+    g.unassigned = { pos: POS(ua.pos) || { x: 0, y: 0 }, size: { w: NUM(ua.size && ua.size.w, 520), h: NUM(ua.size && ua.size.h, 124) }, count: NUM(ua.count) };
+    const gr = g.grid || {};
+    g.grid = {};
+    [["cell_w", 150], ["cell_h", 122], ["pad_x", 18], ["pad_top", 54], ["pad_bottom", 14], ["row_max", 6],
+      ["empty_w", 260], ["empty_h", 124], ["collapsed_w", 200], ["collapsed_h", 124]].forEach(([k, d]) => (g.grid[k] = NUM(gr[k], d)));
+    g.kinds = (Array.isArray(g.kinds) ? g.kinds : []).filter((k) => k && typeof k.id === "string").map((k) => ({ ...k, label: STR(k.label, k.id), tier: NUM(k.tier, 4), wireless: !!k.wireless }));
+    g.others = Array.isArray(g.others) ? g.others : [];
+    g.hidden = Array.isArray(g.hidden) ? g.hidden : [];
+    g.dismissed = NUM(g.dismissed); g.orphan_links = NUM(g.orphan_links); g.ts = NUM(g.ts); g.rev = NUM(g.rev);
+    if (g.site) { g.site.lat = NUMN(g.site.lat); g.site.lon = NUMN(g.site.lon); }
+    return g;
   }
 
   // ---- the equipment icons (isometric, 64×56) ------------------------------------------------
@@ -468,7 +532,7 @@
     div.innerHTML = `<svg id="tv-symbols" width="0" height="0" style="position:absolute;width:0;height:0" aria-hidden="true"><defs>${defs}</defs></svg>`;
     document.body.appendChild(div.firstChild);
   }
-  const kindSvg = (kind, w = 30, h = 26) => `<svg class="ic" viewBox="0 0 64 56" width="${w}" height="${h}" aria-hidden="true"><use href="#tvk-${ICONS[kind] ? kind : "other"}"/></svg>`;
+  const kindSvg = (kind, w = 30, h = 26) => `<svg class="tv-ic" viewBox="0 0 64 56" width="${w}" height="${h}" aria-hidden="true"><use href="#tvk-${ICONS[kind] ? kind : "other"}"/></svg>`;
 
   // Status glyphs drawn on a node (colour is never the only signal).
   const STATE = {
@@ -586,7 +650,7 @@
     // ---- the graph ----------------------------------------------------------------------------
     function setGraph(g) {
       if (!g || !g.nodes) return;
-      S.g = g;
+      S.g = sanitize(g);
       const idx = { nodes: {}, groups: {}, links: {}, byGroup: {}, adj: {} };
       g.nodes.forEach((n) => { idx.nodes[n.id] = n; (idx.byGroup[n.group] = idx.byGroup[n.group] || []).push(n); });
       g.groups.forEach((x) => (idx.groups[x.id] = x));
@@ -832,7 +896,7 @@
       const f = (v) => Math.round(v);
       if (b.ua) {
         const n = (S.idx.byGroup["~"] || []).length;
-        return `<g class="tv-g tv-ua ${S.dropTarget === "~" ? "drop" : ""} ${S.sel && S.sel.t === "ua" ? "sel" : ""}" data-box="~">
+        return `<g class="tv-g tv-ua ${S.dropTarget === "~" ? "drop" : ""} ${S.sel && S.sel.t === "ua" ? "is-sel" : ""}" data-box="~">
           <rect class="tv-g-box" x="${f(b.x)}" y="${f(b.y)}" width="${f(b.w)}" height="${f(b.h)}" rx="16"/>
           <rect class="tv-g-hit" data-drag-box="~" x="${f(b.x)}" y="${f(b.y)}" width="${f(b.w)}" height="44" rx="16"/>
           <text class="tv-g-name" x="${f(b.x + 18)}" y="${f(b.y + 22)}">Not in a group yet · ${n}</text>
@@ -849,7 +913,7 @@
       const stTxt = !c.total ? "Empty" : { ok: "All online", warn: "Needs a look", down: "Down", unknown: "Not monitored" }[gr.status] || "";
       const stCol = { ok: "#34d399", warn: "#fbbf24", down: "#fb7185", unknown: "#94a3b8" }[gr.status] || "#94a3b8";
       const sel = S.sel && S.sel.t === "group" && S.sel.id === gr.id;
-      const cls = `tv-g st-${gr.status} ${sel ? "sel" : ""} ${S.dropTarget === gr.id ? "drop" : ""}`;
+      const cls = `tv-g st-${gr.status} ${sel ? "is-sel" : ""} ${S.dropTarget === gr.id ? "drop" : ""}`;
       const kindLabel = (S.g.group_kinds || {})[gr.kind] || "Group";
       const maxName = Math.max(8, Math.floor((b.w - 110) / 8.2));
       const chevron = b.collapsed ? "M-4,-2 L0,2 L4,-2" : "M-4,2 L0,-2 L4,2";
@@ -916,7 +980,7 @@
       const label = [n.name, kindOf(n.kind).label, st.label, n.ip, probs ? probs + " problem(s)" : ""].filter(Boolean).join(", ");
       const title = [n.name, kindOf(n.kind).label + (n.model ? " · " + n.model : ""), n.ip, n.mac, st.label + (n.state === "offline" ? " · last seen " + ago(n.last_seen) : ""),
         ...(n.problems || []).map((p) => "⚠ " + p.detail), n.locked ? "Position locked" : ""].filter(Boolean).join("\n");
-      return `<g class="tv-n ${st.cls} ${sel ? "sel" : ""} ${dim ? "dim" : ""} ${hit ? "hit" : ""}" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(label)}">
+      return `<g class="tv-n ${st.cls} ${sel ? "is-sel" : ""} ${dim ? "dim" : ""} ${hit ? "hit" : ""}" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(label)}">
         <title>${esc(title)}</title>
         <rect class="plate" x="${f(x + 4)}" y="${f(y + 2)}" width="${CW() - 8}" height="${CH() - 6}" rx="12"/>
         ${n.state === "offline" ? `<circle class="ring" cx="${f(x + 75)}" cy="${f(y + 36)}" r="31" fill="none" stroke="#fb7185" stroke-width="1.6" stroke-dasharray="4 3"/>` : ""}
@@ -969,7 +1033,7 @@
       const roomy = c.len > 90;
       const label = (S.labels && roomy) || look.agg || (!look.confirmed && roomy) ? edgeLabel(e, look) : "";
       const mid = c.at(0.5);
-      let s = `<g class="tv-edge ${dim ? "dim" : ""} ${selected ? "sel" : ""}" data-edge="${esc(e.id)}">
+      let s = `<g class="tv-edge ${dim ? "dim" : ""} ${selected ? "is-sel" : ""}" data-edge="${esc(e.id)}">
         <path class="${cls}" d="${c.d}"/>${look.medium === "fibre" ? `<path class="tv-e fib2" d="${c.d}"/>` : ""}
         <path class="tv-e-hit" d="${c.d}"><title>${esc(e.links.map((L) => `${MEDIUM[L.medium].label}${L.confirmed ? "" : " (suggested)"}: ${nodeName(L.a)}${L.a_port ? " [" + L.a_port + "]" : ""} ↔ ${nodeName(L.b)}${L.b_port ? " [" + L.b_port + "]" : ""}`).join("\n"))}</title></path>`;
       if (label) {
@@ -1430,9 +1494,9 @@
       if (S.sel.t === "link") {
         const L = S.idx.links[S.sel.id];
         if (!L) return;
-        if (!L.confirmed) return act("POST", `/suggestions/${L.id}`, { action: "dismiss" }, { okMsg: "Suggestion dismissed" }).catch(() => {});
+        if (!L.confirmed) return act("POST", `/suggestions/${encodeURIComponent(L.id)}`, { action: "dismiss" }, { okMsg: "Suggestion dismissed" }).catch(() => {});
         if (await confirmBox("Delete this connection?", `${nodeName(L.a)} ↔ ${nodeName(L.b)} (${MEDIUM[L.medium].label})`, { danger: true, ok: "Delete" }))
-          act("DELETE", `/links/${L.id}`, undefined, { okMsg: "Connection deleted" }).then(() => { S.sel = null; render(); }).catch(() => {});
+          act("DELETE", `/links/${encodeURIComponent(L.id)}`, undefined, { okMsg: "Connection deleted" }).then(() => { S.sel = null; render(); }).catch(() => {});
       } else if (S.sel.t === "node") {
         const n = S.idx.nodes[S.sel.id];
         if (n && n.virtual) deleteEquipment(n);
@@ -1441,7 +1505,7 @@
     async function deleteEquipment(n) {
       const links = (S.idx.adj[n.id] || []).filter((L) => L.confirmed).length;
       if (!(await confirmBox(`Delete ${n.name}?`, `This hand-added equipment and its ${links} connection${links === 1 ? "" : "s"} will be removed from the diagram and the map.`, { danger: true, ok: "Delete" }))) return;
-      act("DELETE", `/equipment/${n.id}`, undefined, { okMsg: `${n.name} deleted` }).then(() => { S.sel = null; render(); }).catch(() => {});
+      act("DELETE", `/equipment/${encodeURIComponent(n.id)}`, undefined, { okMsg: `${n.name} deleted` }).then(() => { S.sel = null; render(); }).catch(() => {});
     }
 
     // ---- side panel -----------------------------------------------------------------------------
@@ -1465,7 +1529,7 @@
     }
     function kindOptions(cur, auto) {
       return (auto != null ? `<option value="" ${!cur ? "selected" : ""}>Detected: ${esc(kindOf(auto).label)}</option>` : "")
-        + S.g.kinds.filter((k) => k.id !== "unknown").map((k) => `<option value="${k.id}" ${cur === k.id ? "selected" : ""}>${esc(k.label)}</option>`).join("");
+        + S.g.kinds.filter((k) => k.id !== "unknown").map((k) => `<option value="${esc(k.id)}" ${cur === k.id ? "selected" : ""}>${esc(k.label)}</option>`).join("");
     }
     function linkItem(L, from) {
       const other = L.a === from ? L.b : L.a;
@@ -1630,7 +1694,7 @@
         `<button type="button" class="tv-btn sm" data-p="lock-group" ${edit ? "" : "disabled"}>${gr.locked ? "Unlock" : "Lock"} layout</button>`,
         `<button type="button" class="tv-btn sm" data-p="arrange-group" ${edit && !gr.locked && !locked() ? "" : "disabled"}>${ico("wand", 14)} Tidy inside</button>`,
         `<button type="button" class="tv-btn sm" data-p="add-here" ${edit ? "" : "disabled"}>${ico("plus", 14)} Equipment here</button>`,
-        gr.geo && !gr.geo_approx ? `<a class="tv-btn sm" href="https://www.google.com/maps/dir/?api=1&destination=${gr.geo.lat},${gr.geo.lon}" target="_blank" rel="noopener">Directions ↗</a>` : "",
+        gr.geo && !gr.geo_approx ? `<a class="tv-btn sm" href="https://www.google.com/maps/dir/?api=1&destination=${(+gr.geo.lat).toFixed(6)},${(+gr.geo.lon).toFixed(6)}" target="_blank" rel="noopener">Directions ↗</a>` : "",
         `<button type="button" class="tv-btn sm danger" data-p="delete-group" ${edit ? "" : "disabled"}>Delete</button>`,
       ];
       return `<div class="hd"><span style="width:44px;height:44px;border-radius:12px;background:#0f172a;display:grid;place-items:center;flex:none">${gicon(gr.kind, 30)}</span><div style="min-width:0"><h3>${esc(gr.name)}</h3>
@@ -1919,7 +1983,7 @@
       return { x: x0, y: y0 };
     }
     function groupDialog(gr) {
-      const kinds = Object.entries(S.g.group_kinds || {}).map(([k, l]) => `<option value="${k}" ${(gr ? gr.kind : "tower") === k ? "selected" : ""}>${esc(l)}</option>`).join("");
+      const kinds = Object.entries(S.g.group_kinds || {}).map(([k, l]) => `<option value="${esc(k)}" ${(gr ? gr.kind : "tower") === k ? "selected" : ""}>${esc(l)}</option>`).join("");
       const loc = gr && gr.lat != null ? `${gr.lat}, ${gr.lon}` : "";
       let pickAfter = false;
       const d = dialog({
@@ -1969,7 +2033,7 @@
       };
     }
     function equipmentDialog(n, gid) {
-      const kinds = S.g.kinds.filter((k) => k.id !== "unknown").map((k) => `<option value="${k.id}" ${(n ? n.kind : "unmanaged-switch") === k.id ? "selected" : ""}>${esc(k.label)}</option>`).join("");
+      const kinds = S.g.kinds.filter((k) => k.id !== "unknown").map((k) => `<option value="${esc(k.id)}" ${(n ? n.kind : "unmanaged-switch") === k.id ? "selected" : ""}>${esc(k.label)}</option>`).join("");
       const cur = n ? n.group : gid || (S.sel && S.sel.t === "group" ? S.sel.id : "~");
       dialog({
         title: n ? `Edit ${n.name}` : "Add equipment",
@@ -2142,8 +2206,8 @@
         sub: "Every type has a built-in picture. Upload your own to replace it for the whole type, or set one on a single item from its panel.",
         wide: true,
         body: `<div class="icons">${kinds.map((k) => `<div class="iconbtn">${ti[k.id] ? iconPreview(ti[k.id]) : kindSvg(k.id, 56, 48)}<span>${esc(k.label)}</span>
-            <span style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center"><label class="tv-btn sm" style="cursor:pointer">${ti[k.id] ? "Replace" : "Upload"}<input type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" data-type-up="${k.id}" ${edit ? "" : "disabled"}></label>
-            ${ti[k.id] ? `<button type="button" class="tv-btn sm" data-type-reset="${k.id}" ${edit ? "" : "disabled"}>Default</button>` : ""}</span></div>`).join("")}</div>
+            <span style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center"><label class="tv-btn sm" style="cursor:pointer">${ti[k.id] ? "Replace" : "Upload"}<input type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" data-type-up="${esc(k.id)}" ${edit ? "" : "disabled"}></label>
+            ${ti[k.id] ? `<button type="button" class="tv-btn sm" data-type-reset="${esc(k.id)}" ${edit ? "" : "disabled"}>Default</button>` : ""}</span></div>`).join("")}</div>
           ${Object.keys(S.g.icons || {}).length ? `<div class="tv-field">Uploaded pictures<div class="icons">${Object.values(S.g.icons).map((c) => `<div class="iconbtn">${iconPreview(c.id)}<span>${esc(trunc(c.name || "Uploaded", 16))} · used ${used[c.id] || 0}×</span><button type="button" class="tv-btn sm danger" data-icon-del="${esc(c.id)}" ${edit ? "" : "disabled"}>Delete</button></div>`).join("")}</div></div>` : ""}`,
       });
       d.wrap.querySelectorAll("[data-type-up]").forEach((inp) => inp.addEventListener("change", async () => {
@@ -2292,7 +2356,7 @@
           const sel = S.sel && S.sel.t === "node" && S.sel.id === n.id;
           const dim = hits && !hits.has(n.id);
           const mk = LF.marker([n.geo.lat, n.geo.lon], {
-            icon: LF.divIcon({ className: "tv-mkwrap", iconSize: null, html: `<div class="tv-pin ${st.cls === "on" ? "" : st.cls} ${sel ? "sel" : ""}" style="${dim ? "opacity:.3" : ""}"><svg viewBox="0 0 64 56"><use href="#tvk-${esc(ICONS[n.kind] ? n.kind : "other")}"/></svg></div>` }),
+            icon: LF.divIcon({ className: "tv-mkwrap", iconSize: null, html: `<div class="tv-pin ${st.cls === "on" ? "" : st.cls} ${sel ? "is-sel" : ""}" style="${dim ? "opacity:.3" : ""}"><svg viewBox="0 0 64 56"><use href="#tvk-${esc(ICONS[n.kind] ? n.kind : "other")}"/></svg></div>` }),
             keyboard: true, title: `${n.name} — ${st.label}`, zIndexOffset: sel ? 900 : 0,
           });
           mk.bindTooltip(`${esc(n.name)} · ${esc(st.label)}`, { className: "tv-tip", direction: "top", offset: [0, -12] });
@@ -2309,7 +2373,7 @@
         const dim = hits && !(S.idx.byGroup[g.id] || []).some((n) => hits.has(n.id)) && !g.name.toLowerCase().includes(S.q.trim().toLowerCase());
         const cnt = mon ? `<span class="cnt ${(c.offline || c.quiet) ? "bad" : "ok"}">${c.online}/${mon}</span>` : `<span class="cnt">${c.total || 0}</span>`;
         const flag = g.status === "down" ? " ✕" : g.status === "warn" ? " !" : "";
-        const html = `<div class="tv-mk st-${g.status} ${g.geo_approx ? "approx" : ""} ${sel ? "sel" : ""}" style="${dim ? "opacity:.35" : ""}"><span class="gi">${gicon(g.kind, 18)}</span><b>${esc(g.name)}</b>${cnt}${flag}</div>`;
+        const html = `<div class="tv-mk st-${g.status} ${g.geo_approx ? "approx" : ""} ${sel ? "is-sel" : ""}" style="${dim ? "opacity:.35" : ""}"><span class="gi">${gicon(g.kind, 18)}</span><b>${esc(g.name)}</b>${cnt}${flag}</div>`;
         const mk = LF.marker([g.geo.lat, g.geo.lon], { icon: LF.divIcon({ className: "tv-mkwrap", iconSize: null, html }),
           draggable: edit && !g.geo_approx, keyboard: true, zIndexOffset: 1000, title: `${g.name} — ${{ ok: "all online", warn: "needs a look", down: "down", unknown: "not monitored" }[g.status] || ""}${g.geo_approx ? " (approximate position)" : ""}` });
         mk.bindTooltip(`${esc((S.g.group_kinds || {})[g.kind] || "Group")}: ${esc(g.name)}<br>${mon ? `${c.online} of ${mon} online` : "Nothing monitored"}${c.unmonitored ? ` · ${c.unmonitored} not monitored` : ""}${g.geo_approx ? "<br><i>Approximate — set its location for the real spot</i>" : ""}`, { className: "tv-tip", direction: "top", offset: [0, -34] });
@@ -2447,7 +2511,7 @@
         if (!g.geo) return;
         const c = g.counts || {};
         const mon = (c.total || 0) - (c.unmonitored || 0);
-        const html = `<div class="tv-mk st-${g.status} ${g.geo_approx ? "approx" : ""}"><span class="gi">${gicon(g.kind, 18)}</span><b>${esc(g.name)}</b><span class="cnt ${(c.offline || c.quiet) ? "bad" : mon ? "ok" : ""}">${mon ? `${c.online}/${mon}` : c.total || 0}</span></div>`;
+        const html = `<div class="tv-mk below st-${g.status} ${g.geo_approx ? "approx" : ""}"><span class="gi">${gicon(g.kind, 18)}</span><b>${esc(g.name)}</b><span class="cnt ${(c.offline || c.quiet) ? "bad" : mon ? "ok" : ""}">${mon ? `${c.online}/${mon}` : c.total || 0}</span></div>`;
         const members = graph.nodes.filter((n) => n.group === g.id);
         const pop = `<div style="min-width:220px"><b style="font-size:14px">${esc(g.name)}</b><br><span style="color:#94a3b8">${esc((graph.group_kinds || {})[g.kind] || "")}${g.geo_approx ? " · approximate position" : ""}</span>
           <div style="margin:6px 0;max-height:180px;overflow:auto">${members.map((n) => `<div style="display:flex;gap:6px;align-items:center">${kindSvg(n.kind, 22, 18)}<span style="flex:1">${esc(n.name)}</span><span style="color:${n.state === "online" ? "#34d399" : n.state === "unmonitored" ? "#cbd5e1" : "#fb7185"}">${esc((STATE[n.state] || {}).label || "")}</span></div>`).join("") || "<i>Empty</i>"}</div>
@@ -2458,7 +2522,7 @@
       if (o.onChange) o.onChange(graph);
     }
     async function refresh() {
-      try { graph = await o.load(); draw(); } catch (e) { /* the map works without the overlay */ }
+      try { graph = sanitize(await o.load()); draw(); } catch (e) { /* the map works without the overlay */ }
     }
     refresh();
     return { refresh, remove() { dead = true; layer.remove(); }, get graph() { return graph; },
