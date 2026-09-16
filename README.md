@@ -599,7 +599,10 @@ the same records — switch with **Diagram / Map** — so a change in one is in 
   160 px; never SVG).
 
 Records live on the site Pi in `/data/topology.json` (+ `/data/topo_icons/`) and ride
-along in the config backup. Reading is open like the device list; changes need the
+along in the config backup. **Forget** on a device removes it from the diagram; a bulk
+**prune** does not (a tower that is down for a week keeps its drawing) — **Review** lists
+connections whose device is gone and can remove them. Changes are all-or-nothing, and a
+damaged `topology.json` is kept aside as `topology.json.bad-<time>`, never overwritten. Reading is open like the device list; changes need the
 site login or the hub key. API: `GET /api/topology` and `POST|DELETE
 /api/topology/{groups,equipment,nodes,links,suggestions,layout,arrange,icons,type-icons}…`
 (hub: `/api/hub/sites/<id>/topology…`). Code: `app/topology.py` (records, suggestions,
