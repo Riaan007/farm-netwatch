@@ -1091,8 +1091,7 @@
                             <button id="setip-btn" onclick="openSetIp()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold hidden">🛠️ Change IP</button>
                             <button id="airos-wifi-btn" onclick="fetchAirosWifi()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">📡 Wi-Fi info (airOS)</button>
                             <button id="airos-btn" onclick="openAirosIp()" class="px-3 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold hidden">🛠️ Change IP (airOS)</button>
-                            <button id="mikrotik-status-btn" onclick="fetchMikrotikStatus()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">🧭 Router info (MikroTik)</button>
-                            <button id="mikrotik-manage-btn" onclick="openSiteMtkConsole()" class="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold hidden">🖥️ Open console</button>
+                            <button id="mikrotik-status-btn" onclick="openUnitFor(CURRENT_KEY)" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">🧭 Open router view</button>
                             <button id="switch-view-btn" onclick="openSwitchFor(CURRENT_KEY)" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">🔀 Switch ports &amp; PoE</button>
                             <button onclick="deepScanDevice()" class="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-xs font-bold">🔬 Deep scan</button>
                         </div>
@@ -1131,7 +1130,6 @@
                             </div>
                         </div>
                         <div id="airos-wifi-panel" class="hidden mt-3"></div>
-                        <div id="mikrotik-panel" class="hidden mt-3"></div>
                         <div id="quality-panel" class="hidden mt-3"></div>
                         <pre id="cmd-result" class="hidden mt-2 p-2 bg-[#050b16] border border-white/10 text-emerald-300/90 rounded-lg text-[11px] whitespace-pre-wrap leading-snug max-h-40 overflow-auto"></pre>
                     </div>
@@ -2220,204 +2218,7 @@
             });
         }
 
-        function openMikrotikFor(key){ openModal(key); setTimeout(() => { modalTab('tools'); fetchMikrotikStatus(); }, 250); }
 
-        async function fetchMikrotikStatus(){
-            const panel = document.getElementById('mikrotik-panel');
-            document.getElementById('airos-wifi-panel').classList.add('hidden');
-            panel.classList.remove('hidden');
-            panel.innerHTML = '<p class="text-xs text-slate-500">Reading the router (MAC-Telnet, or the API over its IP)…</p>';
-            let r;
-            try { r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/mikrotik')).json(); }
-            catch(e){ panel.innerHTML = '<p class="text-xs text-rose-300">Could not reach the router.</p>'; return; }
-            if(!r.ok){ panel.innerHTML = '<div class="p-3 bg-rose-500/10 border border-rose-400/40 rounded-lg text-xs text-rose-200">'+esc(r.error||'failed')+'</div>'; return; }
-            renderMikrotikStatus(r, panel);
-        }
-        function renderMikrotikStatus(r, panel){
-            const src = r.source === 'mactelnet' ? '🔗 Connected by MAC (MAC-Telnet)' : '🌐 via IP (RouterOS API)';
-            const memUsed = (r.free_memory && r.total_memory) ? (mtkBytes(r.total_memory - r.free_memory)+' / '+mtkBytes(r.total_memory)) : '';
-            const row = (k, v) => v ? ('<div class="text-slate-400">'+k+'</div><div class="text-slate-200 font-mono">'+esc(String(v))+'</div>') : '';
-            let h = '<div class="p-3 bg-cyan-500/10 border border-cyan-400/30 rounded-lg">';
-            h += '<div class="flex items-center justify-between gap-2"><p class="text-xs font-bold text-cyan-200">🧭 '+esc(r.identity||'MikroTik')+'</p><span class="text-[10px] text-slate-400">'+src+'</span></div>';
-            h += '<div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] mt-2">';
-            h += row('Model', r.model||r.board) + row('RouterOS', r.version) + row('Firmware', r.firmware) + row('Serial', r.serial)
-               + row('Uptime', mtkUptime(r.uptime)) + row('CPU', (r.cpu!=='' && r.cpu!=null)?r.cpu+'%':'') + row('Memory used', memUsed) + row('Arch', r.arch);
-            if(r.health && (r.health.voltage || r.health.temperature))
-                h += row('Health', [r.health.voltage?r.health.voltage+' V':'', r.health.temperature?r.health.temperature+'°C':''].filter(Boolean).join(' · '));
-            h += '</div>';
-            if((r.interfaces||[]).length){
-                h += '<div class="mt-3 text-[10px] font-bold text-slate-400 uppercase">Interfaces</div><div class="mt-1 space-y-1">';
-                r.interfaces.forEach(i => {
-                    const dot = i.running ? 'bg-emerald-400' : (i.disabled ? 'bg-slate-600' : 'bg-rose-400');
-                    h += '<div class="flex items-center gap-2 text-[11px]"><span class="w-2 h-2 rounded-full '+dot+'"></span>'
-                       + '<span class="font-mono text-slate-200 w-24 truncate">'+esc(i.name)+'</span>'
-                       + '<span class="text-slate-500">'+esc(i.type||'')+(i.disabled?' · off':'')+'</span>'
-                       + '<span class="ml-auto text-slate-400 font-mono">↓'+mtkBytes(i.rx)+' ↑'+mtkBytes(i.tx)+'</span></div>';
-                });
-                h += '</div>';
-            }
-            if((r.poe||[]).length){
-                h += '<div class="mt-3 text-[10px] font-bold text-slate-400 uppercase">PoE out</div><div class="mt-1 flex flex-wrap gap-1">';
-                r.poe.forEach(p => { h += '<span class="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[10px]">'+esc(p.name)+': '+esc(p.poe_out||'?')+(p.power?(' '+esc(p.power)+'W'):'')+'</span>'; });
-                h += '</div>';
-            }
-            if((r.addresses||[]).length)
-                h += '<div class="mt-2 text-[11px] text-slate-400">Addresses: '+r.addresses.map(a => '<span class="font-mono text-slate-300">'+esc(a.address)+'</span>').join(', ')+'</div>';
-            const dev = CURRENT_KEY ? DEV_BY_KEY[CURRENT_KEY] : null;
-            h += '<div class="flex gap-2 mt-3 flex-wrap"><button onclick="fetchMikrotikStatus()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">↻ Refresh</button>';
-            if(dev && dev.ip) h += '<a href="http://'+esc(dev.ip)+'/" target="_blank" rel="noopener" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">🌐 Open Webfig ↗</a>';
-            h += '<button onclick="openSiteMtkConsole()" class="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold">🖥️ Open console</button>';
-            h += '<button onclick="document.getElementById(\'mikrotik-panel\').classList.add(\'hidden\')" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">Close</button></div></div>';
-            panel.innerHTML = h;
-        }
-        function openMikrotikManage(){
-            const panel = document.getElementById('mikrotik-panel');
-            panel.classList.remove('hidden');
-            panel.innerHTML = '<div class="p-3 bg-violet-500/10 border border-violet-400/40 rounded-lg">'
-                + '<p class="text-xs font-bold text-violet-200 mb-2">🛠️ Manage router (MikroTik)</p>'
-                + '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">'
-                + '<div class="flex gap-2"><input id="mtk-identity" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm" placeholder="New identity / name">'
-                + '<button onclick="mtkSetIdentity()" class="px-3 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold whitespace-nowrap">Rename</button></div>'
-                + '<button onclick="mtkReboot()" class="px-3 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold">↻ Reboot router</button>'
-                + '</div>'
-                + '<p class="text-[10px] text-slate-400 mb-2">Structured actions use the RouterOS API over the router\'s IP. The terminal logs in <b>by MAC</b> (MAC-Telnet), with SSH-over-IP as the fallback.</p>'
-                + '<div id="mtk-term" class="bg-[#050b16] border border-white/10 rounded-lg p-2 h-44 overflow-auto text-[11px] font-mono text-emerald-300/90 whitespace-pre-wrap"></div>'
-                + '<div class="flex gap-2 mt-2"><span class="text-violet-300 font-mono text-sm self-center">&gt;</span>'
-                + '<input id="mtk-cmd" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm font-mono" placeholder="/system resource print" onkeydown="if(event.key===\'Enter\')mtkRun()">'
-                + '<button onclick="mtkRun()" class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold">Run</button></div>'
-                + '<p class="text-[10px] text-slate-500 mt-1">Runs as <b>admin</b> on the live router and is logged. Router-stranding commands ask before running.</p>'
-                + '<div class="mt-2"><button onclick="fetchMikrotikStatus()" class="text-[11px] text-cyan-300 hover:text-cyan-200 font-bold">← Back to router info</button></div>'
-                + '</div>';
-            setTimeout(() => { const c = document.getElementById('mtk-cmd'); if(c) c.focus(); }, 50);
-        }
-        async function mtkAction(body){
-            try { return await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/mikrotik/action', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json(); }
-            catch(e){ return {ok:false, error:String(e)}; }
-        }
-        async function mtkSetIdentity(){
-            const el = document.getElementById('mtk-identity'); const name = el.value.trim();
-            if(!name) return;
-            const r = await mtkAction({action:'set-identity', name});
-            toast(r.ok ? (r.msg||'Renamed') : (r.error||'Failed'), r.ok?'ok':'bad');
-            if(r.ok) el.value = '';
-        }
-        async function mtkReboot(){
-            if(!confirm('Reboot this router now? It will be offline for ~30-60s.')) return;
-            const r = await mtkAction({action:'reboot'});
-            toast(r.ok ? (r.msg||'Rebooting') : (r.error||'Failed'), r.ok?'ok':'bad');
-        }
-        function mtkTermWrite(cmd, out){
-            const term = document.getElementById('mtk-term'); if(!term) return;
-            const d = document.createElement('div');
-            d.innerHTML = '<div class="text-violet-300">&gt; '+esc(cmd)+'</div><div class="text-emerald-300/90 mb-1">'+esc(out)+'</div>';
-            term.appendChild(d); term.scrollTop = term.scrollHeight;
-        }
-        async function mtkRun(confirmDanger){
-            const input = document.getElementById('mtk-cmd'); const cmd = input.value.trim(); if(!cmd) return;
-            const body = {command: cmd}; if(confirmDanger) body.confirm = true;
-            let r;
-            try { r = await (await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/mikrotik/console', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})).json(); }
-            catch(e){ mtkTermWrite(cmd, 'error: '+e); return; }
-            if(r.needs_confirm){ if(confirm('⚠ '+r.warning+'\n\nRun this command anyway?')) mtkRun(true); return; }
-            if(r.ok){ mtkTermWrite(cmd, r.output || '(no output)'); input.value = ''; }
-            else mtkTermWrite(cmd, 'error: '+(r.error||'failed'));
-            input.focus();
-        }
-
-        // --- Full MikroTik console (site) --------------------------------------
-        const SC = { report:null, tab:'overview', timer:null, hist:[], key:null };
-        function scBytes(v){ let n=parseInt(v,10); if(isNaN(n)) return esc(String(v||'0')); const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024&&i<u.length-1){n/=1024;i++;} return (i?n.toFixed(1):n)+' '+u[i]; }
-        function scRate(v){ let n=parseInt(v,10); if(isNaN(n)||n<=0) return '—'; if(n>=1e9) return (n/1e9).toFixed(2)+' Gb/s'; if(n>=1e6) return (n/1e6).toFixed(1)+' Mb/s'; if(n>=1e3) return (n/1e3).toFixed(0)+' Kb/s'; return n+' b/s'; }
-        function openSiteMtkConsole(key){
-            SC.key = key || CURRENT_KEY; SC.tab='overview'; SC.report=null; SC.hist=[];
-            let ov = document.getElementById('mtk-console');
-            if(!ov){
-                ov = document.createElement('div'); ov.id='mtk-console';
-                ov.className='fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-start justify-center p-2 sm:p-6 overflow-y-auto';
-                ov.innerHTML = '<div class="w-full max-w-5xl bg-[#0b1220] border border-white/10 rounded-2xl shadow-2xl my-auto">'
-                  + '<div class="flex items-center gap-2 p-3 border-b border-white/10"><div class="min-w-0"><div class="text-[10px] uppercase tracking-widest text-slate-400">🖥️ MikroTik console</div><h2 id="sc-title" class="text-lg font-bold text-slate-100 truncate">MikroTik</h2></div>'
-                  + '<label class="ml-auto text-[11px] text-slate-400 flex items-center gap-1"><input type="checkbox" id="sc-auto"> live</label>'
-                  + '<button onclick="scLoad()" class="px-2 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">↻</button>'
-                  + '<button onclick="closeSiteMtkConsole()" class="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white text-xl">&times;</button></div>'
-                  + '<div id="sc-tabs" class="flex gap-1 px-3 pt-2 flex-wrap border-b border-white/10"></div>'
-                  + '<div id="sc-body" class="p-3 max-h-[70vh] overflow-y-auto"></div></div>';
-                document.body.appendChild(ov);
-                ov.addEventListener('click', (e)=>{ if(e.target===ov) closeSiteMtkConsole(); });
-            }
-            ov.classList.remove('hidden');
-            document.getElementById('sc-auto').checked=false; document.getElementById('sc-auto').onchange=(e)=>{ if(SC.timer){clearInterval(SC.timer);SC.timer=null;} if(e.target.checked) SC.timer=setInterval(()=>{ if(SC.tab==='ports'||SC.tab==='overview') scLoad(); },4000); };
-            scLoad();
-        }
-        function closeSiteMtkConsole(){ const o=document.getElementById('mtk-console'); if(o) o.classList.add('hidden'); if(SC.timer){clearInterval(SC.timer);SC.timer=null;} }
-        function scTabs(){ const t=[['overview','Overview'],['ports','Ports & PoE'],['devices','Devices'],['network','Network'],['logs','Logs'],['terminal','Terminal']]; if(SC.report&&SC.report.wireless&&(SC.report.wireless.interfaces.length||SC.report.wireless.registrations.length)) t.splice(4,0,['wireless','Wireless']); return t; }
-        function scDrawTabs(){ document.getElementById('sc-tabs').innerHTML = scTabs().map(([k,l])=>`<button onclick="scTab('${k}')" class="px-3 py-1.5 rounded-t-lg text-xs font-bold ${k===SC.tab?'bg-cyan-600 text-white':'text-slate-300 hover:bg-white/10'}">${l}</button>`).join(''); }
-        function scTab(k){ SC.tab=k; scDrawTabs(); scRender(); }
-        async function scLoad(){
-            const body=document.getElementById('sc-body'); if(!SC.report) body.innerHTML='<div class="animate-pulse h-52 bg-white/5 rounded-lg"></div>';
-            try{ SC.report = await (await fetch('/api/devices/'+encodeURIComponent(SC.key)+'/mikrotik/report')).json();
-                if(!SC.report.ok){ body.innerHTML='<div class="p-3 bg-rose-500/10 border border-rose-400/40 rounded-lg text-sm text-rose-200">'+esc(SC.report.error||'failed')+(SC.report.hint?'<div class="mt-2 text-[12px] text-amber-200">💡 '+esc(SC.report.hint)+'</div>':'')+'</div>'; return; }
-                document.getElementById('sc-title').textContent = (SC.report.system.identity||'MikroTik')+' · '+(SC.report.system.model||'');
-                scDrawTabs(); scRender();
-            }catch(e){ body.innerHTML='<div class="p-3 bg-rose-500/10 border border-rose-400/40 rounded-lg text-sm text-rose-200">Could not reach the router: '+esc(e.message||e)+'</div>'; }
-        }
-        function scOff(){ return SC.report && !SC.report.manage_enabled; }
-        function scBanner(){ return scOff()? '<div class="mb-3 p-2 bg-amber-500/10 border border-amber-400/40 rounded-lg text-[11px] text-amber-200">🔒 Read-only — turn on <b>Manage MikroTik routers</b> in Settings to unlock actions.</div>':''; }
-        async function scAct(body, okMsg){ try{ const r=await (await fetch('/api/devices/'+encodeURIComponent(SC.key)+'/mikrotik/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json(); toast(r.ok?(r.msg||okMsg||'Done'):(r.error||'Failed'), r.ok?'ok':'bad'); if(r.ok) setTimeout(scLoad,800); return r; }catch(e){ toast(String(e),'bad'); } }
-        function scRender(){
-            const b=document.getElementById('sc-body'); if(!SC.report||!SC.report.ok) return; const r=SC.report;
-            const dis = scOff()?'disabled class="opacity-40 cursor-not-allowed"':'';
-            if(SC.tab==='overview'){
-                const y=r.system; const memPct=(y.free_memory&&y.total_memory)?Math.round(100*(1-y.free_memory/y.total_memory)):null;
-                const eth=r.ports.filter(p=>p.type==='ether');
-                const face=eth.map(p=>{ const col=p.disabled?'#475569':p.running?'#34d399':'#ef4444'; const poe=p.poe&&p.poe.mode&&p.poe.mode!=='off'?(p.poe.status==='powered-on'?'⚡':'·'):''; return `<div title="${esc(p.name)}" class="flex-1 min-w-[52px] text-center border border-white/10 rounded-lg py-1.5" style="background:${col}22"><div class="text-[10px] font-mono">${esc(p.name.replace('ether','e'))}</div><div class="w-1.5 h-1.5 rounded-full mx-auto mt-1" style="background:${col}"></div><div class="text-[10px] text-amber-300 h-3">${poe}</div></div>`; }).join('');
-                const kv=[['Model',y.model||y.board],['RouterOS',y.version],['Firmware',y.firmware],['Serial',y.serial],['Uptime',y.uptime],['Arch',y.arch],['Board time',[y.date,y.time].filter(Boolean).join(' ')]];
-                b.innerHTML=scBanner()+`<div class="p-3 bg-white/5 border border-white/10 rounded-xl"><div class="flex items-center justify-between flex-wrap gap-2"><b class="text-slate-100">🧭 ${esc(y.identity||'MikroTik')}</b>
-                    <div class="flex gap-1.5 text-[11px]"><span class="px-2 py-0.5 rounded ${y.cpu>80?'bg-amber-500/20 text-amber-200':'bg-emerald-500/20 text-emerald-200'}">CPU ${esc(String(y.cpu))}%</span>${memPct!=null?`<span class="px-2 py-0.5 rounded bg-white/10">RAM ${memPct}%</span>`:''}${y.health&&y.health.temperature?`<span class="px-2 py-0.5 rounded bg-white/10">${esc(y.health.temperature)}°C</span>`:''}${y.health&&y.health.voltage?`<span class="px-2 py-0.5 rounded bg-white/10">${esc(y.health.voltage)}V</span>`:''}</div></div>
-                  <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] mt-3">${kv.map(([k,v])=>v?`<div class="text-slate-400">${k}</div><div class="text-slate-200 font-mono">${esc(String(v))}</div>`:'').join('')}<div class="text-slate-400">Memory</div><div class="text-slate-200 font-mono">${scBytes((y.total_memory||0)-(y.free_memory||0))} / ${scBytes(y.total_memory)}</div></div>
-                  <div class="text-[10px] uppercase text-slate-400 mt-3 mb-1">Ports</div><div class="flex gap-1">${face||'<span class="text-xs text-slate-500">no ethernet ports</span>'}</div>
-                  <div class="flex gap-2 mt-3 flex-wrap"><button data-act="rename" ${dis} class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">✏️ Rename</button><button data-act="export" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">📄 Export config</button><button data-act="reboot" ${dis} class="px-3 py-1.5 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold">↻ Reboot</button></div><div id="sc-export" class="mt-2"></div></div>`;
-            } else if(SC.tab==='ports'){
-                const rows=r.ports.map(p=>{ const st=p.disabled?'<span class="px-2 py-0.5 rounded bg-white/10 text-slate-400">disabled</span>':p.running?`<span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200">up ${esc(p.rate||'')}${p.full_duplex?' FD':''}</span>`:'<span class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-200">down</span>';
-                    let poe='—', pa=''; if(p.poe){ const on=p.poe.mode&&p.poe.mode!=='off'; poe=`<span class="px-2 py-0.5 rounded ${p.poe.status==='powered-on'?'bg-emerald-500/20 text-emerald-200':'bg-white/10 text-slate-300'}">${esc(p.poe.mode||'off')}${p.poe.status?' · '+esc(p.poe.status):''}${p.poe.power?' · '+esc(p.poe.power)+'W':''}</span>`; pa=`<button data-act="poe-cycle" data-port="${esc(p.name)}" ${dis} class="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-[11px] font-bold">⟳ cycle</button> <button data-act="poe" data-id="${esc(p.name)}" data-mode="${on?'off':'auto-on'}" ${dis} class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-[11px] font-bold">${on?'PoE off':'PoE on'}</button>`; }
-                    return `<tr class="border-b border-white/5"><td class="py-1.5 pr-2 font-mono">${esc(p.name)}</td><td class="pr-2">${st}</td><td class="pr-2 font-mono text-slate-400 text-[11px]">↓${scRate(p.rx_rate)} ↑${scRate(p.tx_rate)}</td><td class="pr-2 font-mono text-slate-400 text-[11px]">${scBytes(p.rx)}/${scBytes(p.tx)}</td><td class="pr-2">${poe}</td><td class="text-right whitespace-nowrap"><button data-act="iface" data-id="${esc(p.name)}" data-enable="${p.disabled?'1':'0'}" ${dis} class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-[11px] font-bold">${p.disabled?'enable':'disable'}</button> ${pa}</td></tr>`; }).join('');
-                b.innerHTML=scBanner()+`<div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-left text-[10px] uppercase text-slate-400 border-b border-white/10"><th class="py-1.5 pr-2">Port</th><th class="pr-2">Link</th><th class="pr-2">Live</th><th class="pr-2">Total ↓/↑</th><th class="pr-2">PoE</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><p class="text-[10px] text-slate-500 mt-2">⟳ cycle power-cycles PoE on that port to reboot the camera/AP plugged into it. Tick <b>live</b> for auto-refresh.</p>`;
-            } else if(SC.tab==='devices'){
-                b.innerHTML=`<div class="flex items-center justify-between mb-2 gap-2"><b class="text-slate-200">${r.connected.length} devices on the switch</b><input id="sc-dsearch" oninput="scFilter()" placeholder="filter ip / mac / name / port" class="p-1.5 bg-[#050b16] border rounded-lg text-xs max-w-[240px]"></div><div class="overflow-x-auto"><table class="w-full text-xs" id="sc-dtable"><thead><tr class="text-left text-[10px] uppercase text-slate-400 border-b border-white/10"><th class="py-1.5 pr-2">IP</th><th class="pr-2">MAC</th><th class="pr-2">Vendor</th><th class="pr-2">Hostname</th><th class="pr-2">Port</th><th>Seen</th></tr></thead><tbody>${r.connected.map(c=>`<tr data-f="${esc((c.ip+' '+c.mac+' '+(c.hostname||'')+' '+(c.vendor||'')+' '+(c.port||c.iface||'')).toLowerCase())}" class="border-b border-white/5"><td class="py-1 pr-2 font-mono">${esc(c.ip||'—')}</td><td class="pr-2 font-mono">${esc(c.mac)}</td><td class="pr-2 text-slate-400">${esc(c.vendor||'')}</td><td class="pr-2">${esc(c.hostname||'')}</td><td class="pr-2 font-mono">${esc(c.port||c.iface||'—')}</td><td class="text-slate-500 text-[10px]">${esc((c.src||[]).filter((x,i,a)=>a.indexOf(x)===i).join('+'))}</td></tr>`).join('')}</tbody></table></div><p class="text-[10px] text-slate-500 mt-2">From the router's DHCP leases, ARP and bridge host table — no scanning.</p>`;
-            } else if(SC.tab==='network'){
-                const tbl=(title,head,rows)=>rows?`<div class="mb-3"><b class="text-slate-200 text-sm">${title}</b><div class="overflow-x-auto mt-1"><table class="w-full text-xs"><thead><tr class="text-left text-[10px] uppercase text-slate-400 border-b border-white/10">${head.map(h=>`<th class="py-1 pr-2">${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></div>`:'';
-                const addr=r.addresses.map(a=>`<tr><td class="py-1 pr-2 font-mono">${esc(a.address)}</td><td class="font-mono text-slate-400">${esc(a.interface)}</td></tr>`).join('');
-                const rt=r.routes.map(x=>`<tr><td class="py-1 pr-2 font-mono">${esc(x.dst)}</td><td class="pr-2 font-mono">${esc(x.gateway||'')}</td><td class="text-slate-400">${esc(x.distance)}</td><td>${x.active?'<span class="text-emerald-300">active</span>':'<span class="text-slate-500">—</span>'}</td></tr>`).join('');
-                const fw=r.firewall.filter.map(f=>`<tr><td class="py-1 pr-2 font-mono">${esc(f.chain)}</td><td class="pr-2 ${f.action==='drop'||f.action==='reject'?'text-rose-300':'text-emerald-300'}">${esc(f.action)}</td><td class="pr-2 text-slate-400">${esc([f.protocol,f.dst_port].filter(Boolean).join('/'))}</td><td class="text-slate-500">${esc(f.comment||'')}</td></tr>`).join('');
-                b.innerHTML=tbl('IP addresses',['Address','Interface'],addr)+tbl('Routes',['Dst','Gateway','Dist',''],rt)+`<div class="mb-3 text-xs"><b class="text-slate-200 text-sm">DNS</b> <span class="font-mono text-slate-400">${esc(r.dns.servers||'—')}</span></div>`+tbl('Firewall filter',['Chain','Action','Match','Comment'],fw);
-            } else if(SC.tab==='wireless'){
-                const ifs=r.wireless.interfaces.map(w=>`<tr><td class="py-1 pr-2 font-mono">${esc(w.name)}</td><td class="pr-2">${esc(w.ssid)}</td><td class="text-slate-400">${esc(w.band)}</td><td>${w.running?'<span class="text-emerald-300">up</span>':'<span class="text-rose-300">down</span>'}</td></tr>`).join('');
-                const regs=r.wireless.registrations.map(x=>`<tr><td class="py-1 pr-2 font-mono">${esc(x.mac)}</td><td class="pr-2 font-mono text-slate-400">${esc(x.interface)}</td><td>${esc(x.signal)}</td><td class="text-slate-400">${esc(x.tx_rate)}/${esc(x.rx_rate)}</td><td class="text-slate-500">${esc(x.uptime)}</td></tr>`).join('');
-                b.innerHTML=`<div class="overflow-x-auto"><table class="w-full text-xs mb-3"><thead><tr class="text-left text-[10px] uppercase text-slate-400 border-b border-white/10"><th class="py-1 pr-2">Iface</th><th class="pr-2">SSID</th><th class="pr-2">Band</th><th></th></tr></thead><tbody>${ifs}</tbody></table><b class="text-slate-200 text-sm">Clients (${r.wireless.registrations.length})</b><table class="w-full text-xs mt-1"><thead><tr class="text-left text-[10px] uppercase text-slate-400 border-b border-white/10"><th class="py-1 pr-2">MAC</th><th class="pr-2">Iface</th><th class="pr-2">Signal</th><th class="pr-2">Tx/Rx</th><th>Uptime</th></tr></thead><tbody>${regs||'<tr><td colspan=5 class="text-slate-500 py-1">none</td></tr>'}</tbody></table></div>`;
-            } else if(SC.tab==='logs'){
-                b.innerHTML=`<pre class="text-[11px] font-mono text-emerald-300/80 whitespace-pre-wrap max-h-[60vh] overflow-auto bg-[#050b16] border border-white/10 rounded-lg p-3">${r.logs.map(l=>esc(l.time)+'  '+esc(l.topics)+'  '+esc(l.message)).join('\n')||'no log entries'}</pre>`;
-            } else if(SC.tab==='terminal'){
-                b.innerHTML=scBanner()+`<pre id="sc-term" class="text-[11px] font-mono text-emerald-300/90 whitespace-pre-wrap h-[46vh] overflow-auto bg-[#050b16] border border-white/10 rounded-lg p-3">${SC.hist.map(esc).join('')}</pre><div class="flex gap-2 mt-2"><span class="text-violet-300 font-mono self-center">&gt;</span><input id="sc-cmd" ${scOff()?'disabled':''} class="flex-grow p-2 bg-[#050b16] border rounded-lg text-sm font-mono" placeholder="type a RouterOS command…" onkeydown="if(event.key==='Enter')scRun()"><button onclick="scRun()" ${dis} class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-bold">Run</button></div><div class="flex gap-1 mt-2 flex-wrap">${['/system resource print','/ip dhcp-server lease print','/interface print stats','/ip firewall filter print','/log print'].map(q=>`<button onclick="document.getElementById('sc-cmd').value='${q}';document.getElementById('sc-cmd').focus()" ${dis} class="px-2 py-1 bg-white/10 hover:bg-white/20 rounded text-[10px] font-bold">${esc(q.replace(/^\//,'').split(' ').slice(0,2).join(' '))}</button>`).join('')}</div><p class="text-[10px] text-slate-500 mt-1">Runs as <b>admin</b> by MAC (MAC-Telnet), logged. Dangerous commands ask first.</p>`;
-                setTimeout(()=>{const c=document.getElementById('sc-cmd'); if(c)c.focus();},50);
-            }
-            b.querySelectorAll('[data-act]').forEach(btn=>btn.onclick=()=>scDo(btn));
-        }
-        function scFilter(){ const q=(document.getElementById('sc-dsearch').value||'').toLowerCase(); document.querySelectorAll('#sc-dtable tbody tr').forEach(tr=>{ tr.style.display=tr.dataset.f.includes(q)?'':'none'; }); }
-        function scDo(btn){ const a=btn.dataset.act;
-            if(a==='reboot'){ if(confirm('Reboot this router now? Offline ~30-60s.')) scAct({action:'reboot'},'Rebooting'); }
-            else if(a==='rename'){ const n=prompt('New router identity:', SC.report.system.identity||''); if(n) scAct({action:'set-identity',name:n},'Renamed'); }
-            else if(a==='poe-cycle'){ if(confirm('Power-cycle '+btn.dataset.port+'? The device on that port reboots.')) scAct({action:'poe-cycle',port:btn.dataset.port,duration:5}); }
-            else if(a==='poe'){ scAct({action:'poe',id:btn.dataset.id,mode:btn.dataset.mode}); }
-            else if(a==='iface'){ scAct({action:'interface',id:btn.dataset.id,enable:btn.dataset.enable==='1'}); }
-            else if(a==='export'){ const box=document.getElementById('sc-export'); box.innerHTML='<div class="animate-pulse h-12 bg-white/5 rounded"></div>'; fetch('/api/devices/'+encodeURIComponent(SC.key)+'/mikrotik/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'export'})}).then(r=>r.json()).then(r=>{ box.innerHTML='<pre class="text-[10px] font-mono whitespace-pre-wrap max-h-[40vh] overflow-auto bg-[#050b16] border border-white/10 rounded-lg p-2">'+esc(r.config||'(empty)')+'</pre>'; }).catch(e=>{ box.innerHTML='<p class="text-xs text-rose-300">'+esc(e.message)+'</p>'; }); }
-        }
-        async function scRun(confirmDanger){ const input=document.getElementById('sc-cmd'); const cmd=input.value.trim(); if(!cmd) return; SC.hist.push('> '+cmd+'\n');
-            let r; try{ r=await (await fetch('/api/devices/'+encodeURIComponent(SC.key)+'/mikrotik/console',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd,confirm:!!confirmDanger})})).json(); }
-            catch(e){ SC.hist.push('error: '+e+'\n\n'); }
-            if(r&&r.needs_confirm){ SC.hist.pop(); if(confirm('⚠ '+r.warning+'\n\nRun anyway?')) scRun(true); return; }
-            if(r) SC.hist.push((r.ok?(r.output||'(no output)'):('error: '+(r.error||'failed')))+'\n\n');
-            if(SC.hist.length>200) SC.hist.splice(0,100);
-            const t=document.getElementById('sc-term'); if(t){ t.textContent=SC.hist.join(''); t.scrollTop=t.scrollHeight; } input.value=''; input.focus();
-        }
         async function connTest(){
             const dev = CURRENT_KEY ? DEV_BY_KEY[CURRENT_KEY] : null;
             const ip = dev ? dev.ip : MODAL_IP;
@@ -2533,8 +2334,6 @@
             // is gated on the mikrotik_manage flag, like airOS Change IP.
             const isMikrotik = dev && (/mikrotik|routerboard|routeros/i.test((dev.vendor||'')+' '+(dev.model||'')) || ((dev.ports||[]).includes(8291) && !['printer','camera','nvr','nas','voip'].includes(dev.category))) && !isHik;
             document.getElementById('mikrotik-status-btn').classList.toggle('hidden', !isMikrotik);
-            document.getElementById('mikrotik-manage-btn').classList.toggle('hidden', !isMikrotik);
-            document.getElementById('mikrotik-panel').classList.add('hidden');
 
             drawSpark([]); document.getElementById('up-24h').innerText='--'; document.getElementById('up-7d').innerText='--'; document.getElementById('up-30d').innerText='--';
             loadCreds(key);
