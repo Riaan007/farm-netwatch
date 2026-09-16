@@ -33,6 +33,8 @@ import radiomon
 import siteauth
 import switchmon
 import sysmon
+import topology
+import topology_routes
 import tunnels
 import wifidiag
 import kuma
@@ -49,6 +51,14 @@ app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024   # 8 MB photo cap
 siteauth.init_app(app)
 
 guard = siteauth.required            # a logged-in person or the hub key
+
+# Network page (diagram + map): app/topology.py behind app/topology_routes.py.
+app.register_blueprint(topology_routes.bp)
+topology_routes.providers.update(
+    routers=lambda: {k: {"ts": v["view"].get("read_ts"), "ports": v["view"].get("port_macs") or {}}
+                     for k, v in list(_ROUTER_CACHE.items()) if v["view"].get("ok")},
+    problems=lambda: scanner.problems() + _radio_problems() + _switch_problems(),
+)
 
 
 def _photo_path(key):
@@ -1989,6 +1999,7 @@ def api_config_export():
         "credentials": _read_json_file(creds.CRED_PATH),
         "secret_key": key_b64,
         "hubvpn_conf": wg,
+        "topology": topology.export_bundle(topology.store),
     })
 
 
@@ -2023,6 +2034,12 @@ def api_config_import():
             applied.append("device logins")
         except (OSError, ValueError):
             pass
+    if isinstance(b.get("topology"), dict):
+        try:
+            if topology.import_bundle(topology.store, b["topology"]):
+                applied.append("network diagram")
+        except (OSError, ValueError) as e:
+            print("topology import:", e, flush=True)
     if b.get("hubvpn_conf") and not hubvpn.has_config():
         ok, msg = hubvpn.save_config(b["hubvpn_conf"])
         if ok:

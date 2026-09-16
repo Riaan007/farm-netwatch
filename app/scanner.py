@@ -192,6 +192,10 @@ class Scanner:
         # The radio monitor already SSHes into every radio with a login; it hands
         # back the host name it reads so radios get a display name for free.
         radiomon.monitor.on_identity = self.set_device_name
+        # The network diagram follows a device that is re-keyed (IP -> MAC) or
+        # forgotten/pruned (topology_routes sets these; on_forget gets a list).
+        self.on_rekey = None
+        self.on_forget = None
         self._wake = threading.Event()
         self._hb_wake = threading.Event()
         self._hub_up = None        # last-known hub VPN link state (for alerts)
@@ -442,6 +446,7 @@ class Scanner:
                         if old_key in self.registry and key not in self.registry:
                             self.registry[key] = self.registry.pop(old_key)
                             reg_changed = True
+                        self._rekeyed(old_key, key)
                         if old_rec.get("first_seen"):
                             rec["first_seen"] = min(rec["first_seen"], old_rec["first_seen"])
                         if not rec["name"] and old_rec.get("name"):
@@ -739,6 +744,7 @@ class Scanner:
                 if old_key in self.registry and key not in self.registry:
                     self.registry[key] = self.registry.pop(old_key)
                     reg_changed = True
+                self._rekeyed(old_key, key)
                 if old_key in self.seen_keys:
                     was_seen = True
             found[key] = rec
@@ -795,6 +801,7 @@ class Scanner:
                 if old_key in self.registry and key not in self.registry:
                     self.registry[key] = self.registry.pop(old_key)
                     reg_changed = True
+                self._rekeyed(old_key, key)
                 if old_key in self.seen_keys:
                     was_seen = True
             found[key] = rec
@@ -1339,9 +1346,24 @@ class Scanner:
             except Exception as e:  # noqa: BLE001 — best-effort cleanup
                 print("kuma deprovision on prune error:", e, flush=True)
 
+    def _rekeyed(self, old_key, key):
+        if self.on_rekey:
+            try:
+                self.on_rekey(old_key, key)
+            except Exception as e:  # noqa: BLE001 - a scan must never fail on a listener
+                print("rekey listener error:", e, flush=True)
+
+    def _forgotten(self, keys):
+        if self.on_forget and keys:
+            try:
+                self.on_forget(list(keys))
+            except Exception as e:  # noqa: BLE001 - forgetting must never fail on a listener
+                print("forget listener error:", e, flush=True)
+
     def delete_device(self, key):
         """Forget a device entirely: registry, live state, miss counter,
         seen-set, its uptime history — and its auto-created Kuma monitor."""
+        self._forgotten([key])
         self._drop_kuma_monitor(key)
         removed = False
         if key in self.registry:
@@ -1392,6 +1414,7 @@ class Scanner:
         if victims:
             self.save_registry()
             self._save_state()
+            self._forgotten(victims)
             if monitors:        # like Forget: no orphaned (paused) monitors left in Kuma
                 threading.Thread(target=self._drop_kuma_monitors, args=(monitors,),
                                  daemon=True).start()

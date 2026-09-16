@@ -726,6 +726,10 @@ def summarize(report):
             return int(v or 0)
         except (TypeError, ValueError):
             return 0
+    port_macs = {}          # which MACs the bridge learned on which port (network diagram)
+    for h in report.get("hosts") or []:
+        if h.get("mac") and h.get("interface") and not h.get("local"):
+            port_macs.setdefault(h["interface"], []).append(h["mac"].lower())
     return {
         "identity": sysinfo.get("identity", ""), "model": sysinfo.get("model") or sysinfo.get("board", ""),
         "version": sysinfo.get("version", ""), "uptime": sysinfo.get("uptime", ""),
@@ -740,6 +744,7 @@ def summarize(report):
                 "ports": sum(1 for p in ports if p.get("poe_supported"))},
         "connected": len(report.get("connected") or []),
         "addresses": report.get("addresses") or [],
+        "port_macs": port_macs,
     }
 
 
