@@ -141,7 +141,9 @@
 .tv-svg .tv-ua .tv-g-name{fill:#fde68a}
 .tv-svg .tv-tog{cursor:pointer}
 .tv-svg .tv-tog rect{fill:rgba(148,163,184,.12);stroke:rgba(148,163,184,.3)}
-.tv-svg .tv-tog:hover rect{fill:rgba(34,211,238,.2)}
+.tv-svg .tv-tog:hover rect,.tv-svg .tv-tog:focus-visible rect{fill:rgba(34,211,238,.2)}
+.tv-svg .tv-tog:focus-visible rect{stroke:#22d3ee}
+.tv-svg .tv-tog{outline:none}
 .tv-svg .tv-tog path{stroke:#e2e8f0;stroke-width:1.8;fill:none;stroke-linecap:round}
 .tv-svg .tv-n{cursor:pointer;outline:none}
 .tv-svg .tv-n .plate{fill:transparent;stroke:transparent;stroke-width:1.5}
@@ -929,7 +931,7 @@
         <use href="#tvg-${esc(GICON[gr.kind] ? gr.kind : "site")}" x="${f(b.x + 12)}" y="${f(b.y + 11)}" width="22" height="22" style="color:#e2e8f0" pointer-events="none"/>
         <text class="tv-g-name" x="${f(b.x + 42)}" y="${f(b.y + 21)}" pointer-events="none">${esc(trunc(gr.name, maxName))}</text>
         <text class="tv-g-sub" x="${f(b.x + 42)}" y="${f(b.y + 37)}" pointer-events="none"><tspan fill="${stCol}" font-weight="700">${esc(stTxt)}</tspan>${bits.length && !b.collapsed ? esc(" · " + bits.join(" · ")) : ""}</text>
-        <g class="tv-tog" data-toggle="${esc(gr.id)}" transform="translate(${f(b.x + b.w - 24)},${f(b.y + 22)})" role="button" aria-label="${b.collapsed ? "Expand" : "Collapse"} ${esc(gr.name)}"><rect x="-13" y="-13" width="26" height="26" rx="8"/><path d="${chevron}"/></g>
+        <g class="tv-tog" data-toggle="${esc(gr.id)}" transform="translate(${f(b.x + b.w - 24)},${f(b.y + 22)})" role="button" tabindex="0" aria-expanded="${b.collapsed ? "false" : "true"}" aria-label="${b.collapsed ? "Expand" : "Collapse"} ${esc(gr.name)}"><rect x="-13" y="-13" width="26" height="26" rx="8"/><path d="${chevron}"/></g>
         ${gr.locked ? `<g transform="translate(${f(b.x + b.w - 50)},${f(b.y + 22)})" pointer-events="none"><rect x="-9" y="-9" width="18" height="18" rx="5" fill="rgba(148,163,184,.14)"/><svg x="-7" y="-7" width="14" height="14" viewBox="0 0 24 24" style="color:#fbbf24">${I.lock}</svg></g>` : ""}`;
       if (b.collapsed) {
         const lines = [];
@@ -1389,7 +1391,16 @@
     svg.addEventListener("keydown", (ev) => {
       if (!S.g) return;
       const nodeEl = ev.target.closest && ev.target.closest("[data-node]");
+      const togEl = ev.target.closest && ev.target.closest("[data-toggle]");
       if (ev.key === "Escape") { S.connect = null; S.sel = null; S.multi.clear(); render(); return; }
+      if ((ev.key === "Enter" || ev.key === " ") && togEl) {
+        ev.preventDefault();
+        const id = togEl.dataset.toggle;
+        toggleGroup(id);
+        const again = LG.querySelector(`[data-toggle="${window.CSS && window.CSS.escape ? window.CSS.escape(id) : id}"]`);
+        if (again) again.focus({ preventScroll: true });
+        return;
+      }
       if ((ev.key === "Enter" || ev.key === " ") && nodeEl) {
         ev.preventDefault();
         if (S.connect) pickConnect(nodeEl.dataset.node);
