@@ -1367,6 +1367,24 @@ class Scanner:
             except Exception as e:  # noqa: BLE001 - forgetting must never fail on a listener
                 print("forget listener error:", e, flush=True)
 
+    @staticmethod
+    def _drop_history(keys):
+        """Delete forgotten devices' uptime samples in the background. A farm
+        prune is ~a million rows: done in the request thread, the call stayed
+        open for minutes after the device list was already saved. Only rows
+        from before now go — a device that comes back keeps its new samples.
+        Rows left by a restart mid-way age out with scan.history_days."""
+        def run(keys, before):
+            t0 = time.monotonic()
+            try:
+                n = history.delete_keys(keys, before=before)
+                print(f"history: deleted {n} rows of {len(keys)} forgotten device(s) "
+                      f"in {time.monotonic() - t0:.1f}s", flush=True)
+            except Exception as e:  # noqa: BLE001 - history cleanup is best-effort
+                print("history cleanup error:", e, flush=True)
+        threading.Thread(target=run, args=(list(keys), int(time.time())),
+                         name="history-purge", daemon=True).start()
+
     def delete_device(self, key):
         """Forget a device entirely: registry, live state, miss counter,
         seen-set, its uptime history — and its auto-created Kuma monitor."""
@@ -1384,10 +1402,7 @@ class Scanner:
             self.miss.pop(key, None)
             self.seen_keys.discard(key)
         self._save_state()
-        try:
-            history.delete_key(key)
-        except Exception:  # noqa: BLE001 - history cleanup is best-effort
-            pass
+        self._drop_history([key])
         return removed
 
     def prune_devices(self, days=None, only_offline=True):
@@ -1396,10 +1411,10 @@ class Scanner:
         `days`. Monitored devices are never pruned — they leave only by Forget.
         Returns the list of removed keys.
 
-        Done as ONE atomic batch (single registry/state save + a single history
-        delete) — a per-device loop rewrote devices.json/state.json and committed
-        SQLite once per victim, which on a busy Pi could take minutes and make the
-        UI button look hung."""
+        Done as ONE atomic batch (single registry/state save) — a per-device
+        loop rewrote devices.json/state.json once per victim. Returns as soon
+        as those are saved; the Kuma monitors and the uptime history go in the
+        background."""
         cutoff = (time.time() - days * 86400) if days else None
         with self.lock:
             victims = []
@@ -1424,10 +1439,7 @@ class Scanner:
             if monitors:        # like Forget: no orphaned (paused) monitors left in Kuma
                 threading.Thread(target=self._drop_kuma_monitors, args=(monitors,),
                                  daemon=True).start()
-            try:
-                history.delete_keys(victims)
-            except Exception:  # noqa: BLE001 - history cleanup is best-effort
-                pass
+            self._drop_history(victims)
         return victims
 
     # ---- background loop ----------------------------------------------

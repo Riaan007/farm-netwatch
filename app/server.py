@@ -665,7 +665,9 @@ def api_credentials_bulk():
 @guard
 def api_devices_prune():
     """Forget stale devices. Body: {"days": N} removes offline devices not seen
-    in N days; {"days": null} (or omitted) removes ALL currently-offline ones."""
+    in N days; {"days": null} (or omitted) removes ALL currently-offline ones.
+    Answers once the device list is saved; their uptime history is deleted in
+    the background (see Scanner._drop_history)."""
     body = request.get_json(force=True, silent=True) or {}
     days = body.get("days")
     try:

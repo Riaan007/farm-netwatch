@@ -19,7 +19,9 @@ device drops offline.
   device type. Unknown devices show up as **Mystery Nodes** you can name once.
 - **Uptime history** — every scan is recorded in SQLite; the device panel shows
   24h / 7d / 30d uptime and a sparkline. Great for spotting a camera that keeps
-  dropping.
+  dropping. **Forget** and **prune** answer as soon as the device list is saved;
+  the devices' samples are then deleted in the background, in short batches so
+  scans keep writing (a big prune takes a while on a slow SD card).
 - **Ubiquiti switches (EdgeSwitch / UISP)** — every switch with a saved web login is
   read over its own API every 5 min (`switch.poll_min`): a front-panel view of every
   port with link speed, PoE watts, traffic, errors and **which Netwatch device is

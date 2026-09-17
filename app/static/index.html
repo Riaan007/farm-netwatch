@@ -2642,12 +2642,25 @@
             if(!confirm('Remove '+label+'? They drop from the registry and uptime history. Live devices reappear on the next scan.')) return;
             const r = document.getElementById('prune-result');
             r.textContent='Pruning…'; r.className='text-xs text-slate-500';
+            let res = null, j = {};
             try {
-                const res = await fetch('/api/devices/prune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:days})});
-                const j = await res.json();
+                res = await fetch('/api/devices/prune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:days})});
+                j = await res.json().catch(() => ({}));
+            } catch(e){ res = null; }
+            if(res && res.ok && j.ok){
                 r.textContent = 'Removed '+j.removed+' device(s).'; r.className='text-xs text-emerald-400';
                 await loadDevices();
-            } catch(e){ r.textContent='Failed.'; r.className='text-xs text-rose-400'; }
+                return;
+            }
+            r.className='text-xs text-rose-400';
+            if(res && (res.status === 401 || j.error)){        // the Pi answered: nothing was removed
+                r.textContent = 'Not removed: ' + (res.status === 401 ? 'log in with the Pi password first' : j.error);
+                return;
+            }
+            // No answer, or a proxy's error page, is not proof it failed — it may be done already.
+            r.textContent = 'No answer from the Pi' + (res ? ' (' + res.status + ')' : '') +
+                ' — check the device list before trying again.';
+            loadDevices();
         }
         function populateLinkOptions(dev){
             const sel = document.getElementById('edit-link');

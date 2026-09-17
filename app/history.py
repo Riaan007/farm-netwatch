@@ -7,6 +7,7 @@ import os
 import sqlite3
 import threading
 import time
+from array import array
 
 DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
 DB_PATH = os.path.join(DATA_DIR, "netwatch.db")
@@ -465,27 +466,69 @@ def latest_beat(key):
     return dict(r) if r else None
 
 
-def delete_key(key):
-    """Drop all uptime samples + heartbeats for a device that's being forgotten."""
-    c = _conn()
-    c.execute("DELETE FROM samples WHERE key = ?", (key,))
-    c.execute("DELETE FROM heartbeats WHERE key = ?", (key,))
-    c.commit()
+# Forgetting devices deletes their rows in short batches. A prune at a farm is
+# ~a million rows; as one transaction it held the write lock for the whole
+# delete, and the scan and heartbeat writers give up after 10 s (timeout=10).
+PURGE_ROWS = (200, 1000, 50000)   # rows per batch: least, first, most
+PURGE_TARGET_S = 0.5              # batch size follows how long a batch takes
+PURGE_PAUSE_S = 0.05              # minimum rest between batches
+_purge_lock = threading.Lock()
 
 
-def delete_keys(keys):
-    """Drop samples for many devices in a single commit (used by prune).
+def delete_keys(keys, before=None):
+    """Drop the uptime samples + heartbeats of devices being forgotten (Forget,
+    prune) — only rows up to `before` (epoch s, default now), so a device that
+    comes back while this runs keeps its new samples.
 
-    Deliberately leaves the `events` audit log intact so a forgotten device's
-    history is preserved.
+    Batches go in table (rowid) order: a scan writes every device's row side by
+    side, so going device by device rewrites each page once per device on it
+    (45x the disk writes on a farm-sized test). Each batch is committed on its
+    own and followed by a rest at least as long as it took, so the write lock
+    is never held for long and other writers always get a turn. Slow on a big
+    prune: callers run it off the request thread. Deliberately leaves the
+    `events` audit log intact so a forgotten device's history is preserved.
+    Returns the number of rows deleted.
     """
-    keys = list(keys)
+    keys = list(dict.fromkeys(keys))
     if not keys:
-        return
+        return 0
+    before = int(time.time() if before is None else before)
     c = _conn()
-    c.executemany("DELETE FROM samples WHERE key = ?", [(k,) for k in keys])
-    c.executemany("DELETE FROM heartbeats WHERE key = ?", [(k,) for k in keys])
-    c.commit()
+    most = min(PURGE_ROWS[2], c.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER) - 501)  # + keys + ts
+    least, size = (min(n, most) for n in PURGE_ROWS[:2])
+    total = 0
+    with _purge_lock:          # one purge at a time
+        for table in ("samples", "heartbeats"):
+            for i in range(0, len(keys), 500):
+                chunk = keys[i:i + 500]
+                match = f"key IN ({','.join('?' * len(chunk))}) AND ts <= ?"
+                ids = array("q")
+                cur = c.execute(f"SELECT rowid FROM {table} WHERE {match} ORDER BY rowid",
+                                (*chunk, before))
+                for rows in iter(lambda: cur.fetchmany(10000), []):
+                    ids.extend(r[0] for r in rows)
+                done = 0
+                while done < len(ids):
+                    part = ids[done:done + size]
+                    t0 = time.monotonic()
+                    try:
+                        # NOT INDEXED: look the rows up by rowid, never walk the key index
+                        total += c.execute(
+                            f"DELETE FROM {table} NOT INDEXED WHERE rowid IN "
+                            f"({','.join('?' * len(part))}) AND {match}",
+                            (*part, *chunk, before)).rowcount
+                        c.commit()
+                    except Exception:
+                        c.rollback()
+                        raise
+                    done += len(part)
+                    took = time.monotonic() - t0
+                    if took < PURGE_TARGET_S / 2:
+                        size = min(size * 2, most)
+                    elif took > PURGE_TARGET_S * 2:
+                        size = max(size // 2, least)
+                    time.sleep(max(PURGE_PAUSE_S, took))
+    return total
 
 
 # ---- event log -----------------------------------------------------------
