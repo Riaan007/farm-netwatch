@@ -61,9 +61,14 @@ device drops offline.
   Add `COMPOSE_FILE=docker-compose.yml:docker-compose.netcfg.yml` to `.env` so plain
   `docker compose` commands keep the override. Extra IPs + routed ranges work on the
   default image.
-- **Site internet badge + Kuma link** — the site dashboard header shows a live
-  **Internet** badge (gateway / upstream / DNS) and a **Kuma ↗** link to the site's
-  own Uptime Kuma.
+- **Site header at a glance** — the site page says which site it is (name +
+  location) and how it is doing, without ever cutting the answer off: a live dot
+  with the last scan (*Live · updated 41s ago*, *Scanning*, *Scans late*, or
+  *Can't reach the Pi* when the browser has lost it — then the figures below fade),
+  **Internet** (router / DNS / upstream), the **hub link** with its last handshake,
+  and this Pi's own address. The page tabs sit on a second row that stays pinned
+  while you scroll; everything above it scrolls away. A **Kuma ↗** link opens the
+  site's own Uptime Kuma.
 - **Offline alerts both ways (ntfy)** — the **hub** alerts (🔔 Alerts) when a farm
   **site drops off** the hub (and recovers) and when a **monitored device** goes
   offline or comes back (one message per site, only after the site has missed it
@@ -367,6 +372,11 @@ fleet:
   .10–.199 · `88.3` = 192.168.88.3 and .30–.39. Results come in address order.
   Devices not seen for 7+ days are "gone quiet" and hidden unless you ask for them,
   so old discoveries don't bury the real picture.
+  The summary cards above the list name what is wrong, not only how many: *Problems*
+  and *Wireless links* carry the worst item's own words, and **Pi health** gives a
+  verdict ("All good", or "Needs attention: the power supply is too weak +4 more")
+  before the readings — temperature, processor, memory, storage, uptime, services,
+  power and watchdog, each labelled, so a warning is a word and not only a colour.
 - **A site** — Overview, Devices, Problems (IP conflicts with *Clear & re-test*,
   wireless link findings), Pi health, History (timeline with repeats folded, or by
   IP), Switches (ports, PoE, traffic and faults of each Ubiquiti switch, with port and

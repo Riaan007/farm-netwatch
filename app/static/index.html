@@ -96,28 +96,56 @@
         /* ===== Site dashboard shell (2026-09 redesign) — plain CSS, no Tailwind
            dependency, so JS-built markup never loses a class at build time. ===== */
         [hidden] { display: none !important; }
-        .nw-top { position: sticky; top: 0; z-index: 50; background: rgba(6,10,19,.84);
+        /* Header = two rows. Row 1 (who, how it is, actions) scrolls away; the
+           page tabs stay pinned — the sticky top is minus row 1's height.
+           Nothing in row 1 is clipped: status pills wrap to a new line instead.
+           --nw-head / --nw-row1 / --nw-stick are measured by measureHead(). */
+        :root { --nw-head: 116px; --nw-row1: 70px; --nw-stick: 46px; }
+        .nw-top { position: sticky; top: calc(-1 * var(--nw-row1)); z-index: 50; background: rgba(6,10,19,.86);
             backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid rgba(148,163,184,.14); }
-        .nw-top-in { max-width: 88rem; margin: 0 auto; padding: .7rem 1.5rem; display: flex; align-items: center; gap: 1rem; flex-wrap: nowrap; }
-        .nw-brand { display: flex; align-items: center; gap: .7rem; min-width: 0; text-decoration: none; color: inherit; }
-        .nw-brand svg { width: 38px; height: 38px; flex: none; }
-        .nw-id { min-width: 0; flex: 1 1 0; }
-        .nw-idrow { display: flex; align-items: center; gap: .6rem; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
-        /* the site name keeps its width; status chips give way (clipped) instead */
-        .nw-idrow .nw-status { flex-wrap: nowrap; min-width: 0; flex: 1 1 auto; overflow: hidden; }
-        .nw-title { font-size: 1.25rem; line-height: 1.25; color: #f1f5f9; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 26rem; flex: 0 0 auto; }
-        .nw-subt { display: block; font-size: 11.5px; color: #64748b; margin-top: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .nw-live span.t { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
-        .nw-brand b { display: block; font-size: 1.2rem; line-height: 1.2; color: #f1f5f9; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32rem; }
-        .nw-brand small { display: block; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-top-in { max-width: 88rem; margin: 0 auto; padding: .8rem 1.5rem .7rem; display: flex; align-items: center; gap: .6rem 1rem; }
+        .nw-brand { display: flex; align-items: center; min-width: 0; text-decoration: none; color: inherit; flex: none; }
+        .nw-brand svg { width: 40px; height: 40px; flex: none; }
+        .nw-id { min-width: 0; flex: 1 1 auto; display: grid; gap: .4rem; }
+        .nw-idrow { display: flex; align-items: baseline; gap: .1rem .75rem; flex-wrap: wrap; min-width: 0; }
+        .nw-title { font-size: 1.3rem; line-height: 1.2; font-weight: 750; color: #f8fafc; letter-spacing: -.015em; overflow-wrap: anywhere; }
+        .nw-subt { display: inline-flex; align-items: center; gap: .3rem; font-size: 12.5px; line-height: 1.3; color: #94a3b8; min-width: 0; overflow-wrap: anywhere; }
+        .nw-subt svg { width: 13px; height: 13px; flex: none; color: #64748b; align-self: center; }
         .nw-status { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; min-width: 0; }
-        .nw-live { display: inline-flex; align-items: center; gap: .4rem; height: 22px; padding: 0 .6rem; border-radius: 999px; font-size: 11px; font-weight: 600; color: #94a3b8; background: rgba(148,163,184,.08); white-space: nowrap; }
-        .nw-live i { width: 7px; height: 7px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,.18); }
-        .nw-live.scan { color: #67e8f9; background: rgba(34,211,238,.12); }
-        .nw-live.scan i { background: #22d3ee; animation: pulse-soft 1.2s infinite; }
+        .nw-pill { display: inline-flex; align-items: center; gap: .35rem; height: 24px; padding: 0 .65rem; border-radius: 999px; font-size: 11.5px; font-weight: 650; white-space: nowrap; color: #cbd5e1; background: rgba(148,163,184,.08); border: 1px solid rgba(148,163,184,.18); }
+        .nw-pill svg { width: 13px; height: 13px; flex: none; }
+        .nw-pill .dim { color: #94a3b8; font-weight: 500; }
+        .nw-pill.ok { color: #6ee7b7; background: rgba(16,185,129,.1); border-color: rgba(52,211,153,.32); }
+        .nw-pill.info { color: #67e8f9; background: rgba(34,211,238,.09); border-color: rgba(34,211,238,.32); }
+        .nw-pill.warn { color: #fcd34d; background: rgba(245,158,11,.12); border-color: rgba(251,191,36,.4); }
+        .nw-pill.bad { color: #fda4af; background: rgba(244,63,94,.13); border-color: rgba(251,113,133,.45); }
+        .nw-pill.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 500; color: #94a3b8; }
+        .nw-live i, .nw-mini i { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #34d399; box-shadow: 0 0 0 3px rgba(52,211,153,.18); }
+        .nw-live { color: #e2e8f0; }
+        .nw-live.scan { color: #67e8f9; background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.32); }
+        .nw-live.scan i, .nw-mini.scan i { background: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.2); animation: pulse-soft 1.2s infinite; }
+        .nw-live.late i, .nw-mini.late i { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251,191,36,.2); }
+        .nw-live.lost i, .nw-mini.lost i { background: #fb7185; box-shadow: 0 0 0 3px rgba(251,113,133,.22); animation: pulse-soft 1.6s infinite; }
+        .nw-live.wait i { background: #64748b; box-shadow: none; }
+        .nw-status.stale .nw-pill:not(.nw-live) { opacity: .45; }
         .nw-actions { margin-left: auto; display: flex; align-items: center; gap: .45rem; flex: none; }
-        @media (max-width: 1400px) { #pi-ip { display: none !important; } .nw-live span.t { max-width: 15rem; } }
-        @media (max-width: 1180px) { .nw-top .nw-ib .lbl { display: none; } .nw-live span.t { max-width: 11rem; } }
+        .nw-navbar { border-top: 1px solid rgba(148,163,184,.08); }
+        .nw-navbar-in { max-width: 88rem; margin: 0 auto; padding: 0 1.5rem; display: flex; align-items: stretch; gap: 1rem; min-height: 46px; }
+        /* the site name rides along in the pinned row once row 1 has scrolled away */
+        .nw-mini { display: none; align-items: center; gap: .5rem; padding: 0 .1rem; max-width: 16rem; border: 0; background: none; color: #e2e8f0; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+        .nw-mini span { overflow: hidden; text-overflow: ellipsis; }
+        .nw-top.stuck .nw-mini { display: inline-flex; }
+        .nw-pages { display: flex; align-items: stretch; gap: .15rem; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+        .nw-pages::-webkit-scrollbar { display: none; }
+        .nw-pages a { position: relative; display: inline-flex; align-items: center; gap: .45rem; padding: 0 .8rem; font-size: 13px; font-weight: 650; color: #94a3b8; text-decoration: none; white-space: nowrap; flex: none; }
+        .nw-pages a svg { width: 16px; height: 16px; flex: none; }
+        .nw-pages a:hover { color: #e2e8f0; background: rgba(148,163,184,.06); }
+        .nw-pages a.on { color: #f0fdff; }
+        .nw-pages a.on svg { color: #22d3ee; }
+        .nw-pages a.on::after { content: ""; position: absolute; left: .55rem; right: .55rem; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: linear-gradient(90deg, #22d3ee, #34d399); }
+        .nw-pages a:focus-visible, .nw-mini:focus-visible { outline: 2px solid #22d3ee; outline-offset: -3px; border-radius: .4rem; }
+        @media (max-width: 1200px) { #pi-ip { display: none !important; } }
+        @media (max-width: 1000px) { .nw-top .nw-ib .lbl { display: none; } }
         .nw-scan { display: flex; align-items: stretch; border: 1px solid rgba(103,232,249,.4); border-radius: .7rem; overflow: visible; position: relative; background: rgba(8,145,178,.12); }
         .nw-scan select { height: 34px; background: transparent; border: 0; color: #cffafe; font-size: 12px; padding: 0 .5rem 0 .65rem; max-width: 13rem; border-right: 1px solid rgba(103,232,249,.25); }
         .nw-scan select option { background: #0b1322; }
@@ -139,19 +167,40 @@
         @keyframes nwslide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
         .nw-main { max-width: 88rem; margin: 0 auto; padding: 1.25rem 1.5rem 4rem; width: 100%; flex-grow: 1; }
         .nw-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
-        .nw-kpi { text-align: left; padding: .8rem .95rem; border-radius: .9rem; border: 1px solid rgba(148,163,184,.15); background: linear-gradient(180deg, rgba(148,163,184,.08), rgba(148,163,184,.025)); color: #e2e8f0; transition: border-color .15s, background .15s; min-width: 0; }
+        .nw-kpi { display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; text-align: left; padding: .8rem .95rem; border-radius: .9rem; border: 1px solid rgba(148,163,184,.15); background: linear-gradient(180deg, rgba(148,163,184,.08), rgba(148,163,184,.025)); color: #e2e8f0; transition: border-color .15s, background .15s; min-width: 0; }
         button.nw-kpi:hover, a.nw-kpi:hover { border-color: rgba(34,211,238,.45); }
-        .nw-kpi .k { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+        /* label and note wrap to a second line instead of losing their end */
+        .nw-kpi .k { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #94a3b8; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
         .nw-kpi .v { display: block; font-size: 1.65rem; font-weight: 750; line-height: 1.2; margin-top: .1rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
         .nw-kpi .v small { font-size: .85rem; color: #64748b; font-weight: 600; }
-        .nw-kpi .s { display: block; font-size: 11.5px; color: #64748b; margin-top: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-kpi .s { font-size: 11.5px; line-height: 1.4; color: #7c8aa0; margin-top: .15rem; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+        .nw-kpi .s b { color: #cbd5e1; font-weight: 600; }
+        /* the summary row: one line of cards when there is room; renderKpis() lets
+           the last card fill a short final row so no row ends in a gap */
+        #kpis { grid-template-columns: repeat(var(--n, 7), minmax(0, 1fr)); }
+        @media (max-width: 1180px) { #kpis { grid-template-columns: repeat(var(--n-md, 4), minmax(0, 1fr)); } }
         .nw-kpi.good .v { color: #34d399; } .nw-kpi.warn .v { color: #fbbf24; } .nw-kpi.bad .v { color: #fb7185; }
         .nw-kpi.bad { border-color: rgba(251,113,133,.35); } .nw-kpi.warn { border-color: rgba(251,191,36,.3); }
         .nw-kpi.active { border-color: #22d3ee; background: rgba(34,211,238,.1); box-shadow: 0 0 0 1px rgba(34,211,238,.35) inset; }
         .nw-kpi.accent { background: linear-gradient(135deg, rgba(14,165,233,.16), rgba(34,211,238,.04)); border-color: rgba(34,211,238,.3); }
         .nw-kpi .bar { display: block; height: 4px; border-radius: 99px; background: rgba(148,163,184,.15); margin-top: .45rem; overflow: hidden; }
         .nw-kpi .bar i { display: block; height: 100%; background: linear-gradient(90deg, #34d399, #22d3ee); border-radius: inherit; }
-        .nw-health { margin-bottom: 1rem; }
+        /* Pi health: a verdict first, then labelled readings (colour is never the only signal) */
+        .nw-health { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem 1.3rem; margin-bottom: 1rem; padding: .6rem .95rem; border: 1px solid rgba(148,163,184,.15); border-radius: .9rem; background: linear-gradient(180deg, rgba(148,163,184,.07), rgba(148,163,184,.02)); font-size: 12.5px; color: #cbd5e1; }
+        .nw-health.warn { border-color: rgba(251,191,36,.35); } .nw-health.bad { border-color: rgba(251,113,133,.45); }
+        .nw-vhead { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .35rem .5rem; min-width: 0; padding-right: 1.3rem; border-right: 1px solid rgba(148,163,184,.14); font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #94a3b8; }
+        .nw-vhead svg { width: 16px; height: 16px; color: #67e8f9; flex: none; }
+        .nw-vbadge { display: inline-flex; align-items: center; gap: .3rem; min-height: 22px; padding: .1rem .55rem; line-height: 1.3; overflow-wrap: anywhere; border-radius: 999px; font-size: 11.5px; font-weight: 650; letter-spacing: 0; text-transform: none; }
+        .nw-vbadge.good { color: #6ee7b7; background: rgba(16,185,129,.12); }
+        .nw-vbadge.warn { color: #fcd34d; background: rgba(245,158,11,.14); }
+        .nw-vbadge.bad { color: #fda4af; background: rgba(244,63,94,.15); }
+        .nw-v { display: inline-flex; align-items: baseline; gap: .35rem; padding: .1rem 0; white-space: nowrap; }
+        .nw-v .l { font-size: 10.5px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: #64748b; }
+        .nw-v b { font-weight: 650; color: #e2e8f0; font-variant-numeric: tabular-nums; }
+        .nw-v b.good { color: #34d399; } .nw-v b.warn { color: #fbbf24; } .nw-v b.bad { color: #fb7185; }
+        .nw-v .d { color: #7c8aa0; font-variant-numeric: tabular-nums; }
+        .nw-v .d.warn { color: #fbbf24; } .nw-v .d.bad { color: #fb7185; }
+        #kpis.stale, #pi-health.stale { opacity: .5; filter: saturate(.3); transition: opacity .3s; }
         .nw-panel { border: 1px solid rgba(148,163,184,.15); border-radius: 1rem; background: linear-gradient(180deg, rgba(148,163,184,.07), rgba(148,163,184,.02)); }
         .nw-dhead { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; padding: .9rem 1.1rem .6rem; }
         .nw-dhead h2 { margin: 0; font-size: 1rem; font-weight: 700; color: #f1f5f9; }
@@ -287,7 +336,7 @@
         .nw-mapwrap { position: relative; overflow: hidden; padding: 0; }
         /* isolation: Leaflet's panes use z-index 400-1000; without a stacking context
            they paint over the device window and the header */
-        #nw-map { height: calc(100vh - 235px); min-height: 460px; border-radius: 1rem; background: #0b1322; position: relative; z-index: 0; isolation: isolate; }
+        #nw-map { height: calc(100vh - var(--nw-head) - 168px); min-height: 460px; border-radius: 1rem; background: #0b1322; position: relative; z-index: 0; isolation: isolate; }
         .nw-mapbanner { position: absolute; z-index: 800; left: 50%; top: 12px; transform: translateX(-50%); display: flex; gap: .6rem; align-items: center; padding: .5rem .6rem .5rem .9rem; border-radius: 999px; background: rgba(8,145,178,.95); color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 10px 30px rgba(0,0,0,.5); white-space: nowrap; }
         .nw-mapbanner button { background: rgba(255,255,255,.2); border-radius: 999px; padding: .15rem .6rem; font-size: 12px; }
         .nw-placing #nw-map, .nw-placing #nw-map .leaflet-interactive { cursor: crosshair !important; }
@@ -312,7 +361,7 @@
         .nw-sitepin::after { content: ""; position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); border: 7px solid transparent; border-top-color: #e2e8f0; border-bottom: 0; }
         .nw-sitepin b { font-weight: 700; }
         .nw-sitepin:hover { border-color: #22d3ee; } .nw-sitepin:hover::after { border-top-color: #22d3ee; }
-        .nw-mlist { max-height: calc(100vh - 330px); min-height: 200px; overflow-y: auto; }
+        .nw-mlist { max-height: calc(100vh - var(--nw-head) - 263px); min-height: 200px; overflow-y: auto; }
         .nw-mitem { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: .2rem .6rem; align-items: center; padding: .55rem 1rem; border-top: 1px solid rgba(148,163,184,.08); cursor: pointer; }
         .nw-mitem:hover { background: rgba(34,211,238,.05); }
         .nw-mitem .nm { font-weight: 650; font-size: 13px; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -320,12 +369,6 @@
         @media (max-width: 1000px) { .nw-mgrid { grid-template-columns: 1fr; } #nw-map { height: 62vh; min-height: 340px; } .nw-mlist { max-height: none; } }
 
         /* ===== pages: devices · history · settings ===== */
-        .nw-pages { display: inline-flex; border: 1px solid rgba(148,163,184,.2); border-radius: .7rem; overflow: hidden; flex: none; }
-        .nw-pages a { height: 34px; padding: 0 .8rem; display: inline-flex; align-items: center; gap: .4rem; font-size: 12.5px; font-weight: 650; color: #94a3b8; text-decoration: none; }
-        .nw-pages a + a { border-left: 1px solid rgba(148,163,184,.16); }
-        .nw-pages a svg { width: 15px; height: 15px; }
-        .nw-pages a:hover { color: #e2e8f0; background: rgba(148,163,184,.08); }
-        .nw-pages a.on { color: #cffafe; background: rgba(34,211,238,.16); }
         .nw-phead { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: .25rem 0 1rem; }
         .nw-phead h1 { margin: 0; font-size: 1.5rem; font-weight: 750; color: #f1f5f9; letter-spacing: -.02em; }
         .nw-phead p { margin: .2rem 0 0; color: #94a3b8; font-size: 13px; }
@@ -346,7 +389,7 @@
         .nw-inp[readonly] { color: #94a3b8; }
         /* history */
         .nw-hgrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1rem; align-items: start; }
-        .nw-day { position: sticky; top: 64px; z-index: 5; display: flex; align-items: center; gap: .6rem; margin: 1rem 0 .4rem; padding: .35rem 0; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; background: linear-gradient(180deg, #0a1120 70%, transparent); }
+        .nw-day { position: sticky; top: var(--nw-stick); z-index: 5; display: flex; align-items: center; gap: .6rem; margin: 1rem 0 .4rem; padding: .35rem 0; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; background: linear-gradient(180deg, #0a1120 70%, transparent); }
         .nw-day:first-child { margin-top: 0; }
         .nw-day span { color: #475569; letter-spacing: 0; text-transform: none; font-weight: 600; }
         .nw-ev { display: grid; grid-template-columns: 52px 128px minmax(0,1fr) auto; gap: .75rem; align-items: center; padding: .55rem .6rem; border-radius: .6rem; border: 1px solid transparent; }
@@ -486,13 +529,13 @@
         }
         /* settings */
         .nw-sgrid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 1.25rem; align-items: start; }
-        .nw-snav { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px; }
+        .nw-snav { position: sticky; top: calc(var(--nw-stick) + 14px); display: flex; flex-direction: column; gap: 2px; }
         .nw-snav a { display: flex; align-items: center; gap: .55rem; padding: .5rem .7rem; border-radius: .6rem; color: #cbd5e1; text-decoration: none; font-size: 13px; font-weight: 550; border: 1px solid transparent; }
         .nw-snav a:hover { background: rgba(148,163,184,.07); }
         .nw-snav a.on { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #cffafe; }
         .nw-snav a .st { margin-left: auto; width: 7px; height: 7px; border-radius: 50%; background: transparent; }
         .nw-snav a .st.ok { background: #34d399; } .nw-snav a .st.warn { background: #fbbf24; } .nw-snav a .st.bad { background: #fb7185; }
-        .nw-sec { border: 1px solid rgba(148,163,184,.15); border-radius: 1rem; background: linear-gradient(180deg, rgba(148,163,184,.07), rgba(148,163,184,.02)); scroll-margin-top: 80px; margin-bottom: 1rem; }
+        .nw-sec { border: 1px solid rgba(148,163,184,.15); border-radius: 1rem; background: linear-gradient(180deg, rgba(148,163,184,.07), rgba(148,163,184,.02)); scroll-margin-top: calc(var(--nw-stick) + 16px); margin-bottom: 1rem; }
         .nw-sec > header { display: flex; align-items: flex-start; gap: .75rem; padding: 1rem 1.2rem .8rem; border-bottom: 1px solid rgba(148,163,184,.1); }
         .nw-sec > header .ico { width: 34px; height: 34px; border-radius: .6rem; display: grid; place-items: center; font-size: 17px; background: rgba(34,211,238,.1); flex: none; }
         .nw-sec > header h2 { margin: 0; font-size: 15px; font-weight: 700; color: #f1f5f9; }
@@ -535,22 +578,31 @@
             .nw-ev { grid-template-columns: 44px minmax(0,1fr) auto; }
             .nw-ev .bd { grid-column: 2; justify-self: start; }
             .nw-ev .who { grid-column: 2 / -1; }
-            .nw-pages a .lbl { display: none; }
-            .nw-scan select { max-width: 8.5rem; }
             .nw-actions { gap: .35rem; }
-            .nw-day { top: 0; }
         }
         @media (max-width: 760px) {
-            .nw-top-in { padding: .6rem .9rem; gap: .55rem; flex-wrap: wrap; }
-            .nw-id { flex: 1 1 calc(100% - 60px); }
-            .nw-idrow { flex-wrap: wrap; overflow: visible; }
-            .nw-idrow .nw-status { flex-wrap: wrap; }
-            .nw-title { font-size: 1.05rem; max-width: 62vw; }
-            .nw-live span.t { max-width: 58vw; }
-            .nw-actions { margin-left: 0; width: 100%; flex-wrap: wrap; }
+            .nw-top-in { padding: .7rem .9rem .6rem; gap: .6rem; flex-wrap: wrap; align-items: flex-start; }
+            .nw-brand svg { width: 34px; height: 34px; }
+            .nw-id { flex: 1 1 calc(100% - 50px); gap: .45rem; }
+            .nw-title { font-size: 1.1rem; }
+            .nw-subt { font-size: 12px; }
+            .nw-actions { margin-left: 0; width: 100%; }
+            .nw-scan { flex: 1 1 auto; min-width: 0; }
+            .nw-scan select { flex: 1 1 auto; min-width: 0; max-width: none; }
             .nw-ib .lbl { display: none; }
+            /* tabs: icon over label, shared out across the width (they scroll if a phone is narrower still) */
+            .nw-navbar-in { padding: 0 .35rem; min-height: 54px; }
+            .nw-pages { flex: 1 1 auto; gap: 0; }
+            .nw-pages a { flex: 1 0 3.3rem; flex-direction: column; justify-content: center; gap: .2rem; padding: .3rem .1rem; font-size: 10.5px; }
+            .nw-pages a svg { width: 18px; height: 18px; }
+            .nw-pages a.on::after { left: 24%; right: 24%; }
+            .nw-top.stuck .nw-mini { display: none; }
+            .nw-health { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem .8rem; padding: .75rem .85rem; }
+            .nw-vhead, .nw-vhead + .nw-v { grid-column: 1 / -1; }
+            .nw-vhead { border-right: 0; padding-right: 0; }
+            .nw-v { padding: 0; white-space: normal; flex-wrap: wrap; row-gap: 0; }
             .nw-main { padding: 1rem .8rem 4rem; }
-            .nw-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+            .nw-kpis, #kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
             .nw-dhead { padding: .8rem .8rem .5rem; }
             .nw-tools { margin-left: 0; width: 100%; }
             .nw-search { flex: 1; } .nw-search input { width: 100%; max-width: none; }
@@ -568,6 +620,9 @@
             .nw-map { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); }
             .nw-scan .menu-anchor { position: static; }
         }
+        @media (max-width: 380px) {
+            .nw-pages a { flex-basis: 2.95rem; font-size: 10px; }
+        }
         ::-webkit-scrollbar { width: 10px; height: 10px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(148,163,184,.2); border-radius: 8px; border: 2px solid #070b14; }
@@ -579,9 +634,9 @@
     <div class="bg-noc"></div>
     <div class="bg-grid"></div>
 
-    <header class="nw-top">
-        <div class="nw-top-in">
-            <a class="nw-brand" href="/" title="Farm Network Asset Identifier">
+    <header class="nw-top" id="nw-top">
+        <div class="nw-top-in" id="nw-row1">
+            <a class="nw-brand" href="/" title="Netwatch — Farm Network Asset Identifier" aria-label="Netwatch home">
                 <svg viewBox="0 0 40 40" aria-hidden="true">
                     <defs><linearGradient id="lg-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#34d399"/></linearGradient></defs>
                     <path d="M20 3 34 11v18L20 37 6 29V11z" fill="none" stroke="url(#lg-brand)" stroke-width="1.6" opacity=".9"/>
@@ -592,25 +647,18 @@
                 </svg>
             </a>
             <div class="nw-id">
-              <div class="nw-idrow"><b id="site-title" class="nw-title">Netwatch</b>
-              <div class="nw-status">
-                <span id="system-status" class="nw-live"><i></i>Connecting…</span>
-                <span id="internet-badge" class="chip hidden"></span>
-                <span id="hub-badge" class="chip hidden"></span>
-                <span id="pi-ip" class="chip hidden bg-white/10 !border-white/10 text-slate-400 font-mono" title="This Pi's own LAN IP — the address of the server running Netwatch"></span>
-              </div></div>
-              <small id="site-sub" class="nw-subt">Farm Network Asset Identifier</small>
+              <div class="nw-idrow">
+                <b id="site-title" class="nw-title">Netwatch</b>
+                <span id="site-sub" class="nw-subt" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg><span class="t"></span></span>
+              </div>
+              <div class="nw-status" aria-label="Site status">
+                <span id="system-status" class="nw-pill nw-live wait"><i></i><span class="t">Connecting…</span></span>
+                <span id="internet-badge" class="nw-pill" hidden></span>
+                <span id="hub-badge" class="nw-pill" hidden></span>
+                <span id="pi-ip" class="nw-pill mono" hidden title="This Pi's own LAN IP — the address of the server running Netwatch"></span>
+              </div>
             </div>
             <div class="nw-actions">
-                <nav class="nw-pages" aria-label="Pages">
-                    <a href="#/" data-page="devices" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
-                    <a href="#/network" data-page="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h6v5H4zM14 4h6v5h-6zM9 15h6v5H9zM7 9v3h10V9M12 12v3"/></svg><span class="lbl">Network</span></a>
-                    <a href="#/map" data-page="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg><span class="lbl">Map</span></a>
-                    <a href="#/wifi" data-page="wifi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
-                    <a href="#/units" data-page="units"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18v10H3zM7 11v2M11 11v2M15 11v2M19 11v2"/></svg><span class="lbl">Managed</span></a>
-                    <a href="#/history" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></a>
-                    <a href="#/settings" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg><span class="lbl">Settings</span></a>
-                </nav>
                 <div class="nw-scan">
                     <select id="target-select" onchange="onTargetChange()" aria-label="Network to show and scan"></select>
                     <button class="go" onclick="quickScan()" title="Quick scan of the selected network now"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5"/></svg>Scan</button>
@@ -627,13 +675,27 @@
 
             </div>
         </div>
+        <div class="nw-navbar">
+            <div class="nw-navbar-in">
+                <button type="button" id="nw-mini" class="nw-mini" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="Back to the top"><i></i><span>Netwatch</span></button>
+                <nav class="nw-pages" aria-label="Pages">
+                    <a href="#/" data-page="devices" class="on" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
+                    <a href="#/network" data-page="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h6v5H4zM14 4h6v5h-6zM9 15h6v5H9zM7 9v3h10V9M12 12v3"/></svg><span class="lbl">Network</span></a>
+                    <a href="#/map" data-page="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg><span class="lbl">Map</span></a>
+                    <a href="#/wifi" data-page="wifi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
+                    <a href="#/units" data-page="units"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h18v10H3zM7 11v2M11 11v2M15 11v2M19 11v2"/></svg><span class="lbl">Managed</span></a>
+                    <a href="#/history" data-page="history"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2"/></svg><span class="lbl">History</span></a>
+                    <a href="#/settings" data-page="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.3l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2.2-1.3L14.4 3h-4l-.4 2.4a7 7 0 0 0-2.2 1.3l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.6l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2.2 1.3l.4 2.4h4l.4-2.4a7 7 0 0 0 2.2-1.3l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.3z"/></svg><span class="lbl">Settings</span></a>
+                </nav>
+            </div>
+        </div>
         <div id="scan-progress" class="nw-progress" hidden><i></i></div>
     </header>
 
     <main class="nw-main">
       <div id="page-devices">
         <section id="kpis" class="nw-kpis" aria-label="Site summary"></section>
-        <div id="pi-health" class="hidden panel nw-health px-4 py-2.5 flex flex-wrap gap-x-5 gap-y-1.5 items-center text-xs"></div>
+        <div id="pi-health" class="nw-health" hidden></div>
         <div id="conflict-monitor" class="hidden mb-4"></div>
 
         <section class="nw-panel" id="devices-panel">
@@ -664,7 +726,7 @@
         <div class="nw-phead">
             <div><div class="nw-eyebrow">Network</div><h1>How it is connected</h1><p>Towers and sites, what is on each and how it all links up — as a diagram or on the map. Both views show the same records.</p></div>
         </div>
-        <div id="topo-host" style="--tv-height: calc(100vh - 250px)"></div>
+        <div id="topo-host" style="--tv-height: calc(100vh - var(--nw-head) - 183px); --tv-sticky-top: calc(var(--nw-stick) + 12px)"></div>
       </div>
       <div id="page-map" hidden>
         <div class="nw-phead">
@@ -1899,30 +1961,60 @@
             const myst = recent.filter(d => !isIdentified(d)).length;
             const mystOn = recent.filter(d => d.online && !isIdentified(d)).length;
             const probs = PROBLEMS.length, highProbs = PROBLEMS.filter(p => p.severity === 'high').length;
-            const tile = (act, k, v, s, cls, extra, active) => `<button class="nw-kpi ${cls} ${active ? 'active' : ''}" onclick="${act}"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span>${extra || ''}</button>`;
+            const tile = (act, k, v, s, cls, extra, active, title) => `<button class="nw-kpi ${cls} ${active ? 'active' : ''}" onclick="${act}"${title ? ` title="${esc(title)}"` : ''}><span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span>${extra || ''}</button>`;
             let html;
             if(mon.length){
                 const pct = Math.round(100 * monUp / mon.length);
                 html = tile(`showList('monitored')`, 'Monitored online', `${monUp}<small>/${mon.length}</small>`, monDown.length ? `${monDown.length} offline — see the list` : 'every monitored device is up', monDown.length ? 'bad' : 'good', `<span class="bar"><i style="width:${pct}%"></i></span>`, LIST === 'monitored' && FILTER === 'all');
-                html += tile(`showList('monitored','offline')`, 'Monitored offline', monDown.length, monDown.length ? `${esc(devTitle(monDown[0]))} · ${esc(downFor(monDown[0]))}` : 'nothing down', monDown.length ? 'bad' : 'good', '', LIST === 'monitored' && FILTER === 'offline');
+                html += tile(`showList('monitored','offline')`, 'Monitored offline', monDown.length, monDown.length ? `<b>${esc(devTitle(monDown[0]))}</b> · ${esc(downFor(monDown[0]))}${monDown.length > 1 ? ` · +${monDown.length - 1} more` : ''}` : 'nothing is down', monDown.length ? 'bad' : 'good', '', LIST === 'monitored' && FILTER === 'offline',
+                    monDown.map(d => devTitle(d) + ' — ' + downFor(d)).join('\n'));
             } else {
                 html = tile(`openMonitorPicker()`, 'Monitored', '0', 'choose the devices to watch →', 'accent', '', false);
             }
-            html += tile(`showList('other')`, 'Other devices', `${otherUp}<small>/${otherRecent.length}</small>`, `online this week${otherQuiet ? ` · ${otherQuiet} gone quiet` : ''}`, '', '', LIST === 'other' && FILTER === 'all');
-            html += tile(`showList('all','unidentified')`, 'Mystery', myst, myst ? `not identified · ${mystOn} online` : 'everything identified', myst ? 'warn' : '', '', LIST === 'all' && FILTER === 'unidentified');
-            html += `<button class="nw-kpi ${highProbs ? 'bad' : probs ? 'warn' : 'good'}" onclick="openProblems()"><span class="k">Problems</span><span class="v">${probs}</span><span class="s">${probs ? (highProbs ? `${highProbs} need fixing` : 'minor — worth a look') : 'no network problems'}</span></button>`;
-            if(WIFI && WIFI.radios) html += `<a class="nw-kpi ${WIFI.crit ? 'bad' : WIFI.warn ? 'warn' : ''}" href="#/wifi" style="text-decoration:none"><span class="k">Wireless links</span><span class="v">${WIFI.links}</span><span class="s">${WIFI.crit ? WIFI.crit+' critical' : WIFI.warn ? WIFI.warn+' warning' : WIFI.unread ? WIFI.unread+' radios unread' : 'all healthy'}</span></a>`;
+            const otherOff = otherRecent.length - otherUp;
+            html += tile(`showList('other')`, 'Other devices', `${otherUp}<small>/${otherRecent.length}</small>`,
+                (otherOff ? `online now · ${otherOff} offline` : 'all online now') + (otherQuiet ? ` · ${otherQuiet} gone quiet` : ''), '', '', LIST === 'other' && FILTER === 'all',
+                `Devices nobody monitors, seen in the last 7 days: ${otherUp} online, ${otherOff} offline` + (otherQuiet ? `. ${otherQuiet} more have not been seen for 7+ days.` : ''));
+            html += tile(`showList('all','unidentified')`, 'Mystery', myst, myst ? `not identified yet · ${mystOn} online now` : 'everything is identified', myst ? 'warn' : '', '', LIST === 'all' && FILTER === 'unidentified');
+            // name the most serious problem instead of only counting them
+            const SEV = {high: 3, medium: 2, low: 1};
+            const byWeight = PROBLEMS.slice().sort((x, y) => (SEV[y.severity] || 0) - (SEV[x.severity] || 0));
+            const probText = (x) => String(x.detail || x.type || 'see the list');
+            html += tile(`openProblems()`, 'Problems', `${probs}${probs ? `<small> · ${highProbs ? highProbs + ' urgent' : probs > 1 ? 'all minor' : 'minor'}</small>` : ''}`,
+                probs ? esc(probText(byWeight[0])) : 'no network problems',
+                highProbs ? 'bad' : probs ? 'warn' : 'good', '', false, byWeight.map(x => '• ' + probText(x)).join('\n'));
+            if(WIFI && WIFI.radios){
+                const wBad = WIFI.crit ? `${WIFI.crit} critical` : WIFI.warn ? `${WIFI.warn} warning${WIFI.warn > 1 ? 's' : ''}` : '';
+                const wSub = wBad ? (WIFI.top || 'see the Wi-Fi page') : WIFI.unread ? `${WIFI.unread} radio${WIFI.unread > 1 ? 's' : ''} could not be read` : `all healthy · ${WIFI.radios} radios read`;
+                html += `<a class="nw-kpi ${WIFI.crit ? 'bad' : WIFI.warn ? 'warn' : 'good'}" href="#/wifi" style="text-decoration:none"${WIFI.all.length ? ` title="${esc(WIFI.all.map(x => '• ' + x).join('\n'))}"` : ''}><span class="k">Wireless links</span>`
+                    + `<span class="v">${WIFI.links}${wBad ? `<small> · ${esc(wBad)}</small>` : ''}</span><span class="s">${esc(wSub)}</span></a>`;
+            }
             const st = STATUS || {};
             let scanV = '—', scanS = 'no scan yet';
             if(st.is_scanning){ scanV = '<span class="scanning" style="font-size:1.1rem">Scanning…</span>'; scanS = st.progress || 'looking for devices'; }
             else if(st.last_scan_ts){
-                scanV = `<span style="font-size:1.15rem">${new Date(st.last_scan_ts*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>`;
+                scanV = `<span style="font-size:1.15rem">${clockText(st.last_scan_ts)}</span>`;
                 const next = st.scan_interval_min ? st.last_scan_ts + st.scan_interval_min*60 - nowS() : null;
-                scanS = agoText(st.last_scan_ts) + (next != null ? (next > 30 ? ` · next in ${Math.ceil(next/60)} min` : ' · next any moment') : '');
+                scanS = agoText(st.last_scan_ts) + (next == null ? ' · automatic scans are off'
+                    : next > 30 ? ` · next in ${Math.ceil(next/60)} min` : next > -120 ? ' · next any moment' : ' · next scan is overdue');
             }
-            html += `<div class="nw-kpi accent"><span class="k">Last scan</span><span class="v">${scanV}</span><span class="s">${esc(scanS)}</span></div>`;
+            html += `<div class="nw-kpi accent"${st.scan_interval_min ? ` title="A scan runs every ${st.scan_interval_min} min"` : ''}><span class="k">Last scan</span><span class="v">${scanV}</span><span class="s">${esc(scanS)}</span></div>`;
             box.innerHTML = html;
+            fitKpiRows(box);
         }
+        // one row of cards when there is room; otherwise the last card fills the short final row
+        function fitKpiRows(box){
+            const cards = box.children, n = cards.length;
+            if(!n) return;
+            box.style.setProperty('--n', n);
+            box.style.setProperty('--n-md', n > 6 ? 4 : n > 4 ? 3 : n);
+            cards[n - 1].style.gridColumn = '';
+            const tpl = getComputedStyle(box).gridTemplateColumns;
+            if(!/px/.test(tpl)) return;          // page hidden — measured again when shown
+            const cols = tpl.trim().split(/\s+/).length, rest = n % cols;
+            if(rest) cards[n - 1].style.gridColumn = 'span ' + (cols - rest + 1);
+        }
+        addEventListener('resize', () => fitKpiRows(document.getElementById('kpis')));
         function openProblems(){
             const box = document.getElementById('conflict-monitor');
             if(!PROBLEMS.length){ filterGrid('problem'); return; }
@@ -3102,9 +3194,11 @@
             ['devices','network','map','wifi','units','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
             if(PAGE !== 'units') unmountSwitch();
             if(PAGE !== 'map') mapCancelPlace(true);
-            document.querySelectorAll('.nw-pages a').forEach(a => a.classList.toggle('on', a.dataset.page === PAGE));
-            const siteName = (STATUS && STATUS.site && STATUS.site.name) || 'Netwatch';
-            document.title = ({devices:'', network:'Network · ', map:'Map · ', wifi:'Wi-Fi · ', units:'Managed units · ', history:'History · ', settings:'Settings · '}[PAGE]) + siteName + ' · Netwatch';
+            document.querySelectorAll('.nw-pages a').forEach(a => {
+                a.classList.toggle('on', a.dataset.page === PAGE);
+                if(a.dataset.page === PAGE) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+            });
+            document.title = pageTitle();
             if(PAGE === 'network') showNetworkPage(query);
             if(PAGE === 'map'){
                 const qp = new URLSearchParams(query || '');
@@ -4050,48 +4144,97 @@
             if(s < 86400) return Math.floor(s/3600) + 'h ago';
             return Math.floor(s/86400) + 'd ago';
         }
-        function setLive(scanning, text){
+        // ---- header row 1: live state, internet, hub link, Pi address ----
+        const HDR_ICON = {
+            globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9s1.3-6.4 3.8-9z"/></svg>',
+            link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2"/></svg>',
+            chip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9.5 2.5v3.5M14.5 2.5v3.5M9.5 18v3.5M14.5 18v3.5M2.5 9.5H6M2.5 14.5H6M18 9.5h3.5M18 14.5h3.5"/></svg>',
+        };
+        let STATUS_OK_AT = 0, STATUS_FAILS = 0, LIVE_STATE = 'wait';
+        const clockText = (ts) => new Date(ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        const siteName = () => ((STATUS && STATUS.site && STATUS.site.name) || '').trim() || 'Netwatch';
+        function pageTitle(){
+            return ({devices:'', network:'Network · ', map:'Map · ', wifi:'Wi-Fi · ', units:'Managed units · ', history:'History · ', settings:'Settings · '}[PAGE] || '') + siteName() + ' · Netwatch';
+        }
+        // state: live | scan | late | lost | wait (older callers pass true = scanning, false = live)
+        function setLive(state, text, detail, title){
+            if(state === true) state = 'scan'; else if(state === false) state = 'live';
+            LIVE_STATE = state;
             const ss = document.getElementById('system-status');
-            ss.className = 'nw-live' + (scanning ? ' scan' : '');
-            ss.innerHTML = '<i></i><span class="t">' + esc(text) + '</span>';
-            ss.title = text;
-            document.getElementById('scan-progress').hidden = !scanning;
+            ss.className = 'nw-pill nw-live ' + state;
+            ss.innerHTML = '<i></i><span class="t">' + esc(text) + (detail ? ' <span class="dim">· ' + esc(detail) + '</span>' : '') + '</span>';
+            ss.title = title || (detail ? text + ' · ' + detail : text);
+            document.getElementById('scan-progress').hidden = state !== 'scan';
+            const mini = document.getElementById('nw-mini');
+            mini.className = 'nw-mini ' + state;
+            mini.title = ss.title + ' — back to the top';
+            // numbers the page can no longer refresh are shown faded, not as if they were current
+            ['kpis', 'pi-health'].forEach(id => document.getElementById(id).classList.toggle('stale', state === 'lost'));
+            ss.parentElement.classList.toggle('stale', state === 'lost');
         }
         function applyStatus(data){
             STATUS = data;
-            const site = data.site || {};
-            if(site.name){
-                document.getElementById('site-title').textContent = site.name;
-                document.title = ({devices:'', map:'Map · ', history:'History · ', settings:'Settings · '}[PAGE]) + site.name + ' · Netwatch';
+            STATUS_OK_AT = nowS(); STATUS_FAILS = 0;
+            const name = siteName();
+            document.getElementById('site-title').textContent = name;
+            document.querySelector('#nw-mini span').textContent = name;
+            document.title = pageTitle();
+            const loc = String((data.site || {}).location || '').trim();
+            const sub = document.getElementById('site-sub');
+            sub.querySelector('.t').textContent = loc;
+            sub.hidden = !loc;
+            const every = data.scan_interval_min || 0;
+            if(data.is_scanning){
+                setLive('scan', 'Scanning', data.progress || 'looking for devices');
+            } else if(data.last_scan_ts){
+                const when = 'Last scan ' + clockText(data.last_scan_ts) + ' (' + agoText(data.last_scan_ts) + ')' + (every ? ' · a scan runs every ' + every + ' min' : '');
+                if(every && nowS() - data.last_scan_ts > Math.max(3 * every * 60, 20 * 60))
+                    setLive('late', 'Scans late', 'last ' + agoText(data.last_scan_ts), when + ' — the next scan is overdue');
+                else setLive('live', 'Live', 'updated ' + agoText(data.last_scan_ts), when);
+            } else {
+                setLive('live', 'Live', 'first scan running soon', 'No scan has finished yet');
             }
-            document.getElementById('site-sub').textContent = [site.location, 'Farm Network Asset Identifier'].filter(Boolean).join('  ·  ');
-            if(data.is_scanning) setLive(true, 'Scanning · ' + (data.progress || 'network'));
-            else setLive(false, data.last_scan_ts ? 'Live · updated ' + agoText(data.last_scan_ts) : 'Live');
             renderKpis();
         }
 
-        // ---- central hub VPN link chip ----
+        // ---- central hub VPN link ----
         async function loadHubBadge(){
             const b = document.getElementById('hub-badge');
             let h; try { h = await (await fetch('/api/hub/status')).json(); } catch(e){ return; }
-            if(!h || !h.configured){ b.classList.add('hidden'); return; }
-            if(h.connected){ b.className = 'chip bg-cyan-500/15 text-cyan-300'; b.textContent = '🔗 Hub linked'; b.title = 'VPN link to the central hub is up' + (h.address ? ' · ' + h.address : ''); }
-            else { b.className = 'chip bg-amber-500/20 text-amber-300'; b.textContent = '🔗 Hub link down'; b.title = 'No recent handshake with the central hub' + (h.last_handshake_s != null ? ' (last ' + Math.round(h.last_handshake_s/60) + ' min ago)' : ''); }
+            if(!h || !h.configured){ b.hidden = true; return; }
+            const hs = h.last_handshake_s;
+            const ago = hs == null ? '' : hs < 90 ? Math.round(hs) + ' s ago' : hs < 5400 ? Math.round(hs / 60) + ' min ago' : Math.round(hs / 3600) + ' h ago';
+            const addr = String(h.address || '').split('/')[0];
+            if(h.connected){
+                b.className = 'nw-pill info';
+                b.innerHTML = HDR_ICON.link + '<span>Hub linked</span>';
+                b.title = 'The VPN link to the central hub is up' + (addr ? ' · this site is ' + addr : '') + (ago ? ' · last handshake ' + ago : '');
+            } else {
+                b.className = 'nw-pill warn';
+                b.innerHTML = HDR_ICON.link + '<span>Hub link down' + (ago ? ' <span class="dim">· ' + esc(ago) + '</span>' : '') + '</span>';
+                b.title = 'No recent handshake with the central hub' + (ago ? ' (the last one was ' + ago + ')' : '') + ' — the hub cannot watch or back up this site until the link is back';
+            }
+            b.hidden = false;
         }
         setInterval(loadHubBadge, 60000);
 
         // Single poller: refreshes the device grid the moment a scan completes,
-        // and polls faster while a scan is running.
+        // and polls faster while a scan is running. Two failed polls in a row
+        // say so in the header instead of leaving "Live" up.
         async function pollStatus(){
             let data = null;
-            try { data = await (await fetch('/api/status')).json(); } catch(e){}
+            try {
+                const r = await fetch('/api/status');
+                if(r.ok) data = await r.json();
+            } catch(e){}
             if(data){
                 FEATURES = data.features || FEATURES;
-                if(data.server_ip){
+                const el = document.getElementById('pi-ip');
+                if(data.server_ip && el.dataset.ip !== data.server_ip){
                     PI_IP = data.server_ip;
-                    const el = document.getElementById('pi-ip');
-                    el.textContent = 'Pi ' + PI_IP;
-                    el.classList.remove('hidden');
+                    el.dataset.ip = PI_IP;
+                    el.innerHTML = HDR_ICON.chip + '<span>Pi ' + esc(PI_IP) + '</span>';
+                    el.hidden = false;
                 }
                 applyStatus(data);
                 if(data.last_scan_ts && data.last_scan_ts !== LAST_SCAN_TS){
@@ -4099,6 +4242,9 @@
                     loadDevices();               // new scan finished → repaint live
                 }
                 WAS_SCANNING = data.is_scanning;
+            } else if(++STATUS_FAILS >= 2){
+                setLive('lost', "Can't reach the Pi", STATUS_OK_AT ? 'last heard ' + agoText(STATUS_OK_AT) : 'still trying',
+                    "This page has not heard from the Pi" + (STATUS_OK_AT ? ' since ' + clockText(STATUS_OK_AT) : '') + ' — the figures below may be out of date. Still trying every few seconds.');
             }
             return data;
         }
@@ -4176,11 +4322,15 @@
             Object.entries(o.radios || {}).forEach(([key, r]) =>
                 (r.links || []).forEach(l => pairs.add(
                     [String(key).toUpperCase(), String(l.peer||'').toUpperCase()].sort().join('|'))));
-            const crit = (o.problems || []).filter(p => p.level === 'crit').length;
+            const probs = o.problems || [];
+            const crit = probs.filter(p => p.level === 'crit').length;
+            const worst = probs.find(p => p.level === 'crit') || probs[0];
             WIFI = { radios: radios.length, links: pairs.size, unread: radios.filter(r => !r.ok).length,
-                     crit, warn: (o.problems || []).length - crit };
+                     crit, warn: probs.length - crit, top: worst ? String(worst.what || '') : '',
+                     all: probs.map(p => String(p.what || '')).filter(Boolean) };
             renderKpis();
         }
+        setInterval(() => { if(!document.hidden) loadWifiTile(); }, 120000);
         function jumpToWifi(){ location.hash = '#/wifi'; }
 
         // ---- Wi-Fi page: links, diagnosis, fix list (data + rules: /api/radio/links → wifidiag.py) ----
@@ -4554,67 +4704,102 @@
         function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge(); loadMonitoring(); }
 
         // ---- Pi self-health strip ----
-        function healthClass(v, warn, crit){
-            if(v == null) return 'text-slate-500';
-            return v >= crit ? 'text-rose-400 font-bold' : v >= warn ? 'text-amber-400 font-bold' : 'text-emerald-400';
-        }
         function fmtUp(s){
             if(s == null) return '—';
             if(s < 3600) return Math.floor(s/60)+'m';
             if(s < 86400) return Math.floor(s/3600)+'h';
             return Math.floor(s/86400)+'d '+Math.floor((s%86400)/3600)+'h';
         }
-        function healthStripHtml(s){
-            const worstDisk = (s.disks||[]).reduce((a,d)=>d.used_pct>(a?a.used_pct:-1)?d:a, null);
-            const th = s.throttled || {};
-            const uv = th.undervoltage_now ? '<span class="text-rose-400 font-bold">⚡ UNDERVOLTAGE NOW</span>'
-                     : th.throttled_now ? '<span class="text-amber-400 font-bold">🔥 throttled</span>'
-                     : (th.undervoltage_ever ? '<span class="text-amber-400/80" title="Undervoltage occurred since boot — check the PSU">⚡ UV since boot</span>' : '');
-            const dtf = (s.disks||[]).map(d=>d.trend&&d.trend.days_to_full).filter(v=>v!=null);
-            const minDays = dtf.length ? Math.min(...dtf) : null;
-            const fullSeg = (minDays != null && minDays < 90)
-                ? ` <span class="${minDays<=5?'text-rose-400 font-bold':minDays<=14?'text-amber-400 font-bold':'text-slate-500'}" title="Predicted from the last 14 days of growth">full in ~${Math.round(minDays)}d</span>` : '';
-            const ck = s.clock || {};
-            const clockSeg = (ck.offset_s != null && Math.abs(ck.offset_s) >= 120)
-                ? `<span>⏱ <b class="${Math.abs(ck.offset_s)>=600?'text-rose-400':'text-amber-400'}" title="vs ${ck.server}">clock off ${Math.round(ck.offset_s)}s</b></span>` : '';
-            const sm = s.smart || {};
-            const smDevs = sm.devices || [];
-            const smartSeg = (sm.available && smDevs.length)
-                ? `<span title="${smDevs.map(d=>(d.dev||'')+' '+(d.model||'')+': '+(d.healthy?'OK':'FAILING')+(d.notes?' ('+d.notes+')':'')).join(' | ').replace(/"/g,'&quot;')}">SSD ${smDevs.every(d=>d.healthy)?'<b class="text-emerald-400">✓</b>':'<b class="text-rose-400">⚠ FAILING</b>'}</span>` : '';
+        // One verdict first, then labelled readings. Every warning is a word, not only a colour.
+        const HEALTH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M7 12.5h2.5l1.5-3.5 2.2 6 1.6-2.5H17"/></svg>';
+        function healthStrip(s){
+            const RANK = {good: 0, warn: 1, bad: 2};
+            let worst = 0;
+            const why = [];
+            const lvl = (v, warn, crit) => v == null ? '' : v >= crit ? 'bad' : v >= warn ? 'warn' : 'good';
+            // o: {l label, v value (plain text), cls, d detail, dcls, t tooltip, w what is wrong (for the verdict)}
+            const seg = (o) => {
+                const r = RANK[o.cls] || 0, dr = RANK[o.dcls] || 0;
+                worst = Math.max(worst, r, dr);
+                if(r && o.w) why.push([r * 10 + (o.p || 0), o.w]);
+                if(dr && o.dw) why.push([dr * 10, o.dw]);
+                return `<span class="nw-v"${o.t ? ` title="${esc(o.t)}"` : ''}>${o.l ? `<span class="l">${esc(o.l)}</span>` : ''}<b class="${o.cls || ''}">${esc(o.v)}</b>`
+                    + (o.d ? ` <span class="d ${o.dcls || ''}">${esc(o.d)}</span>` : '') + '</span>';
+            };
+            const parts = [];
+            const model = String(s.model || '').replace(/^Raspberry Pi/, 'Pi').replace(/\s+Rev\s+[\d.]+$/, '');
+            if(model || PI_IP) parts.push(seg({v: model || 'This Pi', d: PI_IP, t: (s.model || '') + (PI_IP ? ' · LAN address ' + PI_IP : '')}));
+            parts.push(seg({l: 'Temp', v: s.temp_c != null ? s.temp_c + ' °C' : '—', cls: lvl(s.temp_c, 75, 82), w: 'running hot', t: 'Chip temperature — throttling starts at 80 °C'}));
+            const load = (s.load || []).map(Number);
+            parts.push(seg({l: 'CPU', v: s.cpu_pct != null ? s.cpu_pct + '%' : '—', cls: lvl(s.cpu_pct, 80, 95), w: 'processor busy',
+                d: load.length ? 'load ' + load[0].toFixed(1) : '',
+                t: load.length ? 'Load average ' + load.map(x => x.toFixed(1)).join(' / ') + ' over 1, 5 and 15 minutes' + (s.cores ? ' on ' + s.cores + ' cores' : '') : ''}));
+            const mem = (s.mem || {}).used_pct;
+            parts.push(seg({l: 'Memory', v: mem != null ? mem + '%' : '—', cls: lvl(mem, 90, 97), w: 'memory nearly full'}));
+            const disk = (s.disks || []).reduce((a, d) => d.used_pct > (a ? a.used_pct : -1) ? d : a, null);
+            if(disk){
+                const dtf = (s.disks || []).map(d => d.trend && d.trend.days_to_full).filter(v => v != null);
+                const days = dtf.length ? Math.min(...dtf) : null;
+                const soon = days != null && days < 90;
+                parts.push(seg({l: 'Storage', v: disk.used_pct + '% used', cls: lvl(disk.used_pct, 85, 95), w: 'storage nearly full',
+                    d: disk.free_gb + ' GB free' + (soon ? ' · full in ~' + Math.round(days) + ' d' : ''),
+                    dcls: soon ? (days <= 5 ? 'bad' : days <= 14 ? 'warn' : '') : '', dw: 'storage filling up',
+                    t: (disk.mount ? disk.mount + ' · ' : '') + (disk.total_gb != null ? disk.total_gb + ' GB in total' : '') + (soon ? ' · the full-in estimate uses the last 14 days of growth' : '')}));
+            }
+            parts.push(seg({l: 'Up', v: fmtUp(s.uptime_s), t: 'Time since the Pi last started'}));
             const co = s.containers || {};
-            const contSeg = co.available
-                ? `<span title="${(co.containers||[]).map(c=>c.name+': '+c.state).join(' | ').replace(/"/g,'&quot;')}">🐳 <b class="tabular-nums text-slate-300">${(co.containers||[]).length}</b>${(co.flapping||[]).length?` <b class="text-amber-400">⚠ ${co.flapping.join(', ')}</b>`:' <b class="text-emerald-400">✓</b>'}</span>` : '';
-            const sto = s.storage || {};
-            const stoFs = sto.filesystems || [];
-            const stoBad = stoFs.some(f=>f.ro || (f.write_test && f.write_test.ok === false));
-            const extErr = (sto.ext4_errors||[]).reduce((a,e)=>a+(e.count||0),0);
-            const stoSlow = stoFs.some(f=>f.write_test && f.write_test.fsync_ms > 5000);
-            const card = (sto.cards||[])[0];
-            let stoSeg = '';
-            if (stoBad) stoSeg = '<span>💳 <b class="text-rose-400">STORAGE FAILING (read-only)</b></span>';
-            else if (extErr) stoSeg = `<span title="ext4 recorded filesystem errors — corruption has started">💳 <b class="text-rose-400">${extErr} fs errors</b></span>`;
-            else if ((sto.io_errors_new||0) > 0) stoSeg = `<span title="storage I/O errors in the kernel log">💳 <b class="text-amber-400">I/O errors</b></span>`;
-            else if (stoSlow) stoSeg = '<span title="write+fsync latency over 5s — the card controller is struggling">💳 <b class="text-amber-400">slow writes</b></span>';
-            else if (card) stoSeg = `<span title="${card.dev} ${card.name||''} manufactured ${card.date||'?'}${card.age_years!=null?' — '+card.age_years+' years old':''} · write test ${((stoFs[0]||{}).write_test||{}).fsync_ms||'?'} ms">💳 SD ${card.age_years > 5 ? '<b class="text-amber-400">'+Math.round(card.age_years)+'y old</b>' : '<b class="text-emerald-400">✓</b>'}</span>`;
+            if(co.available){
+                const list = co.containers || [], flap = co.flapping || [];
+                const running = list.filter(c => c.state === 'running').length;
+                const t = list.map(c => c.name + ': ' + c.state).join(' · ');
+                parts.push(seg(flap.length
+                    ? {l: 'Services', v: flap.join(', ') + ' restarting', cls: 'warn', w: 'a service keeps restarting', t}
+                    : {l: 'Services', v: running + '/' + list.length + ' running', cls: running === list.length ? 'good' : '', t}));
+            }
+            const sm = s.smart || {}, smDevs = sm.devices || [];
+            if(sm.available && smDevs.length){
+                const ok = smDevs.every(d => d.healthy);
+                parts.push(seg({l: 'Drive', v: ok ? 'healthy' : 'FAILING', cls: ok ? 'good' : 'bad', p: 3, w: 'the drive reports it is failing',
+                    t: smDevs.map(d => (d.dev || '') + ' ' + (d.model || '') + ': ' + (d.healthy ? 'OK' : 'FAILING') + (d.notes ? ' (' + d.notes + ')' : '')).join(' · ')}));
+            }
+            const sto = s.storage || {}, fs = sto.filesystems || [];
+            const card = (sto.cards || [])[0];
+            const extErr = (sto.ext4_errors || []).reduce((a, e) => a + (e.count || 0), 0);
+            const label = card ? 'SD card' : 'Disk';
+            if(fs.some(f => f.ro || (f.write_test && f.write_test.ok === false)))
+                parts.push(seg({l: label, v: 'failing — read-only', cls: 'bad', p: 3, w: 'storage has gone read-only'}));
+            else if(extErr) parts.push(seg({l: label, v: extErr + ' filesystem errors', cls: 'bad', p: 2, w: 'filesystem errors', t: 'ext4 recorded filesystem errors — corruption has started'}));
+            else if((sto.io_errors_new || 0) > 0) parts.push(seg({l: label, v: 'I/O errors', cls: 'warn', w: 'storage I/O errors', t: 'Storage I/O errors in the kernel log'}));
+            else if(fs.some(f => f.write_test && f.write_test.fsync_ms > 5000)) parts.push(seg({l: label, v: 'slow writes', cls: 'warn', w: 'storage is slow', t: 'Writes take over 5 s — the card or drive is struggling'}));
+            else if(card) parts.push(seg({l: label, v: card.age_years > 5 ? Math.round(card.age_years) + ' years old' : 'OK', cls: card.age_years > 5 ? 'warn' : 'good', w: 'old SD card',
+                t: (card.dev || '') + ' ' + (card.name || '') + ' · made ' + (card.date || '?') + ' · write test ' + (((fs[0] || {}).write_test || {}).fsync_ms || '?') + ' ms'}));
+            const ck = s.clock || {};
+            if(ck.offset_s != null && Math.abs(ck.offset_s) >= 120)
+                parts.push(seg({l: 'Clock', v: 'off by ' + Math.round(ck.offset_s) + ' s', cls: Math.abs(ck.offset_s) >= 600 ? 'bad' : 'warn', w: 'the clock is wrong', t: 'Compared with ' + (ck.server || 'a time server')}));
+            const th = s.throttled || {};
+            if(th.undervoltage_now) parts.push(seg({l: 'Power', v: 'undervoltage now', cls: 'bad', p: 3, w: 'the power supply is too weak', t: 'The Pi is not getting enough power — use the official supply'}));
+            else if(th.throttled_now) parts.push(seg({l: 'Power', v: 'throttled', cls: 'warn', w: 'slowed down by heat or power'}));
+            else if(th.undervoltage_ever) parts.push(seg({l: 'Power', v: 'dipped since start', cls: 'warn', w: 'the power dipped', t: 'Undervoltage happened since the Pi started — check the power supply'}));
+            else if(th.undervoltage_now === false) parts.push(seg({l: 'Power', v: 'OK', cls: 'good'}));
             const wd = s.watchdog || {};
-            const wdSeg = wd.active ? '<span class="text-emerald-400/80" title="Hardware watchdog armed — a hard-hung Pi reboots itself after ~15s">🐶 WD</span>'
-                        : (wd.enabled && wd.note) ? `<span class="text-slate-500" title="${(wd.note||'').replace(/"/g,'&quot;')}">🐶 host-owned</span>` : '';
-            return `<span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">🩺 Pi health</span>`
-                + `<span class="text-slate-500">${(s.model||'').replace('Raspberry Pi','Pi')}</span>`
-                + `<span>🌡 <b class="${healthClass(s.temp_c, 75, 82)} tabular-nums">${s.temp_c != null ? s.temp_c+'°C' : '—'}</b></span>`
-                + `<span>CPU <b class="${healthClass(s.cpu_pct, 80, 95)} tabular-nums">${s.cpu_pct != null ? s.cpu_pct+'%' : '—'}</b> <span class="text-slate-500 tabular-nums">(load ${(s.load||[]).map(x=>x.toFixed(1)).join(' ')})</span></span>`
-                + `<span>RAM <b class="${healthClass((s.mem||{}).used_pct, 90, 97)} tabular-nums">${(s.mem||{}).used_pct != null ? s.mem.used_pct+'%' : '—'}</b></span>`
-                + (worstDisk ? `<span>💾 <b class="${healthClass(worstDisk.used_pct, 85, 95)} tabular-nums">${worstDisk.used_pct}%</b> <span class="text-slate-500">(${worstDisk.free_gb} GB free)</span>${fullSeg}</span>` : '')
-                + `<span class="text-slate-500">up <span class="tabular-nums">${fmtUp(s.uptime_s)}</span></span>`
-                + (smartSeg ? smartSeg : '') + (stoSeg ? stoSeg : '') + (contSeg ? contSeg : '') + (clockSeg ? clockSeg : '')
-                + (uv ? `<span>${uv}</span>` : '') + (wdSeg ? wdSeg : '');
+            if(wd.active) parts.push(seg({l: 'Watchdog', v: 'on', cls: 'good', t: 'Hardware watchdog armed — a hung Pi restarts itself after about 15 s'}));
+            else if(wd.enabled && wd.note) parts.push(seg({l: 'Watchdog', v: 'on (system)', cls: 'good', t: wd.note}));
+            const level = ['good', 'warn', 'bad'][worst];
+            why.sort((x, y) => y[0] - x[0]);
+            const whyText = why.map(x => x[1]);
+            const verdict = worst === 2 ? 'Needs attention' : worst === 1 ? 'Worth a look' : 'All good';
+            const head = `<span class="nw-vhead">${HEALTH_ICON}Pi health <b class="nw-vbadge ${level}"${whyText.length ? ` title="${esc(whyText.join(' · '))}"` : ''}>${verdict}${whyText.length ? ': ' + esc(whyText[0]) + (whyText.length > 1 ? ' +' + (whyText.length - 1) + ' more' : '') : ''}</b></span>`;
+            return { html: head + parts.join(''), level };
         }
         async function loadSysinfo(){
             const el = document.getElementById('pi-health');
-            let s; try { s = await (await fetch('/api/sysinfo')).json(); } catch(e){ el.classList.add('hidden'); return; }
-            if(!s || !s.ts){ el.classList.add('hidden'); return; }
-            el.innerHTML = healthStripHtml(s);
-            el.classList.remove('hidden');
+            let s; try { s = await (await fetch('/api/sysinfo')).json(); } catch(e){ return; }
+            if(!s || !s.ts){ el.hidden = true; return; }
+            const h = healthStrip(s);
+            el.innerHTML = h.html;
+            el.classList.remove('good', 'warn', 'bad');
+            el.classList.add(h.level);
+            el.hidden = false;
         }
         setInterval(loadSysinfo, 30000);
 
@@ -4652,16 +4837,21 @@
         // ---- local internet monitor badge ----
         async function loadInternet(){
             const b = document.getElementById('internet-badge');
-            let s; try { s = await (await fetch('/api/internet')).json(); } catch(e){ b.classList.add('hidden'); return; }
-            if (!s || s.checked_ts == null) { b.classList.add('hidden'); return; }
+            let s; try { s = await (await fetch('/api/internet')).json(); } catch(e){ return; }
+            if (!s || s.checked_ts == null) { b.hidden = true; return; }
             let txt, cls;
-            if (s.ok)                              { txt='🌐 Internet OK';  cls='bg-emerald-500/20 text-emerald-300'; }
-            else if (s.has_gateway && !s.gateway)  { txt='🔴 Gateway down'; cls='bg-red-500/20 text-red-300'; }
-            else if (!s.dns && s.external)         { txt='🟠 DNS broken';   cls='bg-amber-500/20 text-amber-300'; }
-            else                                   { txt='🟠 No upstream';  cls='bg-amber-500/20 text-amber-300'; }
-            b.textContent = txt; b.className = 'chip ' + cls;
-            b.classList.remove('hidden');
+            if (s.ok)                              { txt = 'Internet OK';  cls = 'ok'; }
+            else if (s.has_gateway && !s.gateway)  { txt = 'Gateway down'; cls = 'bad'; }
+            else if (!s.dns && s.external)         { txt = 'DNS broken';   cls = 'warn'; }
+            else                                   { txt = 'No internet';  cls = 'warn'; }
+            const mark = (v) => v == null ? '?' : v ? 'OK' : 'failed';
+            b.className = 'nw-pill ' + cls;
+            b.innerHTML = HDR_ICON.globe + '<span>' + txt + '</span>';
+            b.title = 'Checked ' + agoText(s.checked_ts) + ' · router ' + (s.has_gateway ? mark(s.gateway) : 'not known')
+                + ' · name lookups (DNS) ' + mark(s.dns) + ' · internet ' + mark(s.external);
+            b.hidden = false;
         }
+        setInterval(() => { if(!document.hidden) loadInternet(); }, 60000);
         // preload ntfy settings + Kuma link (host the browser used, port from base_url)
         fetch('/api/config').then(r=>r.json()).then(c=>{
             if(c.alerts && !c.redacted){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands===true; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }
@@ -4670,6 +4860,21 @@
             const link = document.getElementById('kuma-link');
             if(ku){ link.href = location.protocol+'//'+location.hostname+':'+port; link.hidden = false; }
         }).catch(()=>{});
+        // ---- header geometry: the pinned tab row and everything that sits under it ----
+        (function(){
+            const top = document.getElementById('nw-top'), row1 = document.getElementById('nw-row1');
+            const measure = () => {
+                const h = top.offsetHeight, h1 = row1.offsetHeight, st = document.documentElement.style;
+                st.setProperty('--nw-head', h + 'px');
+                st.setProperty('--nw-row1', h1 + 'px');
+                st.setProperty('--nw-stick', (h - h1) + 'px');
+            };
+            measure();
+            if(window.ResizeObserver){ const ro = new ResizeObserver(measure); ro.observe(top); ro.observe(row1); }
+            // once row 1 has scrolled away, the pinned row shows the site name and live dot
+            if(window.IntersectionObserver)
+                new IntersectionObserver(([e]) => top.classList.toggle('stuck', !e.isIntersecting), {rootMargin: '-1px 0px 0px 0px'}).observe(row1);   // -1px: touching the top edge counts as gone
+        })();
         renderKpis(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge(); loadMonitoring();
         route();
         tick();

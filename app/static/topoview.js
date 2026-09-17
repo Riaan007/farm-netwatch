@@ -79,7 +79,7 @@
 .tv .tv-legend svg{flex:none}
 .tv .tv-empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:var(--tv-muted);padding:20px;pointer-events:none}
 .tv .tv-empty b{display:block;color:#e2e8f0;font-size:16px;margin-bottom:4px}
-.tv .tv-side{border:1px solid var(--tv-line);border-radius:14px;background:linear-gradient(180deg,rgba(148,163,184,.07),rgba(148,163,184,.02));max-height:var(--tv-h);min-height:460px;overflow:auto;position:sticky;top:70px}
+.tv .tv-side{border:1px solid var(--tv-line);border-radius:14px;background:linear-gradient(180deg,rgba(148,163,184,.07),rgba(148,163,184,.02));max-height:var(--tv-h);min-height:460px;overflow:auto;position:sticky;top:var(--tv-sticky-top,70px)}
 .tv .tv-side .hd{display:flex;align-items:flex-start;gap:10px;padding:14px 14px 10px;border-bottom:1px solid var(--tv-line);position:sticky;top:0;background:#0a1120;z-index:2}
 .tv .tv-side .hd h3{margin:0;font-size:16px;line-height:1.25;word-break:break-word}
 .tv .tv-side .hd p{margin:3px 0 0;color:var(--tv-muted);font-size:12.5px}
