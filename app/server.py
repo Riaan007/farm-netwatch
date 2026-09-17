@@ -1796,6 +1796,28 @@ def api_kuma_monitor_bulk():
                     **({} if n else {"message": "Nothing to add — matching devices are already monitored."})})
 
 
+@app.route("/api/kuma/unowned", methods=["GET", "POST"])
+@guard
+def api_kuma_unowned():
+    """Settings "Tidy Kuma". GET: Uptime Kuma monitors that no device and no
+    internet check owns, with Netwatch's own spare copies flagged `leftover`.
+    POST {ids: [monitor ids]}: delete those — each only if it still belongs to
+    nothing when checked again."""
+    if not monitoring.kuma_follows():
+        return jsonify({"ok": False, "error": "Set the Kuma URL, username and password first"}), 400
+    if request.method == "POST":
+        ids = (request.get_json(silent=True) or {}).get("ids")
+        if not (isinstance(ids, list) and ids and len(ids) <= 500
+                and all(isinstance(i, int) and not isinstance(i, bool) and i > 0 for i in ids)):
+            return jsonify({"ok": False, "error": "'ids' must be a list of monitor numbers"}), 400
+        res = monitoring.remove_unowned(scanner, ids)
+        return jsonify(res), (200 if res.get("ok") else 502)
+    mons = monitoring.unowned(scanner)
+    if mons is None:
+        return jsonify({"ok": False, "error": "could not read Uptime Kuma"}), 502
+    return jsonify({"ok": True, "monitors": mons})
+
+
 @app.route("/api/kuma/test", methods=["POST"])
 @guard
 def api_kuma_test():

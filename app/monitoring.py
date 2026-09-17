@@ -30,6 +30,13 @@ way (e.g. from an older backup) keeps its monitor running.
 
 Every switch is written to the device's history (event type "monitoring",
 detail {monitored, by}) so "who stopped watching the gate camera?" has an answer.
+
+Monitors Netwatch creates carry the description "netwatch:<device key>". Kuma
+answers an add only after re-sending its whole monitor list, so on a busy Pi a
+reply can be lost although the monitor exists; the marker lets the next pass
+adopt that monitor instead of making a second one. unowned()/remove_unowned()
+back the Settings "Tidy Kuma" list: monitors no device or internet check
+accounts for, with Netwatch's own leftovers flagged.
 """
 import threading
 import time
@@ -181,14 +188,42 @@ def _drain(scanner):
             print("[monitoring] kuma follow error:", e, flush=True)
 
 
+def _owned_ids(scanner):
+    """Kuma monitor ids Netwatch accounts for: each device's monitor and the
+    internet checks (registry "__internet__")."""
+    ids = set()
+    for reg in list(scanner.registry.values()):
+        if isinstance(reg, dict) and reg.get("kuma_monitor_id"):
+            ids.add(reg["kuma_monitor_id"])
+    net = scanner.registry.get("__internet__") or {}
+    ids |= {v for v in (net.get("monitors") or {}).values() if v}
+    return ids
+
+
+def _marked_key(mon):
+    desc = mon.get("description") or ""
+    return desc[len(kuma.MARKER):] if desc.startswith(kuma.MARKER) else None
+
+
+def _adopt(reg, mon):
+    reg["kuma_monitor_id"] = mon["id"]
+    reg["kuma_ip"] = mon.get("hostname") or reg.get("kuma_ip", "")
+    if mon.get("active"):
+        reg.pop("kuma_paused", None)
+    else:
+        reg["kuma_paused"] = True
+
+
 def _sync(scanner):
     """Put the registry in line with what Kuma really has: a monitor deleted in
-    Kuma's own UI is forgotten, one paused or resumed there is recorded as such.
+    Kuma's own UI is forgotten, one paused or resumed there is recorded as such,
+    and a monitor Netwatch made whose reply was lost is adopted.
     Returns the keys this changed — their follow-up runs straight away."""
     login = kuma_login()
-    states = kuma.monitor_states(*login) if login else None
-    if states is None:
+    mons = kuma.monitor_list(*login) if login else None
+    if mons is None:
         return set()
+    states = {m["id"]: m["active"] for m in mons}
     changed = set()
     for key, reg in list(scanner.registry.items()):
         mid = reg.get("kuma_monitor_id") if isinstance(reg, dict) else None
@@ -206,6 +241,15 @@ def _sync(scanner):
             continue
         changed.add(key)
         _tried.pop(key, None)
+    owned = _owned_ids(scanner)
+    for mon in mons:
+        key = _marked_key(mon)
+        reg = scanner.registry.get(key) if key and mon["id"] not in owned else None
+        if isinstance(reg, dict) and not reg.get("kuma_monitor_id") and not reg.get("kuma_token"):
+            _adopt(reg, mon)
+            owned.add(mon["id"])
+            changed.add(key)
+            _tried.pop(key, None)
     if changed:
         scanner.save_registry()
     return changed
@@ -284,9 +328,17 @@ def _apply(scanner, keys):
         regs = dict(creates)
         with scanner.lock:
             devs = {k: dict(scanner.devices[k]) for k in regs if k in scanner.devices}
-        items = [(k, scanner._kuma_name(d), d["ip"], d.get("category"))
-                 for k, d in devs.items() if d.get("ip")]
-        res = kuma.provision_many(base, user, pw, items, 60) if items else {}
+        # a monitor made earlier whose reply was lost carries our marker: adopt it
+        owned = _owned_ids(scanner)
+        marked = {}
+        for mon in kuma.monitor_list(base, user, pw) or []:
+            key = _marked_key(mon)
+            if key in devs and mon["id"] not in owned:
+                marked.setdefault(key, mon)
+        res = {k: {"ok": True, "monitor_id": m["id"], "adopt": m} for k, m in marked.items()}
+        items = [(k, scanner._kuma_name(d), d["ip"], d.get("category"), kuma.marker(k))
+                 for k, d in devs.items() if d.get("ip") and k not in marked]
+        res.update(kuma.provision_many(base, user, pw, items, 60) if items else {})
         for key, r in res.items():
             if not r.get("ok"):
                 print(f"[monitoring] kuma create for {key} failed: {r.get('error')}", flush=True)
@@ -301,8 +353,13 @@ def _apply(scanner, keys):
                 continue
             # Stored even if monitoring was switched off meanwhile: that flip queued
             # the key again, and the next pass pauses this monitor.
-            reg.update(kuma_monitor_id=r["monitor_id"], kuma_ip=devs[key]["ip"])
-            reg.pop("kuma_paused", None)
+            if r.get("adopt"):
+                _adopt(reg, r["adopt"])
+                if _out_of_step(scanner, key, reg):
+                    follow_kuma(scanner, [key])     # e.g. an adopted monitor that is paused
+            else:
+                reg.update(kuma_monitor_id=r["monitor_id"], kuma_ip=devs[key]["ip"])
+                reg.pop("kuma_paused", None)
             dirty = True
     if dirty:
         scanner.save_registry()
@@ -334,6 +391,95 @@ def after_restore(scanner):
     _last_sync = time.time()
     if kuma_follows():
         follow_kuma(scanner, [], sync=True)
+
+
+_INTERNET_NAMES = ("Gateway", "Internet", "DNS ")
+
+
+def _dev_brief(key, reg, dev):
+    return {"key": key, "ip": dev.get("ip") or "",
+            "name": reg.get("name") or dev.get("name") or dev.get("device_name")
+            or dev.get("type") or dev.get("vendor") or key}
+
+
+def unowned(scanner):
+    """Kuma monitors that no device and no internet check accounts for (Settings
+    "Tidy Kuma"), each with `leftover` = looks like Netwatch's own spare copy:
+      * marked for a device that has since been forgotten, or that uses another
+        monitor; or
+      * a ping of a device that already has its own monitor, under one of that
+        device's own labels (a copy made before monitors were marked).
+    Internet checks, push monitors and anything else are listed, never flagged.
+    None when Kuma can't be read."""
+    login = kuma_login()
+    mons = kuma.monitor_list(*login) if login else None
+    if mons is None:
+        return None
+    owned = _owned_ids(scanner)
+    with scanner.lock:
+        devs = {k: dict(d) for k, d in scanner.devices.items()}
+    by_ip = {}
+    for k, d in devs.items():
+        if d.get("ip"):
+            by_ip.setdefault(d["ip"], []).append(k)
+    out = []
+    for mon in mons:
+        if mon["id"] in owned:
+            continue
+        row = dict(mon, device=None, leftover=False, why="")
+        key = _marked_key(mon)
+        if key is not None:
+            reg = scanner.registry.get(key)
+            if not isinstance(reg, dict):
+                row.update(leftover=True, why="made by Netwatch for a device that has since been forgotten",
+                           device={"key": key, "ip": "", "name": key})
+            else:
+                row["device"] = _dev_brief(key, reg, devs.get(key) or {})
+                if reg.get("kuma_monitor_id"):
+                    row.update(leftover=True, why=f"a spare copy — this device uses monitor #{reg['kuma_monitor_id']}")
+                else:
+                    row["why"] = "made by Netwatch; it is linked to its device on the next check"
+        elif mon["type"] == "push":
+            row["why"] = "a push monitor (set up by hand)"
+        elif mon["name"].startswith(_INTERNET_NAMES):
+            row["why"] = "looks like an internet check"
+        elif mon["type"] == "ping" and mon["hostname"] in by_ip:
+            for k in by_ip[mon["hostname"]]:
+                reg, dev = scanner.registry.get(k) or {}, devs[k]
+                row["device"] = _dev_brief(k, reg, dev)
+                labels = {x for x in (reg.get("name"), dev.get("name"), dev.get("device_name"),
+                                      dev.get("type"), dev.get("vendor"), dev.get("model")) if x}
+                if reg.get("kuma_monitor_id") and mon["name"] in labels:
+                    row.update(leftover=True, why=f"a spare copy — this device uses monitor #{reg['kuma_monitor_id']}")
+                    break
+            if not row["why"]:
+                row["why"] = "pings a device Netwatch knows, but was not made for it"
+        else:
+            row["why"] = "not made by Netwatch"
+        out.append(row)
+    return out
+
+
+def remove_unowned(scanner, ids):
+    """Delete the given Kuma monitors — only those that still belong to nothing
+    when checked again right now. Returns {ok, removed, skipped}."""
+    login = kuma_login()
+    if not login:
+        return {"ok": False, "error": "Uptime Kuma is not set up on this Pi"}
+    mons = kuma.monitor_list(*login)
+    if mons is None:
+        return {"ok": False, "error": "could not read Uptime Kuma"}
+    owned, present = _owned_ids(scanner), {m["id"] for m in mons}
+    removed, skipped = [], []
+    for mid in ids:
+        if mid in owned or mid not in present:
+            skipped.append(mid)
+            continue
+        r = kuma.deprovision(*login, mid)
+        (removed if r.get("ok") else skipped).append(mid)
+    if removed:
+        print(f"[monitoring] removed Kuma monitors no device owned: {removed}", flush=True)
+    return {"ok": True, "removed": removed, "skipped": skipped}
 
 
 def summary(scanner):

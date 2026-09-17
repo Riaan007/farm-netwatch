@@ -511,6 +511,13 @@
         .nw-tgl b { font-size: 13px; color: #e2e8f0; font-weight: 650; }
         .nw-tgl span { font-size: 12px; color: #64748b; line-height: 1.45; }
         .nw-subh { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; margin: .2rem 0 -.3rem; }
+        .nw-tidy { display: grid; gap: .2rem; max-height: 22rem; overflow-y: auto; padding: .25rem; border: 1px solid rgba(148,163,184,.14); border-radius: .7rem; background: rgba(2,6,23,.3); }
+        .nw-tidyrow { display: grid; grid-template-columns: auto minmax(0,1fr); gap: .65rem; align-items: start; padding: .45rem .6rem; border-radius: .55rem; cursor: pointer; }
+        .nw-tidyrow:hover { background: rgba(34,211,238,.05); }
+        .nw-tidyrow input { width: 17px; height: 17px; margin-top: 2px; accent-color: #22d3ee; }
+        .nw-tidyrow b { color: #f1f5f9; font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+        .nw-tidyrow small { display: block; color: #64748b; font-size: 11.5px; overflow-wrap: anywhere; }
+        .nw-tidyrow small.why { color: #94a3b8; }
         .nw-savebar { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 45; display: flex; align-items: center; gap: .75rem; padding: .6rem .7rem .6rem 1.1rem; border-radius: 999px; background: rgba(11,19,36,.96); border: 1px solid rgba(34,211,238,.45); box-shadow: 0 16px 50px -10px rgba(0,0,0,.8); font-size: 13px; color: #e2e8f0; }
         .nw-savebar b { color: #67e8f9; }
         .nw-locked { max-width: 34rem; margin: 3rem auto; text-align: center; padding: 2rem; }
@@ -519,7 +526,7 @@
         .nw-toast { padding: .65rem .9rem; border-radius: .8rem; background: #0f1a2e; border: 1px solid rgba(148,163,184,.3); font-size: 13px; color: #e2e8f0; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
         .nw-toast.ok { border-color: rgba(52,211,153,.55); } .nw-toast.bad { border-color: rgba(251,113,133,.6); }
         @media (max-width: 1000px) {
-            .nw-hgrid, .nw-sgrid { grid-template-columns: 1fr; }
+            .nw-hgrid, .nw-sgrid { grid-template-columns: minmax(0, 1fr); }   /* the section nav scrolls instead of widening the page */
             .nw-snav { position: static; flex-direction: row; overflow-x: auto; scrollbar-width: none; padding-bottom: .2rem; }
             .nw-snav a { white-space: nowrap; }
         }
@@ -552,6 +559,8 @@
             .nw-tablewrap { margin: -.8rem; }
             .nw-cards { grid-template-columns: 1fr; }
             .nw-lists { padding: 0 .8rem .7rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+            #kuma-legacy .flex { flex-wrap: wrap; }          /* the Kuma form rows wrap instead of widening the page */
+            #kuma-legacy input { min-width: 0; }
             .nw-lists button { min-width: 9.2rem; flex: none; }
             .nw-selbar { bottom: .5rem; width: calc(100vw - 1rem); }
             .nw-selbar .sep { display: none; }
@@ -881,6 +890,10 @@
                     <span id="kuma-repair-result" class="text-xs"></span>
                     <span id="kuma-tag-result" class="text-xs ml-2"></span>
                     </div>
+                    <div class="nw-subh">Tidy Kuma</div>
+                    <p class="nw-help">Monitors that belong to no device and no internet check — for example a spare copy left behind when Kuma answered too slowly. Netwatch's own spare copies come ticked; nothing is deleted until you press Remove, and a monitor a device uses is never touched.</p>
+                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center"><button class="nw-btn" type="button" id="kuma-tidy-check">Check Kuma</button><button class="nw-btn danger" type="button" id="kuma-tidy-remove" hidden>Remove ticked</button><span id="kuma-tidy-status" class="nw-help" role="status"></span></div>
+                    <div id="kuma-tidy-list" class="nw-tidy" hidden></div>
                 </div>
             </section>
 
@@ -3936,6 +3949,40 @@
                 res.innerText = r.ok ? ('✓ ' + r.updated + ' monitor(s) now ping every 60s') : ('⚠ ' + (r.error||'failed'));
             } catch(e){ res.className='text-xs text-rose-400'; res.innerText='Error: '+e; }
         }
+        // ---- Tidy Kuma: monitors no device owns (monitoring.unowned) ----
+        async function kumaTidyCheck(){
+            const st = document.getElementById('kuma-tidy-status'), box = document.getElementById('kuma-tidy-list'), rm = document.getElementById('kuma-tidy-remove');
+            st.textContent = 'Reading Uptime Kuma…'; box.hidden = true; rm.hidden = true;
+            let r, j = {};
+            try { r = await fetch('/api/kuma/unowned'); j = await r.json().catch(() => ({})); }
+            catch(e){ st.textContent = 'Could not reach the Pi.'; return; }
+            if(!r.ok || !j.ok){ st.textContent = r.status === 401 ? 'Needs the Pi password.' : (j.error || ('Failed (' + r.status + ')')); return; }
+            const mons = j.monitors || [], spare = mons.filter(m => m.leftover).length;
+            st.textContent = !mons.length ? 'Every Kuma monitor belongs to a device or an internet check.'
+                : `${mons.length} monitor${mons.length===1?' belongs':'s belong'} to nothing` + (spare ? ` · ${spare} look${spare===1?'s':''} like Netwatch's spare cop${spare===1?'y':'ies'} (ticked)` : '') + '.';
+            if(!mons.length) return;
+            box.innerHTML = mons.map(m => `<label class="nw-tidyrow"><input type="checkbox" data-id="${esc(m.id)}" ${m.leftover ? 'checked' : ''}>
+                <span><b>#${esc(m.id)} ${esc(m.name || '(no name)')}</b><small>${esc(m.type)}${m.hostname ? ' · ' + esc(m.hostname) : ''}${m.active ? '' : ' · paused'}</small>
+                <small class="why">${esc(m.why)}${m.device ? ' — ' + esc(m.device.name) + (m.device.ip ? ' (' + esc(m.device.ip) + ')' : '') : ''}</small></span></label>`).join('');
+            box.hidden = false; rm.hidden = false;
+        }
+        async function kumaTidyRemove(){
+            const ids = [...document.querySelectorAll('#kuma-tidy-list input:checked')].map(i => +i.dataset.id).filter(Boolean);
+            if(!ids.length){ nwToast('Tick the monitors to remove first'); return; }
+            if(!confirm(`Delete ${ids.length} Uptime Kuma monitor${ids.length===1?'':'s'} (${ids.map(i => '#' + i).join(', ')})?\n\nTheir history in Kuma is deleted too. A monitor that a device uses is never touched.`)) return;
+            const btn = document.getElementById('kuma-tidy-remove');
+            btn.disabled = true;
+            try {
+                const r = await fetch('/api/kuma/unowned', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids})});
+                const j = await r.json().catch(() => ({}));
+                if(!r.ok || !j.ok) nwToast('Not removed: ' + (j.error || r.status), 'bad');
+                else nwToast(`Removed ${j.removed.length}` + (j.skipped.length ? ` · ${j.skipped.length} left alone (no longer spare)` : ''), 'ok');
+            } catch(e){ nwToast('Could not reach the Pi', 'bad'); }
+            btn.disabled = false;
+            kumaTidyCheck();
+        }
+        document.getElementById('kuma-tidy-check').addEventListener('click', kumaTidyCheck);
+        document.getElementById('kuma-tidy-remove').addEventListener('click', kumaTidyRemove);
         async function syncKumaTags(){
             const res = document.getElementById('kuma-tag-result');
             res.className = 'text-xs ml-2 text-slate-500'; res.innerText = 'Tagging monitors…';

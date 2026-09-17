@@ -324,7 +324,18 @@ background, and after each scan Netwatch retries any monitor that is out of step
 (e.g. Kuma was down), at most every 30 minutes per device. A monitor deleted by hand
 in Kuma is re-created the next time the device is monitored. **Forgetting or pruning
 a device deletes its monitor** — no orphans left in Kuma. A hand-made push-token
-monitor (the device window's *Manual / pull setup*) is left alone. If you have
+monitor (the device window's *Manual / pull setup*) is left alone.
+
+Every monitor Netwatch creates carries the description `netwatch:<device key>`. Kuma
+answers an *add* only after re-sending its whole monitor list, so on a busy Pi a reply
+can arrive too late although the monitor exists; the next pass finds the marked
+monitor and adopts it instead of making a second one. New monitors are named after the
+device's own name (its label, else the name the device reports, else its type).
+**Settings → Uptime Kuma → Tidy Kuma** lists the monitors that belong to no device and
+no internet check. Netwatch's own spare copies (a marked monitor of a forgotten device or
+of a device that uses another monitor, or a ping of a device under one of its own labels)
+come ticked; nothing is deleted until you press *Remove*, and a monitor a device uses is
+never deleted (`GET`/`POST /api/kuma/unowned`, site login or hub key). If you have
 monitors left over from an older version, **Settings → "Fix monitors → ping
 (60s)"** converts them in place.
 

@@ -46,6 +46,8 @@ PROTECTED = [
     ("delete", "/api/devices/aa:bb/photo"),
     ("post", "/api/bridge-macs"),
     ("post", "/api/monitoring"),
+    ("get", "/api/kuma/unowned"),
+    ("post", "/api/kuma/unowned"),
     ("post", "/api/network/address"),
     ("post", "/api/network/static"),
     ("post", "/api/network/static/confirm"),

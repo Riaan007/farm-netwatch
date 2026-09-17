@@ -961,7 +961,8 @@ class Scanner:
         # Name by device identity, NOT the IP — the monitor's hostname carries the
         # IP and ensure_ping keeps it current, so the name never goes stale when
         # the device moves address.
-        label = dev.get("name") or dev.get("type") or dev.get("vendor") or "device"
+        label = (dev.get("name") or dev.get("device_name") or dev.get("type")
+                 or dev.get("vendor") or "device")
         return label[:150]
 
     def _kuma_sync(self, cfg, devices):

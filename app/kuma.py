@@ -127,11 +127,24 @@ def _ensure_tag(sio, cache, label, color):
     return tid
 
 
-def provision_many(base_url, user, pw, items, interval=60):
+MARKER = "netwatch:"
+
+
+def marker(key):
+    """The description Netwatch writes on a monitor it creates for device `key`,
+    so a monitor whose reply was lost (slow Kuma) is recognised and adopted
+    instead of being created a second time."""
+    return MARKER + str(key)
+
+
+def provision_many(base_url, user, pw, items, interval=60, add_timeout=60):
     """Create a Kuma PING monitor per item (Kuma pings the device directly, which
-    gives a smooth graph + accurate uptime). items: [(key, name, ip, category)].
+    gives a smooth graph + accurate uptime). items: [(key, name, ip, category,
+    description)] — the last two optional. Kuma answers an `add` only after it has
+    re-sent its whole monitor list, which is slow on a busy Pi with many monitors:
+    hence the long `add_timeout` (a timed-out add may still have been created).
     Returns {key: {ok, monitor_id, error}}."""
-    items = [tuple(it) + (None,) * (4 - len(it)) for it in items]
+    items = [tuple(it)[:5] + (None,) * (5 - len(it)) for it in items]
     try:
         sio, _ = _connect(base_url)
     except Exception as e:
@@ -142,14 +155,16 @@ def provision_many(base_url, user, pw, items, interval=60):
         ok, msg = _login(sio, user, pw)
         if not ok:
             return {k: {"ok": False, "error": msg} for k, *_ in items}
-        for key, name, ip, category in items:
+        for key, name, ip, category, description in items:
             monitor = {"type": "ping", "name": name, "hostname": ip or "",
                        "interval": int(interval), "maxretries": 1,
                        "retryInterval": int(interval), "resendInterval": 0,
                        "upsideDown": False, "notificationIDList": {},
                        "accepted_statuscodes": ["200-299"], "packetSize": 56}
+            if description:
+                monitor["description"] = description
             try:
-                add = sio.call("add", monitor, timeout=15)
+                add = sio.call("add", monitor, timeout=add_timeout)
             except Exception as e:
                 out[key] = {"ok": False, "error": str(e)[:100]}
                 continue
@@ -350,8 +365,15 @@ def tag_monitors(base_url, user, pw, items):
 
 def monitor_states(base_url, user, pw, wait=10):
     """{monitor_id: active} for every monitor this Kuma has — what is really
-    there, whatever Netwatch's registry says. None when it can't be read
-    (unreachable, login refused, no list within `wait` s)."""
+    there, whatever Netwatch's registry says. None when it can't be read."""
+    mons = monitor_list(base_url, user, pw, wait)
+    return None if mons is None else {m["id"]: m["active"] for m in mons}
+
+
+def monitor_list(base_url, user, pw, wait=10):
+    """Every monitor this Kuma has, as [{id, name, type, hostname, active,
+    description}] (id order). None when it can't be read (unreachable, login
+    refused, no list within `wait` s)."""
     import threading
     got, listing = threading.Event(), {}
     try:
@@ -370,8 +392,11 @@ def monitor_states(base_url, user, pw, wait=10):
         ok, _msg = _login(sio, user, pw)
         if not ok or not got.wait(wait):
             return None
-        return {int(m["id"]): bool(m.get("active")) for m in listing.values()
-                if isinstance(m, dict) and m.get("id") is not None}
+        return sorted(({"id": int(m["id"]), "name": m.get("name") or "", "type": m.get("type") or "",
+                        "hostname": m.get("hostname") or "", "active": bool(m.get("active")),
+                        "description": m.get("description") or ""}
+                       for m in listing.values() if isinstance(m, dict) and m.get("id") is not None),
+                      key=lambda m: m["id"])
     except Exception:
         return None
     finally:

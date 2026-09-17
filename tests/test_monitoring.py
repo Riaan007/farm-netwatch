@@ -28,6 +28,11 @@ HUB = {"REMOTE_ADDR": "10.8.0.1"}
 LOGIN = ("http://kuma:3001", "admin", "pw")
 
 
+def kmon(mid, active=True, name="x", hostname="", type_="ping", description=""):
+    return {"id": mid, "active": active, "name": name, "hostname": hostname, "type": type_,
+            "description": description}
+
+
 def device(key, ip, online=True, **kw):
     return {"key": key, "ip": ip, "online": online, "category": "camera",
             "last_seen": int(time.time()) - (0 if online else 600), **kw}
@@ -136,6 +141,7 @@ class KumaFollows(Base):
                                                                              for n, (k, *_rest) in enumerate(items)}).start()
         self.act = mock.patch.object(monitoring.kuma, "set_active_many",
                                      side_effect=lambda b, u, p, items: {m: {"ok": True} for m, _ in items}).start()
+        self.listing = mock.patch.object(monitoring.kuma, "monitor_list", return_value=[]).start()
         self.s.devices = {CAM: device(CAM, "10.0.0.2", name="Gate"), NVR: device(NVR, "10.0.0.3"),
                           PHONE: device(PHONE, "10.0.0.4"), RADIO: device(RADIO, "10.0.0.5")}
 
@@ -200,8 +206,8 @@ class KumaFollows(Base):
                            NVR: {"watch": True, "kuma_monitor_id": 2},                        # paused in Kuma
                            PHONE: {"watch": False, "kuma_monitor_id": 3, "kuma_paused": True},  # resumed in Kuma
                            RADIO: {"watch": True, "kuma_monitor_id": 4}}                      # all fine
-        with mock.patch.object(monitoring.kuma, "monitor_states", return_value={2: False, 3: True, 4: True}):
-            changed = monitoring._sync(self.s)
+        self.listing.return_value = [kmon(2, False), kmon(3, True), kmon(4, True)]
+        changed = monitoring._sync(self.s)
         self.assertEqual(changed, {CAM, NVR, PHONE})
         self.assertEqual(self.s.registry[CAM]["kuma_monitor_id"], 0)
         self.assertTrue(self.s.registry[NVR]["kuma_paused"])
@@ -209,8 +215,8 @@ class KumaFollows(Base):
         monitoring._apply(self.s, changed)
         self.assertEqual(self.s.registry[CAM]["kuma_monitor_id"], 50)          # made again
         self.assertEqual(sorted(self.act.call_args[0][3]), [(2, True), (3, False)])
-        with mock.patch.object(monitoring.kuma, "monitor_states", return_value=None):
-            self.assertEqual(monitoring._sync(self.s), set())                  # Kuma unreadable: no guesses
+        self.listing.return_value = None
+        self.assertEqual(monitoring._sync(self.s), set())                      # Kuma unreadable: no guesses
 
     def test_reconcile_reads_kuma_now_and_then(self):
         self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 3}}
@@ -219,6 +225,36 @@ class KumaFollows(Base):
         self.follow.assert_called_once_with(self.s, [], sync=True)
         monitoring.reconcile(self.s)
         self.assertEqual(self.follow.call_count, 1)                           # not again for SYNC_S
+
+    def test_new_monitors_carry_the_device_marker(self):
+        self.s.registry = {CAM: {"watch": True}}
+        monitoring._apply(self.s, {CAM})
+        item = self.prov.call_args[0][3][0]
+        self.assertEqual((item[0], item[4]), (CAM, "netwatch:" + CAM))
+
+    def test_a_lost_reply_is_adopted_not_made_twice(self):
+        # an earlier add timed out, but Kuma made the monitor (paused meanwhile)
+        self.s.registry = {CAM: {"watch": True}, NVR: {"watch": True}}
+        self.listing.return_value = [kmon(40, active=False, description="netwatch:" + CAM),
+                                     kmon(41, description="netwatch:" + CAM)]      # a second copy
+        monitoring._apply(self.s, {CAM, NVR})
+        self.assertEqual([i[0] for i in self.prov.call_args[0][3]], [NVR])           # only NVR is made
+        self.assertEqual(self.s.registry[CAM]["kuma_monitor_id"], 40)
+        self.assertTrue(self.s.registry[CAM]["kuma_paused"])
+        self.follow.assert_called_with(self.s, [CAM])                               # …and resumed next
+
+    def test_read_back_adopts_a_marked_monitor(self):
+        self.s.registry = {CAM: {"watch": True}, NVR: {"watch": True, "kuma_token": "tok"}}
+        self.listing.return_value = [kmon(42, description="netwatch:" + CAM),
+                                     kmon(43, description="netwatch:" + NVR)]       # push-token device: left alone
+        self.assertEqual(monitoring._sync(self.s), {CAM})
+        self.assertEqual(self.s.registry[CAM]["kuma_monitor_id"], 42)
+        self.assertNotIn("kuma_monitor_id", self.s.registry[NVR])
+
+    def test_monitor_name_prefers_the_devices_own_name(self):
+        self.assertEqual(sys.modules["scanner"].Scanner._kuma_name(
+            {"type": "Access Point / Switch", "device_name": "PTZ2Ap=>MainC", "vendor": "Ubiquiti"}), "PTZ2Ap=>MainC")
+        self.assertEqual(sys.modules["scanner"].Scanner._kuma_name({"name": "Gate", "device_name": "X"}), "Gate")
 
     def test_in_step_monitors_are_not_touched(self):
         self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 3},
@@ -268,6 +304,45 @@ class KumaFollows(Base):
         self.assertEqual(calls, [{CAM, NVR}])
 
 
+class Tidy(Base):
+    def setUp(self):
+        super().setUp()
+        mock.patch.object(monitoring, "kuma_login", return_value=LOGIN).start()
+        self.listing = mock.patch.object(monitoring.kuma, "monitor_list").start()
+        self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 5, "name": "Gate"},
+                           NVR: {"watch": True, "kuma_monitor_id": 6},
+                           PHONE: {"watch": True},
+                           "__internet__": {"gateway_ip": "10.0.0.1", "monitors": {"Gateway": 7}}}
+        self.s.devices = {CAM: device(CAM, "10.0.0.2", name="Gate", type="IP Camera"),
+                          NVR: device(NVR, "10.0.0.3"), PHONE: device(PHONE, "10.0.0.4")}
+        self.listing.return_value = [
+            kmon(5, name="Gate", hostname="10.0.0.2"), kmon(6), kmon(7, name="Gateway", hostname="10.0.0.1"),
+            kmon(8, description="netwatch:" + CAM),                       # our spare copy
+            kmon(9, description="netwatch:aa:00:00:00:00:99"),            # ours, device forgotten
+            kmon(10, name="IP Camera", hostname="10.0.0.2"),              # unmarked copy under the device's label
+            kmon(11, name="Custom check", hostname="10.0.0.2"),           # someone's own check
+            kmon(12, name="Internet", hostname="10.0.0.1"),               # an old internet check
+            kmon(13, name="Door", type_="push"),
+            kmon(14, name="Website", type_="http"),
+            kmon(15, description="netwatch:" + PHONE),                    # ours, adopted on the next pass
+        ]
+
+    def test_only_netwatchs_own_spare_copies_are_flagged(self):
+        rows = {r["id"]: r for r in monitoring.unowned(self.s)}
+        self.assertEqual(sorted(rows), [8, 9, 10, 11, 12, 13, 14, 15])       # 5, 6 and 7 belong to something
+        self.assertEqual(sorted(i for i, r in rows.items() if r["leftover"]), [8, 9, 10])
+        self.assertIn("#5", rows[8]["why"])
+        self.assertEqual(rows[10]["device"]["ip"], "10.0.0.2")
+        self.listing.return_value = None
+        self.assertIsNone(monitoring.unowned(self.s))
+
+    def test_removal_rechecks_and_never_touches_owned_monitors(self):
+        with mock.patch.object(monitoring.kuma, "deprovision", return_value={"ok": True}) as dep:
+            res = monitoring.remove_unowned(self.s, [5, 7, 8, 99])
+        dep.assert_called_once_with(*LOGIN, 8)
+        self.assertEqual(res, {"ok": True, "removed": [8], "skipped": [5, 7, 99]})
+
+
 class Api(Base):
     def setUp(self):
         super().setUp()
@@ -308,6 +383,21 @@ class Api(Base):
         self.assertTrue(self.s.registry[NVR]["watch"])
         self.assertEqual(self.post(f"/api/devices/{CAM}", {"watch": True}, hub=True).status_code, 200)
         self.assertTrue(self.s.registry[CAM]["watch"])
+
+    def test_kuma_tidy_needs_the_login_and_valid_ids(self):
+        for method in ("get", "post"):
+            r = getattr(self.c, method)("/api/kuma/unowned", json={"ids": [1]}, environ_base=HUB)
+            self.assertEqual(r.status_code, 401, method)
+        hub = {siteauth.HEADER: KEY}
+        self.assertEqual(self.c.get("/api/kuma/unowned", environ_base=HUB, headers=hub).status_code, 400)  # no Kuma here
+        with mock.patch.object(monitoring, "kuma_follows", return_value=True), \
+                mock.patch.object(monitoring, "unowned", return_value=[]), \
+                mock.patch.object(monitoring, "remove_unowned", return_value={"ok": True, "removed": [3], "skipped": []}) as rm:
+            self.assertEqual(self.c.get("/api/kuma/unowned", environ_base=HUB, headers=hub).get_json(), {"ok": True, "monitors": []})
+            for bad in ({"ids": []}, {"ids": ["3"]}, {"ids": [True]}, {"ids": [0]}, {}):
+                self.assertEqual(self.c.post("/api/kuma/unowned", json=bad, environ_base=HUB, headers=hub).status_code, 400, bad)
+            self.assertEqual(self.c.post("/api/kuma/unowned", json={"ids": [3]}, environ_base=HUB, headers=hub).status_code, 200)
+            rm.assert_called_once_with(server.scanner, [3])
 
     def test_bad_bodies(self):
         for body in ({"monitor": "x"}, {"monitor": [1]}, {"monitor": [NVR], "stop": [NVR]},
