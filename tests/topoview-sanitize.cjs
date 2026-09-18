@@ -16,11 +16,12 @@ const g = TV.sanitize({
     { id: 7 }, null,
   ],
   groups: [{ id: "g", name: evil, status: evil, counts: { online: evil, total: "4" }, pos: { x: "10", y: "20" },
-             geo: { lat: "-33.1", lon: "18.2" }, lat: evil }],
+             geo: { lat: "-33.1", lon: "18.2" }, lat: evil, fixed_size: { w: "900", h: 99999 } },
+           { id: "g2", name: "b", fixed_size: { w: evil, h: 10 } }],
   links: [{ id: "l", a: "a", b: "a", medium: evil, status: evil, label: 5, metrics: { signal: evil, distance: "2300" } },
           { id: "x", a: 1, b: "a" }],
   suggestions: [{ id: "s", members: [1, 2], unknown: evil, medium: "fibre" }],
-  unassigned: { pos: { x: evil }, size: {} },
+  unassigned: { pos: { x: evil }, size: {}, fixed_size: "nope" },
   grid: { cell_w: evil },
   kinds: [{ id: "camera", label: evil, tier: evil }, { id: 3 }],
   site: { lat: evil, lon: "18" },
@@ -38,6 +39,8 @@ ok(g.links.length === 1 && g.links[0].medium === "ethernet" && g.links[0].status
 ok(g.links[0].metrics.signal === null && g.links[0].metrics.distance === 2300, "link metrics coerced");
 ok(g.suggestions[0].members.every((m) => typeof m === "string") && g.suggestions[0].unknown === 0, "suggestion coerced");
 ok(g.unassigned.pos.x === 0 && g.grid.cell_w === 150, "review area + grid defaults");
+ok(g.groups[0].fixed_size.w === 900 && g.groups[0].fixed_size.h === 4000, "a dragged box size is coerced and capped");
+ok(g.groups[1].fixed_size === null && g.unassigned.fixed_size === null, "a junk box size is dropped");
 ok(g.kinds.length === 1 && g.kinds[0].tier === 4, "kinds coerced");
 ok(g.site.lat === null && g.site.lon === 18, "site location coerced");
 ok(TV.esc(evil) === "&lt;img src=x onerror=alert(1)&gt;", "esc() escapes markup");

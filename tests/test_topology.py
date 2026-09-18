@@ -299,6 +299,56 @@ class Diagram(unittest.TestCase):
                                         "type": "Access Point / Switch"}), "switch")
         self.assertEqual(T.device_kind({"category": "network", "vendor": "Ruijie Networks", "type": "Access Point / Switch"}), "switch")
 
+    def test_camera_shapes_come_from_the_name_or_model(self):
+        cam = lambda **kw: T.device_kind({"category": "camera", **kw})
+        self.assertEqual(cam(name="Hek PTZ"), "camera-ptz")
+        self.assertEqual(cam(model="DS-2DE5425IWG-E"), "camera-ptz")
+        self.assertEqual(cam(model="DS-2SE7C425MWG-EB/26"), "camera-ptz")
+        self.assertEqual(cam(name="Kliphuis 180N", model="DS-2CD2T87G2P-LSU/SL"), "camera-bullet")   # Hikvision CD2…T = bullet
+        self.assertEqual(cam(name="IP Dome Water toring"), "camera-dome")
+        self.assertEqual(cam(name="Turret voorhek"), "camera-turret")
+        self.assertEqual(cam(name="Hek dual-lens"), "camera-dual")
+        self.assertEqual(cam(name="Werf PanoVu"), "camera-pano")
+        self.assertEqual(cam(name="Thermal kamp"), "camera-thermal")
+        self.assertEqual(cam(name="ANPR ingang"), "camera-anpr")
+        self.assertEqual(cam(name="Deurbel voor"), "intercom")
+        self.assertEqual(cam(name="Boorgat 180E"), "camera")     # a bearing, not a panoramic lens
+        self.assertEqual(cam(), "camera")
+        # a Ubiquiti Bullet radio is still a radio: the shapes only refine cameras
+        self.assertEqual(T.device_kind({"category": "network", "vendor": "Ubiquiti", "model": "Bullet M2"}), "radio")
+
+    def test_a_group_box_can_be_dragged_bigger(self):
+        d = fresh()
+        g = T.create_group(d, {"name": "Tower A"})
+        T.set_node(d, "aa:00:00:00:00:05", {"group": g["id"], "pos": {"x": 18, "y": 54}}, set(DEV))
+        small = T.boxes(graph(d), d["view"])
+        base = next(x for x in graph(d)["groups"] if x["id"] == g["id"])
+        T.update_group(d, g["id"], {"size": {"w": 900, "h": 600}})
+        gr = next(x for x in graph(d)["groups"] if x["id"] == g["id"])
+        T.boxes({"nodes": [], "groups": [gr]}, d["view"])
+        self.assertEqual((gr["size"]["w"], gr["size"]["h"]), (900, 600))
+        self.assertEqual(gr["fixed_size"], {"w": 900, "h": 600})
+        # smaller than its contents is not a size a box can have
+        T.update_group(d, g["id"], {"size": {"w": 10, "h": 10}})
+        self.assertEqual(d["groups"][g["id"]]["size"], {"w": T.EMPTY_W, "h": T.EMPTY_H})
+        T.update_group(d, g["id"], {"size": ""})
+        self.assertNotIn("size", d["groups"][g["id"]])
+        T.set_layout(d, {"unassigned": {"size": {"w": 1200, "h": 400}}}, set(DEV))
+        self.assertEqual(d["view"]["unassigned_size"], {"w": 1200, "h": 400})
+        self.assertIsNotNone(small)
+
+    def test_a_picture_is_an_upload_or_one_netwatch_draws(self):
+        d = fresh()
+        T.set_node(d, "aa:00:00:00:00:11", {"icon": "b:camera-ptz"}, set(DEV))
+        self.assertEqual(d["nodes"]["aa:00:00:00:00:11"]["icon"], "b:camera-ptz")
+        T.set_type_icon(d, "camera", "b:camera-dome")
+        self.assertEqual(d["type_icons"]["camera"], "b:camera-dome")
+        for bad in ("b:../secret", "b:WITH CAPS", "i-deadbeef", "b:"):
+            with self.assertRaises(T.TopologyError):
+                T.set_node(d, "aa:00:00:00:00:11", {"icon": bad}, set(DEV))
+        T.set_node(d, "aa:00:00:00:00:11", {"icon": ""}, set(DEV))
+        self.assertNotIn("icon", d["nodes"]["aa:00:00:00:00:11"])
+
     def test_group_summary_and_location(self):
         d = fresh()
         g = T.create_group(d, {"name": "Tower A"})

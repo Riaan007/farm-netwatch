@@ -68,6 +68,15 @@ KINDS = [
     ("nas", "NAS / storage", 3, False),
     ("ups", "UPS / battery", 3, False),
     ("camera", "Camera", 4, False),
+    ("camera-ptz", "PTZ camera", 4, False),
+    ("camera-dome", "Dome camera", 4, False),
+    ("camera-turret", "Turret camera", 4, False),
+    ("camera-bullet", "Bullet camera", 4, False),
+    ("camera-dual", "Dual-lens camera", 4, False),
+    ("camera-pano", "Panoramic camera", 4, False),
+    ("camera-thermal", "Thermal camera", 4, False),
+    ("camera-anpr", "Number-plate camera", 4, False),
+    ("intercom", "Doorbell / intercom", 4, False),
     ("alarm", "Alarm system", 4, False),
     ("solar", "Solar / inverter", 4, False),
     ("pc", "Computer", 4, False),
@@ -80,10 +89,11 @@ KINDS = [
 ]
 KIND = {k: {"id": k, "label": label, "tier": tier, "wireless": wl} for k, label, tier, wl in KINDS}
 WIRELESS_KINDS = {k for k, v in KIND.items() if v["wireless"]}
+CAMERA_KINDS = {k for k, *_ in KINDS if k.startswith("camera")}
 # What turns up in the review area on its own: the equipment a support contract
 # is about. Phones, laptops and TVs only appear once someone adds them.
 INFRA_KINDS = {"internet", "ptp", "radio", "router", "wifi-router", "switch", "unmanaged-switch",
-               "media-converter", "poe", "nvr", "camera", "alarm", "solar", "ups"}
+               "media-converter", "poe", "nvr", "alarm", "solar", "ups", "intercom"} | CAMERA_KINDS
 CATEGORY_KIND = {
     "camera": "camera", "nvr": "nvr", "router": "router", "printer": "printer", "nas": "nas",
     "voip": "phone", "alarm": "alarm", "solar": "solar", "media": "media", "iot": "iot",
@@ -109,8 +119,24 @@ _AP_MODEL = re.compile(r"(\buap\b|\bu6\b|\bu7\b|unifi|ac lite|ac pro|ac lr|nanoh
 # identify.classify()'s catch-all labels say nothing about what a box really is
 _GENERIC_TYPES = {"access point / switch", "router / gateway", "ip camera", "nvr / recorder", "unknown device",
                   "iot device", "server / host", "computer / host"}
+# A camera's own name or model says what shape it is; the category only says
+# "camera". Bearings like "Hek 180W" are NOT panoramic, so no bare 180/360 here.
+_CAM_SHAPE = [
+    ("camera-anpr", re.compile(r"(\banpr\b|\blpr\b|licen[cs]e.?plate|number.?plate|nommerplaat|plate.?cam)", re.I)),
+    ("camera-thermal", re.compile(r"(thermal|thermograph|heat.?cam|\bbi-?therm)", re.I)),
+    ("camera-pano", re.compile(r"(panoram|panovu|fisheye|multi.?sensor|multi.?lens|\bpanna\b|\bpano\b)", re.I)),
+    ("camera-dual", re.compile(r"(dual.?lens|dual.?view|tandem|binocular|duovu|two.?lens)", re.I)),
+    ("camera-ptz", re.compile(r"(\bptz\b|speed.?dome|\bpan.?tilt|ds-\d(de|se|pt)\d)", re.I)),
+    ("camera-turret", re.compile(r"(turret|eyeball)", re.I)),
+    ("camera-bullet", re.compile(r"(bullet|\bbul\b|ds-2cd\d*t\d)", re.I)),
+    ("camera-dome", re.compile(r"\bdome\b", re.I)),
+    ("intercom", re.compile(r"(intercom|doorbell|deurbel|door.?station|door.?phone)", re.I)),
+]
 _SWITCH_MODEL = re.compile(r"(switch|\bes-\d|\bep-s|uisp-s|\busw|\bcrs\d|\bcss\d|\bgs\d{3}|tl-sg|\bsg\d{3}|rg-es|rg-nbs)", re.I)
 _WIRELESS_IFACE = re.compile(r"^(wlan|wifi|cap|wl|ath)", re.I)
+# "b:<name>" = a picture the renderer draws itself (topoview.js BUILTIN). The
+# server does not keep that list: an unknown name falls back to the type icon.
+_BUILTIN_ICON = re.compile(r"^b:[a-z0-9][a-z0-9-]{0,23}$")
 
 
 # ---- small validators ----------------------------------------------------------
@@ -140,6 +166,18 @@ def _float(v, lo, hi):
     except (TypeError, ValueError):
         return None
     return round(f, 6) if lo <= f <= hi and f == f else None
+
+
+def _size(v):
+    """A box size the operator dragged. Never smaller than its contents — that
+    is enforced where the box is measured (container_size), not here."""
+    if not isinstance(v, dict):
+        return None
+    w, h = _float(v.get("w"), 0, 20000), _float(v.get("h"), 0, 20000)
+    if w is None or h is None:
+        return None
+    return {"w": int(min(6000, max(EMPTY_W, round(w / 10) * 10))),
+            "h": int(min(4000, max(EMPTY_H, round(h / 10) * 10)))}
 
 
 def _pos(v):
@@ -305,8 +343,19 @@ def create_group(d, body):
     if p:
         g["pos"] = p              # where the operator was looking — still free to be nudged
         g["manual"] = False
+    if "size" in body:
+        _apply_size(g, body.get("size"))
     d["groups"][gid] = g
     return g
+
+
+def _apply_size(holder, v):
+    """size: {w,h} to set one, "" / null to go back to hugging the contents."""
+    sz = _size(v)
+    if sz:
+        holder["size"] = sz
+    else:
+        holder.pop("size", None)
 
 
 def update_group(d, gid, body):
@@ -336,6 +385,8 @@ def update_group(d, gid, body):
         else:
             g.pop("pos", None)
             g["manual"] = False
+    if "size" in body:
+        _apply_size(g, body.get("size"))
     return g
 
 
@@ -490,7 +541,7 @@ def set_node(d, nid, body, known):
             meta.pop("kind", None)
     if "icon" in body:
         iid = _s(body.get("icon"))
-        if iid and iid not in d["icons"]:
+        if iid and not _BUILTIN_ICON.match(iid) and iid not in d["icons"]:
             raise TopologyError("That icon no longer exists", 404)
         if iid:
             meta["icon"] = iid
@@ -511,7 +562,7 @@ def set_layout(d, body, known):
             n += 1
     for gid, v in groups.items():
         if gid in d["groups"] and isinstance(v, dict):
-            update_group(d, gid, {k: v[k] for k in ("pos", "locked", "collapsed") if k in v})
+            update_group(d, gid, {k: v[k] for k in ("pos", "locked", "collapsed", "size") if k in v})
             n += 1
     ua = body.get("unassigned")
     if isinstance(ua, dict) and "pos" in ua:
@@ -520,6 +571,13 @@ def set_layout(d, body, known):
             d["view"]["unassigned_pos"] = p
         else:
             d["view"].pop("unassigned_pos", None)
+        n += 1
+    if isinstance(ua, dict) and "size" in ua:
+        sz = _size(ua.get("size"))
+        if sz:
+            d["view"]["unassigned_size"] = sz
+        else:
+            d["view"].pop("unassigned_size", None)
         n += 1
     if "lock_all" in body:
         d["view"]["lock_all"] = bool(body["lock_all"])
@@ -904,6 +962,11 @@ def device_kind(dev, meta=None, radios=()):
     title = str((dev.get("banner") or {}).get("title") or "")
     vendor = str(dev.get("vendor") or "").lower()
     role = str(dev.get("radio_role") or "").lower()
+    if cat == "camera":
+        for kind, rx in _CAM_SHAPE:
+            if rx.search(text):
+                return kind
+        return "camera"
     if dev.get("is_switch") or re.search(r"edgeswitch|uisp switch", title, re.I):
         return "switch"
     # radiomon tries every Ubiquiti device with a login; only a radio that
@@ -1175,6 +1238,7 @@ def build(d, devices, registry=None, radios=None, switches=None, routers=None, p
                 approx = True
         groups.append({**{k: g.get(k) for k in ("id", "name", "kind", "description", "lat", "lon", "pos",
                                                   "created_ts")},
+                       "fixed_size": dict(g["size"]) if isinstance(g.get("size"), dict) else None,
                        "locked": bool(g.get("locked")), "collapsed": bool(g.get("collapsed")),
                        "manual": bool(g.get("manual")),
                        "counts": cnt, "status": status, "geo": geo, "geo_approx": approx})
@@ -1377,15 +1441,18 @@ def _grid_rows(members, row_max):
     return [[m["id"] for m in order[i:i + row_max]] for i in range(0, len(order), row_max)]
 
 
-def container_size(members, collapsed=False):
+def container_size(members, collapsed=False, manual=None):
     if collapsed:
         return COLLAPSED_W, COLLAPSED_H
     pts = [m["pos"] for m in members if m.get("pos")]
     if not pts:
-        return EMPTY_W, EMPTY_H
-    w = max(p["x"] for p in pts) + CELL_W + PAD_X
-    h = max(p["y"] for p in pts) + CELL_H + PAD_BOTTOM
-    return max(EMPTY_W, round(w)), max(EMPTY_H, round(h))
+        w, h = EMPTY_W, EMPTY_H
+    else:
+        w = max(EMPTY_W, round(max(p["x"] for p in pts) + CELL_W + PAD_X))
+        h = max(EMPTY_H, round(max(p["y"] for p in pts) + CELL_H + PAD_BOTTOM))
+    if isinstance(manual, dict):        # dragged bigger by hand
+        w, h = max(w, int(manual.get("w") or 0)), max(h, int(manual.get("h") or 0))
+    return w, h
 
 
 def _overlaps(a, b, gap=24):
@@ -1432,7 +1499,7 @@ def layout(d, graph, force=False, scope=None):
     # 2. the containers on the canvas (a scoped tidy-up leaves them where they are)
     groups = graph["groups"]
     gby = {g["id"]: g for g in groups}
-    size = {g["id"]: container_size(by_group.get(g["id"], []), g.get("collapsed")) for g in groups}
+    size = {g["id"]: container_size(by_group.get(g["id"], []), g.get("collapsed"), g.get("size")) for g in groups}
     gadj = {}
     for L in graph["links"]:
         ga, gb = group_of.get(L["a"]), group_of.get(L["b"])
@@ -1460,7 +1527,7 @@ def layout(d, graph, force=False, scope=None):
     rects = [(g["pos"]["x"], g["pos"]["y"], *size[g["id"]]) for g in fixed]
     ua_members = by_group.get(UNASSIGNED, [])
     ua_pos = d["view"].get("unassigned_pos")
-    ua_size = container_size(ua_members) if ua_members else (0, 0)
+    ua_size = container_size(ua_members, False, d["view"].get("unassigned_size")) if ua_members else (0, 0)
     ua_size = (max(ua_size[0], UA_MIN_W), ua_size[1]) if ua_members else ua_size
     ua_rect = (ua_pos["x"], ua_pos["y"], *ua_size) if (ua_pos and ua_members and not (force and not scope)) else None
 
@@ -1605,13 +1672,19 @@ def boxes(graph, view):
     for n in graph["nodes"]:
         by_group.setdefault(n["group"], []).append(n)
     for g in graph["groups"]:
-        w, h = container_size(by_group.get(g["id"], []), False)
+        members = by_group.get(g["id"], [])
+        mw, mh = container_size(members, False)                     # what the contents need
+        w, h = container_size(members, False, g.get("fixed_size"))  # what it is drawn at
         g["size"] = {"w": w, "h": h}
+        g["min_size"] = {"w": mw, "h": mh}
         g["size_collapsed"] = {"w": COLLAPSED_W, "h": COLLAPSED_H}
     ua = by_group.get(UNASSIGNED, [])
-    w, h = container_size(ua, False)
-    return {"pos": view.get("unassigned_pos") or {"x": 0, "y": 0}, "size": {"w": max(w, UA_MIN_W), "h": h},
-            "count": len(ua)}
+    mw, mh = container_size(ua, False)
+    w, h = container_size(ua, False, view.get("unassigned_size"))
+    fixed = view.get("unassigned_size")
+    return {"pos": view.get("unassigned_pos") or {"x": 0, "y": 0},
+            "size": {"w": max(w, UA_MIN_W), "h": h}, "min_size": {"w": max(mw, UA_MIN_W), "h": mh},
+            "fixed_size": dict(fixed) if isinstance(fixed, dict) else None, "count": len(ua)}
 
 
 # ---- icons ---------------------------------------------------------------------------------
@@ -1676,7 +1749,7 @@ def set_type_icon(d, kind, iid):
     if kind not in KIND:
         raise TopologyError("Unknown equipment type")
     if iid:
-        if iid not in d["icons"]:
+        if not _BUILTIN_ICON.match(iid) and iid not in d["icons"]:
             raise TopologyError("That icon no longer exists", 404)
         d["type_icons"][kind] = iid
     else:

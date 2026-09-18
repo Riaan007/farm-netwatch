@@ -613,13 +613,26 @@ the same records — switch with **Diagram / Map** — so a change in one is in 
   moves anything that was placed by hand. Growing groups push their neighbours aside.
   **Auto-arrange** tidies everything that is not locked; lock single items, a whole group
   (its menu) or the whole layout (**Lock layout**). Positions are saved as you drag and
-  are separate from GPS — moving a box never moves a map pin.
+  are separate from GPS — moving a box never moves a map pin. A group's corner grip
+  makes its box bigger than its contents (never smaller), which is how you leave room
+  for gear you are about to add.
+- **Selecting** — drag a box around equipment on empty canvas to select it all (shift to
+  add to what is already selected), then drag the lot into a group at once. To move the
+  diagram itself, hold the **space bar**, drag with the middle mouse button, or switch on
+  the hand button next to the zoom controls. A touch screen always pans on a finger drag.
+- **Details panel** — under the diagram by default (it spreads its sections across the
+  width and floats over the diagram's lower edge), or beside it — the **Panel** button
+  switches, and each browser remembers its own choice.
 - **Map** — tower/site markers with their counts and status (a dashed marker = position
   estimated from its devices' pins), device pins, and the links between places with
   signal and distance. The site's **Map** page shows the towers too.
-- **Icons** — every type has a built-in isometric picture; **Icons** replaces one for a
-  whole type, and an item's panel sets one for that item (PNG/JPEG/WebP/GIF, shrunk to
-  160 px; never SVG).
+- **Pictures** — 40+ built-in isometric pictures: every equipment type (including nine
+  camera shapes — PTZ, dome, turret, bullet, dual-lens, panoramic, thermal, number-plate
+  and doorbell) plus Ubiquiti, MikroTik and Cudy hardware. Pick one for a single item
+  (its panel → **Picture…**) or for a whole type (**Icons** → **Choose**), or upload your
+  own (PNG/JPEG/WebP/GIF, shrunk to 160 px; never SVG). A camera's shape is also worked
+  out from its own name or model — "Hek PTZ" and `DS-2DE…` draw as a PTZ, `DS-2CD…T…` as
+  a bullet — and the panel's type list can always correct it.
 
 Records live on the site Pi in `/data/topology.json` (+ `/data/topo_icons/`) and ride
 along in the config backup. **Forget** on a device removes it from the diagram; a bulk

@@ -58,19 +58,32 @@
 .tv .tv-search svg{position:absolute;left:9px;top:9px;width:16px;height:16px;color:var(--tv-dim)}
 .tv .tv-main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:10px;align-items:start}
 .tv.side-off .tv-main{grid-template-columns:minmax(0,1fr)}
+/* Details under the diagram: floating over its lower edge, so the diagram keeps
+   its full height and the panel never needs scrolling to reach. */
+.tv.side-bottom .tv-main{grid-template-columns:minmax(0,1fr);position:relative}
+.tv.side-bottom .tv-side{position:absolute;left:10px;right:10px;bottom:10px;top:auto;z-index:6;
+  max-height:min(32vh,300px);min-height:0;background:rgba(10,17,32,.97);box-shadow:0 -12px 40px rgba(0,0,0,.55);
+  display:flex;flex-wrap:wrap;align-content:flex-start}
+.tv.side-bottom .tv-side>.hd{flex:1 1 100%;position:sticky;top:0}
+.tv.side-bottom .tv-side>.sec{flex:1 1 300px;min-width:0;border-bottom:0;border-right:1px solid rgba(148,163,184,.08)}
 .tv .tv-stage{position:relative;height:var(--tv-h);min-height:460px;border-radius:14px;border:1px solid var(--tv-line);overflow:hidden;background:radial-gradient(900px 500px at 20% 0%,rgba(34,211,238,.06),transparent 60%),#060b15;touch-action:none;user-select:none;-webkit-user-select:none}
-.tv .tv-svg{width:100%;height:100%;display:block;outline:none;cursor:grab}
+.tv .tv-svg{width:100%;height:100%;display:block;outline:none;cursor:crosshair}
+.tv.pan-mode .tv-svg{cursor:grab}
 .tv .tv-svg.panning{cursor:grabbing}
+.tv .tv-marq{fill:rgba(34,211,238,.12);stroke:#22d3ee;stroke-width:1.2;stroke-dasharray:5 4;pointer-events:none}
+.tv .tv-g-grip{cursor:nwse-resize}
+.tv .tv-g-grip rect{fill:rgba(148,163,184,.16)}
+.tv .tv-g-grip:hover rect{fill:rgba(34,211,238,.28)}
 .tv .tv-svg.connecting,.tv .tv-svg.connecting .tv-n{cursor:crosshair}
 .tv .tv-map{position:absolute;inset:0;z-index:0;isolation:isolate;background:#0b1322}
 .tv .tv-banner{position:absolute;z-index:900;left:50%;top:12px;transform:translateX(-50%);display:flex;gap:10px;align-items:center;padding:6px 8px 6px 14px;border-radius:99px;background:rgba(8,145,178,.96);color:#fff;font-weight:600;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:calc(100% - 24px)}
 .tv .tv-banner span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tv .tv-banner button{border:0;background:rgba(255,255,255,.2);border-radius:99px;padding:2px 10px;font-size:12px;color:#fff}
-.tv .tv-zoom{position:absolute;left:10px;bottom:10px;z-index:5;display:flex;gap:4px;align-items:center;background:rgba(6,11,21,.88);border:1px solid var(--tv-line2);border-radius:10px;padding:3px}
+.tv .tv-zoom{position:absolute;left:10px;bottom:calc(10px + var(--tv-dock-h,0px));z-index:5;display:flex;gap:4px;align-items:center;background:rgba(6,11,21,.88);border:1px solid var(--tv-line2);border-radius:10px;padding:3px}
 .tv .tv-zoom button{border:0;background:transparent;border-radius:7px;min-width:30px;height:28px;font-weight:700;color:#cbd5e1;padding:0 6px}
 .tv .tv-zoom button:hover{background:rgba(148,163,184,.16)}
 .tv .tv-zoom span{font-size:11.5px;color:var(--tv-muted);min-width:40px;text-align:center;font-variant-numeric:tabular-nums}
-.tv .tv-legend{position:absolute;right:10px;bottom:10px;z-index:5;max-width:min(330px,calc(100% - 20px));background:rgba(6,11,21,.94);border:1px solid var(--tv-line2);border-radius:12px;font-size:12px}
+.tv .tv-legend{position:absolute;right:10px;bottom:calc(10px + var(--tv-dock-h,0px));z-index:5;max-width:min(330px,calc(100% - 20px));background:rgba(6,11,21,.94);border:1px solid var(--tv-line2);border-radius:12px;font-size:12px}
 .tv .tv-legend>button{border:0;background:transparent;padding:6px 10px;font-weight:700;color:#cbd5e1;width:100%;text-align:left;display:flex;gap:6px;align-items:center}
 .tv .tv-legend .body{padding:2px 12px 10px;display:grid;gap:10px;max-height:52vh;overflow:auto}
 .tv .tv-legend h4{margin:0 0 4px;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--tv-dim)}
@@ -281,6 +294,8 @@
   const GEO = (p) => (p && isFinite(+p.lat) && isFinite(+p.lon) ? { ...p, lat: +p.lat, lon: +p.lon, ts: NUMN(p.ts) } : null);
   const STR = (v, d = "") => (v === null || v === undefined ? d : String(v));
   const pick = (v, allowed, d) => (allowed.includes(v) ? v : d);
+  const SIZE = (v) => (v && typeof v === "object" && NUM(v.w) > 0 && NUM(v.h) > 0
+    ? { w: Math.min(6000, NUM(v.w)), h: Math.min(4000, NUM(v.h)) } : null);
   function sanitize(g) {
     if (!g || typeof g !== "object") return g;
     const numObj = (o, keys) => { if (o) keys.forEach((k) => { if (k in o) o[k] = NUMN(o[k]); }); return o; };
@@ -306,6 +321,7 @@
       x.counts = {};
       ["total", "online", "offline", "quiet", "unmonitored", "problems"].forEach((k) => (x.counts[k] = NUM(c[k])));
       x.size = { w: NUM(x.size && x.size.w, 260), h: NUM(x.size && x.size.h, 124) };
+      x.fixed_size = SIZE(x.fixed_size);
     });
     g.links = (Array.isArray(g.links) ? g.links : []).filter((L) => L && typeof L.id === "string" && typeof L.a === "string" && typeof L.b === "string");
     g.links.forEach((L) => {
@@ -323,7 +339,8 @@
       ["a", "b", "a_port", "b_port", "evidence", "type"].forEach((k) => (x[k] = STR(x[k])));
     });
     const ua = g.unassigned || {};
-    g.unassigned = { pos: POS(ua.pos) || { x: 0, y: 0 }, size: { w: NUM(ua.size && ua.size.w, 520), h: NUM(ua.size && ua.size.h, 124) }, count: NUM(ua.count) };
+    g.unassigned = { pos: POS(ua.pos) || { x: 0, y: 0 }, size: { w: NUM(ua.size && ua.size.w, 520), h: NUM(ua.size && ua.size.h, 124) },
+      fixed_size: SIZE(ua.fixed_size), count: NUM(ua.count) };
     const gr = g.grid || {};
     g.grid = {};
     [["cell_w", 150], ["cell_h", 122], ["pad_x", 18], ["pad_top", 54], ["pad_bottom", 14], ["row_max", 6],
@@ -377,6 +394,17 @@
     `<path d="M${x},${y - r * 0.8} A${r},${r} 0 0 ${dir > 0 ? 1 : 0} ${x},${y + r * 0.8}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" opacity="${1 - i * 0.25}" transform="translate(${dir * 2},0)"/>`).join("");
   const bolt = (x, y, s = 1) => `<path d="M${x + 1 * s},${y - 6 * s} L${x - 3 * s},${y + 1 * s} L${x},${y + 1 * s} L${x - 1 * s},${y + 6 * s} L${x + 3 * s},${y - 1 * s} L${x},${y - 1 * s} Z" fill="#fbbf24"/>`;
 
+  function camBullet(shellColor, lens) {
+    const b = box(35, 38, 26, 11, 11, shellColor);
+    const L = b.P(26, 5.5, 5.5);
+    const hood = box(34, 30, 30, 13, 1.6, shade(shellColor, -0.1));
+    return shadow(34, 47, 18) + `<path d="M22,46 L22,38 L28,34" stroke="#94a3b8" stroke-width="3" fill="none" stroke-linecap="round"/>`
+      + poly([[16, 44], [24, 48], [24, 40], [16, 36]], "#64748b") + b.svg + hood.svg
+      + `<ellipse cx="${L[0].toFixed(1)}" cy="${L[1].toFixed(1)}" rx="4.2" ry="4.8" fill="#0f172a" stroke="#475569"/>`
+      + `<circle cx="${(L[0] - 1).toFixed(1)}" cy="${(L[1] - 1.4).toFixed(1)}" r="1.3" fill="${lens || "#67e8f9"}"/>`
+      + `<circle cx="${b.P(3, 11, 8)[0].toFixed(1)}" cy="${b.P(3, 11, 8)[1].toFixed(1)}" r="1" fill="#f43f5e"/>`;
+  }
+
   const ICONS = {
     camera() {
       const b = box(35, 38, 26, 11, 11, "#e2e8f0");
@@ -387,6 +415,67 @@
         + `<ellipse cx="${lens[0].toFixed(1)}" cy="${lens[1].toFixed(1)}" rx="4.2" ry="4.8" fill="#0f172a" stroke="#475569"/>`
         + `<circle cx="${(lens[0] - 1).toFixed(1)}" cy="${(lens[1] - 1.4).toFixed(1)}" r="1.3" fill="#67e8f9"/>`
         + `<circle cx="${b.P(3, 11, 8)[0].toFixed(1)}" cy="${b.P(3, 11, 8)[1].toFixed(1)}" r="1" fill="#f43f5e"/>`;
+    },
+    "camera-bullet"() { return camBullet("#e2e8f0"); },
+    "camera-thermal"() {
+      return camBullet("#cbd5e1", "#fb923c")
+        + `<path d="M46,20 q3,-3 0,-6 M50,21 q4,-4 0,-8" fill="none" stroke="#fb923c" stroke-width="1.5" stroke-linecap="round" opacity=".9"/>`;
+    },
+    "camera-anpr"() {
+      return camBullet("#cbd5e1", "#fde68a")
+        + `<rect x="36" y="40" width="20" height="9" rx="1.6" fill="#f8fafc" stroke="#475569" stroke-width=".8"/>`
+        + `<path d="M39,45.5 h3 M44,45.5 h3 M49,45.5 h4" stroke="#0f172a" stroke-width="1.6" stroke-linecap="round"/>`;
+    },
+    "camera-ptz"() {
+      const plate = box(30, 15, 20, 12, 3, "#cbd5e1");
+      return shadow(31, 49, 17) + plate.svg
+        + `<path d="M30,17 L30,22" stroke="#94a3b8" stroke-width="3.4" stroke-linecap="round"/>`
+        + `<path d="M17,30 a13,13 0 0 1 26,0 z" fill="#94a3b8" stroke="rgba(2,6,23,.6)" stroke-width=".8"/>`
+        + `<circle cx="30" cy="31" r="13" fill="#f1f5f9" stroke="rgba(2,6,23,.55)" stroke-width=".8"/>`
+        + `<path d="M17,31 a13,13 0 0 0 26,0 z" fill="#e2e8f0"/>`
+        + `<circle cx="34" cy="33" r="6.4" fill="#0f172a" stroke="#475569" stroke-width=".9"/>`
+        + `<circle cx="32.2" cy="31.2" r="1.9" fill="#67e8f9"/>`
+        + `<path d="M46,26 a9,9 0 0 1 0,11" fill="none" stroke="#22d3ee" stroke-width="1.7" stroke-linecap="round"/>`
+        + `<path d="M46,37 l-2.6,-1 l.6,2.9 z" fill="#22d3ee"/>`;
+    },
+    "camera-dome"() {
+      const plate = box(31, 44, 30, 16, 3, "#cbd5e1");
+      return shadow(31, 49, 19) + plate.svg
+        + `<path d="M15,40 a16,16 0 0 1 32,0 z" fill="#f1f5f9" stroke="rgba(2,6,23,.55)" stroke-width=".9"/>`
+        + `<path d="M20,40 a11,11 0 0 1 22,0 z" fill="#1e293b" opacity=".85"/>`
+        + `<circle cx="33" cy="34" r="4.6" fill="#0f172a" stroke="#475569" stroke-width=".8"/>`
+        + `<circle cx="31.4" cy="32.6" r="1.5" fill="#67e8f9"/>`;
+    },
+    "camera-turret"() {
+      const base = box(31, 45, 24, 14, 5, "#cbd5e1");
+      return shadow(31, 49, 17) + base.svg
+        + `<path d="M19,38 a13,9 0 0 1 24,0 z" fill="#94a3b8"/>`
+        + `<circle cx="31" cy="30" r="12" fill="#f1f5f9" stroke="rgba(2,6,23,.55)" stroke-width=".9"/>`
+        + `<circle cx="33" cy="31" r="7.4" fill="#0f172a" stroke="#475569" stroke-width=".9"/>`
+        + `<circle cx="31" cy="29" r="2.2" fill="#67e8f9"/>`
+        + `<path d="M24,24 a10,10 0 0 1 14,0" fill="none" stroke="#e2e8f0" stroke-width="1.4" opacity=".7"/>`;
+    },
+    "camera-dual"() {
+      const arm = `<path d="M18,47 L18,36 L24,32" stroke="#94a3b8" stroke-width="3" fill="none" stroke-linecap="round"/>`;
+      const b = box(36, 36, 30, 12, 13, "#e2e8f0");
+      return shadow(33, 48, 18) + arm + poly([[12, 45], [20, 49], [20, 41], [12, 37]], "#64748b") + b.svg
+        + `<ellipse cx="44" cy="30" rx="4.4" ry="5" fill="#0f172a" stroke="#475569"/><circle cx="43" cy="28.6" r="1.3" fill="#67e8f9"/>`
+        + `<ellipse cx="44" cy="38.5" rx="4.4" ry="5" fill="#0f172a" stroke="#475569"/><circle cx="43" cy="37.1" r="1.3" fill="#a78bfa"/>`;
+    },
+    "camera-pano"() {
+      const arm = `<path d="M31,49 L31,40" stroke="#94a3b8" stroke-width="3.4" stroke-linecap="round"/>`;
+      return shadow(31, 50, 18) + arm
+        + `<path d="M12,34 a19,13 0 0 1 38,0 a19,9 0 0 1 -38,0 z" fill="#e2e8f0" stroke="rgba(2,6,23,.55)" stroke-width=".9"/>`
+        + `<path d="M12,34 a19,13 0 0 1 38,0 z" fill="#f1f5f9"/>`
+        + [16.5, 25.5, 34.5, 43.5].map((x, i) => `<circle cx="${x}" cy="${33 - [0, 3, 3, 0][i]}" r="3.4" fill="#0f172a" stroke="#475569" stroke-width=".8"/>`).join("")
+        + `<circle cx="16.5" cy="32" r="1.1" fill="#67e8f9"/><circle cx="43.5" cy="32" r="1.1" fill="#67e8f9"/>`;
+    },
+    intercom() {
+      const b = box(31, 44, 22, 8, 26, "#cbd5e1");
+      return shadow(31, 48, 15) + b.svg
+        + b.L(4, 18, 17, 23, "#0f172a")
+        + b.L(6, 16, 9.5, 11.5, "#94a3b8") + b.L(6, 16, 7, 9, "#94a3b8") + b.L(6, 16, 4.5, 6.5, "#94a3b8")
+        + `<circle cx="${b.P(11, 8, 14)[0].toFixed(1)}" cy="${b.P(11, 8, 14)[1].toFixed(1)}" r="2.4" fill="#22d3ee"/>`;
     },
     nvr() {
       const b = box(32, 44, 30, 26, 11, "#475569");
@@ -532,6 +621,71 @@
   };
 
   // Group kinds: line icons (24×24) for headers, map markers and collapsed towers.
+
+  // Pictures an operator can pick by hand (BUILTIN below). Same 64×56 frame.
+  const EXTRA_ICONS = {
+    "ubnt-dish"() {
+      return shadow(28, 50, 12)
+        + `<path d="M26,50 L26,12" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>`
+        + `<path d="M26,26 L33,26" stroke="#64748b" stroke-width="2.4"/>`
+        + `<circle cx="42" cy="26" r="15" fill="#e2e8f0" stroke="rgba(2,6,23,.6)" stroke-width=".9"/>`
+        + `<circle cx="42" cy="26" r="11" fill="#f8fafc"/>`
+        + `<circle cx="42" cy="26" r="11" fill="none" stroke="#0ea5e9" stroke-width="1.4" opacity=".8"/>`
+        + `<circle cx="42" cy="26" r="3.6" fill="#cbd5e1" stroke="#64748b" stroke-width=".8"/>`;
+    },
+    "ubnt-sector"() {
+      const b = box(38, 30, 10, 5, 34, "#f1f5f9");
+      return shadow(28, 50, 12) + `<path d="M26,50 L26,10" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>`
+        + `<path d="M26,26 L33,26" stroke="#64748b" stroke-width="2.4"/>` + b.svg
+        + b.L(1.5, 8.5, 6, 28, "#cbd5e1") + arcs(50, 26, 1);
+    },
+    "ubnt-ap"() {
+      const plate = box(31, 20, 12, 8, 3, "#cbd5e1");
+      return shadow(31, 46, 20) + plate.svg
+        + `<path d="M31,23 L31,29" stroke="#94a3b8" stroke-width="2.6" stroke-linecap="round"/>`
+        + `<ellipse cx="31" cy="36" rx="20" ry="9" fill="#f8fafc" stroke="rgba(2,6,23,.5)" stroke-width=".9"/>`
+        + `<ellipse cx="31" cy="34.5" rx="20" ry="9" fill="#ffffff"/>`
+        + `<ellipse cx="31" cy="34.5" rx="11" ry="5" fill="none" stroke="#0ea5e9" stroke-width="1.6"/>`;
+    },
+    "ubnt-nano"() {
+      const b = box(36, 32, 9, 6, 22, "#f1f5f9");
+      return shadow(28, 50, 12) + `<path d="M26,50 L26,14" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>`
+        + `<path d="M26,28 L32,28" stroke="#64748b" stroke-width="2.2"/>` + b.svg
+        + b.L(1.5, 7.5, 4, 18, "#cbd5e1") + arcs(48, 28, 1);
+    },
+    "mikrotik-router"() {
+      const b = box(31, 42, 34, 20, 7, "#1e40af");
+      let ant = "";
+      [-13, 0, 13].forEach((dx) => { ant += `<path d="M${31 + dx},${28 - Math.abs(dx) * 0.18} L${31 + dx},${14 - Math.abs(dx) * 0.2}" stroke="#94a3b8" stroke-width="2.6" stroke-linecap="round"/>`; });
+      return shadow(31, 46, 24) + ant + b.svg + b.L(4, 30, 2.5, 4.5, "#60a5fa") + b.T(5, 29, 5, 15, "rgba(255,255,255,.07)");
+    },
+    "mikrotik-switch"() {
+      const b = box(32, 41, 42, 16, 9, "#1d4ed8");
+      let s2 = shadow(32, 45, 28) + b.svg;
+      for (let i = 0; i < 8; i++) s2 += b.L(3 + i * 4.6, 6.3 + i * 4.6, 1.5, 5, "#0f172a") + b.L(3.8 + i * 4.6, 5.5 + i * 4.6, 5.6, 6.6, "#93c5fd");
+      return s2 + b.T(3, 14, 3, 5, "#bfdbfe");
+    },
+    "cudy-router"() {
+      const b = box(31, 42, 30, 18, 6, "#f8fafc");
+      let ant = "";
+      [-14, -5, 5, 14].forEach((dx) => { ant += `<path d="M${31 + dx},${29} L${31 + dx + dx * 0.25},${15}" stroke="#cbd5e1" stroke-width="2.4" stroke-linecap="round"/>`; });
+      return shadow(31, 46, 22) + ant + b.svg + b.L(5, 25, 2, 3.6, "#22d3ee") + b.T(6, 24, 4, 13, "rgba(148,163,184,.12)");
+    },
+    "cudy-outdoor"() {
+      const b = box(35, 34, 14, 9, 24, "#f8fafc");
+      return shadow(28, 50, 12) + `<path d="M26,50 L26,16" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>`
+        + `<path d="M26,30 L31,30" stroke="#64748b" stroke-width="2.2"/>` + b.svg
+        + b.L(2.5, 11.5, 15, 21, "#e2e8f0") + b.L(4, 10, 4, 6, "#22d3ee") + arcs(50, 30, 1);
+    },
+  };
+  // What the icon picker offers: every equipment type, then these extras.
+  const EXTRA_META = {
+    "ubnt-dish": ["Dish radio (PowerBeam)", "Ubiquiti"], "ubnt-sector": ["Sector antenna", "Ubiquiti"],
+    "ubnt-ap": ["Ceiling AP (UniFi)", "Ubiquiti"], "ubnt-nano": ["NanoStation / LiteAP", "Ubiquiti"],
+    "mikrotik-router": ["Router (hAP)", "MikroTik"], "mikrotik-switch": ["Switch (CRS)", "MikroTik"],
+    "cudy-router": ["Indoor router", "Cudy"], "cudy-outdoor": ["Outdoor AP", "Cudy"],
+  };
+
   const GICON = {
     tower: `<path d="M12 3 7 21M12 3l5 18M8.3 15h7.4M9.5 10h5M7 21h10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M5 5a9 9 0 0 1 0 6M19 5a9 9 0 0 0 0 6" fill="none" stroke="#22d3ee" stroke-width="1.5" stroke-linecap="round"/>`,
     site: `<path d="M3 11l9-7 9 7M5 10v10h14V10M10 20v-5h4v5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>`,
@@ -545,13 +699,16 @@
   // One hidden <svg> of <symbol>s shared by every view on the page.
   function ensureSymbols() {
     if (document.getElementById("tv-symbols")) return;
-    const defs = Object.entries(ICONS).map(([k, fn]) => `<symbol id="tvk-${k}" viewBox="0 0 64 56">${fn()}</symbol>`).join("")
+    const defs = Object.entries({ ...ICONS, ...EXTRA_ICONS }).map(([k, fn]) => `<symbol id="tvk-${k}" viewBox="0 0 64 56">${fn()}</symbol>`).join("")
       + Object.entries(GICON).map(([k, s]) => `<symbol id="tvg-${k}" viewBox="0 0 24 24">${s}</symbol>`).join("");
     const div = document.createElement("div");
     div.innerHTML = `<svg id="tv-symbols" width="0" height="0" style="position:absolute;width:0;height:0" aria-hidden="true"><defs>${defs}</defs></svg>`;
     document.body.appendChild(div.firstChild);
   }
-  const kindSvg = (kind, w = 30, h = 26) => `<svg class="tv-ic" viewBox="0 0 64 56" width="${w}" height="${h}" aria-hidden="true"><use href="#tvk-${ICONS[kind] ? kind : "other"}"/></svg>`;
+  const ALL_ICONS = { ...ICONS, ...EXTRA_ICONS };
+  const kindSvg = (kind, w = 30, h = 26) => `<svg class="tv-ic" viewBox="0 0 64 56" width="${w}" height="${h}" aria-hidden="true"><use href="#tvk-${ALL_ICONS[kind] ? kind : "other"}"/></svg>`;
+  /** A picture reference: "b:<name>" = one Netwatch draws, anything else = an uploaded file. */
+  const builtinOf = (ref) => (typeof ref === "string" && ref.slice(0, 2) === "b:" && ALL_ICONS[ref.slice(2)] ? ref.slice(2) : null);
 
   // Status glyphs drawn on a node (colour is never the only signal).
   const STATE = {
@@ -578,6 +735,8 @@
     review: `<path d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`,
     filter: `<path d="M4 5h16l-6 8v6l-4-2v-4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>`,
     fit: `<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`,
+    hand: `<path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12V4.5a1.5 1.5 0 0 1 3 0V12V6.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a5 5 0 0 1-4.3-2.5L4 15a1.6 1.6 0 0 1 2.6-1.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`,
+    dock: `<path d="M4 5h16v14H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 15h16" stroke="currentColor" stroke-width="1.8"/>`,
     image: `<path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="15.5" cy="9" r="1.5" fill="currentColor"/>`,
     refresh: `<path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`,
     info: `<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`,
@@ -600,12 +759,14 @@
       media: pref.media || { ethernet: true, fibre: true, wireless: true },
       sugg: pref.sugg !== false, labels: pref.labels !== false, review: pref.review !== false,
       legend: !!pref.legend, scope: pref.scope === "all" ? "all" : "infra",
-      panel: null, connect: null, drag: null, over: { nodes: {}, groups: {}, ua: null },
+      panel: null, connect: null, drag: null, over: { nodes: {}, groups: {}, ua: null, size: {} },
       dropTarget: null, placing: null, destroyed: false, loading: false, err: "", timer: null,
+      dock: pref.dock === "right" ? "right" : "bottom", panMode: !!pref.panMode, space: false, marquee: null,
       focusWanted: opts.focus || null,
     };
     const savePref = () => store.set(PK, { view: S.view, k: S.k, tx: S.tx, ty: S.ty, status: S.status, kinds: S.kinds,
-      media: S.media, sugg: S.sugg, labels: S.labels, review: S.review, legend: S.legend, scope: S.scope });
+      media: S.media, sugg: S.sugg, labels: S.labels, review: S.review, legend: S.legend, scope: S.scope,
+      dock: S.dock, panMode: S.panMode });
     const toast = (m, kind) => (opts.toast ? opts.toast(m, kind) : console.log(m));
     const confirmBox = (t, x, o) => (opts.confirm ? opts.confirm(t, x, o || {}) : Promise.resolve(window.confirm(t + "\n\n" + x)));
     const kindOf = (id) => (S.g && S.g.kinds.find((k) => k.id === id)) || { id, label: id, tier: 4, wireless: false };
@@ -640,11 +801,12 @@
         <button type="button" class="tv-btn" data-a="lock" title="Lock the layout so nothing can be dragged by accident">${ico("unlock")}<span class="lbl">Lock layout</span></button>
         <button type="button" class="tv-btn" data-a="review" title="Suggested connections and equipment not in a group yet">${ico("review")}<span class="lbl">Review</span><span class="n" data-rn hidden></span></button>
         <button type="button" class="tv-btn" data-a="icons" title="Equipment pictures">${ico("image")}<span class="lbl">Icons</span></button>
+        <button type="button" class="tv-btn" data-a="dock" title="Show the details panel under the diagram or beside it">${ico("dock")}<span class="lbl">Panel</span></button>
         </div>
       </div>
       <div class="tv-main">
         <div class="tv-stage">
-          <svg class="tv-svg" tabindex="0" role="application" aria-label="Network diagram — drag to pan, scroll to zoom">
+          <svg class="tv-svg" tabindex="0" role="application" aria-label="Network diagram — drag to select, hold the space bar to move, scroll to zoom">
             <defs>
               <pattern id="tv-dots" width="30" height="30" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="rgba(148,163,184,.13)"/></pattern>
               <pattern id="tv-iso" width="34.64" height="20" patternUnits="userSpaceOnUse"><path d="M0,10 L17.32,0 L34.64,10 L17.32,20 Z" fill="none" stroke="rgba(148,163,184,.055)" stroke-width="1"/></pattern>
@@ -653,7 +815,8 @@
           </svg>
           <div class="tv-map" hidden></div>
           <div class="tv-banner" hidden><span data-bt></span><button type="button" data-bc>Cancel</button></div>
-          <div class="tv-zoom" data-zoombar><button type="button" data-z="-" aria-label="Zoom out">−</button><span data-zl>100%</span><button type="button" data-z="+" aria-label="Zoom in">+</button><button type="button" data-z="fit" title="Fit to screen" aria-label="Fit to screen">${ico("fit")}</button></div>
+          <div class="tv-zoom" data-zoombar><button type="button" data-z="-" aria-label="Zoom out">−</button><span data-zl>100%</span><button type="button" data-z="+" aria-label="Zoom in">+</button><button type="button" data-z="fit" title="Fit to screen" aria-label="Fit to screen">${ico("fit")}</button>
+            <button type="button" data-z="hand" title="Drag to move the diagram instead of selecting (or hold the space bar)" aria-label="Move the diagram" aria-pressed="false">${ico("hand")}</button></div>
           <div class="tv-legend" data-legend></div>
           <div class="tv-empty" data-empty hidden></div>
         </div>
@@ -736,18 +899,22 @@
       });
       return { w: Math.round(w), h: Math.round(h) };
     }
+    /** A box never shrinks below what is inside it, however small it was dragged. */
+    const grown = (min, fixed) => (fixed ? { w: Math.max(min.w, fixed.w || 0), h: Math.max(min.h, fixed.h || 0) } : min);
     function computeBoxes() {
       const out = {};
       S.g.groups.forEach((gr) => {
         const p = S.over.groups[gr.id] || gr.pos || { x: 0, y: 0 };
-        const sz = gr.collapsed ? { w: G().collapsed_w, h: G().collapsed_h } : fitSize(S.idx.byGroup[gr.id] || []);
-        out[gr.id] = { id: gr.id, x: p.x, y: p.y, w: sz.w, h: sz.h, collapsed: !!gr.collapsed, g: gr };
+        const min = fitSize(S.idx.byGroup[gr.id] || []);
+        const sz = gr.collapsed ? { w: G().collapsed_w, h: G().collapsed_h } : grown(min, S.over.size[gr.id] || gr.fixed_size);
+        out[gr.id] = { id: gr.id, x: p.x, y: p.y, w: sz.w, h: sz.h, min, collapsed: !!gr.collapsed, g: gr };
       });
       const ua = S.idx.byGroup["~"] || [];
       if (ua.length && S.review) {
         const p = S.over.ua || (S.g.unassigned && S.g.unassigned.pos) || { x: 0, y: 0 };
-        const sz = fitSize(ua);
-        out["~"] = { id: "~", x: p.x, y: p.y, w: Math.max(sz.w, 520), h: sz.h, ua: true };
+        const min = { w: Math.max(fitSize(ua).w, 520), h: fitSize(ua).h };
+        const sz = grown(min, S.over.size["~"] || (S.g.unassigned && S.g.unassigned.fixed_size));
+        out["~"] = { id: "~", x: p.x, y: p.y, w: sz.w, h: sz.h, min, ua: true };
       }
       S.boxes = out;
     }
@@ -820,7 +987,8 @@
 
     // ---- filters --------------------------------------------------------------------------------
     const KGROUP = { net: ["internet", "ptp", "radio", "router", "wifi-router", "switch", "unmanaged-switch", "media-converter", "patch-panel"],
-      cctv: ["camera", "nvr"], power: ["poe", "ups", "solar", "alarm", "server", "nas", "pc", "printer", "phone", "media", "iot", "other", "unknown"] };
+      cctv: ["camera", "camera-ptz", "camera-dome", "camera-turret", "camera-bullet", "camera-dual", "camera-pano",
+        "camera-thermal", "camera-anpr", "intercom", "nvr"], power: ["poe", "ups", "solar", "alarm", "server", "nas", "pc", "printer", "phone", "media", "iot", "other", "unknown"] };
     function ipMatch(q) {
       if (!/^[\d.*]+$/.test(q) || !/\d/.test(q)) return null;
       if (/^\d{1,3}(\.\d{1,3}){3}$/.test(q)) return (ip) => ip === q;
@@ -844,8 +1012,19 @@
     }
 
     // ---- drawing --------------------------------------------------------------------------------
+    /** Where the details panel sits, and what dragging the canvas does. */
+    function applyModes() {
+      tv.classList.toggle("side-bottom", S.dock === "bottom");
+      // how much of the canvas the docked panel covers, so the zoom bar and legend clear it
+      const h = S.dock === "bottom" && side.offsetParent && side.offsetHeight ? side.offsetHeight + 12 : 0;
+      tv.style.setProperty("--tv-dock-h", h + "px");
+      tv.classList.toggle("pan-mode", S.panMode || S.space);
+      const hb = $('[data-z="hand"]');
+      if (hb) { hb.setAttribute("aria-pressed", String(S.panMode)); hb.style.color = S.panMode ? "#67e8f9" : ""; }
+    }
     function render() {
       if (S.destroyed) return;
+      applyModes();
       if (!S.g) {
         const e = $("[data-empty]");
         e.hidden = false;
@@ -895,7 +1074,8 @@
         if (!a || S.over.nodes[n.id]) return "";
         return nodeSvg(n, a, hits, related);
       }).join("");
-      LO.innerHTML = Object.keys(S.over.nodes).map((id) => nodeSvg(S.idx.nodes[id], S.over.nodes[id], null, null, true)).join("") + (S.ghost || "");
+      LO.innerHTML = Object.keys(S.over.nodes).map((id) => nodeSvg(S.idx.nodes[id], S.over.nodes[id], null, null, true)).join("") + (S.ghost || "")
+        + (S.marquee ? `<rect class="tv-marq" x="${S.marquee.x.toFixed(1)}" y="${S.marquee.y.toFixed(1)}" width="${S.marquee.w.toFixed(1)}" height="${S.marquee.h.toFixed(1)}" rx="4"/>` : "");
     }
     function applyTransform() {
       world.setAttribute("transform", `translate(${S.tx.toFixed(1)},${S.ty.toFixed(1)}) scale(${S.k.toFixed(4)})`);
@@ -923,7 +1103,8 @@
           <rect class="tv-g-box" x="${f(b.x)}" y="${f(b.y)}" width="${f(b.w)}" height="${f(b.h)}" rx="16"/>
           <rect class="tv-g-hit" data-drag-box="~" x="${f(b.x)}" y="${f(b.y)}" width="${f(b.w)}" height="44" rx="16"/>
           <text class="tv-g-name" x="${f(b.x + 18)}" y="${f(b.y + 22)}">Not in a group yet · ${n}</text>
-          <text class="tv-g-sub" x="${f(b.x + 18)}" y="${f(b.y + 38)}">Found by the scanner or added by hand — drag each into its tower or site, or use Review</text></g>`;
+          <text class="tv-g-sub" x="${f(b.x + 18)}" y="${f(b.y + 38)}">Found by the scanner or added by hand — drag each into its tower or site, or use Review</text>
+          ${canEdit() && !locked() ? gripSvg("~", b) : ""}</g>`;
       }
       const gr = b.g, c = gr.counts || {};
       const mon = (c.total || 0) - (c.unmonitored || 0);
@@ -951,6 +1132,7 @@
         <text class="tv-g-name" x="${f(b.x + 42)}" y="${f(b.y + 21)}" pointer-events="none">${esc(trunc(gr.name, maxName))}</text>
         <text class="tv-g-sub" x="${f(b.x + 42)}" y="${f(b.y + 37)}" pointer-events="none"><tspan fill="${stCol}" font-weight="700">${esc(stTxt)}</tspan>${bits.length && !b.collapsed ? esc(" · " + bits.join(" · ")) : ""}</text>
         <g class="tv-tog" data-toggle="${esc(gr.id)}" transform="translate(${f(b.x + b.w - 24)},${f(b.y + 22)})" role="button" tabindex="0" aria-expanded="${b.collapsed ? "false" : "true"}" aria-label="${b.collapsed ? "Expand" : "Collapse"} ${esc(gr.name)}"><rect x="-13" y="-13" width="26" height="26" rx="8"/><path d="${chevron}"/></g>
+        ${canEdit() && !locked() && !b.collapsed && !gr.locked ? gripSvg(gr.id, b) : ""}
         ${gr.locked ? `<g transform="translate(${f(b.x + b.w - 50)},${f(b.y + 22)})" pointer-events="none"><rect x="-9" y="-9" width="18" height="18" rx="5" fill="rgba(148,163,184,.14)"/><svg x="-7" y="-7" width="14" height="14" viewBox="0 0 24 24" style="color:#fbbf24">${I.lock}</svg></g>` : ""}`;
       if (b.collapsed) {
         const lines = [];
@@ -963,6 +1145,13 @@
           + lines.map((l, i) => `<text x="${f(b.x + 78)}" y="${f(b.y + 70 + i * 16)}" font-size="12" font-weight="600" fill="${l[1]}" pointer-events="none">${esc(l[0])}</text>`).join("");
       }
       return s + "</g>";
+    }
+    /** Drag corner: makes a group or the review area bigger than its contents. */
+    function gripSvg(id, b) {
+      const f = (v) => Math.round(v);
+      return `<g class="tv-g-grip" data-resize="${esc(id)}" transform="translate(${f(b.x + b.w)},${f(b.y + b.h)})" role="button" tabindex="-1" aria-label="Resize">
+        <rect x="-20" y="-20" width="20" height="20" rx="6"/>
+        <path d="M-14,-3 L-3,-14 M-8,-3 L-3,-8" stroke="#cbd5e1" stroke-width="1.6" stroke-linecap="round" fill="none"/></g>`;
     }
     function nodeTag(n) {
       if (n.state === "offline") return "Offline · " + ago(n.last_seen);
@@ -979,10 +1168,19 @@
       }
       return kindOf(n.kind).label;
     }
-    function iconHref(n) {
-      const id = n.icon || (S.g.type_icons || {})[n.kind];
-      return id && S.g.icons && S.g.icons[id] && opts.iconUrl ? opts.iconUrl(id) : null;
+    function iconRef(n) {
+      const id = n.icon || (S.g.type_icons || {})[n.kind] || "";
+      const b = builtinOf(id);
+      if (b) return { builtin: b };
+      if (id && S.g.icons && S.g.icons[id] && opts.iconUrl) return { href: opts.iconUrl(id) };
+      return { builtin: ALL_ICONS[n.kind] ? n.kind : "other" };
     }
+    /** The same picture the diagram uses, for the lists in the side panel. */
+    const itemIcon = (n, w = 30, h = 26) => {
+      const r = iconRef(n);
+      return r.href ? `<img class="tv-ic" src="${esc(r.href)}" alt="" width="${w}" height="${h}" style="object-fit:contain">`
+        : `<svg class="tv-ic" viewBox="0 0 64 56" width="${w}" height="${h}" aria-hidden="true"><use href="#tvk-${esc(r.builtin)}"/></svg>`;
+    };
     function nodeSvg(n, a, hits, related, dragging) {
       const st = STATE[n.state] || STATE.online;
       const f = (v) => Math.round(v);
@@ -990,10 +1188,10 @@
       const sel = (S.sel && S.sel.t === "node" && S.sel.id === n.id) || S.multi.has(n.id);
       const dim = !dragging && ((hits && !hits.has(n.id)) || (!hits && !passesFilter(n)) || (related && !related.has(n.id)));
       const hit = hits && hits.has(n.id);
-      const href = iconHref(n);
-      const icon = href
-        ? `<image class="ico" href="${esc(href)}" x="${f(x + 43)}" y="${f(y + 6)}" width="64" height="56" preserveAspectRatio="xMidYMid meet"/>`
-        : `<use class="ico" href="#tvk-${esc(ICONS[n.kind] ? n.kind : "other")}" x="${f(x + 43)}" y="${f(y + 6)}" width="64" height="56"/>`;
+      const ref = iconRef(n);
+      const icon = ref.href
+        ? `<image class="ico" href="${esc(ref.href)}" x="${f(x + 43)}" y="${f(y + 6)}" width="64" height="56" preserveAspectRatio="xMidYMid meet"/>`
+        : `<use class="ico" href="#tvk-${esc(ref.builtin)}" x="${f(x + 43)}" y="${f(y + 6)}" width="64" height="56"/>`;
       const sub = n.ip || (n.virtual ? kindOf(n.kind).label : n.mac) || "";
       const suspect = n.inferred && n.inferred.state === "suspect";
       const badge = suspect
@@ -1150,6 +1348,7 @@
     $("[data-bc]").onclick = () => { S.connect = null; S.placing = null; render(); };
     $$("[data-z]").forEach((b) => (b.onclick = () => {
       const r = svg.getBoundingClientRect();
+      if (b.dataset.z === "hand") { S.panMode = !S.panMode; savePref(); applyModes(); return; }
       if (b.dataset.z === "fit") { fitView(); drawDiagram(); return; }
       zoomAt(r.width / 2, r.height / 2, clamp(S.k * (b.dataset.z === "+" ? 1.25 : 0.8), 0.15, 2.5));
     }));
@@ -1167,6 +1366,7 @@
       if (what === "lock") return needEdit(() => act("POST", "/layout", { lock_all: !locked() }, { okMsg: locked() ? "Layout unlocked" : "Layout locked — nothing can be dragged until you unlock it" }));
       if (what === "review") { S.sel = null; S.panel = S.panel === "review" ? null : "review"; render(); return; }
       if (what === "icons") return iconLibrary();
+      if (what === "dock") { S.dock = S.dock === "bottom" ? "right" : "bottom"; savePref(); applyModes(); drawDiagram(); return; }
     });
     async function needEdit(fn) {
       if (!canEdit() && opts.login) {
@@ -1270,7 +1470,7 @@
       if (pointers.size === 2) {
         const [p, q] = [...pointers.values()];
         S.drag = { type: "pinch", d0: Math.hypot(p.x - q.x, p.y - q.y), k0: S.k };
-        S.over.nodes = {}; S.over.groups = {}; S.over.ua = null; S.ghost = "";
+        S.over.nodes = {}; S.over.groups = {}; S.over.ua = null; S.over.size = {}; S.ghost = ""; S.marquee = null;
         return;
       }
       const t = ev.target;
@@ -1281,7 +1481,12 @@
       const nodeEl = t.closest("[data-node]");
       const edgeEl = t.closest("[data-edge]");
       const boxEl = t.closest("[data-drag-box]");
+      const gripEl = t.closest("[data-resize]");
       if (tog) S.drag = { ...base, type: "toggle", id: tog.dataset.toggle };
+      else if (gripEl && editable) {
+        const gb = S.boxes[gripEl.dataset.resize];
+        S.drag = { ...base, type: "resize", id: gripEl.dataset.resize, start: { w: gb.w, h: gb.h }, min: gb.min || { w: gb.w, h: gb.h } };
+      }
       else if (S.connect) S.drag = { ...base, type: "pick", node: nodeEl ? nodeEl.dataset.node : null };
       else if (handle && editable) S.drag = { ...base, type: "connect", from: handle.dataset.handle };
       else if (nodeEl) {
@@ -1292,9 +1497,12 @@
         const id = boxEl.dataset.dragBox;
         const b = S.boxes[id];
         S.drag = { ...base, type: "box", id, start: { x: b.x, y: b.y }, can: editable && (id === "~" || !S.idx.groups[id].locked) };
-      } else {
+      } else if (S.panMode || S.space || ev.button === 1 || ev.pointerType === "touch") {
         S.drag = { ...base, type: "pan", tx0: S.tx, ty0: S.ty };
         svg.classList.add("panning");
+      } else {
+        // empty canvas + mouse = draw a box around equipment to select it
+        S.drag = { ...base, type: "marquee", add: ev.shiftKey || ev.metaKey || ev.ctrlKey };
       }
       try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* synthetic events */ }
     });
@@ -1334,6 +1542,13 @@
         const p = { x: Math.round((D.start.x + w.x - D.w0.x) / 10) * 10, y: Math.round((D.start.y + w.y - D.w0.y) / 10) * 10 };
         if (D.id === "~") S.over.ua = p; else S.over.groups[D.id] = p;
         schedule();
+      } else if (D.type === "resize") {
+        S.over.size[D.id] = { w: Math.max(D.min.w, Math.round((D.start.w + w.x - D.w0.x) / 10) * 10),
+                              h: Math.max(D.min.h, Math.round((D.start.h + w.y - D.w0.y) / 10) * 10) };
+        schedule();
+      } else if (D.type === "marquee") {
+        S.marquee = { x: Math.min(D.w0.x, w.x), y: Math.min(D.w0.y, w.y), w: Math.abs(w.x - D.w0.x), h: Math.abs(w.y - D.w0.y) };
+        schedule();
       } else if (D.type === "connect") {
         const n = S.idx.nodes[D.from], a = absPos(n);
         const tgt = nodeUnder(ev.clientX, ev.clientY);
@@ -1348,11 +1563,20 @@
       if (!D || (D.type === "pinch" && pointers.size)) return;
       S.drag = null;
       svg.classList.remove("panning");
-      if (cancelled) { S.over = { nodes: {}, groups: {}, ua: null }; S.ghost = ""; S.dropTarget = null; S.dropHighlight = null; drawDiagram(); return; }
+      if (cancelled) { S.over = { nodes: {}, groups: {}, ua: null, size: {} }; S.marquee = null; S.ghost = ""; S.dropTarget = null; S.dropHighlight = null; drawDiagram(); return; }
       if (D.type === "pinch") { drawDiagram(); return; }
       if (D.type === "pan") {
         if (!D.moved) { S.sel = null; S.multi.clear(); render(); }
         savePrefSoon();
+      } else if (D.type === "resize") {
+        if (D.moved && S.over.size[D.id]) saveBoxSize(D.id, S.over.size[D.id]);
+        else { S.over.size = {}; drawDiagram(); }
+      } else if (D.type === "marquee") {
+        const m = S.marquee;
+        S.marquee = null;
+        if (D.moved && m && (m.w > 4 || m.h > 4)) selectInBox(m, D.add);
+        else if (!D.moved) { S.sel = null; S.multi.clear(); }
+        render();
       } else if (D.type === "toggle") toggleGroup(D.id);
       else if (D.type === "pick") { if (D.node) pickConnect(D.node); }
       else if (D.type === "node") {
@@ -1413,10 +1637,13 @@
       } else if (box && box.dataset.dragBox !== "~") toggleGroup(box.dataset.dragBox);
       else if (!box) { const r = svg.getBoundingClientRect(); zoomAt(ev.clientX - r.left, ev.clientY - r.top, clamp(S.k * 1.5, 0.15, 2.5)); }
     });
+    svg.addEventListener("keyup", (ev) => { if (ev.key === " " && S.space) { S.space = false; applyModes(); } });
+    svg.addEventListener("blur", () => { if (S.space) { S.space = false; applyModes(); } });
     svg.addEventListener("keydown", (ev) => {
       if (!S.g) return;
       const nodeEl = ev.target.closest && ev.target.closest("[data-node]");
       const togEl = ev.target.closest && ev.target.closest("[data-toggle]");
+      if (ev.key === " " && !ev.target.closest("[data-node]") && !S.space) { S.space = true; applyModes(); ev.preventDefault(); return; }
       if (ev.key === "Escape") { S.connect = null; S.sel = null; S.multi.clear(); render(); return; }
       if ((ev.key === "Enter" || ev.key === " ") && togEl) {
         ev.preventDefault();
@@ -1485,6 +1712,31 @@
         drawDiagram();
         send("POST", "/layout", body).catch((e) => { toast(e.message, "bad"); refresh(true); });
       }
+    }
+    /** A box that was dragged bigger keeps that size until it is dragged back. */
+    function saveBoxSize(id, sz) {
+      const b = S.boxes[id], min = (b && b.min) || sz;
+      const fixed = sz.w <= min.w && sz.h <= min.h ? "" : sz;     // back to hugging the contents
+      S.over.size = {};
+      if (id === "~") { if (S.g.unassigned) S.g.unassigned.fixed_size = fixed || null; }
+      else if (S.idx.groups[id]) S.idx.groups[id].fixed_size = fixed || null;
+      drawDiagram();
+      send("POST", "/layout", id === "~" ? { unassigned: { size: fixed } } : { groups: { [id]: { size: fixed } } })
+        .catch((e) => { toast(e.message, "bad"); refresh(true); });
+    }
+    /** Everything whose middle is inside the box the operator drew. */
+    function selectInBox(m, add) {
+      if (!add) S.multi.clear();
+      (S.g.nodes || []).forEach((n) => {
+        const a = absPos(n);
+        if (!a || !passesFilter(n)) return;
+        const cx = a.x + CW() / 2, cy = a.y + CH() / 2;
+        if (cx >= m.x && cx <= m.x + m.w && cy >= m.y && cy <= m.y + m.h) S.multi.add(n.id);
+      });
+      const picked = [...S.multi];
+      S.sel = picked.length === 1 ? { t: "node", id: picked[0] } : null;
+      S.panel = null;
+      if (!picked.length) toast("Nothing inside the box");
     }
     function saveBoxPos(D) {
       const p = D.id === "~" ? S.over.ua : S.over.groups[D.id];
@@ -1565,9 +1817,23 @@
         + S.g.groups.slice().sort((a, b) => a.name.localeCompare(b.name))
           .map((g) => `<option value="${esc(g.id)}" ${cur === g.id ? "selected" : ""}>${esc(g.name)} (${esc((S.g.group_kinds || {})[g.kind] || g.kind)})</option>`).join("");
     }
+    const KIND_SECTIONS = [["Wireless", ["ptp", "radio", "wifi-router"]], ["Network", ["internet", "router", "switch", "unmanaged-switch", "media-converter", "patch-panel"]],
+      ["Cameras", ["camera", "camera-ptz", "camera-dome", "camera-turret", "camera-bullet", "camera-dual", "camera-pano", "camera-thermal", "camera-anpr", "intercom", "nvr"]],
+      ["Power", ["poe", "ups", "solar", "alarm"]], ["Other", ["server", "nas", "pc", "printer", "phone", "media", "iot", "other"]]];
+    /** <option>s for every type, grouped — 30+ in one flat list is unreadable. */
+    function kindOptionList(cur) {
+      const seen = new Set();
+      let out = "";
+      KIND_SECTIONS.forEach(([label, ids]) => {
+        const opts2 = ids.filter((id) => kindOf(id).label !== id).map((id) => { seen.add(id); return `<option value="${esc(id)}" ${cur === id ? "selected" : ""}>${esc(kindOf(id).label)}</option>`; }).join("");
+        if (opts2) out += `<optgroup label="${esc(label)}">${opts2}</optgroup>`;
+      });
+      const rest = S.g.kinds.filter((k) => k.id !== "unknown" && !seen.has(k.id));
+      if (rest.length) out += `<optgroup label="Other">${rest.map((k) => `<option value="${esc(k.id)}" ${cur === k.id ? "selected" : ""}>${esc(k.label)}</option>`).join("")}</optgroup>`;
+      return out;
+    }
     function kindOptions(cur, auto) {
-      return (auto != null ? `<option value="" ${!cur ? "selected" : ""}>Detected: ${esc(kindOf(auto).label)}</option>` : "")
-        + S.g.kinds.filter((k) => k.id !== "unknown").map((k) => `<option value="${esc(k.id)}" ${cur === k.id ? "selected" : ""}>${esc(k.label)}</option>`).join("");
+      return (auto != null ? `<option value="" ${!cur ? "selected" : ""}>Detected: ${esc(kindOf(auto).label)}</option>` : "") + kindOptionList(cur);
     }
     function linkItem(L, from) {
       const other = L.a === from ? L.b : L.a;
@@ -1651,10 +1917,10 @@
           ${n.virtual ? "" : `<label class="tv-field">Equipment type<select class="tv-inp" data-set="kind" ${edit ? "" : "disabled"}>${kindOptions(n.kind_set ? n.kind : "", n.kind_set ? "" : n.kind)}</select></label>`}
           ${n.suggested_group && n.group === "~" ? `<button type="button" class="tv-btn sm ok" data-p="to-group" data-g="${esc(n.suggested_group.group)}">Move to ${esc(groupName(n.suggested_group.group))} <span class="dim">(wired to ${esc(n.suggested_group.via)})</span></button>` : ""}
           <div class="tv-acts"><label class="tv-btn sm" style="cursor:pointer"><input type="checkbox" data-set="locked" ${n.locked ? "checked" : ""} ${edit ? "" : "disabled"}> Lock position</label>
-            <button type="button" class="tv-btn sm" data-p="icon" ${edit ? "" : "disabled"}>${ico("image", 14)} Icon…</button></div>
+            <button type="button" class="tv-btn sm" data-p="icon" ${edit ? "" : "disabled"}>${ico("image", 14)} Picture…</button></div>
           ${edit ? "" : `<p class="tv-note">${opts.login ? `<button type="button" class="tv-btn sm" data-p="login">${ico("lock", 14)} Log in to change the diagram</button>` : "Read only."}</p>`}
         </div></div>`;
-      return `<div class="hd">${kindSvg(n.kind, 48, 42)}<div style="min-width:0"><h3>${esc(n.name)}</h3><p>${esc(kindOf(n.kind).label)} · ${esc(groupName(n.group))}</p>
+      return `<div class="hd">${itemIcon(n, 48, 42)}<div style="min-width:0"><h3>${esc(n.name)}</h3><p>${esc(kindOf(n.kind).label)} · ${esc(groupName(n.group))}</p>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">${stateBadge(n)}${(n.problems || []).length ? `<span class="tv-b warn">⚠ ${n.problems.length} problem${n.problems.length > 1 ? "s" : ""}</span>` : ""}${n.locked ? `<span class="tv-b">🔒 Locked</span>` : ""}</div></div>
           <button type="button" class="x" data-close aria-label="Close">×</button></div>
         <div class="sec"><p class="tv-note" style="margin-bottom:8px">${esc(stateText(n))}</p><dl class="tv-kv">${kv.join("")}</dl></div>
@@ -1796,10 +2062,12 @@
         ${bad.length ? `<div class="sec"><h4>Needs a look <span class="c">${bad.length}</span></h4><div class="tv-list">${bad.slice(0, 12).map((x) => nodeItem(x)).join("")}</div></div>` : `<div class="sec"><p class="tv-note">✓ Everything that is monitored answers.</p></div>`}
         ${reviewCta()}
         <div class="sec"><h4>How it works</h4><p class="tv-note">
-          • <b>Groups</b> are towers, sites or buildings. Drag equipment onto one to put it there; the ▾ button collapses it to a summary.<br>
+          • <b>Groups</b> are towers, sites or buildings. Drag equipment onto one to put it there; the ▾ button collapses it to a summary, and the corner grip makes the box bigger.<br>
+          • <b>Select several</b>: drag a box around them on empty space, or shift-click. Hold the <b>space bar</b> (or use the hand button) to move the diagram instead.<br>
           • <b>Connect</b>: drag the <b>+</b> handle of one item onto another, or use Connect. Wireless links join two radios.<br>
           • <b>Equipment</b> adds things Netwatch cannot see, like an unmanaged switch — no IP needed.<br>
           • Dotted lines are <b>suggested</b> from switch, router and radio readings; confirm or dismiss them.<br>
+          • Each item can get its own picture — open it and choose <b>Picture</b>; <b>Icons</b> sets one for a whole type.<br>
           • Positions are saved as you drag. <b>Lock layout</b> stops accidental moves; <b>Auto-arrange</b> tidies what is not locked.<br>
           • Moving things here never changes their GPS position on the map.</p></div>`;
     }
@@ -2089,7 +2357,7 @@
       };
     }
     function equipmentDialog(n, gid) {
-      const kinds = S.g.kinds.filter((k) => k.id !== "unknown").map((k) => `<option value="${esc(k.id)}" ${(n ? n.kind : "unmanaged-switch") === k.id ? "selected" : ""}>${esc(k.label)}</option>`).join("");
+      const kinds = kindOptionList(n ? n.kind : "unmanaged-switch");
       const cur = n ? n.group : gid || (S.sel && S.sel.t === "group" ? S.sel.id : "~");
       dialog({
         title: n ? `Edit ${n.name}` : "Add equipment",
@@ -2217,37 +2485,68 @@
       });
     }
     const iconPreview = (iid) => (iid && opts.iconUrl ? `<img src="${esc(opts.iconUrl(iid))}" alt="">` : "");
+    // ---- pictures ----------------------------------------------------------------------------
+    /** Every picture Netwatch draws itself, in the order the picker shows them. */
+    function builtinSections() {
+      const out = KIND_SECTIONS.map(([label, ids]) => [label, ids.filter((id) => ALL_ICONS[id])]);
+      const brands = {};
+      Object.entries(EXTRA_META).forEach(([id, [, brand]]) => (brands[brand] = brands[brand] || []).push(id));
+      Object.entries(brands).forEach(([brand, ids]) => out.push([brand, ids]));
+      return out.filter(([, ids]) => ids.length);
+    }
+    const builtinLabel = (id) => (EXTRA_META[id] ? EXTRA_META[id][0] : kindOf(id).label);
+    function builtinGrid(current) {
+      return builtinSections().map(([label, ids]) => `<div class="tv-field">${esc(label)}<div class="icons">${ids.map((id) =>
+        `<button type="button" class="iconbtn ${current === "b:" + id ? "on" : ""}" data-icon="b:${esc(id)}">${kindSvg(id, 56, 48)}<span>${esc(builtinLabel(id))}</span></button>`).join("")}</div></div>`).join("");
+    }
     function iconDialog(n) {
       const typeIcon = (S.g.type_icons || {})[n.kind];
       const current = n.icon || "";
-      const choices = Object.values(S.g.icons || {}).sort((a, b) => b.ts - a.ts);
+      const uploads = Object.values(S.g.icons || {}).sort((a, b) => b.ts - a.ts);
       const d = dialog({
-        title: `Icon for ${n.name}`,
-        sub: `Pick a picture, upload your own, or keep the default for “${esc(kindOf(n.kind).label)}”.`,
+        title: `Picture for ${n.name}`,
+        sub: `Pick one below, or upload your own. “Default” follows the equipment type (${esc(kindOf(n.kind).label)}).`,
         wide: true,
         body: `<div class="icons">
-            <button type="button" class="iconbtn ${!current ? "on" : ""}" data-icon="">${typeIcon ? iconPreview(typeIcon) : kindSvg(n.kind, 56, 48)}<span>Default${typeIcon ? " (custom for the type)" : ""}</span></button>
-            ${choices.map((c) => `<button type="button" class="iconbtn ${current === c.id ? "on" : ""}" data-icon="${esc(c.id)}">${iconPreview(c.id)}<span>${esc(trunc(c.name || "Uploaded", 16))}</span></button>`).join("")}
+            <button type="button" class="iconbtn ${!current ? "on" : ""}" data-icon="">${typeIcon ? (builtinOf(typeIcon) ? kindSvg(builtinOf(typeIcon), 56, 48) : iconPreview(typeIcon)) : kindSvg(n.kind, 56, 48)}<span>Default${typeIcon ? " (set for the type)" : ""}</span></button>
           </div>
-          <label class="tv-field">Upload a picture (PNG, JPEG, WebP or GIF — it is shrunk to 160 px)<input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif" class="tv-inp"></label>
-          <label style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" name="all"> Use the uploaded picture for every “${esc(kindOf(n.kind).label)}”</label>`,
+          ${uploads.length ? `<div class="tv-field">Your pictures<div class="icons">${uploads.map((c) => `<button type="button" class="iconbtn ${current === c.id ? "on" : ""}" data-icon="${esc(c.id)}">${iconPreview(c.id)}<span>${esc(trunc(c.name || "Uploaded", 16))}</span></button>`).join("")}</div></div>` : ""}
+          ${builtinGrid(current)}
+          <label style="display:flex;gap:8px;align-items:center;font-size:13px"><input type="checkbox" name="all"> Use the picture I click for every “${esc(kindOf(n.kind).label)}”, not just this one</label>
+          <label class="tv-field">Upload your own (PNG, JPEG, WebP or GIF — shrunk to 160 px)<input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif" class="tv-inp"></label>`,
         ok: "Upload",
         async onOk(f) {
           const file = f.file.files[0];
-          if (!file) throw new Error("Choose a picture to upload, or click one above");
+          if (!file) throw new Error("Choose a picture above, or pick a file to upload");
           const data = await shrinkImage(file);
           const body = { data, name: file.name };
           if (f.all.checked) body.kind = n.kind; else body.node = n.id;
           await send("POST", "/icons", body);
-          toast("Icon saved", "ok");
+          toast("Picture saved", "ok");
         },
       });
       d.wrap.querySelectorAll("[data-icon]").forEach((b) => (b.onclick = async () => {
+        const forType = d.wrap.querySelector("[name=all]").checked;
         try {
-          await send("POST", `/nodes/${enc(n.id)}`, { icon: b.dataset.icon });
-          toast("Icon changed", "ok");
+          if (forType) await send("POST", "/type-icons", { kind: n.kind, icon: b.dataset.icon });
+          else await send("POST", `/nodes/${enc(n.id)}`, { icon: b.dataset.icon });
+          toast(forType ? `Picture set for every ${kindOf(n.kind).label}` : "Picture changed", "ok");
           d.close();
         } catch (e) { d.err.textContent = e.message; }
+      }));
+    }
+    /** Pick one of Netwatch's own pictures for a whole equipment type. */
+    function typeIconDialog(kind) {
+      const cur = (S.g.type_icons || {})[kind] || "";
+      const d = dialog({
+        title: `Picture for every ${kindOf(kind).label}`,
+        sub: "Every item of this type is drawn with it, unless it has its own picture.",
+        wide: true,
+        body: `<div class="icons"><button type="button" class="iconbtn ${!cur ? "on" : ""}" data-icon="">${kindSvg(kind, 56, 48)}<span>Default</span></button></div>${builtinGrid(cur)}`,
+      });
+      d.wrap.querySelectorAll("[data-icon]").forEach((b) => (b.onclick = async () => {
+        try { await send("POST", "/type-icons", { kind, icon: b.dataset.icon }); d.close(); iconLibrary(); }
+        catch (e) { d.err.textContent = e.message; }
       }));
     }
     function iconLibrary() {
@@ -2259,13 +2558,15 @@
       const edit = canEdit();
       const d = dialog({
         title: "Equipment pictures",
-        sub: "Every type has a built-in picture. Upload your own to replace it for the whole type, or set one on a single item from its panel.",
+        sub: "Every type is drawn with its own picture. Choose a different one from Netwatch's set, or upload your own. A single item can also be given its own picture from its panel.",
         wide: true,
-        body: `<div class="icons">${kinds.map((k) => `<div class="iconbtn">${ti[k.id] ? iconPreview(ti[k.id]) : kindSvg(k.id, 56, 48)}<span>${esc(k.label)}</span>
-            <span style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center"><label class="tv-btn sm" style="cursor:pointer">${ti[k.id] ? "Replace" : "Upload"}<input type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" data-type-up="${esc(k.id)}" ${edit ? "" : "disabled"}></label>
+        body: `<div class="icons">${kinds.map((k) => `<div class="iconbtn">${ti[k.id] ? (builtinOf(ti[k.id]) ? kindSvg(builtinOf(ti[k.id]), 56, 48) : iconPreview(ti[k.id])) : kindSvg(k.id, 56, 48)}<span>${esc(k.label)}</span>
+            <span style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center"><button type="button" class="tv-btn sm" data-type-pick="${esc(k.id)}" ${edit ? "" : "disabled"}>Choose</button>
+            <label class="tv-btn sm" style="cursor:pointer">Upload<input type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" data-type-up="${esc(k.id)}" ${edit ? "" : "disabled"}></label>
             ${ti[k.id] ? `<button type="button" class="tv-btn sm" data-type-reset="${esc(k.id)}" ${edit ? "" : "disabled"}>Default</button>` : ""}</span></div>`).join("")}</div>
           ${Object.keys(S.g.icons || {}).length ? `<div class="tv-field">Uploaded pictures<div class="icons">${Object.values(S.g.icons).map((c) => `<div class="iconbtn">${iconPreview(c.id)}<span>${esc(trunc(c.name || "Uploaded", 16))} · used ${used[c.id] || 0}×</span><button type="button" class="tv-btn sm danger" data-icon-del="${esc(c.id)}" ${edit ? "" : "disabled"}>Delete</button></div>`).join("")}</div></div>` : ""}`,
       });
+      d.wrap.querySelectorAll("[data-type-pick]").forEach((b) => (b.onclick = () => { d.close(); typeIconDialog(b.dataset.typePick); }));
       d.wrap.querySelectorAll("[data-type-up]").forEach((inp) => inp.addEventListener("change", async () => {
         const file = inp.files[0];
         if (!file) return;
