@@ -1013,11 +1013,22 @@
 
     // ---- drawing --------------------------------------------------------------------------------
     /** Where the details panel sits, and what dragging the canvas does. */
-    function applyModes() {
-      tv.classList.toggle("side-bottom", S.dock === "bottom");
-      // how much of the canvas the docked panel covers, so the zoom bar and legend clear it
+    // how much of the canvas the docked panel covers, so the zoom bar and legend clear it
+    function syncDock() {
       const h = S.dock === "bottom" && side.offsetParent && side.offsetHeight ? side.offsetHeight + 12 : 0;
       tv.style.setProperty("--tv-dock-h", h + "px");
+    }
+    // opts.fitHeight: the diagram ends at the bottom of the window, whatever sits above it
+    function fitStage() {
+      if (!opts.fitHeight || S.destroyed || !stage.offsetParent) return;
+      const top = stage.getBoundingClientRect().top + window.scrollY;
+      root.style.setProperty("--tv-height", `calc(100vh - ${Math.round(top) + 14}px)`);
+    }
+    const sizeObs = window.ResizeObserver ? new ResizeObserver(() => { syncDock(); fitStage(); }) : null;
+    if (sizeObs) { sizeObs.observe(side); sizeObs.observe($(".tv-bar")); }
+    function applyModes() {
+      tv.classList.toggle("side-bottom", S.dock === "bottom");
+      syncDock();
       tv.classList.toggle("pan-mode", S.panMode || S.space);
       const hb = $('[data-z="hand"]');
       if (hb) { hb.setAttribute("aria-pressed", String(S.panMode)); hb.style.color = S.panMode ? "#67e8f9" : ""; }
@@ -2801,6 +2812,7 @@
       } else mapFocusNode(id);
     }
     const onResize = () => {
+      fitStage();
       if (!S.g) return;
       tv.classList.toggle("side-off", !S.sel && S.panel !== "review" && window.innerWidth <= 1100);
       if (S.view === "map" && MAP) MAP.invalidateSize();
@@ -2820,6 +2832,7 @@
       destroy() {
         S.destroyed = true;
         clearInterval(S.timer);
+        if (sizeObs) sizeObs.disconnect();
         window.removeEventListener("resize", onResize);
         document.removeEventListener("visibilitychange", onVis);
         [...dialogs].forEach((close) => close());

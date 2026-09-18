@@ -3540,6 +3540,7 @@
                 return;
             }
             TOPO = TopoView.mount(host, {
+                fitHeight: true,
                 load: topoLoad, call: topoCall,
                 iconUrl: (id) => '/api/topology/icons/' + encodeURIComponent(id),
                 openDevice: (key) => openModal(key),

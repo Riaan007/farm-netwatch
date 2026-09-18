@@ -19,6 +19,7 @@
       const base = `/api/hub/sites/${enc(s.id)}/topology`;
       const p = CC.params();
       ctl = TopoView.mount(el.firstElementChild, {
+        fitHeight: true,
         load: (o) => api(base + (o && o.scope === "all" ? "?scope=all" : ""), { timeout: 45000 }),
         call: (method, path, body) => api(base + path, { method, body, timeout: 60000 }),
         iconUrl: (id) => `${base}/icons/${enc(id)}`,
