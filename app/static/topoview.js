@@ -58,6 +58,11 @@
 .tv .tv-search svg{position:absolute;left:9px;top:9px;width:16px;height:16px;color:var(--tv-dim)}
 .tv .tv-main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:10px;align-items:start}
 .tv.side-off .tv-main{grid-template-columns:minmax(0,1fr)}
+/* Full screen: the whole editor (toolbar, diagram or map, panel) covers the page. Under the
+   host's own windows on purpose — the site's device window (z 60), toasts, the login prompt
+   and every topoview dialog (z 80) must still open on top of it. */
+.tv.tv-max{position:fixed;inset:0;z-index:55;margin:0;padding:10px 12px 12px;background:#060b15;overflow:hidden;display:flex;flex-direction:column}
+.tv.tv-max .tv-main{flex:1 1 auto;min-height:0}
 /* Details under the diagram: floating over its lower edge, so the diagram keeps
    its full height and the panel never needs scrolling to reach. */
 .tv.side-bottom .tv-main{grid-template-columns:minmax(0,1fr);position:relative}
@@ -743,6 +748,8 @@
     fit: `<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`,
     hand: `<path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12V4.5a1.5 1.5 0 0 1 3 0V12V6.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a5 5 0 0 1-4.3-2.5L4 15a1.6 1.6 0 0 1 2.6-1.8z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>`,
     dock: `<path d="M4 5h16v14H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 15h16" stroke="currentColor" stroke-width="1.8"/>`,
+    expand: `<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5M4 4l6 6M20 4l-6 6M20 20l-6-6M4 20l6-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`,
+    shrink: `<path d="M9 4v5H4M15 4v5h5M15 20v-5h5M9 20v-5H4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`,
     image: `<path d="M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="15.5" cy="9" r="1.5" fill="currentColor"/>`,
     refresh: `<path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`,
     info: `<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>`,
@@ -808,6 +815,7 @@
         <button type="button" class="tv-btn" data-a="review" title="Suggested connections and equipment not in a group yet">${ico("review")}<span class="lbl">Review</span><span class="n" data-rn hidden></span></button>
         <button type="button" class="tv-btn" data-a="icons" title="Equipment pictures">${ico("image")}<span class="lbl">Icons</span></button>
         <button type="button" class="tv-btn" data-a="dock" title="Show the details panel under the diagram or beside it">${ico("dock")}<span class="lbl">Panel</span></button>
+        <button type="button" class="tv-btn" data-a="max" title="Full screen (Esc to leave)" aria-pressed="false">${ico("expand")}<span class="lbl">Full screen</span></button>
         </div>
       </div>
       <div class="tv-main">
@@ -1033,6 +1041,55 @@
     }
     const sizeObs = window.ResizeObserver ? new ResizeObserver(() => { syncDock(); fitStage(); }) : null;
     if (sizeObs) { sizeObs.observe(side); sizeObs.observe($(".tv-bar")); }
+    // ---- full screen ----------------------------------------------------------------------------
+    // The editor covers the window (CSS), and the browser goes full screen too when it allows it.
+    // The PAGE goes full screen, not .tv: a full-screen element hides everything outside it, and the
+    // host's device window, toasts and login prompt live outside the editor.
+    let maxWas = null;
+    function setMax(on) {
+      if (!!on === !!S.max) return;
+      S.max = !!on;
+      tv.classList.toggle("tv-max", S.max);
+      const doc = document.documentElement;
+      if (S.max) {
+        maxWas = { overflow: doc.style.overflow, fs: false };
+        doc.style.overflow = "hidden";                 // the page underneath must not scroll
+        if (doc.requestFullscreen && !document.fullscreenElement)
+          doc.requestFullscreen().then(() => { if (maxWas) maxWas.fs = true; }).catch(() => { /* refused: the window is enough */ });
+      } else {
+        if (maxWas) doc.style.overflow = maxWas.overflow || "";
+        if (maxWas && maxWas.fs && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        maxWas = null;
+        tv.style.removeProperty("--tv-h");
+      }
+      fitMax();
+      const b = $("[data-a='max']");
+      if (b) {
+        b.setAttribute("aria-pressed", String(S.max));
+        b.title = S.max ? "Leave full screen (Esc)" : "Full screen (Esc to leave)";
+        b.innerHTML = `${ico(S.max ? "shrink" : "expand")}<span class="lbl">${S.max ? "Exit full screen" : "Full screen"}</span>`;
+      }
+      if (MAP) setTimeout(() => MAP && MAP.invalidateSize(), 80);
+      drawDiagram();
+    }
+    /** In full screen the diagram runs from under the toolbar to the bottom of the screen. */
+    function fitMax() {
+      if (!S.max) return;
+      tv.style.setProperty("--tv-h", `calc(100vh - ${Math.round(stage.getBoundingClientRect().top) + 12}px)`);
+    }
+    const onFsChange = () => {
+      if (!document.fullscreenElement && S.max && maxWas && maxWas.fs) setMax(false);   // Esc left the browser's full screen
+      else fitMax();
+    };
+    // A browser in full screen usually takes Esc itself (then fullscreenchange above does the rest);
+    // when the page does get it, leave here — unless Esc is closing a dialog or the login prompt.
+    const onMaxKey = (e) => {
+      if (e.key !== "Escape" || !S.max) return;
+      if (dialogs.size || document.getElementById("nw-auth")) return;
+      setMax(false);
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("keydown", onMaxKey);
     function applyModes() {
       tv.classList.toggle("side-bottom", S.dock === "bottom");
       tv.classList.toggle("side-min", S.dockMin);
@@ -1393,6 +1450,7 @@
       if (what === "icons") return iconLibrary();
       if (what === "dock") { S.dock = S.dock === "bottom" ? "right" : "bottom"; savePref(); applyModes(); drawDiagram(); return; }
       if (what === "dockmin") { S.dockMin = !S.dockMin; savePref(); applyModes(); return; }
+      if (what === "max") { setMax(!S.max); return; }
     });
     async function needEdit(fn) {
       if (!canEdit() && opts.login) {
@@ -2627,7 +2685,7 @@
           <button type="button" class="tv-btn sm" data-mfit>${ico("fit", 14)} Fit</button>
           ${opts.placeDevicesHref ? `<a class="tv-btn sm" href="${esc(opts.placeDevicesHref)}" title="Give devices their own GPS pins">Place devices ↗</a>` : ""}
         </div>
-        <div data-nogeo style="position:absolute;z-index:700;left:10px;bottom:24px;max-width:min(320px,calc(100% - 20px));max-height:40%;overflow:auto;padding:8px 10px;border-radius:12px;background:rgba(8,14,28,.92);border:1px solid var(--tv-line2);font-size:12.5px" hidden></div>`;
+        <div data-nogeo style="position:absolute;z-index:700;left:10px;bottom:calc(24px + var(--tv-dock-h,0px));max-width:min(320px,calc(100% - 20px));max-height:calc(60% - var(--tv-dock-h,0px));overflow:auto;padding:8px 10px;border-radius:12px;background:rgba(8,14,28,.92);border:1px solid var(--tv-line2);font-size:12.5px" hidden></div>`;
       MAP = LF.map(mapEl.querySelector("[data-mapmap]"), { zoomControl: true, worldCopyJump: true });
       if (opts.mapTiles) opts.mapTiles(MAP, LF);
       else {
@@ -2828,6 +2886,7 @@
     }
     const onResize = () => {
       fitStage();
+      fitMax();
       if (!S.g) return;
       tv.classList.toggle("side-off", !S.sel && S.panel !== "review" && window.innerWidth <= 1100);
       if (S.view === "map" && MAP) MAP.invalidateSize();
@@ -2845,6 +2904,9 @@
       focus,
       select: (id) => focus(id),
       destroy() {
+        if (S.max) setMax(false);
+        document.removeEventListener("fullscreenchange", onFsChange);
+        document.removeEventListener("keydown", onMaxKey);
         S.destroyed = true;
         clearInterval(S.timer);
         if (sizeObs) sizeObs.disconnect();

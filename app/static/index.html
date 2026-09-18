@@ -76,6 +76,8 @@
         /* This block loads AFTER app.css, so a bare `display` here outranks
            Tailwind's .hidden and would pin the Kuma link and status pills open. */
         .tbtn.hidden, .chip.hidden, .tbar.hidden { display: none; }
+        /* the device window opens above the network view's full-screen editor (z 55) */
+        #modal { z-index: 60; }
         /* Device-modal tabs. The modal grew a photo, an identity form, an
            18-field asset register, logins, Kuma and six diagnostics tools —
            one scroll made everything below the fold invisible. */
