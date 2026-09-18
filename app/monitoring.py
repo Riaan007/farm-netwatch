@@ -37,6 +37,16 @@ reply can be lost although the monitor exists; the marker lets the next pass
 adopt that monitor instead of making a second one. unowned()/remove_unowned()
 back the Settings "Tidy Kuma" list: monitors no device or internet check
 accounts for, with Netwatch's own leftovers flagged.
+
+A device's monitor carries the device's name (Scanner._kuma_name) — with its
+address in brackets when the monitor is named that older way (kuma.styled_name).
+The registry keeps `kuma_name`, the device name Netwatch last gave it; when the
+device's name in Netwatch no longer matches, the read-back renames the monitor — at once after a
+rename through the device API (the site page; name_changed), otherwise within
+SYNC_S. A name given in Kuma's own UI stays until the device is renamed in
+Netwatch. Monitors from before this have no `kuma_name` and are brought in line
+once. A hand-made push monitor (a push token, no monitor id) and any
+non-ping monitor are never renamed.
 """
 import threading
 import time
@@ -48,12 +58,14 @@ import kuma
 
 RETRY_S = 1800          # a device's Kuma follow-up is retried at most this often
 SYNC_S = 1800           # how often Kuma's real monitor list is read back
+RENAME_BUDGET_S = 120   # renaming per pass stops after this; the rest waits for the next pass
 MAX_KEYS = 2000
 
 _lock = threading.Lock()
 _pending = set()        # keys whose Kuma monitor may be out of step
 _want_sync = False      # the worker should read Kuma's monitor list first
-_worker = None          # the running drain thread, or None (all three guarded by _lock)
+_rename_first = set()   # devices just renamed: their monitor is renamed before any other
+_worker = None          # the running drain thread, or None (all four guarded by _lock)
 _tried = {}             # key -> last Kuma attempt (reconcile's retry spacing)
 _last_sync = 0.0
 
@@ -169,21 +181,42 @@ def follow_kuma(scanner, keys, sync=False):
         _worker.start()
 
 
+def monitor_name(scanner, key):
+    """The name the device's Kuma monitor should carry (None: device unknown)."""
+    with scanner.lock:
+        dev = dict(scanner.devices.get(key) or {})
+    return scanner._kuma_name(dev) if dev else None
+
+
+def name_changed(scanner, key):
+    """The operator renamed a device (or changed the type its name falls back
+    to): rename its Kuma monitor now instead of at the next read-back."""
+    if not (scanner.registry.get(key) or {}).get("kuma_monitor_id") or not kuma_follows():
+        return
+    with _lock:
+        _rename_first.add(key)
+    follow_kuma(scanner, [], sync=True)
+
+
 def _drain(scanner):
     global _worker, _want_sync
     while True:
         with _lock:
-            keys, sync = set(_pending), _want_sync
+            keys, sync, first = set(_pending), _want_sync, set(_rename_first)
             _pending.clear()
+            _rename_first.clear()
             _want_sync = False
             if not keys and not sync:
                 _worker = None
                 return
         try:
+            renames = []
             if sync:
-                keys |= _sync(scanner)
+                keys |= _sync(scanner, renames)
             if keys:
                 _apply(scanner, keys)
+            if renames:                 # after the on/off work: a name can wait, a switch shouldn't
+                _rename(scanner, renames, first)
         except Exception as e:  # noqa: BLE001 - the worker must survive a bad Kuma
             print("[monitoring] kuma follow error:", e, flush=True)
 
@@ -208,17 +241,20 @@ def _marked_key(mon):
 def _adopt(reg, mon):
     reg["kuma_monitor_id"] = mon["id"]
     reg["kuma_ip"] = mon.get("hostname") or reg.get("kuma_ip", "")
+    reg["kuma_name"] = mon.get("name") or ""      # the name Netwatch gave it when it was made
     if mon.get("active"):
         reg.pop("kuma_paused", None)
     else:
         reg["kuma_paused"] = True
 
 
-def _sync(scanner):
+def _sync(scanner, renames=None):
     """Put the registry in line with what Kuma really has: a monitor deleted in
     Kuma's own UI is forgotten, one paused or resumed there is recorded as such,
-    and a monitor Netwatch made whose reply was lost is adopted.
-    Returns the keys this changed — their follow-up runs straight away."""
+    and a monitor Netwatch made whose reply was lost is adopted. With a
+    `renames` list, the monitors whose device was renamed are appended to it
+    (see _plan_renames). Returns the keys this changed — their follow-up runs
+    straight away."""
     login = kuma_login()
     mons = kuma.monitor_list(*login) if login else None
     if mons is None:
@@ -250,9 +286,69 @@ def _sync(scanner):
             owned.add(mon["id"])
             changed.add(key)
             _tried.pop(key, None)
-    if changed:
+    noted = renames is not None and _plan_renames(scanner, mons, renames)
+    if changed or noted:
         scanner.save_registry()
     return changed
+
+
+def _plan_renames(scanner, mons, out):
+    """Append (key, monitor_id, name, label) for each device monitor to rename:
+    the device's name in Netwatch (`label`) changed since Netwatch last named the
+    monitor (or it never did, before this version) and the monitor doesn't carry
+    it yet. `name` is the label in the monitor's own style (kuma.styled_name).
+    A monitor that already carries it just has the label noted. Returns True
+    when a note was made (the registry needs saving)."""
+    by_id = {m["id"]: m for m in mons}
+    with scanner.lock:
+        devs = {k: dict(d) for k, d in scanner.devices.items()}
+    noted = False
+    for key, reg in list(scanner.registry.items()):
+        if not isinstance(reg, dict):
+            continue
+        # Only Netwatch's own ping monitors (a monitor id). A hand-made push monitor
+        # is a token WITHOUT an id; a token next to an id is a leftover from before
+        # "Fix monitors -> ping" and changes nothing.
+        mon, dev = by_id.get(reg.get("kuma_monitor_id")), devs.get(key)
+        if not mon or mon.get("type") != "ping" or not dev:
+            continue
+        label = scanner._kuma_name(dev)
+        if reg.get("kuma_name") == label:
+            continue                    # not renamed in Netwatch: a name given in Kuma stays
+        name = kuma.styled_name(label, mon)
+        if mon.get("name") == name:
+            reg["kuma_name"] = label
+            noted = True
+        else:
+            out.append((key, mon["id"], name, label))
+    return noted
+
+
+def _rename(scanner, plan, first=()):
+    """Rename the planned monitors, devices just renamed first, for at most
+    RENAME_BUDGET_S; what is left is planned again on the next read-back."""
+    login = kuma_login()
+    if not login:
+        return
+    plan = sorted(plan, key=lambda p: p[0] not in first)
+    res = kuma.rename_many(*login, [(mid, name) for _k, mid, name, _l in plan], budget_s=RENAME_BUDGET_S)
+    done = 0
+    for key, mid, name, label in plan:
+        r = res.get(mid)
+        if r is None:
+            continue                    # not reached this pass
+        if not r.get("ok"):
+            print(f"[monitoring] kuma rename #{mid} to {name!r} failed: {r.get('error')}", flush=True)
+            continue
+        reg = scanner.registry.get(key)
+        if isinstance(reg, dict) and reg.get("kuma_monitor_id") == mid:
+            reg["kuma_name"] = label
+            done += 1
+    if done:
+        scanner.save_registry()
+        left = len(plan) - len(res)
+        print(f"[monitoring] renamed {done} Kuma monitor(s) after their device"
+              + (f"; {left} left for the next pass" if left else ""), flush=True)
 
 
 def _out_of_step(scanner, key, reg):
@@ -336,7 +432,8 @@ def _apply(scanner, keys):
             if key in devs and mon["id"] not in owned:
                 marked.setdefault(key, mon)
         res = {k: {"ok": True, "monitor_id": m["id"], "adopt": m} for k, m in marked.items()}
-        items = [(k, scanner._kuma_name(d), d["ip"], d.get("category"), kuma.marker(k))
+        names = {k: scanner._kuma_name(d) for k, d in devs.items()}
+        items = [(k, names[k], d["ip"], d.get("category"), kuma.marker(k))
                  for k, d in devs.items() if d.get("ip") and k not in marked]
         res.update(kuma.provision_many(base, user, pw, items, 60) if items else {})
         for key, r in res.items():
@@ -358,7 +455,8 @@ def _apply(scanner, keys):
                 if _out_of_step(scanner, key, reg):
                     follow_kuma(scanner, [key])     # e.g. an adopted monitor that is paused
             else:
-                reg.update(kuma_monitor_id=r["monitor_id"], kuma_ip=devs[key]["ip"])
+                reg.update(kuma_monitor_id=r["monitor_id"], kuma_ip=devs[key]["ip"],
+                           kuma_name=names[key])
                 reg.pop("kuma_paused", None)
             dirty = True
     if dirty:

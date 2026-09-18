@@ -336,9 +336,15 @@ monitor (the device window's *Manual / pull setup*) is left alone.
 Every monitor Netwatch creates carries the description `netwatch:<device key>`. Kuma
 answers an *add* only after re-sending its whole monitor list, so on a busy Pi a reply
 can arrive too late although the monitor exists; the next pass finds the marked
-monitor and adopts it instead of making a second one. New monitors are named after the
-device's own name (its label, else the name the device reports, else its type).
-**Settings → Uptime Kuma → Tidy Kuma** lists the monitors that belong to no device and
+monitor and adopts it instead of making a second one. Monitors are named after the
+device (its label, else the name the device reports, else its type), and **renaming a
+device renames its monitor**: straight away when you rename it on the site page (or
+through the API), otherwise at the next half-hourly check (e.g. a name read from the camera). A
+name you give a monitor in Kuma itself stays until the device is renamed in Netwatch;
+monitors from older versions are renamed to their device's name once. A monitor
+named the older way, `Gate (192.168.88.13)`, keeps that style: the name part follows
+the device and the address follows its IP. A hand-made push monitor (*Manual / pull
+setup*) is never renamed. **Settings → Uptime Kuma → Tidy Kuma** lists the monitors that belong to no device and
 no internet check. Netwatch's own spare copies (a marked monitor of a forgotten device or
 of a device that uses another monitor, or a ping of a device under one of its own labels)
 come ticked; nothing is deleted until you press *Remove*, and a monitor a device uses is

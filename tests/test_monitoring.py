@@ -304,6 +304,136 @@ class KumaFollows(Base):
         self.assertEqual(calls, [{CAM, NVR}])
 
 
+class KumaNames(Base):
+    """A device's monitor follows the device's name (_plan_renames / _rename)."""
+    def setUp(self):
+        super().setUp()
+        mock.patch.object(monitoring, "kuma_login", return_value=LOGIN).start()
+        self.listing = mock.patch.object(monitoring.kuma, "monitor_list", return_value=[]).start()
+        self.ren = mock.patch.object(monitoring.kuma, "rename_many",
+                                     side_effect=lambda b, u, p, items, budget_s=None: {m: {"ok": True} for m, _ in items}).start()
+        self.s.devices = {CAM: device(CAM, "10.0.0.2", name="Gate"),
+                          NVR: device(NVR, "10.0.0.3", device_name="Boorgat PTZ", type="IP Camera"),
+                          PHONE: device(PHONE, "10.0.0.4", type="Phone"),
+                          RADIO: device(RADIO, "10.0.0.5", name="Tower")}
+
+    def plan(self):
+        out = []
+        monitoring._sync(self.s, out)
+        return out
+
+    def test_a_device_renamed_in_netwatch_renames_its_monitor(self):
+        self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 3, "kuma_name": "Old gate"}}
+        self.listing.return_value = [kmon(3, name="Old gate")]
+        plan = self.plan()
+        self.assertEqual(plan, [(CAM, 3, "Gate", "Gate")])
+        monitoring._rename(self.s, plan)
+        self.ren.assert_called_once_with(*LOGIN, [(3, "Gate")], budget_s=monitoring.RENAME_BUDGET_S)
+        self.assertEqual(self.s.registry[CAM]["kuma_name"], "Gate")
+        self.assertEqual(self.plan(), [])                    # done: not renamed again
+
+    def test_a_name_given_in_kumas_own_ui_stays(self):
+        self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 3, "kuma_name": "Gate"}}
+        self.listing.return_value = [kmon(3, name="Front gate (set in Kuma)")]
+        self.assertEqual(self.plan(), [])
+
+    def test_first_pass_after_the_upgrade(self):
+        # monitors from before this version carry no note
+        self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 3},          # already right: only noted
+                           NVR: {"watch": True, "kuma_monitor_id": 4}}          # named after its type back then
+        self.listing.return_value = [kmon(3, name="Gate"), kmon(4, name="IP Camera")]
+        self.assertEqual(self.plan(), [(NVR, 4, "Boorgat PTZ", "Boorgat PTZ")])
+        self.assertEqual(self.s.registry[CAM]["kuma_name"], "Gate")
+        self.assertNotIn("kuma_name", self.s.registry[NVR])
+        self.saves.assert_called()
+
+    def test_only_netwatchs_ping_monitors_are_renamed(self):
+        self.s.registry = {PHONE: {"watch": True, "kuma_monitor_id": 5},                     # an http check
+                           RADIO: {"watch": True, "kuma_monitor_id": 6},                     # a push monitor
+                           CAM: {"watch": True, "kuma_monitor_id": 7},                       # deleted in Kuma
+                           NVR: {"watch": True, "kuma_token": "t"},                          # hand-made: token, no id
+                           "aa:00:00:00:00:09": {"kuma_monitor_id": 8}}                      # no live record
+        self.listing.return_value = [kmon(5, type_="http"), kmon(6, type_="push"), kmon(8)]
+        self.assertEqual(self.plan(), [])
+
+    def test_a_token_left_from_the_push_days_changes_nothing(self):
+        # home: 27 monitors were push monitors once, converted to ping in place; the token stayed
+        self.s.registry = {NVR: {"watch": True, "kuma_monitor_id": 4, "kuma_token": "old"}}
+        self.listing.return_value = [kmon(4, name="IP Camera")]
+        self.assertEqual(self.plan(), [(NVR, 4, "Boorgat PTZ", "Boorgat PTZ")])
+
+    def test_the_device_just_renamed_goes_first_and_leftovers_wait(self):
+        self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 3},
+                           NVR: {"watch": True, "kuma_monitor_id": 4}}
+        self.ren.side_effect = lambda b, u, p, items, budget_s=None: {items[0][0]: {"ok": True}}  # budget ran out
+        monitoring._rename(self.s, [(CAM, 3, "Gate", "Gate"), (NVR, 4, "Boorgat PTZ", "Boorgat PTZ")], first={NVR})
+        self.assertEqual(self.ren.call_args[0][3][0], (4, "Boorgat PTZ"))
+        self.assertEqual(self.s.registry[NVR]["kuma_name"], "Boorgat PTZ")
+        self.assertNotIn("kuma_name", self.s.registry[CAM])                   # planned again next pass
+
+    def test_a_failed_rename_is_tried_again_next_pass(self):
+        self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 3, "kuma_name": "Old gate"}}
+        self.ren.side_effect = lambda b, u, p, items, budget_s=None: {3: {"ok": False, "error": "timeout"}}
+        monitoring._rename(self.s, [(CAM, 3, "Gate", "Gate")])
+        self.assertEqual(self.s.registry[CAM]["kuma_name"], "Old gate")
+        self.listing.return_value = [kmon(3, name="Old gate")]
+        self.assertEqual(self.plan(), [(CAM, 3, "Gate", "Gate")])
+
+    def test_names_with_the_address_keep_that_style(self):
+        # older versions named monitors "<name> (<address>)" (the home site): no churn,
+        # the device part follows, and two devices with the same name stay apart
+        self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 3},
+                           NVR: {"watch": True, "kuma_monitor_id": 4, "kuma_name": "Old"},
+                           PHONE: {"watch": True, "kuma_monitor_id": 5}}
+        self.listing.return_value = [kmon(3, name="Gate (10.0.0.2)", hostname="10.0.0.2"),
+                                     kmon(4, name="Old (10.0.0.3)", hostname="10.0.0.3"),
+                                     kmon(5, name="Phone (10.0.0.9)", hostname="10.0.0.4")]   # moved since
+        self.assertEqual(self.plan(), [(NVR, 4, "Boorgat PTZ (10.0.0.3)", "Boorgat PTZ"),
+                                       (PHONE, 5, "Phone (10.0.0.4)", "Phone")])
+        self.assertEqual(self.s.registry[CAM]["kuma_name"], "Gate")
+        long = monitoring.kuma.styled_name("x" * 150, {"hostname": "10.0.0.2", "name": "a (1.2.3.4)"})
+        self.assertEqual((len(long), long[-11:]), (150, " (10.0.0.2)"))
+        self.assertEqual(monitoring.kuma.styled_name("Gate", {"hostname": "10.0.0.2", "name": "Gate (x)"}), "Gate")
+
+    def test_new_and_adopted_monitors_note_their_name(self):
+        with mock.patch.object(monitoring.kuma, "provision_many", return_value={CAM: {"ok": True, "monitor_id": 50}}) as prov:
+            self.s.registry = {CAM: {"watch": True}}
+            monitoring._apply(self.s, {CAM})
+        self.assertEqual(prov.call_args[0][3][0][1], "Gate")
+        self.assertEqual(self.s.registry[CAM]["kuma_name"], "Gate")
+        reg = {}
+        monitoring._adopt(reg, kmon(41, name="IP Camera", description="netwatch:" + NVR))
+        self.assertEqual(reg["kuma_name"], "IP Camera")                       # renamed next pass if stale
+
+    def test_renaming_asks_for_a_read_back_now(self):
+        self.s.registry = {CAM: {"watch": True, "kuma_monitor_id": 3}, PHONE: {}}
+        self.addCleanup(monitoring._rename_first.clear)
+        monitoring.name_changed(self.s, CAM)
+        self.follow.assert_called_once_with(self.s, [], sync=True)
+        self.assertIn(CAM, monitoring._rename_first)
+        monitoring.name_changed(self.s, PHONE)                                # no monitor: nothing to rename
+        self.assertEqual(self.follow.call_count, 1)
+
+    def test_worker_renames_after_the_switch_work(self):
+        order = []
+
+        def sync(s, renames):
+            renames.append((CAM, 3, "Gate", "Gate"))
+            return {NVR}
+        with mock.patch.object(monitoring, "_sync", side_effect=sync), \
+                mock.patch.object(monitoring, "_apply", side_effect=lambda s, keys: order.append(("apply", set(keys)))), \
+                mock.patch.object(monitoring, "_rename", side_effect=lambda s, plan, first: order.append(("rename", plan, first))):
+            with monitoring._lock:
+                monitoring._rename_first.add(CAM)
+            self.real_follow(self.s, [PHONE], sync=True)
+            for _ in range(50):
+                if monitoring._worker is None:
+                    break
+                time.sleep(0.02)
+        self.assertEqual(order, [("apply", {NVR, PHONE}), ("rename", [(CAM, 3, "Gate", "Gate")], {CAM})])
+        self.assertEqual(monitoring._rename_first, set())
+
+
 class Tidy(Base):
     def setUp(self):
         super().setUp()
@@ -398,6 +528,18 @@ class Api(Base):
                 self.assertEqual(self.c.post("/api/kuma/unowned", json=bad, environ_base=HUB, headers=hub).status_code, 400, bad)
             self.assertEqual(self.c.post("/api/kuma/unowned", json={"ids": [3]}, environ_base=HUB, headers=hub).status_code, 200)
             rm.assert_called_once_with(server.scanner, [3])
+
+    def test_renaming_a_device_renames_its_kuma_monitor(self):
+        self.s.devices[CAM]["name"] = "Gate"                       # the live record carries the saved name
+        with mock.patch.object(monitoring, "name_changed") as nc:
+            self.assertEqual(self.post(f"/api/devices/{CAM}", {"name": "Gate"}, hub=True).status_code, 200)
+            nc.assert_not_called()                                  # same name: nothing to rename
+            self.assertEqual(self.post(f"/api/devices/{CAM}", {"name": "Front gate"}, hub=True).status_code, 200)
+            nc.assert_called_once_with(server.scanner, CAM)
+            self.post(f"/api/devices/{CAM}", {"category": "nvr", "type": "Recorder"}, hub=True)
+            self.assertEqual(nc.call_count, 1)                      # the name still wins over the type
+            self.post(f"/api/devices/{NVR}", {"type": "Recorder"}, hub=True)
+            nc.assert_called_with(server.scanner, NVR)              # no name: the type is its monitor's name
 
     def test_bad_bodies(self):
         for body in ({"monitor": "x"}, {"monitor": [1]}, {"monitor": [NVR], "stop": [NVR]},

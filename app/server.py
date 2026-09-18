@@ -768,6 +768,7 @@ def api_device_meta(key):
     fields, err = _device_meta_fields(key, body)
     if err:
         return jsonify({"ok": False, "error": err}), 400
+    kuma_name = monitoring.monitor_name(scanner, key)
     reg = scanner.set_device_meta(
         key,
         name=fields.get("name"),
@@ -777,6 +778,8 @@ def api_device_meta(key):
         model=fields.get("model"),
         link=fields.get("link"),
     )
+    if monitoring.monitor_name(scanner, key) != kuma_name:
+        monitoring.name_changed(scanner, key)       # its Kuma monitor follows the new name
     if watch is not None:
         monitoring.set_many(scanner, on=[key] if watch else [], off=[] if watch else [key], by=_who())
         reg = scanner.registry.get(key, reg)

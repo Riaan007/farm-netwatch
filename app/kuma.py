@@ -10,6 +10,7 @@ Two parts:
 import re
 import secrets
 import socket
+import time
 
 import requests
 
@@ -128,6 +129,22 @@ def _ensure_tag(sio, cache, label, color):
 
 
 MARKER = "netwatch:"
+
+
+# Older versions named a device's monitor "<name> (<address>)"; sites that still
+# have such names keep them (see styled_name), with the address kept current.
+IP_SUFFIX = re.compile(r" \((\d{1,3}(?:\.\d{1,3}){3})\)$")
+
+
+def styled_name(label, mon):
+    """The name a device's monitor should carry: the device's name, followed by
+    " (<address>)" when this monitor is named in that older style — so a site's
+    list keeps one style, and two devices with the same name stay apart."""
+    host = (mon or {}).get("hostname") or ""
+    if host and IP_SUFFIX.search((mon or {}).get("name") or ""):
+        suffix = f" ({host})"
+        return label[:150 - len(suffix)] + suffix
+    return label[:150]
 
 
 def marker(key):
@@ -293,7 +310,8 @@ def provision_internet(base_url, user, pw, gateway_ip, interval=60):
 
 def ensure_ping(base_url, user, pw, items, interval=60):
     """Make each monitor a PING monitor pointing at `ip`. Used to follow a device
-    that changed IP and to repair old push monitors. items: [(monitor_id, ip)]."""
+    that changed IP and to repair old push monitors; a name ending in the old
+    address in brackets gets the new one. items: [(monitor_id, ip)]."""
     try:
         sio, _ = _connect(base_url)
     except Exception as e:
@@ -312,6 +330,7 @@ def ensure_ping(base_url, user, pw, items, interval=60):
                     continue
                 mon["type"] = "ping"
                 mon["hostname"] = ip
+                mon["name"] = IP_SUFFIX.sub(f" ({ip})", mon.get("name") or "")   # "Gate (old ip)" follows
                 mon["interval"] = int(interval)
                 mon["retryInterval"] = int(interval)
                 r = sio.call("editMonitor", mon, timeout=15)
@@ -433,6 +452,50 @@ def set_active_many(base_url, user, pw, items):
             # Kuma's checkOwner answers this for a monitor deleted in its own UI
             out[mid] = {"ok": err is None, "error": err,
                         "gone": bool(err and "own this monitor" in err)}
+    finally:
+        try:
+            sio.disconnect()
+        except Exception:
+            pass
+    return out
+
+
+def rename_many(base_url, user, pw, items, timeout=60, budget_s=None):
+    """Rename monitors in ONE admin session: getMonitor, new name, editMonitor
+    (which keeps a paused monitor paused, like ensure_ping's IP follow).
+    items: [(monitor_id, name)]. Kuma answers an edit only after re-sending its
+    whole monitor list, hence the long timeout. A call that times out ends the
+    batch (Kuma is struggling), and so does `budget_s` running out: those
+    monitors are simply absent from the result — the next pass retries them.
+    Returns {monitor_id: {ok, error}}."""
+    items = [(mid, str(name)[:150]) for mid, name in items if mid and name]
+    if not items:
+        return {}
+    try:
+        sio, _ = _connect(base_url)
+    except Exception as e:
+        return {mid: {"ok": False, "error": f"cannot reach Kuma: {e}"} for mid, _ in items}
+    out = {}
+    start = time.monotonic()
+    try:
+        ok, msg = _login(sio, user, pw)
+        if not ok:
+            return {mid: {"ok": False, "error": msg} for mid, _ in items}
+        for mid, name in items:
+            if budget_s is not None and time.monotonic() - start > budget_s:
+                break
+            try:
+                got = sio.call("getMonitor", mid, timeout=15) or {}
+                mon = got.get("monitor")
+                if not (got.get("ok") and mon):
+                    out[mid] = {"ok": False, "error": got.get("msg") or "no such monitor"}
+                    continue
+                mon["name"] = name
+                r = sio.call("editMonitor", mon, timeout=timeout) or {}
+            except Exception as e:
+                out[mid] = {"ok": False, "error": str(e)[:100]}
+                break
+            out[mid] = {"ok": bool(r.get("ok")), "error": None if r.get("ok") else (r.get("msg") or "failed")}
     finally:
         try:
             sio.disconnect()
