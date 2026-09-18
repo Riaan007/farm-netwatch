@@ -77,6 +77,9 @@
 .tv.side-bottom .tv-dockbtn:hover{color:#67e8f9}
 .tv.side-bottom.side-min .tv-side{max-height:64px;overflow:hidden}
 .tv.side-bottom .tv-side>.sec{flex:1 1 300px;min-width:0;border-bottom:0;border-right:1px solid rgba(148,163,184,.08)}
+/* under the diagram the panel is short: its actions ride right under the title, never below the fold */
+.tv.side-bottom .tv-side>.hd{order:-2}
+.tv.side-bottom .tv-side>.sec-acts{order:-1;flex:1 1 100%;padding:8px 14px;border-right:0;border-bottom:1px solid rgba(148,163,184,.08)}
 .tv .tv-stage{position:relative;height:var(--tv-h);min-height:460px;border-radius:14px;border:1px solid var(--tv-line);overflow:hidden;background:radial-gradient(900px 500px at 20% 0%,rgba(34,211,238,.06),transparent 60%),#060b15;touch-action:none;user-select:none;-webkit-user-select:none}
 .tv .tv-svg{width:100%;height:100%;display:block;outline:none;cursor:crosshair}
 .tv.pan-mode .tv-svg{cursor:grab}
@@ -2011,7 +2014,7 @@
         ${probs ? `<div class="sec"><h4>Problems</h4>${probs}</div>` : ""}${inferred}${radioSection(n.radio)}
         <div class="sec"><h4>Connections <span class="c">${links.length}</span></h4>${links.length ? `<div class="tv-list">${links.map((L) => linkItem(L, n.id)).join("")}</div>` : `<p class="tv-note">Not connected to anything yet. Use <b>Connect to…</b>${canEdit() ? " or drag the + handle on the diagram" : ""}.</p>`}</div>
         ${placement}
-        <div class="sec"><div class="tv-acts">${acts.join("")}</div></div>`;
+        <div class="sec sec-acts"><div class="tv-acts">${acts.join("")}</div></div>`;
     }
     function linkPanel(L) {
       if (!L) return "";
@@ -2100,7 +2103,7 @@
         <div class="sec"><h4>Equipment <span class="c">${members.length}</span></h4>${members.length ? `<div class="tv-list">${members.map((n) => nodeItem(n, !n.virtual && opts.openDevice ? `<button type="button" class="tv-btn sm" data-p="open" data-id="${esc(n.id)}" title="Open the device window">Open</button>` : "")).join("")}</div>` : `<p class="tv-note">Nothing here yet — drag equipment onto this ${esc(((S.g.group_kinds || {})[gr.kind] || "group").toLowerCase())} in the diagram, or pick it as the group in a device's panel.</p>`}</div>
         <div class="sec"><h4>Connections inside <span class="c">${inside.length}</span></h4>${inside.length ? `<div class="tv-list">${inside.map(inItem).join("")}</div>` : `<p class="tv-note">None yet.</p>`}</div>
         <div class="sec"><h4>Links to other places <span class="c">${outside.length}</span></h4>${outside.length ? `<div class="tv-list">${outside.map(extItem).join("")}</div>` : `<p class="tv-note">No links out of this group yet.</p>`}</div>
-        <div class="sec"><div class="tv-acts">${acts.join("")}</div></div>`;
+        <div class="sec sec-acts"><div class="tv-acts">${acts.join("")}</div></div>`;
     }
     function reviewPanel() {
       const sugg = S.g.suggestions;
