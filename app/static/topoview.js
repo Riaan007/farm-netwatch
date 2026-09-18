@@ -62,9 +62,15 @@
    its full height and the panel never needs scrolling to reach. */
 .tv.side-bottom .tv-main{grid-template-columns:minmax(0,1fr);position:relative}
 .tv.side-bottom .tv-side{position:absolute;left:10px;right:10px;bottom:10px;top:auto;z-index:6;
-  max-height:min(32vh,300px);min-height:0;background:rgba(10,17,32,.97);box-shadow:0 -12px 40px rgba(0,0,0,.55);
+  max-height:min(30vh,280px);min-height:0;background:rgba(10,17,32,.97);box-shadow:0 -12px 40px rgba(0,0,0,.55);
   display:flex;flex-wrap:wrap;align-content:flex-start}
 .tv.side-bottom .tv-side>.hd{flex:1 1 100%;position:sticky;top:0}
+.tv .tv-dockbtn{display:none}
+.tv.side-bottom .tv-dockbtn{display:grid;place-items:center;position:absolute;z-index:7;left:50%;transform:translateX(-50%);
+  bottom:calc(var(--tv-dock-h,0px) - 3px);width:54px;height:18px;padding:0;border-radius:9px 9px 0 0;border:1px solid var(--tv-line2);border-bottom:0;
+  background:rgba(10,17,32,.97);color:#cbd5e1;cursor:pointer}
+.tv.side-bottom .tv-dockbtn:hover{color:#67e8f9}
+.tv.side-bottom.side-min .tv-side{max-height:64px;overflow:hidden}
 .tv.side-bottom .tv-side>.sec{flex:1 1 300px;min-width:0;border-bottom:0;border-right:1px solid rgba(148,163,184,.08)}
 .tv .tv-stage{position:relative;height:var(--tv-h);min-height:460px;border-radius:14px;border:1px solid var(--tv-line);overflow:hidden;background:radial-gradient(900px 500px at 20% 0%,rgba(34,211,238,.06),transparent 60%),#060b15;touch-action:none;user-select:none;-webkit-user-select:none}
 .tv .tv-svg{width:100%;height:100%;display:block;outline:none;cursor:crosshair}
@@ -761,12 +767,12 @@
       legend: !!pref.legend, scope: pref.scope === "all" ? "all" : "infra",
       panel: null, connect: null, drag: null, over: { nodes: {}, groups: {}, ua: null, size: {} },
       dropTarget: null, placing: null, destroyed: false, loading: false, err: "", timer: null,
-      dock: pref.dock === "right" ? "right" : "bottom", panMode: !!pref.panMode, space: false, marquee: null,
+      dock: pref.dock === "right" ? "right" : "bottom", dockMin: !!pref.dockMin, panMode: !!pref.panMode, space: false, marquee: null,
       focusWanted: opts.focus || null,
     };
     const savePref = () => store.set(PK, { view: S.view, k: S.k, tx: S.tx, ty: S.ty, status: S.status, kinds: S.kinds,
       media: S.media, sugg: S.sugg, labels: S.labels, review: S.review, legend: S.legend, scope: S.scope,
-      dock: S.dock, panMode: S.panMode });
+      dock: S.dock, dockMin: S.dockMin, panMode: S.panMode });
     const toast = (m, kind) => (opts.toast ? opts.toast(m, kind) : console.log(m));
     const confirmBox = (t, x, o) => (opts.confirm ? opts.confirm(t, x, o || {}) : Promise.resolve(window.confirm(t + "\n\n" + x)));
     const kindOf = (id) => (S.g && S.g.kinds.find((k) => k.id === id)) || { id, label: id, tier: 4, wireless: false };
@@ -821,6 +827,7 @@
           <div class="tv-empty" data-empty hidden></div>
         </div>
         <aside class="tv-side" data-side aria-label="Details" aria-live="polite"></aside>
+        <button type="button" class="tv-dockbtn" data-a="dockmin" aria-label="Make the details panel smaller"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
     </div>`;
     const $ = (sel, el = root) => el.querySelector(sel);
@@ -1028,6 +1035,13 @@
     if (sizeObs) { sizeObs.observe(side); sizeObs.observe($(".tv-bar")); }
     function applyModes() {
       tv.classList.toggle("side-bottom", S.dock === "bottom");
+      tv.classList.toggle("side-min", S.dockMin);
+      const db = $("[data-a='dockmin']");
+      if (db) {
+        db.setAttribute("aria-label", S.dockMin ? "Show the whole details panel" : "Make the details panel smaller");
+        db.title = S.dockMin ? "Show more" : "Show less";
+        db.firstElementChild.style.transform = S.dockMin ? "rotate(180deg)" : "";
+      }
       syncDock();
       tv.classList.toggle("pan-mode", S.panMode || S.space);
       const hb = $('[data-z="hand"]');
@@ -1378,6 +1392,7 @@
       if (what === "review") { S.sel = null; S.panel = S.panel === "review" ? null : "review"; render(); return; }
       if (what === "icons") return iconLibrary();
       if (what === "dock") { S.dock = S.dock === "bottom" ? "right" : "bottom"; savePref(); applyModes(); drawDiagram(); return; }
+      if (what === "dockmin") { S.dockMin = !S.dockMin; savePref(); applyModes(); return; }
     });
     async function needEdit(fn) {
       if (!canEdit() && opts.login) {
