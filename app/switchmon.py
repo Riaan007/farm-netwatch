@@ -1,4 +1,6 @@
-"""Switch monitor: what is happening on every Ubiquiti EdgeSwitch / UISP switch.
+"""Switch monitor: what is happening on every managed switch — Ubiquiti
+EdgeSwitch / UISP (edgeswitch.py) and MikroTik SwOS (swos.py). Both drivers
+return the same snapshot shape, so everything below is driver-blind.
 
 A farm's cameras, radios and NVR all hang off one or two PoE switches. When a
 cable corrodes, a camera's PoE fails or somebody unplugs the wrong thing, the
@@ -28,6 +30,7 @@ import creds
 import edgeswitch
 import history
 import notify
+import swos
 
 DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
 STATE_PATH = os.path.join(DATA_DIR, "switchmon_state.json")
@@ -51,12 +54,25 @@ LIMITS = {
 INFRA_CATEGORIES = {"camera", "nvr", "network", "internet-ap", "router", "solar", "alarm"}
 
 
+def driver(dev):
+    """The module that speaks this switch's language, or None if it isn't one."""
+    if swos.is_swos(dev):
+        return swos
+    if edgeswitch.is_edgeswitch(dev):
+        return edgeswitch
+    return None
+
+
+def is_switch(dev):
+    return driver(dev) is not None
+
+
 def targets(devices, registry):
-    """(key, dev, has_login) for every EdgeSwitch/UISP switch that is online."""
+    """(key, dev, has_login) for every managed switch (EdgeSwitch/UISP or SwOS) that is online."""
     have = creds.keys_with_creds()
     out = []
     for key, dev in devices.items():
-        if not edgeswitch.is_edgeswitch(dev) or not dev.get("online"):
+        if not is_switch(dev) or not dev.get("online"):
             continue
         if registry.get(key, {}).get("switch_monitor") is False:
             continue
@@ -251,7 +267,8 @@ class SwitchMonitor:
         return creds.fingerprint(c["username"], c["password"])
 
     def _no_login(self, key, dev):
-        pub = edgeswitch.public_device(dev.get("ip"))
+        # SwOS has no page that answers without a login.
+        pub = edgeswitch.public_device(dev.get("ip")) if driver(dev) is edgeswitch else {}
         self._last[key] = {"ok": False, "kind": "no_login", "ts": int(time.time()), "ip": dev.get("ip"),
                            "error": "no login saved for this switch",
                            "model": pub.get("model") or "", "product": pub.get("product") or ""}
@@ -263,7 +280,7 @@ class SwitchMonitor:
         c = creds.get(key)
         prev = (self._last.get(key) or {}).get("snap")
         try:
-            snap = edgeswitch.read(dev.get("ip"), c["username"], c["password"])
+            snap = driver(dev).read(dev.get("ip"), c["username"], c["password"])
         except Exception as e:  # noqa: BLE001
             snap = {"ok": False, "error": str(e), "kind": "error"}
         if not snap.get("ok"):
@@ -272,7 +289,7 @@ class SwitchMonitor:
                    "error": snap.get("error"), "kind": snap.get("kind"), "snap": prev,
                    "cred_fp": creds.fingerprint(c["username"], c["password"]),
                    "failed_since": (old.get("failed_since") if not old.get("ok") else None) or int(time.time())}
-            if snap.get("kind") == "auth_failed":
+            if snap.get("kind") == "auth_failed" and driver(dev) is edgeswitch:
                 pub = edgeswitch.public_device(dev.get("ip"))
                 row["model"] = pub.get("model") or ""
             self._last[key] = row
@@ -463,6 +480,11 @@ class SwitchMonitor:
                 add("poe_lost", "crit", f"{label} is powering nothing — it normally draws {base['poe_w']:.1f} W",
                     "The PoE device on this port has died or its cable is broken. Try a PoE power cycle from here "
                     "first; if it stays at 0 W someone must check the device and cable.", port=p)
+            if p.get("poe_fault"):         # SwOS says why a port stopped powering
+                add("poe_fault", "crit", f"{label} PoE: {p.get('poe_status')}",
+                    "The switch cut power to this port. A short circuit or overload is a wet/damaged cable or "
+                    "a faulty device; a voltage/current fault can be a device that needs more power than this port gives.",
+                    port=p)
             b = before.get(p["id"])
             if b and gap_h:
                 cur = (p.get("errors") or 0) + (p.get("dropped") or 0)

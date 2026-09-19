@@ -3,6 +3,7 @@
 One method per device, chosen from what it is and which ports answer:
   Hikvision camera/NVR  ISAPI deviceInfo (HTTP Digest)
   Ubiquiti EdgeSwitch   the switch's own JSON API login (what switchmon uses)
+  MikroTik SwOS         one digest-auth read of /sys.b (what switchmon uses)
   anything with SSH     an SSH login (Ubiquiti, MikroTik, Linux, switches)
   MikroTik web          RouterOS REST (/rest, Basic)
   other web pages       only when the page itself asks for HTTP authentication
@@ -26,6 +27,7 @@ from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 import airos
 import edgeswitch
+import swos
 import hikvision
 
 PROBE_PORTS = (22, 80, 443, 8080, 8443)
@@ -177,6 +179,21 @@ def test_edgeswitch(ip, username, password):
         return _r("unreachable" if e.kind == "unreachable" else "untestable", "EdgeSwitch API", str(e)[:160])
 
 
+def test_swos(ip, username, password):
+    """One read of the SwOS system page — the same call the switch monitor makes.
+    Its factory login is admin with a blank password."""
+    try:
+        with swos.Session(ip, username, password, timeout=(5, 12)) as s:
+            sysb = s.get("/sys.b")
+        return _r("ok", "SwOS web login", "The switch accepted the login", model=swos.hexstr(sysb.get("brd")),
+                  name=swos.hexstr(sysb.get("id")))
+    except swos.SwosError as e:
+        if e.kind == "auth_failed":
+            return _r("auth_failed", "SwOS web login",
+                      "The switch rejected this username or password (use the login of the switch's own web page)")
+        return _r("unreachable" if e.kind == "unreachable" else "untestable", "SwOS web login", str(e)[:160])
+
+
 def test_web(ip, username, password, ports, timeout=6):
     for base in _bases(ports)[:1]:
         res, detail, _resp = _http_once(base.format(ip=ip) + "/", username, password, timeout)
@@ -201,6 +218,8 @@ def plan(dev, ports):
     steps = []
     if hik and web:
         steps.append("hikvision")
+    if web and swos.is_swos(dev):
+        return ["swos"]               # no SSH, no API: the web login is the only one
     if web and edgeswitch.is_edgeswitch(dev):
         return ["edgeswitch"]         # its web page is a login form; SSH users can differ
     if 22 in ports:
@@ -233,6 +252,8 @@ def test(dev, username, password):
             res = test_hikvision(ip, username, password, ports)
         elif step == "edgeswitch":
             res = test_edgeswitch(ip, username, password)
+        elif step == "swos":
+            res = test_swos(ip, username, password)
         elif step == "ssh":
             res = test_ssh(ip, username, password)
         elif step == "mikrotik":

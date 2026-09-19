@@ -209,8 +209,11 @@ def classify(vendor, open_ports, banner, hostname):
            "samsung tv", "webos", "bravia", "kodi", "plex", "shield"):
         return "media", "Media / TV", "med"
 
-    # Networking gear (pro APs / radios / switches)
-    if any(x in v for x in ("ubiquiti", "ubnt", "mikrotik", "ruijie", "ruckus", "aruba",
+    # Networking gear (pro APs / radios / switches). A MikroTik's OUI vendor reads
+    # "Routerboard.com"; SwOS (switch-only firmware) names itself in the page title.
+    if "swos" in b:
+        return "network", "Switch (MikroTik SwOS)", "high"
+    if any(x in v for x in ("ubiquiti", "ubnt", "mikrotik", "routerboard", "ruijie", "ruckus", "aruba",
                             "zyxel", "engenius", "cambium")) or "unifi" in b or "routeros" in b \
             or 8291 in ports:
         if 53 in ports and (80 in ports or 443 in ports):

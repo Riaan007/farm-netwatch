@@ -2528,7 +2528,7 @@
             loadNeighborsPage();
             if(!units.length){
                 unmountSwitch(); list.hidden = true;
-                view.innerHTML = '<section class="nw-panel"><div class="nw-empty"><b>No managed units yet</b>Netwatch manages Ubiquiti EdgeSwitch / UISP switches and MikroTik routers. Once one has been scanned, save its login on the device\'s Access tab and every port shows up here.</div></section>';
+                view.innerHTML = '<section class="nw-panel"><div class="nw-empty"><b>No managed units yet</b>Netwatch manages Ubiquiti EdgeSwitch / UISP switches, MikroTik SwOS switches and MikroTik routers. Once one has been scanned, save its login on the device\'s Access tab and every port shows up here.</div></section>';
                 return;
             }
             const pick = (key && units.find(x => x.key === key)) ? key : (SW_KEY && units.find(x => x.key === SW_KEY) ? SW_KEY : units[0].key);

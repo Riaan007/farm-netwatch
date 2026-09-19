@@ -341,7 +341,7 @@ def api_devices():
         d["cred_test"] = {k: v for k, v in ct.items() if k != "fp"} if ct else None
         sp = plugged.get(edgeswitch.normalize_mac(d.get("mac"))) if d.get("mac") else None
         d["switch_port"] = sp if sp and sp["switch_key"] != d.get("key") else None
-        if edgeswitch.is_edgeswitch(d):
+        if switchmon.is_switch(d):
             d["is_switch"] = True
     return jsonify({
         "targets": cfg["targets"],
@@ -359,7 +359,7 @@ def api_credentials(key):
         user, pw = body.get("username", "").strip(), body.get("password", "")
         saved = creds.set_(key, user, pw, body.get("notes", "").strip())
         sw = next((d for d in scanner.get_devices() if d.get("key") == key), None)
-        if saved and sw and edgeswitch.is_edgeswitch(sw):     # read the switch with the new login now
+        if saved and sw and switchmon.is_switch(sw):     # read the switch with the new login now
             threading.Thread(target=switchmon.monitor.poll_round, kwargs={"force": True, "only": key},
                              daemon=True).start()
         # A remembered login test stays meaningful only for the login it tried.
@@ -1045,6 +1045,10 @@ _ROUTER_TTL = 300
 
 
 def _is_mikrotik_dev(d):
+    """A RouterOS device. A SwOS switch is MikroTik too but has no RouterOS API —
+    it is listed with the switches (switchmon/swos.py) instead."""
+    if switchmon.driver(d) is not None:
+        return False
     text = " ".join(str(d.get(k) or "") for k in ("vendor", "model", "hostname", "os", "banner")).lower()
     if "mikrotik" in text or "routerboard" in text or "routeros" in text:
         return True
@@ -1274,6 +1278,8 @@ def api_mikrotik_console(key):
 # ---- Ubiquiti EdgeSwitch / UISP switches ------------------------------------------
 SWITCH_BACKUP_DIR = os.path.join(os.environ.get("NETWATCH_DATA", "/data"), "switch_backups")
 SWITCH_BACKUP_KEEP = 10
+# EdgeSwitch backups are .tar.gz, SwOS ones the .swb its Backup button saves.
+_SW_BACKUP_RE = re.compile(r"^\d{8}-\d{6}\.(tar\.gz|swb)$")
 # Actions that can take a port's device (or everything behind the port) off the
 # network. Refused outright on a port the Pi or the router is on.
 _SW_CUTTING = {"port-off", "poe-off", "poe-cycle", "cable-test"}
@@ -1340,6 +1346,7 @@ def _sw_view(key, dev, row, by_mac, problems):
         "poe": snap.get("poe") or {}, "summary": snap.get("summary") or {},
         "ports": ports, "lags": snap.get("lags") or [], "vlans": snap.get("vlans") or [],
         "services": snap.get("services") or {},
+        "caps": snap.get("caps") or {},
         "problems": [p for p in problems if p["key"] == key],
         "poll_min": poll_s // 60,
     }
@@ -1360,7 +1367,7 @@ def api_switches():
     snap = switchmon.monitor.snapshot()
     out = []
     for d in devs:
-        if not edgeswitch.is_edgeswitch(d) and d.get("key") not in snap["switches"]:
+        if not switchmon.is_switch(d) and d.get("key") not in snap["switches"]:
             continue
         out.append(_sw_view(d["key"], d, snap["switches"].get(d["key"]) or {}, by_mac, snap["problems"]))
     out.sort(key=lambda s: (not s["online"], s["name"].lower()))
@@ -1445,8 +1452,10 @@ def api_switch_action(key):
     dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
     if not dev or not dev.get("ip"):
         return jsonify({"ok": False, "error": "unknown switch"}), 404
+    drv = switchmon.driver(dev) or edgeswitch
     c = creds.get(key)
     ip, user, pw = dev["ip"], c["username"], c["password"]
+    # SwOS's factory login is admin with NO password, so a saved user alone counts.
     if not (user or pw):
         return jsonify({"ok": False, "error": "Save the switch's login first"}), 400
     kind = {"port": "port-off" if body.get("enabled") is False else "port-on",
@@ -1456,7 +1465,7 @@ def api_switch_action(key):
         if not re.match(r"^\d+/\d+$", port):
             return jsonify({"ok": False, "error": "which port? (e.g. 0/3)"}), 400
     if kind in _SW_CUTTING or kind == "reboot":
-        live = edgeswitch.read(ip, user, pw)
+        live = drv.read(ip, user, pw)
         if not live.get("ok"):
             return jsonify({"ok": False, "error": f"couldn't check the switch first: {live.get('error')}"}), 502
         prot = switchmon.protected_ports(live)
@@ -1476,22 +1485,22 @@ def api_switch_action(key):
                                 "warning": "Every device on this switch loses its network (and PoE power) for "
                                            "about two minutes while it restarts."})
     if action == "port":
-        res = edgeswitch.set_port(ip, user, pw, port, enabled=bool(body.get("enabled")))
+        res = drv.set_port(ip, user, pw, port, enabled=bool(body.get("enabled")))
     elif action == "poe":
         mode = str(body.get("mode") or "")
         if not re.match(r"^[a-z0-9-]{2,16}$", mode):
             return jsonify({"ok": False, "error": "bad PoE mode"}), 400
-        res = edgeswitch.set_port(ip, user, pw, port, poe=mode)
+        res = drv.set_port(ip, user, pw, port, poe=mode)
     elif action == "poe-cycle":
-        res = edgeswitch.poe_cycle(ip, user, pw, port, body.get("off_s", 8))
+        res = drv.poe_cycle(ip, user, pw, port, body.get("off_s", 8))
     elif action == "name":
-        res = edgeswitch.set_port(ip, user, pw, port, name=str(body.get("name") or "").strip())
+        res = drv.set_port(ip, user, pw, port, name=str(body.get("name") or "").strip())
     elif action == "cable-test":
-        res = edgeswitch.cable_test(ip, user, pw, port)
+        res = drv.cable_test(ip, user, pw, port)
     elif action == "locate":
-        res = edgeswitch.locate(ip, user, pw, on=bool(body.get("on", True)))
+        res = drv.locate(ip, user, pw, on=bool(body.get("on", True)))
     elif action == "reboot":
-        res = edgeswitch.reboot(ip, user, pw)
+        res = drv.reboot(ip, user, pw)
     else:
         return jsonify({"ok": False, "error": f"unknown action {action!r}"}), 400
     _sw_audit(dev, kind, res, extra)
@@ -1508,7 +1517,7 @@ def _sw_backup_dir(key):
 def _sw_backup_list(key):
     d = _sw_backup_dir(key)
     try:
-        names = sorted((n for n in os.listdir(d) if n.endswith(".tar.gz")), reverse=True)
+        names = sorted((n for n in os.listdir(d) if _SW_BACKUP_RE.match(n)), reverse=True)
     except OSError:
         return []
     return [{"name": n, "size": os.path.getsize(os.path.join(d, n)),
@@ -1526,12 +1535,12 @@ def api_switch_backups(key):
     if not dev or not dev.get("ip"):
         return jsonify({"ok": False, "error": "unknown switch"}), 404
     c = creds.get(key)
-    res = edgeswitch.backup(dev["ip"], c["username"], c["password"])
+    res = (switchmon.driver(dev) or edgeswitch).backup(dev["ip"], c["username"], c["password"])
     if not res.get("ok"):
         return jsonify({"ok": False, "error": res.get("error")}), 502
     d = _sw_backup_dir(key)
     os.makedirs(d, exist_ok=True)
-    name = time.strftime("%Y%m%d-%H%M%S") + ".tar.gz"
+    name = time.strftime("%Y%m%d-%H%M%S") + (res.get("ext") or ".tar.gz")
     with open(os.path.join(d, name), "wb") as f:
         f.write(res["content"])
     for old in _sw_backup_list(key)[SWITCH_BACKUP_KEEP:]:
@@ -1546,14 +1555,15 @@ def api_switch_backups(key):
 @app.route("/api/devices/<path:key>/switch/backups/<name>")
 @guard
 def api_switch_backup_download(key, name):
-    if not re.match(r"^\d{8}-\d{6}\.tar\.gz$", name):
+    if not _SW_BACKUP_RE.match(name):
         return jsonify({"ok": False, "error": "no such backup"}), 404
     path = os.path.join(_sw_backup_dir(key), name)
     if not os.path.exists(path):
         return jsonify({"ok": False, "error": "no such backup"}), 404
     dev = next((d for d in scanner.get_devices() if d.get("key") == key), None) or {}
     label = re.sub(r"[^A-Za-z0-9_.-]", "-", dev.get("name") or dev.get("device_name") or dev.get("ip") or "switch")
-    return send_file(path, mimetype="application/gzip", as_attachment=True,
+    return send_file(path, mimetype="application/gzip" if name.endswith(".gz") else "application/octet-stream",
+                     as_attachment=True,
                      download_name=f"{label}-{name}")
 
 

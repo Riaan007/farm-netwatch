@@ -151,7 +151,7 @@
   const isDefaultName = (n) => !n || /^port\s*\d+$/i.test(n) || /^sfp\s*\d*$/i.test(n);
   const devName = (d) => d.name || d.ip || d.mac || "device";
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
-  const POE_LABEL = { off: "Off", active: "802.3af/at", "active-4pair": "802.3bt", "24v": "24 V passive", "24v-4pair": "24 V 4-pair", "27v": "27 V passive", "27v-4pair": "27 V 4-pair", "48v": "48 V passive", "54v": "54 V passive", "54v-4pair": "54 V 4-pair", pthru: "Pass-through" };
+  const POE_LABEL = { off: "Off", auto: "Auto (powers what asks for it)", on: "Forced on", active: "802.3af/at", "active-4pair": "802.3bt", "24v": "24 V passive", "24v-4pair": "24 V 4-pair", "27v": "27 V passive", "27v-4pair": "27 V 4-pair", "48v": "48 V passive", "54v": "54 V passive", "54v-4pair": "54 V 4-pair", pthru: "Pass-through" };
   const poeLabel = (m) => POE_LABEL[m] || m || "—";
 
   function portState(p, probs) {
@@ -439,15 +439,16 @@
           ${p.poe_supported && p.poe_mode && p.poe_mode !== "off" ? `<button class="swv-btn" data-x="cycle" title="PoE off for 8 seconds, then back on — restarts the powered device">⚡ Power cycle</button>` : ""}
           ${modes.length ? `<label class="swv-row" style="gap:6px"><span class="swv-muted" style="font-size:13px">PoE</span><select class="swv-sel" data-x="poe">${modes.map((m) => `<option value="${esc(m)}" ${m === p.poe_mode ? "selected" : ""}>${esc(poeLabel(m))}</option>`).join("")}</select></label>` : ""}
           <button class="swv-btn sm" data-x="rename">✏️ Rename</button>
-          <button class="swv-btn sm" data-x="cable" title="Measures the cable pairs — the link drops for a few seconds">📏 Cable test</button>
+          ${(d.caps || {}).cable_test === false ? "" : `<button class="swv-btn sm" data-x="cable" title="Measures the cable pairs — the link drops for a few seconds">📏 Cable test</button>`}
         </div>
         ${p.uplink ? `<p class="swv-note" style="margin:6px 0 0">⇅ ${p.uplink} devices are behind this port — switching it off takes all of them down.</p>` : ""}
-        <p class="swv-note" style="margin:6px 0 0">⚠ Passive 24 V / 48 V PoE can damage devices that don't expect it — only choose it for gear that needs passive power.</p>
+        ${modes.some((m) => /\d+v/i.test(m)) ? `<p class="swv-note" style="margin:6px 0 0">⚠ Passive 24 V / 48 V PoE can damage devices that don't expect it — only choose it for gear that needs passive power.</p>` : ""}
+        ${modes.includes("on") && modes.includes("auto") ? `<p class="swv-note" style="margin:6px 0 0">⚠ This switch's PoE is passive, at its own input voltage. “Forced on” powers the port even when the device doesn't ask for it — keep it on Auto unless the device needs it.</p>` : ""}
         <div id="swv-cable"></div>`;
       }
       el.innerHTML = `<div class="swv-box swv-detail" style="border-color:rgba(34,211,238,.35)">
         <div class="swv-head"><div><h2 style="font-size:17px">Port ${esc(portNo(p))}${!isDefaultName(p.name) ? ` · ${esc(p.name)}` : ""} <span class="swv-b ${s.cls}">${esc(s.label)}</span></h2>
-          <p class="swv-muted">${p.up ? `${p.speed ? p.speed + " Mbit/s " + (p.duplex || "") : "link up"} · ` : ""}${p.poe_supported ? "PoE " + esc(poeLabel(p.poe_mode)) + ((p.poe_w || 0) >= 0.5 ? ` drawing ${(+p.poe_w).toFixed(1)} W` : p.poe_w == null && p.poe_mode && p.poe_mode !== "off" ? " (power not measured)" : "") : "no PoE"}</p></div>
+          <p class="swv-muted">${p.up ? `${p.speed ? p.speed + " Mbit/s " + (p.duplex || "") : "link up"} · ` : ""}${p.poe_supported ? "PoE " + esc(poeLabel(p.poe_mode)) + ((p.poe_w || 0) >= 0.5 ? ` drawing ${(+p.poe_w).toFixed(1)} W` : p.poe_w == null && p.poe_mode && p.poe_mode !== "off" ? " (power not measured)" : "") + (p.poe_status ? " · " + esc(p.poe_status) : "") : "no PoE"}</p></div>
           <div class="swv-row"><div class="swv-seg" role="group" aria-label="Time range">${[[24, "24 h"], [168, "7 d"], [720, "30 d"]].map(([hh, l]) => `<button data-h="${hh}" class="${st.hours === hh ? "on" : ""}">${l}</button>`).join("")}</div><button class="swv-btn sm" data-x="close" aria-label="Close port details">✕</button></div></div>
         ${probs.length ? `<ul class="swv-probs">${probs.map((x) => `<li class="swv-prob ${x.level}"><span>${x.level === "crit" ? "🔴" : x.level === "warn" ? "🟠" : "ℹ️"}</span><div><div class="t">${esc(x.what)}</div><div class="h">${esc(x.hint)}</div></div><span></span></li>`).join("")}</ul>` : ""}
         <div class="swv-grid2">
@@ -529,9 +530,9 @@
           ${(h.temps || []).length ? `<dt>Temperatures</dt><dd>${h.temps.map((t) => esc((t.name ? t.name + " " : "") + Math.round(t.value) + "°C")).join(" · ")}</dd>` : ""}
           ${(h.psu || []).length ? `<dt>Power supply</dt><dd>${h.psu.map((p) => esc([p.type, p.voltage != null ? p.voltage + " V" : "", p.power != null ? p.power + " W" : ""].filter(Boolean).join(" "))).join(" · ")}</dd>` : ""}
           <dt>VLANs</dt><dd>${(d.vlans || []).length ? d.vlans.map((v) => esc(v.id + (v.name ? " " + v.name : ""))).join(", ") : "—"}</dd>
-          ${Object.keys(svc).length ? `<dt>Services</dt><dd>SSH ${on(svc.ssh)} · Telnet ${svc.telnet ? "<b style='color:#fbbf24'>on</b>" : on(svc.telnet)} · HTTP ${on(svc.http)} · SNMP ${on(svc.snmp)} · NTP ${on(svc.ntp)} · UISP ${on(svc.unms)}</dd>` : ""}
+          ${Object.keys(svc).length ? `<dt>Services</dt><dd>SSH ${on(svc.ssh)} · Telnet ${svc.telnet ? "<b style='color:#fbbf24'>on</b>" : on(svc.telnet)} · HTTP ${on(svc.http)} · SNMP ${on(svc.snmp)}${"ntp" in svc ? " · NTP " + on(svc.ntp) : ""}${"unms" in svc ? " · UISP " + on(svc.unms) : ""}</dd>` : ""}
         </dl>
-        ${d.manage ? `<div class="swv-row" style="margin-top:12px"><button class="swv-btn sm" data-i="locate" title="Blink the LEDs so someone on site finds this switch">💡 Blink LEDs</button><button class="swv-btn sm danger" data-i="reboot">↻ Restart switch</button></div>` : ""}
+        ${d.manage ? `<div class="swv-row" style="margin-top:12px">${(d.caps || {}).locate === false ? "" : `<button class="swv-btn sm" data-i="locate" title="Blink the LEDs so someone on site finds this switch">💡 Blink LEDs</button>`}<button class="swv-btn sm danger" data-i="reboot">↻ Restart switch</button></div>` : ""}
         ${bk}`;
       const b = (n) => el.querySelector(`[data-i="${n}"]`);
       if (b("locate")) b("locate").onclick = (e) => act({ action: "locate", on: true }, e.currentTarget, "The switch LEDs are blinking");

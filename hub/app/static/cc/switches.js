@@ -68,7 +68,7 @@
         list.innerHTML = "";
         host.innerHTML = ((sd && sd.legacy) || (rd && rd.legacy))
           ? `<div class="empty"><b>This site's Netwatch is too old for managed units</b>Update the site Pi (docker compose pull netwatch) to manage its switches and routers here.</div>`
-          : `<div class="empty"><b>No managed units at ${esc(s.name)}</b>EdgeSwitch / UISP switches and MikroTik routers show up here once the site has scanned one and its login is saved on the site's Netwatch.</div>`;
+          : `<div class="empty"><b>No managed units at ${esc(s.name)}</b>EdgeSwitch / UISP and MikroTik SwOS switches and MikroTik routers show up here once the site has scanned one and its login is saved on the site's Netwatch.</div>`;
         return;
       }
       const pick = this.key && units.some((x) => x.key === this.key) ? this.key : units[0].key;
