@@ -529,6 +529,37 @@ class Api(Base):
             self.assertEqual(self.c.post("/api/kuma/unowned", json={"ids": [3]}, environ_base=HUB, headers=hub).status_code, 200)
             rm.assert_called_once_with(server.scanner, [3])
 
+    def test_kuma_state_is_open_but_push_tokens_need_the_login_or_hub(self):
+        # CAM: a token left next to a ping monitor by "Fix monitors → ping" (Kuma
+        # 1.23 still takes pushes for it); NVR: a push monitor made by hand
+        self.s.registry[CAM].update(kuma_monitor_id=7, kuma_token="old-push")
+        self.s.registry[NVR].update(kuma_token="hand-push")
+        hub = {siteauth.HEADER: KEY}
+
+        def get(key, headers=None):
+            return self.c.get(f"/api/devices/{key}/kuma", environ_base=HUB, headers=headers or {})
+
+        cam = get(CAM)
+        self.assertNotIn(b"old-push", cam.data)
+        j = cam.get_json()
+        self.assertEqual((j["monitor_id"], j["paused"], j["monitored"], j["has_token"], j["token"], j["push_url"]),
+                         (7, False, True, True, "", ""))
+        self.assertTrue(j["health_url"].endswith(f"/api/devices/{CAM}/health"))
+        self.assertEqual(get(CAM, hub).get_json()["token"], "old-push")
+        j = get(NVR).get_json()
+        self.assertEqual((j["monitored"], j["has_token"], j["token"]), (False, True, ""))
+        # the hub key sets a hand-made token and reads it back; without it nothing changes
+        self.assertEqual(self.post(f"/api/devices/{NVR}/kuma", {"token": ""}).status_code, 401)
+        self.assertEqual(self.s.registry[NVR]["kuma_token"], "hand-push")
+        r = self.post(f"/api/devices/{NVR}/kuma", {"token": " new-push "}, hub=True)
+        self.assertEqual((r.status_code, r.get_json()["token"]), (200, "new-push"))
+        self.assertIn("/api/push/new-push?status=up", r.get_json()["push_url"])
+        self.assertEqual((get(NVR).get_json()["token"], get(NVR, hub).get_json()["token"]), ("", "new-push"))
+        # clearing it leaves nothing to hide
+        self.post(f"/api/devices/{NVR}/kuma", {"token": ""}, hub=True)
+        j = get(NVR, hub).get_json()
+        self.assertEqual((j["has_token"], j["token"], j["push_url"]), (False, "", ""))
+
     def test_renaming_a_device_renames_its_kuma_monitor(self):
         self.s.devices[CAM]["name"] = "Gate"                       # the live record carries the saved name
         with mock.patch.object(monitoring, "name_changed") as nc:

@@ -1377,7 +1377,11 @@
                                 </div>
                                 <div>
                                     <label class="text-[10px] text-slate-400">Push token — paste from a Kuma <b>Push</b> monitor you made yourself</label>
-                                    <div class="flex gap-2">
+                                    <div id="kuma-token-locked" hidden class="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm flex items-center gap-3 flex-wrap">
+                                        <span class="text-slate-400">A push token is saved. Anyone who has it can report this device as up, so it is locked. Unlock to see or change it.</span>
+                                        <button onclick="unlockCreds()" class="ml-auto px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold">🔓 Unlock with Pi password</button>
+                                    </div>
+                                    <div id="kuma-token-form" class="flex gap-2">
                                         <input id="kuma-token" type="text" class="flex-grow p-2 bg-[#050b16] border rounded-lg text-xs font-mono" placeholder="paste push token">
                                         <button onclick="saveKuma()" class="px-4 py-2 bg-cyan-600 text-white rounded-lg text-sm font-bold">Save</button>
                                     </div>
@@ -2812,17 +2816,25 @@
             sec.style.display = '';
             document.getElementById('kuma-token').value = '';
             document.getElementById('kuma-pushurl').innerText = '';
+            // No token box until the answer is in: an empty box saved over a
+            // token this browser may not read would delete it.
+            document.getElementById('kuma-token-form').hidden = true;
+            document.getElementById('kuma-token-locked').hidden = true;
             const st = document.getElementById('kuma-status');
             try {
                 const k = await (await fetch('/api/devices/'+encodeURIComponent(key)+'/kuma')).json();
                 if(key !== CURRENT_KEY) return;
                 document.getElementById('kuma-health').value = k.health_url || '';
+                // The Pi sends a saved token only to its login or the hub key.
+                const locked = !!(k.has_token && !k.token);
+                document.getElementById('kuma-token-locked').hidden = !locked;
+                document.getElementById('kuma-token-form').hidden = locked;
                 document.getElementById('kuma-token').value = k.token || '';
                 document.getElementById('kuma-pushurl').innerText = k.push_url ? ('Push URL: ' + k.push_url) : '';
                 const mid = k.monitor_id || 0;
                 st.textContent = mid > 0
                     ? (k.paused ? `Monitor #${mid} is paused — this device is not monitored (its history is kept).` : `Monitor #${mid} pings this device every 60 seconds.`)
-                    : k.token ? "A hand-made push monitor receives this device's status after every scan."
+                    : k.has_token ? "A hand-made push monitor receives this device's status after every scan."
                     : !k.follows ? 'Uptime Kuma is not set up on this Pi (Settings → Uptime Kuma).'
                     : k.monitored ? 'Its Kuma monitor is being created…' : 'No Kuma monitor — switch Monitored on to add one.';
             } catch(e){ st.textContent = ''; }
@@ -2830,7 +2842,8 @@
         async function saveKuma(){
             if(!CURRENT_KEY) return;
             const token = document.getElementById('kuma-token').value;
-            await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/kuma', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token }) });
+            const r = await fetch('/api/devices/'+encodeURIComponent(CURRENT_KEY)+'/kuma', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token }) });
+            if(!r.ok){ nwToast('Not saved: ' + whyNotSaved(r, await r.json().catch(() => ({}))), 'bad'); return; }   // the typed token stays for another try
             loadKuma(CURRENT_KEY, DEV_BY_KEY[CURRENT_KEY]); loadDevices();
         }
         function renderMonRow(dev){
@@ -3017,8 +3030,8 @@
             const box = document.getElementById('cred-test');
             if(!box.hidden && !box.classList.contains('run')) showCredTest('');
         }));
-        async function unlockCreds(){
-            if(window.nwAuth && await window.nwAuth.login()) loadCreds(CURRENT_KEY);
+        async function unlockCreds(){   // one login unlocks the whole Access tab: saved login + Kuma push token
+            if(window.nwAuth && await window.nwAuth.login()){ loadCreds(CURRENT_KEY); loadKuma(CURRENT_KEY, DEV_BY_KEY[CURRENT_KEY]); }
         }
         function toggleCredPass(){
             const f = document.getElementById('cred-pass');

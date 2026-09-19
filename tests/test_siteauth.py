@@ -90,8 +90,41 @@ class SiteAuth(unittest.TestCase):
 
     def test_open_endpoints_still_open(self):
         for path in ("/api/status", "/api/devices", "/api/sysinfo", "/api/auth/state",
-                     "/api/devices/aa:bb/asset", "/api/bridge-macs"):
+                     "/api/devices/aa:bb/asset", "/api/bridge-macs", "/api/devices/aa:bb/kuma"):
             self.assertEqual(self.call("get", path).status_code, 200, path)
+
+    def test_kuma_push_token_only_for_the_login_or_hub_key(self):
+        # Whoever holds a push token can send the monitor fake "up" beats.
+        server.scanner.registry["aa:bb"] = {"kuma_token": "push-secret-1", "kuma_monitor_id": 0}
+        self.addCleanup(server.scanner.registry.pop, "aa:bb", None)
+        self.call("post", "/api/auth/claim-hub", env=HUB, json={"key": KEY})
+        siteauth.set_password("farm-pass-1")
+
+        def kuma(headers=None):
+            r = self.call("get", "/api/devices/aa:bb/kuma", headers=headers or {})
+            self.assertEqual(r.status_code, 200)
+            return r
+
+        anon = kuma()
+        self.assertNotIn(b"push-secret-1", anon.data)
+        j = anon.get_json()
+        self.assertEqual((j["token"], j["push_url"], j["has_token"]), ("", "", True))
+        for field in ("monitor_id", "paused", "monitored", "follows", "health_url"):
+            self.assertIn(field, j)                 # the page shows these before any login
+        self.assertNotIn(b"push-secret-1", kuma({siteauth.HEADER: "x" * 43}).data)
+
+        j = kuma({siteauth.HEADER: KEY}).get_json()
+        self.assertEqual(j["token"], "push-secret-1")
+        self.assertIn("/api/push/push-secret-1?status=up", j["push_url"])
+
+        self.call("post", "/api/auth/login", json={"password": "farm-pass-1"})
+        self.assertEqual(kuma().get_json()["token"], "push-secret-1")
+        self.call("post", "/api/auth/logout")
+        self.assertNotIn(b"push-secret-1", kuma().data)
+
+        # an anonymous save is refused, so it cannot blank the token either
+        self.assertEqual(self.call("post", "/api/devices/aa:bb/kuma", json={"token": ""}).status_code, 401)
+        self.assertEqual(server.scanner.registry["aa:bb"]["kuma_token"], "push-secret-1")
 
     def test_config_redacts_topic_for_anonymous(self):
         j = self.call("get", "/api/config").get_json()

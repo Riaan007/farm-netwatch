@@ -369,7 +369,9 @@ onto monitors you made earlier (idempotent — safe to run again).
 
 **Manual / pull (no admin creds).** Under a device's "Manual / pull setup" you can
 instead paste a token from a Kuma *Push* monitor you made yourself, or copy the
-device's **health URL** into a Kuma *HTTP* monitor (200 = up, 503 = down).
+device's **health URL** into a Kuma *HTTP* monitor (200 = up, 503 = down). Anyone
+holding a push token can report the device as up, so seeing or changing a saved
+token needs the site login (or the hub key); without it the page only says one is saved.
 
 ## Central hub: all sites on one dashboard
 
@@ -689,7 +691,8 @@ logs into devices.
 
 **Site login.** The dashboard, device list and scans stay open, but everything
 that reveals or uses a secret, or changes the Pi, needs a login: saved device
-logins (read, save, bulk), config export/import, settings writes (and the full
+logins (read, save, bulk), a device's Kuma push token (read, save),
+config export/import, settings writes (and the full
 settings incl. the ntfy topic), hub-VPN connect/disconnect, network changes,
 the Kuma login test, and the device actions that use a saved login (Hikvision
 fetch, airOS Wi-Fi/network read, Change IP). Two callers get in:

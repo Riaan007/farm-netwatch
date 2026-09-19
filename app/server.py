@@ -1691,6 +1691,10 @@ def api_kuma(key):
     {action:"create"} / {action:"remove"} just switch monitoring on / off (the
     monitor is created or paused in the background); {token:"..."} sets a
     hand-made push monitor's token. POSTs need the site login.
+
+    GET stays open for the monitor's state, but the push token and its URL go
+    only to the site login or the hub key: whoever holds the token can send the
+    monitor fake "up" beats and hide a real outage. Others get `has_token`.
     """
     cfg = config.load()
     ki = cfg["integrations"]["kuma"]
@@ -1713,14 +1717,16 @@ def api_kuma(key):
         scanner.set_device_meta(key, kuma_token=body.get("token", ""))
 
     reg = scanner.registry.get(key, {})
-    token = reg.get("kuma_token", "")
+    token = reg.get("kuma_token") or ""
+    shown = token if siteauth.allowed(request, session) else ""
     return jsonify({
-        "token": token,
+        "token": shown,
+        "has_token": bool(token),
         "monitor_id": reg.get("kuma_monitor_id", 0),
         "paused": bool(reg.get("kuma_paused")),
         "monitored": monitoring.is_monitored(reg),
         "follows": monitoring.kuma_follows(),
-        "push_url": f"{base}/api/push/{token}?status=up&msg=OK&ping=0" if token else "",
+        "push_url": f"{base}/api/push/{shown}?status=up&msg=OK&ping=0" if shown else "",
         "health_url": f"{request.scheme}://{request.host}/api/devices/{key}/health",
     })
 
