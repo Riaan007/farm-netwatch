@@ -78,10 +78,33 @@ def _channel_name(base, auth, timeout):
         return ""
 
 
+def _channel_status(base, auth, timeout):
+    """{channel id: online} from the NVR's InputProxy/channels/status ({} when
+    the NVR doesn't answer it)."""
+    try:
+        r = requests.get(f"{base}/ISAPI/ContentMgmt/InputProxy/channels/status", auth=auth,
+                         timeout=timeout, verify=False)
+        if r.status_code != 200:
+            return {}
+        root = ET.fromstring(r.text)
+    except (requests.RequestException, ET.ParseError):
+        return {}
+    out = {}
+    for st in root.iter():
+        if st.tag.rsplit("}", 1)[-1] == "InputProxyChannelStatus":
+            cid, online = _child(st, "id"), _child(st, "online").lower()
+            if cid and online in ("true", "false"):
+                out[cid] = online == "true"
+    return out
+
+
 def nvr_channels(ip, username, password, timeout=8):
-    """An NVR's camera list: [{'id', 'name', 'ip'}]. The channel names are what
-    the operator sees on the recorder, and cover cameras whose own login was
-    never saved. [] if this isn't an NVR or the login fails."""
+    """An NVR's camera list: [{'id', 'name', 'ip', 'online'}]. The channel names
+    are what the operator sees on the recorder, and cover cameras whose own
+    login was never saved. `online` is the NVR's own word on whether it is
+    connected to that camera: False means the channel points at an address the
+    NVR can't use (often a camera that has moved), None that it doesn't say.
+    [] if this isn't an NVR or the login fails."""
     for scheme in ("http", "https"):
         for auth in (HTTPDigestAuth(username, password), HTTPBasicAuth(username, password)):
             try:
@@ -102,6 +125,9 @@ def nvr_channels(ip, username, password, timeout=8):
                 cam_ip = next((e.text.strip() for e in ch.iter()
                                if e.tag.rsplit("}", 1)[-1] == "ipAddress" and e.text), "")
                 out.append({"id": _child(ch, "id"), "name": _child(ch, "name"), "ip": cam_ip})
+            status = _channel_status(f"{scheme}://{ip}", auth, timeout)
+            for ch in out:
+                ch["online"] = status.get(ch["id"])
             return out
     return []
 

@@ -43,6 +43,8 @@ QUICK_PORTS = "22,53,80,443,515,554,631,1883,2000,5000,5060,8000,8080,8291,8443,
 CONFLICT_WINDOW_S = 24 * 3600
 # How often a camera's own display name is re-read over ISAPI (see _names_pass).
 NAME_REFRESH_S = 6 * 3600
+# An NVR's last channel list still has its say this long after it was read.
+NVR_LIST_KEEP_S = 2 * NAME_REFRESH_S
 # Factory-default names that identify nothing — shown as if the device had none.
 _GENERIC_NAMES = {"ipcamera", "ipdome", "camera", "networkcamera", "ipc", "embeddednetdvr",
                   "networkvideorecorder", "nvr", "dvr", "hikvision", "ubnt", "ubiquiti",
@@ -62,6 +64,36 @@ def _useful_device_name(raw, model=None):
             or (model and n == _norm_name(model))):
         return ""
     return name
+
+
+def _sort_num(v, width=1):
+    """'192.168.1.9' -> (192, 168, 1, 9), '7' -> (7,); anything else sorts last."""
+    try:
+        return tuple(int(p) for p in str(v).split("."))
+    except ValueError:
+        return (1 << 30,) * width
+
+
+def nvr_names(lists):
+    """Camera IP -> the name the NVRs give it, from {nvr key: (nvr ip, channels)}
+    (hikvision.nvr_channels). A channel its NVR reports offline names nothing:
+    it points at an address the NVR can't use — often a camera that has moved
+    on — and whatever answers there now is another device. When NVRs disagree,
+    the one with the larger share of its channels online wins (a recorder nobody
+    maintains keeps stale entries), then the lower NVR address; within one NVR
+    the first channel (a multi-lens camera's first lens). Factory names count
+    as no name."""
+    best = {}
+    for nvr_ip, chans in lists.values():
+        known = [c["online"] for c in chans if c.get("online") is not None]
+        health = sum(known) / len(known) if known else 0.5
+        for c in chans:
+            if not c.get("ip") or c.get("online") is False or not _useful_device_name(c.get("name")):
+                continue
+            rank = (c.get("online") is None, -health, _sort_num(nvr_ip, 4), _sort_num(c.get("id")))
+            if c["ip"] not in best or rank < best[c["ip"]][0]:
+                best[c["ip"]] = (rank, c["name"])
+    return {ip: name for ip, (_rank, name) in best.items()}
 
 
 def hik_own_name(info):
@@ -189,6 +221,7 @@ class Scanner:
         self._bridge_macs = self._load_bridge_macs(config.load())
         self.registry = self._load_registry()
         self._name_checked = {}    # key -> last time its own display name was read
+        self._nvr_lists = {}       # NVR key -> (read at, NVR ip, channel list) — see _names_pass
         # The radio monitor already SSHes into every radio with a login; it hands
         # back the host name it reads so radios get a display name for free.
         radiomon.monitor.on_identity = self.set_device_name
@@ -657,8 +690,10 @@ class Scanner:
         """Read display names from Hikvision cameras/NVRs that have a saved login.
         A deep scan does this too, but deep scans are rare; this runs after
         ordinary scans, at most every NAME_REFRESH_S per device. An NVR's channel
-        list also names the cameras behind it that have no login of their own.
-        Radios get theirs from the radio monitor's SSH poll."""
+        list also names the cameras behind it that have no login of their own;
+        where NVRs disagree, nvr_names() decides — over every NVR's latest list,
+        not just this pass's, so two NVRs read in different passes can't take
+        turns naming a camera. Radios get theirs from the radio monitor's SSH poll."""
         have = creds.keys_with_creds()
         now = time.time()
         due = [d for k, d in devices.items()
@@ -667,7 +702,7 @@ class Scanner:
                and now - self._name_checked.get(k, 0) >= NAME_REFRESH_S]
         for d in due:
             self._name_checked[d["key"]] = now
-        by_nvr = {}         # camera IP -> the name an NVR shows for it
+        read = []           # NVRs whose channel list was read in this pass
 
         def one(d):
             c = creds.get(d["key"])
@@ -678,12 +713,17 @@ class Scanner:
             self.set_device_name(d["key"], hik_own_name(info),
                                  model=info.get("model") or d.get("model"))
             if d.get("category") == "nvr" or re.search(r"NVR|DVR", info.get("deviceType", ""), re.I):
-                for ch in hikvision.nvr_channels(d["ip"], c["username"], c["password"]):
-                    if ch["ip"] and _useful_device_name(ch["name"]):
-                        by_nvr.setdefault(ch["ip"], ch["name"])   # first channel of a multi-lens camera
+                chans = hikvision.nvr_channels(d["ip"], c["username"], c["password"])
+                if chans:
+                    self._nvr_lists[d["key"]] = (now, d["ip"], chans)
+                    read.append(d["key"])
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                 list(pool.map(one, due))
+            if not read:
+                return
+            by_nvr = nvr_names({k: (ip, chans) for k, (ts, ip, chans) in list(self._nvr_lists.items())
+                                if now - ts < NVR_LIST_KEEP_S})
             for d in devices.values():
                 if d.get("ip") in by_nvr and _is_hik(d) and not radiomon.is_radio(d):
                     self.set_device_name(d["key"], by_nvr[d["ip"]], model=d.get("model"), src="nvr")

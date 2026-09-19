@@ -103,7 +103,10 @@ device drops offline.
   advertise their serial). No credentials needed.
 - **Hikvision deep info** — a "Camera info" button (and auto, on deep scans) pulls
   model / serial / firmware straight from a Hikvision camera/NVR via ISAPI using
-  its saved login.
+  its saved login. Cameras are also named after the name set on them or, without a
+  login, the name their NVR gives them. A channel the NVR reports offline names
+  nothing (it points at an address the NVR can't reach), and where two NVRs name a
+  camera differently, the NVR with the larger share of its channels online wins.
 - **Change a device's IP** — for **Hikvision** cameras, a "Change IP" button writes
   a new static IP via ISAPI and reboots the camera to apply it (saved login
   required). For **Ubiquiti airOS** radios there's an *experimental, off-by-default*
