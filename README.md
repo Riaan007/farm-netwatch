@@ -107,6 +107,13 @@ device drops offline.
   login, the name their NVR gives them. A channel the NVR reports offline names
   nothing (it points at an address the NVR can't reach), and where two NVRs name a
   camera differently, the NVR with the larger share of its channels online wins.
+  A camera without a login also gets its model / serial / firmware filled in: from
+  the NVR connected to it (only a channel the NVR reports online; the same NVR wins
+  as for names), else from the host name it advertises — a Hikvision camera's host
+  name is its serial number with "/", "(" and ")" shown as "-", so the model is
+  spelt like one the site already knows where exactly one fits. The device window
+  says where such a value came from. A value the operator typed or the camera's
+  own login read is never replaced; the NVR's replaces the host name's.
 - **Change a device's IP** — for **Hikvision** cameras, a "Change IP" button writes
   a new static IP via ISAPI and reboots the camera to apply it (saved login
   required). For **Ubiquiti airOS** radios there's an *experimental, off-by-default*

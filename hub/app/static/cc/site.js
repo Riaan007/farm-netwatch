@@ -519,6 +519,12 @@
   };
 
   // ---- device drawer ---------------------------------------------------------------------------
+  // Where the site filled in a model/serial/firmware nobody read with the device's own login.
+  const metaNote = (d, f) => {
+    const src = (d.meta_src || {})[f];
+    return src === "nvr" ? ` <span class="note">(from the NVR)</span>` : src === "hostname" ? ` <span class="note">(from its network name)</span>` : "";
+  };
+
   CC.openDevice = (siteId, key) => {
     const s = CC.site(siteId);
     const d = (S.devices[siteId] || []).find((x) => x.key === key);
@@ -530,7 +536,7 @@
           <span><b>🔔 Monitored</b><small id="dd-mon-sub"></small></span></label>
         <div class="sect"><h3>Identity</h3><dl class="kv">
           <dt>IP</dt><dd class="mono">${esc(d.ip || "—")}</dd><dt>MAC</dt><dd class="mono">${esc(d.mac || "—")}</dd>
-          ${d.device_name ? `<dt>Own name</dt><dd>${esc(d.device_name)} <span class="note">(${d.device_name_src === "nvr" ? "from the NVR" : "set on the device"})</span></dd>` : ""}<dt>Vendor</dt><dd>${esc(d.vendor || "—")}</dd>${d.model ? `<dt>Model</dt><dd>${esc(d.model)}</dd>` : ""}${d.firmware ? `<dt>Firmware</dt><dd class="mono">${esc(d.firmware)}</dd>` : ""}${d.serial ? `<dt>Serial</dt><dd class="mono">${esc(d.serial)}</dd>` : ""}
+          ${d.device_name ? `<dt>Own name</dt><dd>${esc(d.device_name)} <span class="note">(${d.device_name_src === "nvr" ? "from the NVR" : "set on the device"})</span></dd>` : ""}<dt>Vendor</dt><dd>${esc(d.vendor || "—")}</dd>${d.model ? `<dt>Model</dt><dd>${esc(d.model)}${metaNote(d, "model")}</dd>` : ""}${d.firmware ? `<dt>Firmware</dt><dd><span class="mono">${esc(d.firmware)}</span>${metaNote(d, "firmware")}</dd>` : ""}${d.serial ? `<dt>Serial</dt><dd><span class="mono">${esc(d.serial)}</span>${metaNote(d, "serial")}</dd>` : ""}
           ${d.hostname ? `<dt>Hostname</dt><dd class="mono">${esc(d.hostname)}</dd>` : ""}${d.type ? `<dt>Detected as</dt><dd>${esc(d.type)} <span class="note">(${esc(d.confidence || "")} confidence)</span></dd>` : ""}
           <dt>Last seen</dt><dd>${d.online ? "now" : CC.ago(d.last_seen)} <span class="note">${esc(CC.when(d.last_seen))}</span></dd><dt>First seen</dt><dd>${esc(CC.when(d.first_seen))}</dd>
           ${(d.ports || []).length ? `<dt>Open ports</dt><dd class="mono">${d.ports.map((p) => esc(p) + ((d.services || {})[p] ? ` <span class="dim">${esc(d.services[p].split(" ")[0])}</span>` : "")).join(", ")}</dd>` : ""}

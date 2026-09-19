@@ -335,6 +335,8 @@ def api_devices():
         d["kuma_paused"] = bool(_kreg.get("kuma_paused"))
         d["watch"] = monitoring.is_monitored(_kreg)   # = "Monitored" (see monitoring.py)
         d["geo"] = _kreg.get("geo") or None         # {lat, lon, note, ts} — set by hand
+        ms = _kreg.get("meta_src")                  # model/serial/firmware filled in: {field: "nvr"|"hostname"}
+        d["meta_src"] = dict(ms) if isinstance(ms, dict) else {}
         ct = _kreg.get("cred_test")
         d["cred_test"] = {k: v for k, v in ct.items() if k != "fp"} if ct else None
         sp = plugged.get(edgeswitch.normalize_mac(d.get("mac"))) if d.get("mac") else None
@@ -804,12 +806,10 @@ def api_hikvision(key):
     if res.get("ok"):
         info = res["info"]
         scanner.set_device_meta(key, serial=info.get("serialNumber") or None,
-                                model=info.get("model") or None)
+                                model=info.get("model") or None,
+                                firmware=info.get("firmwareVersion") or None, src="device")
         info["display_name"] = scanner.set_device_name(key, hik_own_name(info),
                                                        model=info.get("model"))
-        if info.get("firmwareVersion"):
-            scanner.registry.setdefault(key, {})["firmware"] = info["firmwareVersion"]
-            scanner.save_registry()
         return jsonify({"ok": True, "info": info})
     return jsonify({"ok": False, "error": res.get("error", "failed")})
 

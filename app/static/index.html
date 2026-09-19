@@ -1700,6 +1700,8 @@
             if(c === 'alarm' || c === 'solar') return 'power';
             return !c || c === 'unknown' ? (d.name ? 'other' : 'unknown') : 'other';
         }
+        // Where the scanner filled in a model/serial/firmware nobody read with the device's own login.
+        function metaNote(d, f){ const src = (d.meta_src||{})[f]; return src==='nvr' ? ' (from the NVR)' : src==='hostname' ? ' (from its network name)' : ''; }
         function devTitle(d){ return d.name || d.device_name || d.model || (d.type && !/^unknown/i.test(d.type) ? d.type : '') || d.hostname || (d.vendor ? d.vendor.replace(/,?\s*(Co\.|Ltd|Inc|Corp|Technology|Digital).*$/i,'') : '') || 'Unknown device'; }
         function vendorShort(v){ return (v||'').replace(/,?\s*(Co\.,?\s*Ltd\.?|Ltd\.?|Inc\.?|Corp\.?|Corporation)\s*$/i,'').replace(/\s+(Digital\s+)?Technolog(y|ies)(\s+Co.*)?$/i,'').replace(/^Hangzhou\s+/i,'').trim(); }
         /* IP search, same rules as the hub Control Center:
@@ -2643,7 +2645,7 @@
             const extra = document.getElementById('modal-extra-info');
             if(dev){
                 extra.classList.remove('hidden');
-                let txt = (dev.device_name ? `Own name: ${dev.device_name}${dev.device_name_src==='nvr' ? ' (from the NVR)' : ''}\n` : '') + `MAC:      ${dev.mac||'n/a (routed host)'}\nHostname: ${dev.hostname||'—'}\nVendor:   ${dev.vendor||'—'}\nModel:    ${dev.model||'—'}\nSerial:   ${dev.serial||'—'}\nPorts:    ${(dev.ports||[]).join(', ')||'none'}\nOS guess: ${dev.os||'—'}\nNetwork:  ${dev.target}${dev.local===false?' (remote)':''}`;
+                let txt = (dev.device_name ? `Own name: ${dev.device_name}${dev.device_name_src==='nvr' ? ' (from the NVR)' : ''}\n` : '') + `MAC:      ${dev.mac||'n/a (routed host)'}\nHostname: ${dev.hostname||'—'}\nVendor:   ${dev.vendor||'—'}\nModel:    ${dev.model||'—'}${metaNote(dev,'model')}\nSerial:   ${dev.serial||'—'}${metaNote(dev,'serial')}${dev.firmware ? `\nFirmware: ${dev.firmware}${metaNote(dev,'firmware')}` : ''}\nPorts:    ${(dev.ports||[]).join(', ')||'none'}\nOS guess: ${dev.os||'—'}\nNetwork:  ${dev.target}${dev.local===false?' (remote)':''}`;
                 if(dev.banner&&dev.banner.title) txt += `\nWeb title: ${dev.banner.title}`;
                 const linked = DATA.devices.filter(o => o.key!==dev.key && (o.link===dev.key || (dev.link && (o.link===dev.link || o.key===dev.link))));
                 if(dev.link || linked.length) txt += `\nLinked:   ` + ([dev.link, ...linked.map(o=>o.ip)].filter(Boolean).join(', '));

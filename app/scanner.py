@@ -50,6 +50,21 @@ _GENERIC_NAMES = {"ipcamera", "ipdome", "camera", "networkcamera", "ipc", "embed
                   "networkvideorecorder", "nvr", "dvr", "hikvision", "ubnt", "ubiquiti",
                   "localhost", "unknown", "airmax", "unifi", "acusense", "mikrotik", "routeros"}
 _NUMBERED_DEFAULT = re.compile(r"^(camera|channel|ipcamera|ipc|cam|ch|d)\d+$")   # "Camera 01", "D1"
+# Model, serial and firmware the scanner fills in by itself (fill_device_meta),
+# and how far each source is trusted: the device's own login, then the NVR
+# connected to it, then the host name it advertises. What an NVR or a host name
+# gave is marked in the registry (`meta_src`, field -> source) so a better source
+# can replace it; an unmarked value — the operator's, or one read with the
+# device's own login — is never filled over.
+_META_FIELDS = ("model", "serial", "firmware")
+_META_RANK = {"hostname": 1, "nvr": 2, "device": 3}
+# A Hikvision camera's host name is its serial number: model, build date, unit
+# code ("DS-2CD2T46G2P-ISU-SL20240617AAWRFG0192309"), with every character a host
+# name can't carry ("/", "(", ")") shown as "-".
+_HIK_SERIAL_NAME = re.compile(
+    r"^([A-Z][A-Z0-9]*-[A-Z0-9-]*?[A-Z0-9])-?"                 # model
+    r"(20\d\d(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])"         # build date
+    r"[A-Z]{4,6}\d{6,}[A-Z]{0,4})$", re.I)                      # unit code
 
 
 def _norm_name(v):
@@ -74,26 +89,103 @@ def _sort_num(v, width=1):
         return (1 << 30,) * width
 
 
+def _ranked_channels(lists):
+    """(rank, NVR key, channel) for each channel of {nvr key: (nvr ip, channels)}
+    that points at an address its NVR doesn't report offline; a lower rank is
+    trusted more (see nvr_names)."""
+    for key, (nvr_ip, chans) in lists.items():
+        known = [c["online"] for c in chans if c.get("online") is not None]
+        health = sum(known) / len(known) if known else 0.5
+        for c in chans:
+            if c.get("ip") and c.get("online") is not False:
+                yield (c.get("online") is None, -health, _sort_num(nvr_ip, 4), _sort_num(c.get("id"))), key, c
+
+
 def nvr_names(lists):
     """Camera IP -> the name the NVRs give it, from {nvr key: (nvr ip, channels)}
     (hikvision.nvr_channels). A channel its NVR reports offline names nothing:
     it points at an address the NVR can't use — often a camera that has moved
     on — and whatever answers there now is another device. When NVRs disagree,
-    the one with the larger share of its channels online wins (a recorder nobody
-    maintains keeps stale entries), then the lower NVR address; within one NVR
-    the first channel (a multi-lens camera's first lens). Factory names count
-    as no name."""
+    a connected channel beats one of unknown state, then the NVR with the larger
+    share of its channels online wins (a recorder nobody maintains keeps stale
+    entries), then the lower NVR address; within one NVR the first channel (a
+    multi-lens camera's first lens). Factory names count as no name."""
     best = {}
-    for nvr_ip, chans in lists.values():
-        known = [c["online"] for c in chans if c.get("online") is not None]
-        health = sum(known) / len(known) if known else 0.5
-        for c in chans:
-            if not c.get("ip") or c.get("online") is False or not _useful_device_name(c.get("name")):
-                continue
-            rank = (c.get("online") is None, -health, _sort_num(nvr_ip, 4), _sort_num(c.get("id")))
-            if c["ip"] not in best or rank < best[c["ip"]][0]:
-                best[c["ip"]] = (rank, c["name"])
+    for rank, _key, c in _ranked_channels(lists):
+        if _useful_device_name(c.get("name")) and (c["ip"] not in best or rank < best[c["ip"]][0]):
+            best[c["ip"]] = (rank, c["name"])
     return {ip: name for ip, (_rank, name) in best.items()}
+
+
+def _meta_text(v):
+    """A model/serial/firmware value as stored: one line of at most 100 characters."""
+    return re.sub(r"\s+", " ", v).strip()[:100] if isinstance(v, str) else ""
+
+
+def _meta_marks(reg):
+    """{field: source} for the fields of a registry entry the scanner filled in."""
+    marks = reg.get("meta_src") if isinstance(reg, dict) else None
+    return marks if isinstance(marks, dict) else {}
+
+
+def nvr_details(lists):
+    """Camera IP -> (NVR key, {model, serial, firmware}) from the same lists as
+    nvr_names(), trusting the NVRs in the same order. Only a channel its NVR
+    reports online counts: those are what the NVR read from the camera it is
+    connected to. Unlike a name, a factory channel name ("Camera 01") doesn't
+    matter here."""
+    best = {}
+    for rank, key, c in _ranked_channels(lists):
+        det = {f: _meta_text(c.get(f)) for f in _META_FIELDS}
+        if c.get("online") is True and any(det.values()) \
+                and (c["ip"] not in best or rank < best[c["ip"]][0]):
+            best[c["ip"]] = (rank, key, det)
+    return {ip: (key, det) for ip, (_rank, key, det) in best.items()}
+
+
+def _host_form(text):
+    """`text` the way a host name carries it: upper case, "-" for anything else."""
+    return re.sub(r"-+", "-", re.sub(r"[^A-Z0-9-]", "-", str(text or "").upper())).strip("-")
+
+
+def _model_spellings(lists, registry):
+    """Host form -> the models the site knows spelt exactly: every channel of
+    {nvr key: (nvr ip, channels)} and every device's model — except one a host
+    name gave that was never matched to a spelling (it still reads "-" for "/")."""
+    out = {}
+    models = [c.get("model") for _ip, chans in lists.values() for c in chans]
+    models += [r.get("model") for r in list(registry.values()) if isinstance(r, dict)
+               and (_meta_marks(r).get("model") != "hostname"
+                    or _host_form(r.get("model")) != str(r.get("model")).upper())]
+    for m in models:
+        m = _meta_text(m)
+        if m:
+            out.setdefault(_host_form(m), set()).add(m)
+    return out
+
+
+def hik_hostname_ident(hostname, spellings=None):
+    """{model, serial} from a host name that is a Hikvision serial number, else
+    None. A "-" in it may stand for "/", "(" or ")" — "DS-2CD2T46G2P-ISU-SL" is
+    really DS-2CD2T46G2P-ISU/SL — so the model is spelt the way the site already
+    knows it (`spellings`, see _model_spellings) when exactly one known model
+    fits, and is otherwise kept as the host name has it."""
+    label = str(hostname or "").strip().split(".")[0]
+    m = _HIK_SERIAL_NAME.match(label)
+    if not m:
+        return None
+    known = (spellings or {}).get(_host_form(m.group(1))) or set()
+    if len(known) == 1:
+        model = next(iter(known))
+        return {"model": model, "serial": model + m.group(2)}
+    return {"model": m.group(1), "serial": label}
+
+
+def _same_unit(a, b):
+    """Whether two serial numbers name one unit: the same in host form, or one
+    the short form the other ends with."""
+    a, b = _host_form(a), _host_form(b)
+    return min(len(a), len(b)) >= 6 and (a.endswith(b) or b.endswith(a))
 
 
 def hik_own_name(info):
@@ -651,8 +743,9 @@ class Scanner:
             rec["firmware"] = info["firmwareVersion"]
         if info.get("deviceName") and not rec.get("hostname"):
             rec["hostname"] = info["deviceName"]
-        self.set_device_meta(rec["key"], serial=rec.get("serial") or None,
-                             model=rec.get("model") or None)
+        self.set_device_meta(rec["key"], serial=info.get("serialNumber") or None,
+                             model=info.get("model") or None,
+                             firmware=info.get("firmwareVersion") or None, src="device")
         rec["device_name"] = self.set_device_name(rec["key"], hik_own_name(info),
                                                   model=rec.get("model"))
         self._name_checked[rec["key"]] = time.time()
@@ -693,7 +786,9 @@ class Scanner:
         list also names the cameras behind it that have no login of their own;
         where NVRs disagree, nvr_names() decides — over every NVR's latest list,
         not just this pass's, so two NVRs read in different passes can't take
-        turns naming a camera. Radios get theirs from the radio monitor's SSH poll."""
+        turns naming a camera. Radios get theirs from the radio monitor's SSH poll.
+        Model, serial and firmware come along: from the device's own read, else
+        from its NVR or its host name (_fill_meta, every pass)."""
         have = creds.keys_with_creds()
         now = time.time()
         due = [d for k, d in devices.items()
@@ -712,6 +807,8 @@ class Scanner:
             info = res["info"]
             self.set_device_name(d["key"], hik_own_name(info),
                                  model=info.get("model") or d.get("model"))
+            self.fill_device_meta(d["key"], {"model": info.get("model"), "serial": info.get("serialNumber"),
+                                             "firmware": info.get("firmwareVersion")}, "device")
             if d.get("category") == "nvr" or re.search(r"NVR|DVR", info.get("deviceType", ""), re.I):
                 chans = hikvision.nvr_channels(d["ip"], c["username"], c["password"])
                 if chans:
@@ -720,15 +817,46 @@ class Scanner:
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                 list(pool.map(one, due))
-            if not read:
-                return
-            by_nvr = nvr_names({k: (ip, chans) for k, (ts, ip, chans) in list(self._nvr_lists.items())
-                                if now - ts < NVR_LIST_KEEP_S})
-            for d in devices.values():
-                if d.get("ip") in by_nvr and _is_hik(d) and not radiomon.is_radio(d):
-                    self.set_device_name(d["key"], by_nvr[d["ip"]], model=d.get("model"), src="nvr")
+            lists = {k: v for k, v in list(self._nvr_lists.items()) if now - v[0] < NVR_LIST_KEEP_S}
+            if read:
+                by_nvr = nvr_names({k: (ip, chans) for k, (_ts, ip, chans) in lists.items()})
+                for d in devices.values():
+                    if d.get("ip") in by_nvr and _is_hik(d) and not radiomon.is_radio(d):
+                        self.set_device_name(d["key"], by_nvr[d["ip"]], model=d.get("model"), src="nvr")
+            self._fill_meta(devices, lists)
         except Exception as e:  # noqa: BLE001 - names are cosmetic; never break scanning
             print("names pass error:", e, flush=True)
+
+    def _fill_meta(self, devices, lists):
+        """Model/serial/firmware for the cameras no login has read: from the NVR
+        connected to them (nvr_details over `lists`, {nvr key: (read at, nvr ip,
+        channels)}), else from the host name they advertise (hik_hostname_ident).
+        An NVR list read before the camera first showed up doesn't count — it may
+        describe the unit this one replaced at that address — nor one whose
+        serial the camera's host name contradicts. A camera sharing its address
+        with another live device is left alone: which one the NVR sees can't be
+        told."""
+        at_ip = {}
+        for d in devices.values():
+            if d.get("online") and d.get("ip"):
+                at_ip.setdefault(d["ip"], []).append(d)
+        cams = [ds[0] for ds in at_ip.values()
+                if len(ds) == 1 and _is_hik(ds[0]) and not radiomon.is_radio(ds[0])]
+        if not cams:
+            return
+        pairs = {k: (ip, chans) for k, (_ts, ip, chans) in lists.items()}
+        from_nvr, spellings = nvr_details(pairs), _model_spellings(pairs, self.registry)
+        for d in cams:
+            # An NVR's host name puts its channel count between model and date.
+            host = hik_hostname_ident(d.get("hostname"), spellings) if d.get("category") != "nvr" else None
+            nvr_key, det = from_nvr.get(d["ip"], (None, None))
+            if det and (lists[nvr_key][0] < (d.get("first_seen") or 0)
+                        or (host and det["serial"] and not _same_unit(det["serial"], host["serial"]))):
+                det = None
+            if det:
+                self.fill_device_meta(d["key"], det, "nvr")
+            if host:
+                self.fill_device_meta(d["key"], host, "hostname")
 
     # ---- local L2 discovery (mDNS / SSDP / NetBIOS / ARP) --------------
     def _apply_disc(self, rec, info):
@@ -1318,14 +1446,52 @@ class Scanner:
         with self.lock:
             return dict(self.status)
 
+    def fill_device_meta(self, key, values, src):
+        """Fill in model/serial/firmware (`values`) from `src`: "device" (the
+        device's own login), "nvr" or "hostname" (see _META_RANK). A field is
+        only written where the registry has nothing better — empty, or filled
+        earlier from the same or a weaker source — so a value the operator typed
+        or the device's own login read is never overwritten. Nothing is written
+        when nothing changes: this runs after every scan and the registry lives
+        on the Pi's SD card. Returns the fields written."""
+        reg = self.registry.get(key) or {}
+        marks = _meta_marks(reg)
+        out = {}
+        for f in _META_FIELDS:
+            v, have, mark = _meta_text(values.get(f)), reg.get(f) or "", marks.get(f)
+            if not v or (have and _META_RANK.get(mark, 99) > _META_RANK[src]):
+                continue
+            if v != have or mark != (None if src == "device" else src):
+                out[f] = v
+        if out:
+            self.set_device_meta(key, src=src, **out)
+        return out
+
     def set_device_meta(self, key, name=None, category=None, type_label=None,
-                        serial=None, model=None, link=None, kuma_token=None,
-                        kuma_monitor_id=None, kuma_ip=None):
+                        serial=None, model=None, firmware=None, link=None, kuma_token=None,
+                        kuma_monitor_id=None, kuma_ip=None, src=None):
         """Operator/device metadata. The Monitored switch (`watch`) is NOT set
-        here — monitoring.set_many() owns it, so Uptime Kuma always follows."""
+        here — monitoring.set_many() owns it, so Uptime Kuma always follows.
+        `src` says where serial/model/firmware come from: "nvr"/"hostname" marks
+        them as filled in by the scanner (registry `meta_src`), "device" (the
+        device's own login) clears that mark, and anyone else (the operator's
+        form, which sends every field back) clears it only for a value that
+        changes."""
         reg = self.registry.get(key, {})
+        marks = dict(_meta_marks(reg))
+        for field, val in (("serial", serial), ("model", model), ("firmware", firmware)):
+            if val is None:
+                continue
+            if src in ("nvr", "hostname"):
+                marks[field] = src
+            elif src == "device" or val != reg.get(field, ""):
+                marks.pop(field, None)
+        if marks:
+            reg["meta_src"] = marks
+        else:
+            reg.pop("meta_src", None)
         for field, val in (("name", name), ("category", category), ("type", type_label),
-                           ("serial", serial), ("model", model)):
+                           ("serial", serial), ("model", model), ("firmware", firmware)):
             if val is not None:
                 reg[field] = val
         if link is not None:
@@ -1342,8 +1508,8 @@ class Scanner:
             if key in self.devices:
                 self.devices[key].update({k: v for k, v in
                                           (("name", name), ("category", category),
-                                           ("type", type_label),
-                                           ("serial", serial), ("model", model), ("link", link))
+                                           ("type", type_label), ("serial", serial),
+                                           ("model", model), ("firmware", firmware), ("link", link))
                                           if v is not None})
         return reg
 

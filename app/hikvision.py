@@ -98,13 +98,18 @@ def _channel_status(base, auth, timeout):
     return out
 
 
+# What a channel's <sourceInputPortDescriptor> says about the camera behind it.
+_SOURCE_FIELDS = {"model": "model", "serial": "serialNumber", "firmware": "firmwareVersion"}
+
+
 def nvr_channels(ip, username, password, timeout=8):
-    """An NVR's camera list: [{'id', 'name', 'ip', 'online'}]. The channel names
-    are what the operator sees on the recorder, and cover cameras whose own
-    login was never saved. `online` is the NVR's own word on whether it is
-    connected to that camera: False means the channel points at an address the
-    NVR can't use (often a camera that has moved), None that it doesn't say.
-    [] if this isn't an NVR or the login fails."""
+    """An NVR's camera list: [{'id', 'name', 'ip', 'online', 'model', 'serial',
+    'firmware'}]. The channel names are what the operator sees on the recorder,
+    and cover cameras whose own login was never saved. `online` is the NVR's own
+    word on whether it is connected to that camera: False means the channel
+    points at an address the NVR can't use (often a camera that has moved), None
+    that it doesn't say. model/serial/firmware are what the NVR read from the
+    camera ('' when it doesn't say). [] if this isn't an NVR or the login fails."""
     for scheme in ("http", "https"):
         for auth in (HTTPDigestAuth(username, password), HTTPBasicAuth(username, password)):
             try:
@@ -124,7 +129,10 @@ def nvr_channels(ip, username, password, timeout=8):
                     continue
                 cam_ip = next((e.text.strip() for e in ch.iter()
                                if e.tag.rsplit("}", 1)[-1] == "ipAddress" and e.text), "")
-                out.append({"id": _child(ch, "id"), "name": _child(ch, "name"), "ip": cam_ip})
+                src = next((e for e in ch if e.tag.rsplit("}", 1)[-1] == "sourceInputPortDescriptor"), None)
+                out.append({"id": _child(ch, "id"), "name": _child(ch, "name"), "ip": cam_ip,
+                            **{k: _child(src, tag) if src is not None else ""
+                               for k, tag in _SOURCE_FIELDS.items()}})
             status = _channel_status(f"{scheme}://{ip}", auth, timeout)
             for ch in out:
                 ch["online"] = status.get(ch["id"])
