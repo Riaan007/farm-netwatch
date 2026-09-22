@@ -1053,6 +1053,40 @@ def api_site_device_credtest(site_id, key):
     return jsonify(out), r.status_code
 
 
+@app.route("/api/hub/sites/<site_id>/devices/<path:key>/restart", methods=["GET", "POST"])
+def api_site_device_restart(site_id, key):
+    """Restart a device at a site and watch it come back (site app/restart.py).
+
+    GET asks whether this device can be restarted and reads a running restart's
+    progress; POST starts one, and the site refuses it without {"confirm": true}.
+    Both return at once — the watching happens on the site Pi, so the page polls
+    GET for the verdict instead of holding a request open for minutes."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    body = request.get_json(silent=True) or {} if request.method == "POST" else None
+    try:
+        r = requests.request(request.method,
+                             f"{siteapi.base_url(site)}/api/devices/{quote(key, safe='')}/restart",
+                             json=body, headers=siteapi.headers(site), timeout=(5, 30))
+    except requests.RequestException:
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+    # An older site image has no such route, and its catch-all /api/devices/<path:key>
+    # swallows the "/restart" tail — so it answers 405 (or 404) with Flask's HTML
+    # page rather than JSON. Say that plainly instead of passing the mess on.
+    if r.status_code in (404, 405) and "json" not in r.headers.get("Content-Type", ""):
+        msg = "this site's Netwatch is too old to restart devices — update it (docker compose pull)"
+        if request.method == "GET":
+            return jsonify({"ok": True, "can_restart": False, "reason": "legacy", "detail": msg, "job": None})
+        return jsonify({"ok": False, "error": msg, "reason": "legacy"}), 501
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site refused the hub's key — see the site's Backups tab"}), 502
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+
+
 @app.route("/api/hub/sites/<site_id>/location", methods=["POST"])
 def api_site_location(site_id):
     """Set or clear a site's GPS position ({lat, lon} | {clear: true}). It lives in

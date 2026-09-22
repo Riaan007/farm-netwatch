@@ -1166,6 +1166,7 @@
             'offline':  {icon:'🔴', label:'Went offline',  cls:'text-rose-300 bg-rose-500/15'},
             'online':   {icon:'🟢', label:'Back online',   cls:'text-emerald-300 bg-emerald-500/15'},
             'ip_change':{icon:'🔄', label:'IP reassigned', cls:'text-amber-300 bg-amber-500/15'},
+            'restart':  {icon:'⟳', label:'Restarted',      cls:'text-violet-300 bg-violet-500/15'},
         };
         const tsFull=ts=>ts?new Date(ts*1000).toLocaleString():'—';
         const tsAgo=ts=>{ if(!ts)return''; const s=Math.floor(Date.now()/1000-ts); if(s<60)return s+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; };

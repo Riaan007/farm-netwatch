@@ -89,6 +89,13 @@ DEFAULTS = {
         # modes and power cycles, cable tests, reboot. Off by default like the
         # MikroTik writes; reading ports, PoE, traffic and alerts is always on.
         "switch_manage": False,
+        # Restart a device from its page or the hub (restart.py): the saved login
+        # is tested, the restart goes out on the device's own protocol, and the
+        # address is watched until it drops and comes back. Off by default —
+        # this is the one action that takes a camera or a whole backhaul down.
+        # MikroTik routers and switches ALSO need their own management switch
+        # above, so turning this on can't reach past a site that said no there.
+        "device_restart": False,
     },
     # Switch telemetry (switchmon.py): every EdgeSwitch/UISP switch with a saved
     # login is read over its own API on the LAN — its own thread and cadence,

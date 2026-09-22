@@ -1064,6 +1064,7 @@
                     <label class="nw-tgl"><input id="setup-airos-setip" type="checkbox" data-track><b>Change IP for Ubiquiti airOS radios <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Edits the radio's config over SSH and <b>reboots it</b> — a wrong value can drop the link to a whole building. Needs the radio's SSH login saved. Turn off to hide the button on this site.</span></label>
                     <label class="nw-tgl"><input id="setup-mikrotik-manage" type="checkbox" data-track><b>Manage MikroTik routers <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Unlocks the write actions (rename, enable/disable ports, PoE, reboot) and the <b>web terminal</b> on a MikroTik's Tools tab — config power over the router. Finding routers by MAC and reading their status stay available whether this is on or off.</span></label>
                     <label class="nw-tgl"><input id="setup-switch-manage" type="checkbox" data-track><b>Manage switches <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Lets the Switches page (and the hub) turn Ubiquiti switch ports on and off, change PoE, power-cycle PoE devices, run cable tests and restart the switch. Ports the Pi or the router are on are always refused. Reading ports, PoE, traffic and the alerts stay on either way.</span></label>
+                    <label class="nw-tgl"><input id="setup-device-restart" type="checkbox" data-track><b>Restart devices <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Adds a Restart button (here and on the hub) to any device with a saved login — Hikvision cameras and NVRs, airOS radios, EdgeSwitches, MikroTik routers and SwOS switches. Every restart asks first, tests the login before it sends anything, then watches the device drop and come back so you know it really restarted. MikroTik routers and switches still need their own switch above.</span></label>
                 </div>
             </section>
 
@@ -3294,6 +3295,7 @@
             document.getElementById('setup-airos-setip').checked = !!(c.features && c.features.airos_change_ip);
             document.getElementById('setup-mikrotik-manage').checked = !!(c.features && c.features.mikrotik_manage);
             document.getElementById('setup-switch-manage').checked = !!(c.features && c.features.switch_manage);
+            document.getElementById('setup-device-restart').checked = !!(c.features && c.features.device_restart);
             document.getElementById('setup-watchdog').checked = !!(c.sysmon && c.sysmon.watchdog);
             document.getElementById('kuma-auto-ip').textContent = PI_IP;
             const k = (c.integrations && c.integrations.kuma) || {};
@@ -3315,7 +3317,7 @@
         function updateSaveBar(){
             const bar = document.getElementById('save-bar');
             bar.hidden = !SETTINGS_DIRTY.size;
-            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management'};
+            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management','setup-device-restart':'device restart'};
             const what = new Set([...SETTINGS_DIRTY].map(id => Object.entries(names).find(([k]) => id.startsWith(k)) ).filter(Boolean).map(x => x[1]));
             document.getElementById('save-bar-what').textContent = [...what].join(', ');
         }
@@ -3834,6 +3836,13 @@
             'ip_change':{icon:'🔄', label:'IP reassigned',     cls:'text-amber-300 bg-amber-500/15'},
             'replaced': {icon:'🔁', label:'Address taken over', cls:'text-orange-300 bg-orange-500/15'},
             'monitoring':{icon:'🔔', label:'Monitoring changed', cls:'text-cyan-300 bg-cyan-500/15'},
+            'restart':  {icon:'⟳', label:'Restarted',          cls:'text-violet-300 bg-violet-500/15'},
+        };
+        // What a restart actually ended up doing — the verdict app/restart.py reached.
+        const RESTART_SAID={
+            restarted:'went offline and came back', no_downtime:'never went offline — it ignored the restart',
+            still_down:'went offline and has not come back', auth_failed:'not restarted: login rejected',
+            unreachable:'not restarted: no answer', failed:'not restarted: the device refused it',
         };
         function tsFull(ts){ return ts ? new Date(ts*1000).toLocaleString() : '—'; }
         function tsAgo(ts){ if(!ts) return ''; const s=Math.floor(Date.now()/1000-ts); if(s<60) return s+'s ago'; if(s<3600) return Math.floor(s/60)+'m ago'; if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
@@ -3878,6 +3887,11 @@
         function evDetail(e){
             const d=e.detail||{}; const bits=[];
             if(e.type==='monitoring') bits.push((d.monitored ? 'now monitored' : 'no longer monitored') + (d.by ? ' · by ' + d.by : ''));
+            if(e.type==='restart'){
+                bits.push(RESTART_SAID[d.restart] || d.restart || '');
+                if(d.method) bits.push('over '+d.method);
+                if(d.seconds_down) bits.push('offline '+d.seconds_down+'s');
+            }
             if(e.mac) bits.push(e.mac);
             if(e.hostname) bits.push(e.hostname);
             if(d.type_label) bits.push(d.type_label);
@@ -4289,6 +4303,7 @@
                 airos_change_ip: document.getElementById('setup-airos-setip').checked,
                 mikrotik_manage: document.getElementById('setup-mikrotik-manage').checked,
                 switch_manage: document.getElementById('setup-switch-manage').checked,
+                device_restart: document.getElementById('setup-device-restart').checked,
                 watchdog: document.getElementById('setup-watchdog').checked,
                 kuma_base_url: document.getElementById('setup-kuma-url').value,
                 kuma_auto_url: document.getElementById('setup-kuma-auto').checked,

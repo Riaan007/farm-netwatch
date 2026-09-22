@@ -30,6 +30,7 @@ import mikrotik
 import monitoring
 import netcfg
 import radiomon
+import restart
 import siteauth
 import switchmon
 import sysmon
@@ -295,6 +296,8 @@ def api_setup():
         feats["mikrotik_manage"] = bool(body["mikrotik_manage"])
     if "switch_manage" in body:
         feats["switch_manage"] = bool(body["switch_manage"])
+    if "device_restart" in body:
+        feats["device_restart"] = bool(body["device_restart"])
     if feats:
         patch["features"] = feats
     if "watchdog" in body:
@@ -948,6 +951,89 @@ def api_airos_set_ip(key):
         scanner.save_registry()
         scanner.trigger("quick", hosts=[new_ip])
     return jsonify(res)
+
+
+# ---- Restart a device ----------------------------------------------------
+def _restart_enabled():
+    return bool(config.load().get("features", {}).get("device_restart"))
+
+
+def _restart_target(key):
+    """What Netwatch can do about restarting this device, as
+    (dev, method, reason, detail) — reason is "" when it can go ahead."""
+    dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
+    if not dev:
+        return None, None, "unknown", "unknown device"
+    if not dev.get("ip"):
+        return dev, None, "no_ip", "this device has no IP address right now"
+    method = restart.method_for(dev)
+    if not method:
+        return dev, None, "unsupported", ("Netwatch has no way to restart this kind of device (it restarts "
+                                          "Hikvision cameras and NVRs, Ubiquiti airOS radios and EdgeSwitches, "
+                                          "MikroTik routers and SwOS switches)")
+    if not _restart_enabled():
+        return dev, method, "off", "Restarting devices is turned off in this site's Settings"
+    gate = method.get("gate")
+    if gate and not config.load().get("features", {}).get(gate):
+        return dev, method, "gate", f"turn on \u201c{method['gate_label']}\u201d in this site's Settings first"
+    return dev, method, "", ""
+
+
+def _restart_audit(dev, job):
+    """A restart is the bluntest write there is — it always lands in history."""
+    detail = {"restart": job.get("verdict") or job.get("phase"), "method": job.get("method"),
+              "result": "ok" if job.get("ok") else "fail"}
+    if job.get("seconds_down"):
+        detail["seconds_down"] = job["seconds_down"]
+    if not job.get("ok") and job.get("msg"):
+        detail["error"] = str(job["msg"])[:200]
+    try:
+        named = {**(dev or {}), "name": (dev or {}).get("name") or (dev or {}).get("device_name") or ""}
+        history.log_events([history.build_event("restart", named, detail)])
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@app.route("/api/devices/<path:key>/restart", methods=["GET", "POST"])
+@guard
+def api_device_restart(key):
+    """Restart one device and watch it come back (restart.py).
+
+    GET always answers 200 and says whether this device can be restarted, why
+    not if it can't, and where a running restart has got to — a page asks it for
+    every device it draws, so "no" is an answer, not an error. POST starts one,
+    and refuses without {"confirm": true} so nothing reboots a camera on a stray
+    click or a retried request. Both return at once: the watching runs on its own
+    thread here, and the page polls GET for the verdict."""
+    dev, method, reason, detail = _restart_target(key)
+    job = restart.state(key)
+    if request.method == "GET":
+        out = {"ok": True, "can_restart": not reason, "job": job}
+        if method:
+            out["method"], out["method_label"], out["warning"] = method["id"], method["label"], method["warn"]
+        if reason:
+            out["reason"], out["detail"] = reason, detail
+        return jsonify(out)
+    if reason:
+        return jsonify({"ok": False, "error": detail, "reason": reason}), \
+            (404 if reason == "unknown" else 403 if reason in ("off", "gate") else 400)
+    if restart.running(key):
+        return jsonify({"ok": False, "error": "a restart of this device is already running", "job": job}), 409
+    c = creds.get(key)
+    user, pw = c["username"], c["password"]
+    # SwOS and RouterOS ship admin with a blank password, so a saved username alone counts.
+    if not (user or pw):
+        return jsonify({"ok": False, "error": "Save this device's login first"}), 400
+    if not (request.get_json(silent=True) or {}).get("confirm"):
+        return jsonify({"ok": False, "needs_confirm": True, "warning": method["warn"],
+                        "method_label": method["label"]}), 200
+    started = restart.start(dev, user, pw, method,
+                            on_done=lambda j: (_restart_audit(dev, j),
+                                               scanner.trigger("quick", hosts=[dev["ip"]])))
+    if started is None:
+        return jsonify({"ok": False, "error": "a restart of this device is already running",
+                        "job": restart.state(key)}), 409
+    return jsonify({"ok": True, "job": started})
 
 
 # ---- MikroTik / RouterOS -------------------------------------------------

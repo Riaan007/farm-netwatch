@@ -543,6 +543,7 @@
           ${d.ip_conflict_with && d.ip_conflict_with.length ? `<dt>Shares IP with</dt><dd>${d.ip_conflict_with.map((x) => esc(x.name || x.vendor || x.mac)).join(", ")}</dd>` : ""}
         </dl></div>
         <div class="sect"><h3>Login</h3><div id="dd-login"></div></div>
+        <div class="sect" id="dd-restart-sect" hidden><h3>Restart</h3><div id="dd-restart"></div></div>
         ${CC.isMikrotik(d) ? `<div class="sect"><h3>MikroTik router</h3>
           <div id="dd-mt" class="note">Reading the router…</div>
           <div class="row" style="margin-top:10px"><a class="btn pri" id="dd-mt-console" href="#/site/${enc(siteId)}/switches?key=${enc(d.key)}" data-close>🧭 Open router view</a><button class="btn sm" id="dd-mt-reload">↻ Refresh</button></div>
@@ -640,6 +641,75 @@
       };
     };
     drawLogin();
+
+    // Restart: the site tests the saved login, sends the restart on the device's own
+    // protocol, then watches the address drop and come back. Only that round trip is
+    // reported as restarted — so what lands here is evidence, not a hopeful "sent".
+    const RS = { restarted: ["ok", "\u2713 Restarted"], no_downtime: ["warn", "\u26a0 Never went offline"],
+      still_down: ["bad", "\u2717 Has not come back"], auth_failed: ["bad", "\u2717 Login rejected"],
+      unreachable: ["bad", "\u2717 Couldn't reach it"], failed: ["bad", "\u2717 Restart failed"] };
+    let rsTimer = null, rsInfo = null;
+    const rsStop = () => { if (rsTimer) clearInterval(rsTimer); rsTimer = null; };
+    dlg.addEventListener("close", rsStop);
+
+    const drawRestart = (job) => {
+      const box = $("#dd-restart", dlg);
+      if (!box || !rsInfo) return;
+      if (job && !job.done) {
+        box.innerHTML = `<div class="panel pbd" style="display:grid;gap:6px">
+          <div><span class="b info nodot">\u27f3 Restarting</span> <span class="note">${esc(job.method_label || "")} \u00b7 started ${CC.ago(job.started)}</span></div>
+          <div class="muted" style="font-size:13px">${esc(job.msg || "Working\u2026")}</div>
+          <div class="note">This keeps running on the site Pi \u2014 you can close the drawer and come back.</div></div>`;
+        return;
+      }
+      const v = job && job.verdict ? RS[job.verdict] || ["unk", esc(job.verdict)] : null;
+      box.innerHTML = `
+        ${v ? `<div class="panel pbd" style="display:grid;gap:4px;margin-bottom:10px">
+          <div><span class="b ${v[0]} nodot">${v[1]}</span> <span class="note">${esc(job.method_label || "")} \u00b7 ${CC.ago(job.finished || job.started)}</span></div>
+          <div class="muted" style="font-size:13px">${esc(job.msg || "")}</div>
+          ${job.untested ? `<div class="note warn">The saved login could not be proven before the restart went out.</div>` : ""}</div>` : ""}
+        ${rsInfo.can_restart
+          ? `<div class="row"><button class="btn sm danger" id="dd-rs-go">\u27f3 Restart this device</button></div>
+             <p class="note" style="margin:6px 0 0">${esc(rsInfo.warning || "")} You are asked before anything is sent; the saved login is checked first, then the site watches it go offline and come back.</p>`
+          : `<p class="note" style="margin:0"><span class="b unk nodot">Restart not available</span> ${esc(rsInfo.detail || "")}${rsInfo.reason === "off" || rsInfo.reason === "gate" ? `${s.links && s.links.netwatch ? ` \u2014 <a href="${esc(s.links.netwatch)}" target="_blank" rel="noopener">open the site's Settings ${icon("ext")}</a>` : ""}` : ""}</p>`}`;
+      const go = $("#dd-rs-go", dlg);
+      if (go) go.onclick = (e) => CC.busy(e.currentTarget, async () => {
+        const ok = await CC.confirm(`Restart ${CC.devName(d)}?`,
+          `${rsInfo.warning}\n\nNetwatch checks the saved login first, restarts it over ${rsInfo.method_label}, then watches it go offline and come back so you can see it really restarted.`,
+          { ok: "Restart it", danger: true });
+        if (!ok) return;
+        try {
+          const r = await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/restart`, { method: "POST", body: { confirm: true }, timeout: 40000 });
+          CC.toast(`Restart sent to ${CC.devName(d)}`, "ok");
+          drawRestart(r.job);
+          rsPoll();
+        } catch (err) { box.insertAdjacentHTML("afterbegin", `<div class="banner bad" style="margin:0 0 8px">${esc(err.message)}</div>`); }
+      });
+    };
+
+    const rsPoll = () => {
+      rsStop();
+      rsTimer = setInterval(async () => {
+        let r;
+        try { r = await api(`/api/hub/sites/${siteId}/devices/${enc(key)}/restart`); } catch (err) { return; }
+        drawRestart(r.job);
+        if (!r.job || r.job.done) {
+          rsStop();
+          if (r.job) {
+            CC.toast(`${CC.devName(d)}: ${r.job.ok ? "restarted and back online" : r.job.msg}`, r.job.ok ? "ok" : "bad");
+            api(`/api/hub/sites/${siteId}/poll`, { method: "POST" }).catch(() => {});
+          }
+        }
+      }, 3000);
+    };
+
+    if (d.has_credentials) api(`/api/hub/sites/${siteId}/devices/${enc(key)}/restart`).then((r) => {
+      if (!r.can_restart && !r.job && (r.reason === "unsupported" || r.reason === "unknown" || r.reason === "no_ip")) return;
+      rsInfo = r;
+      $("#dd-restart-sect", dlg).hidden = false;
+      drawRestart(r.job);
+      if (r.job && !r.job.done) rsPoll();
+    }).catch(() => {});
 
     const retry = (fn) => fn().catch(() => new Promise((r) => setTimeout(r, 2500)).then(fn));
     retry(() => api(`/api/hub/sites/${siteId}/history/${enc(key)}`)).then((h) => {
