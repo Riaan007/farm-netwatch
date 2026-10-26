@@ -3304,7 +3304,8 @@
             document.getElementById('setup-kuma-auto').checked = !!k.auto_url;
             document.getElementById('setup-kuma-url').value = k.auto_url ? KUMA_RESOLVED : (k.base_url || '');
             kumaAutoToggle();
-            document.getElementById('kuma-open').href = KUMA_RESOLVED || '#';
+            document.getElementById('kuma-open').href = c.kuma_proxy_port
+                ? location.protocol + '//' + location.hostname + ':' + c.kuma_proxy_port : (KUMA_RESOLVED || '#');
             document.getElementById('setup-kuma-user').value = k.username || '';
             document.getElementById('setup-kuma-pass').value = '';
             document.getElementById('setup-kuma-pass').placeholder = k.username ? 'password saved — leave blank to keep' : 'Kuma admin password';
@@ -4890,7 +4891,8 @@
         fetch('/api/config').then(r=>r.json()).then(c=>{
             if(c.alerts && !c.redacted){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands===true; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }
             const ku = (c.integrations&&c.integrations.kuma&&c.integrations.kuma.base_url)||'';
-            const port = (ku.split(':')[2]||'3001').replace(/\D/g,'')||'3001';
+            // through the hub proxy the hub names its port for this site's Kuma
+            const port = c.kuma_proxy_port ? String(c.kuma_proxy_port) : ((ku.split(':')[2]||'3001').replace(/\D/g,'')||'3001');
             const link = document.getElementById('kuma-link');
             if(ku){ link.href = location.protocol+'//'+location.hostname+':'+port; link.hidden = false; }
         }).catch(()=>{});

@@ -131,17 +131,23 @@ def render_caddyfile(cfg):
 
     blocks = []
 
-    def block(port, target, label):
-        blocks.append(f"# {label}\n:{port} {{\n{basic}\treverse_proxy {target}\n}}\n")
+    def block(port, target, label, header=None):
+        rp = (f"\treverse_proxy {target} {{\n\t\theader_up {header[0]} {header[1]}\n\t}}\n"
+              if header else f"\treverse_proxy {target}\n")
+        blocks.append(f"# {label}\n:{port} {{\n{basic}{rp}}}\n")
 
     for s in cfg["sites"]:
         if not is_proxied(s):
             continue
         nw = s.get("proxy_netwatch_port")
-        if _valid(nw, *port_range()):
-            block(nw, f"{s['vpn_ip']}:{s.get('netwatch_port', 8090)}", f"{s['id']} netwatch")
         kp, kt = s.get("proxy_kuma_port"), _kuma_hostport(s)
-        if _valid(kp, *port_range()) and kt:
+        kuma_ok = _valid(kp, *port_range()) and kt
+        if _valid(nw, *port_range()):
+            # Tell the site page where ITS Kuma is on this hub; without it the
+            # page's Kuma button pointed at <hub>:3001 = the hub's own Kuma.
+            block(nw, f"{s['vpn_ip']}:{s.get('netwatch_port', 8090)}", f"{s['id']} netwatch",
+                  ("X-Netwatch-Kuma-Port", kp) if kuma_ok else None)
+        if kuma_ok:
             block(kp, kt, f"{s['id']} kuma")
     return "\n".join(head) + "\n" + "\n".join(blocks)
 

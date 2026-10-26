@@ -195,6 +195,11 @@ def api_config():
         # What the URL currently resolves to (== base_url when auto_url is off);
         # the UI shows this and points its Open-Kuma links at it.
         ki["resolved_url"] = kuma.effective_base(ki)
+    # Opened through the hub's LAN proxy: the hub says which of ITS ports serves
+    # this site's Kuma, so the header Kuma button can point there.
+    kp = request.headers.get("X-Netwatch-Kuma-Port", "")
+    if kp.isdigit() and 0 < int(kp) < 65536:
+        cfg["kuma_proxy_port"] = int(kp)
     return jsonify(cfg)
 
 
