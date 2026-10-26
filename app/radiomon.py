@@ -85,7 +85,7 @@ def _sample_from(res):
     """Flatten a get_wifi() result into the columns history.radio_record expects."""
     return {
         "ip": res.get("ip"), "mode": res.get("mode"), "ssid": res.get("ssid"),
-        "freq": res.get("frequency"), "chanbw": res.get("channelWidth"),
+        "freq": res.get("frequency"), "center": res.get("centerFreq"), "chanbw": res.get("channelWidth"),
         "signal": _f(res.get("signal")), "noise": _f(res.get("noise")),
         "chain0": _f(res.get("chain0")), "chain1": _f(res.get("chain1")),
         "airtime": _f(res.get("airtime")),
@@ -360,7 +360,7 @@ class RadioMonitor:
                     "name": sample.get("ip") or key,
                     "mode": sample.get("mode"), "ssid": sample.get("ssid"),
                     "sample": {k: sample.get(k) for k in
-                               ("ip", "mode", "ssid", "freq", "chanbw", "signal", "noise",
+                               ("ip", "mode", "ssid", "freq", "center", "chanbw", "signal", "noise",
                                 "chain0", "chain1", "airtime", "cap_dl", "cap_ul",
                                 "tx_rate", "rx_rate", "links")},
                     "links": links,

@@ -33,6 +33,25 @@ TOWERS = {"t1": {"name": "Silo", "kind": "tower", "lat": -29.0, "lon": 27.0},
 
 
 class Plan(unittest.TestCase):
+    def test_bands_are_built_around_the_centre(self):
+        """airOS freq is the CONTROL channel; Tweespruit .201 reads freq 5495 / centerFreq 5505 at 40 MHz."""
+        ap = r("ap-ptp-ac", 5495, 40, S1)
+        ap["sample"]["center"] = "5505"
+        radios = {A1: ap, S1: r("sta-ptp-ac", 5495, 40, A1),
+                  A2: r("ap-ptp-ac", 5540, 20, S2), S2: r("sta-ptp-ac", 5540, 20, A2)}
+        out = F.analyse(TOWERS, {A1: "t1", A2: "t1"}, radios, devs(A1, S1, A2, S2))
+        silo = next(t for t in out["towers"] if t["name"] == "Silo")
+        L = next(x for x in silo["links"] if x["ap"] == A1)
+        self.assertEqual((L["freq"], L["control"], L["lo"], L["hi"], L["centre_known"]), (5505, 5495, 5485, 5525, True))
+        # 5525 → 5530 is a 5 MHz gap: a clash the control frequency (5475-5515) would have hidden
+        self.assertEqual([(c["level"], c["gap"]) for c in silo["clashes"]], [("warn", 5.0)])
+        self.assertEqual(out["summary"]["centre_unknown"], 0)
+
+    def test_wide_link_without_a_centre_is_flagged(self):
+        radios = {A1: r("ap-ptp-ac", 5480, 40, S1), S1: r("sta-ptp-ac", 5480, 40, A1)}
+        out = F.analyse(TOWERS, {A1: "t1"}, radios, devs(A1, S1))
+        self.assertEqual(out["summary"]["centre_unknown"], 1)
+
     def test_overlap_on_one_tower_is_critical_and_gets_a_clean_move(self):
         radios = {A1: r("ap-ptmp-ac", 5480, 40, S1), S1: r("sta-ptmp-ac", 5480, 40, A1),
                   A2: r("ap-ptp-ac", 5500, 40, S2), S2: r("sta-ptp-ac", 5500, 40, A2)}

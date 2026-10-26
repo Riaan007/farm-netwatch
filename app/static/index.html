@@ -4623,7 +4623,7 @@
             if(!p.towers.length) return `<div class="nw-empty"><b>No towers yet</b>On the Network page, add a group of type “Tower / mast” for each high point and put its radios in it — then the plan checks their channels.</div>`;
             const moves = p.moves || [];
             const s = p.summary || {};
-            const head = `<div class="nw-help" style="margin-bottom:.4rem">${s.clashes ? `<b class="t-warn">${s.clashes} clash${s.clashes === 1 ? '' : 'es'}</b> on ${s.towers} tower${s.towers === 1 ? '' : 's'} · ${s.moves} move${s.moves === 1 ? '' : 's'} suggested` : `✓ No channel clashes on ${s.towers} tower${s.towers === 1 ? '' : 's'}`} · same tower: ${p.guard_mhz} MHz gap wanted · towers within ${p.near_km} km planned together · <span style="color:#fcd34d">amber band = DFS (radar check)</span></div>`;
+            const head = `<div class="nw-help" style="margin-bottom:.4rem">${s.clashes ? `<b class="t-warn">${s.clashes} clash${s.clashes === 1 ? '' : 'es'}</b> on ${s.towers} tower${s.towers === 1 ? '' : 's'} · ${s.moves} move${s.moves === 1 ? '' : 's'} suggested` : `✓ No channel clashes on ${s.towers} tower${s.towers === 1 ? '' : 's'}`} · same tower: ${p.guard_mhz} MHz gap wanted · towers within ${p.near_km} km planned together · frequencies are channel centres · <span style="color:#fcd34d">amber band = DFS (radar check)</span>${s.centre_unknown ? ` · <span class="t-warn">${s.centre_unknown} wide link${s.centre_unknown === 1 ? '' : 's'} not re-read yet — placed from the control channel until the next radio read</span>` : ''}</div>`;
             return head + p.towers.map(t => {
                 const mv = moves.filter(m => m.towers.includes(t.name));
                 return `<div class="nw-tower">

@@ -37,6 +37,7 @@ import threading
 import time
 
 import airos
+import freqplan
 
 FIXES = {
     "ac_mode": {"label": "Switch the AP to airMAX AC only",
@@ -51,7 +52,6 @@ FIXES = {
                         "over a minute to come up. If they are not all back within the wait, the radio moves "
                         "back to the old channel by itself."},
 }
-_DFS = ((5250, 5350), (5470, 5730))          # radar-checked bands (centre MHz, wide margins)
 PLAN_TTL_S = 300
 POLL_S = 6
 _TMP = "/tmp/nwfix"
@@ -67,10 +67,6 @@ def _int(v):
         return int(float(str(v).split()[0]))
     except (ValueError, IndexError, TypeError):
         return None
-
-
-def is_dfs(mhz):
-    return any(lo <= mhz <= hi for lo, hi in _DFS)
 
 
 # ---- reading ---------------------------------------------------------------
@@ -89,6 +85,16 @@ def read(ip, user, pw):
     if "netconf." not in cfg_txt:
         raise FixError("logged in, but could not read the radio's config — not an airOS radio?")
     return {"kv": kv, "cfg": cfg, "peers": airos._stations(wsta, cfg.get("wireless.1.ssid", ""))}
+
+
+def _centre_key(cfg):
+    """The config key holding the channel's centre MHz, or None when this firmware has
+    none. Refuses when more than one key looks like it (we would be guessing)."""
+    keys = [k for k in cfg if re.match(r"^radio\.1\.center[._a-z0-9]*freq$", k)]
+    if len(keys) > 1:
+        raise FixError("this radio's config has several centre-frequency keys (" + ", ".join(sorted(keys))
+                       + ") — change the channel in airOS or UISP")
+    return keys[0] if keys else None
 
 
 def _live(r, name):
@@ -177,23 +183,55 @@ def plan(kind, target, login_for, find_device=None, params=None):
     elif kind == "channel":
         if not ap:
             raise FixError(f"{target['name']} is not an access point — a station follows its AP's channel")
+        # params["freq"] is the new CENTRE (middle of the channel), as the planner and UISP use it.
+        # airOS keeps the control channel in radio.1.freq and the centre in its own key; on a
+        # 40 MHz channel they are 10 MHz apart, and changing only one leaves the radio on a
+        # channel that cannot come up (Tweespruit 2026-10-26: three moves, all undone).
         new = _int(params.get("freq"))
         if new is None or not 4900 <= new <= 6100:
             raise FixError("give the new centre frequency in MHz (5 GHz band)")
-        cur = _int(cfg.get("radio.1.freq"))
-        live = _int(_live(r, "frequency"))
-        out["edits"].append(_edit(cfg, "radio.1.freq", new, want_old=live if live and cur and live == cur else None))
-        if new == cur:
-            raise FixError(f"{target['name']} is already on {new} MHz")
-        width = _int(params.get("width"))
-        if width:
-            if width not in (10, 20, 30, 40, 50, 60, 80):
-                raise FixError("channel width must be 10, 20, 30, 40, 50, 60 or 80 MHz")
-            if str(width) != cfg.get("radio.1.chanbw"):
-                out["edits"].append(_edit(cfg, "radio.1.chanbw", width))
-        out["lines"] = [f"Centre frequency: {cur} → {new} MHz"
-                        + (f", width {cfg.get('radio.1.chanbw')} → {width} MHz" if width and str(width) != cfg.get("radio.1.chanbw") else "")]
-        if is_dfs(new):
+        cur_w = _int(cfg.get("radio.1.chanbw")) or _int(_live(r, "channelWidth"))
+        width = _int(params.get("width")) or cur_w
+        if params.get("width") and width not in (10, 20, 30, 40, 50, 60, 80):
+            raise FixError("channel width must be 10, 20, 30, 40, 50, 60 or 80 MHz")
+        if not width:
+            raise FixError(f"cannot tell {target['name']}'s channel width — change it in airOS by hand")
+        lo, hi = new - width / 2, new + width / 2
+        if not any(a <= lo and hi <= b for a, b in freqplan.RANGES):
+            raise FixError(f"{new} MHz at {width} MHz wide ({lo:g}–{hi:g}) leaves the allowed 5 GHz ranges")
+        live_f, live_c = _int(_live(r, "frequency")), _int(_live(r, "centerFreq"))
+        cur_f = _int(cfg.get("radio.1.freq"))
+        ckey = _centre_key(cfg)
+        if ckey:
+            cur_c = _int(cfg.get(ckey))
+            off = (cur_f - cur_c) if cur_f is not None and cur_c is not None else None
+            if off is None:
+                raise FixError(f"cannot read {target['name']}'s current channel from its config")
+        else:
+            # No separate centre in this firmware's config: radio.1.freq must then be the centre.
+            if (live_c is not None and live_f is not None and live_c != live_f) or (live_c is None and cur_w and cur_w > 20):
+                raise FixError(f"{target['name']} reports a centre frequency its config does not hold — "
+                               f"Netwatch cannot change it safely; change the channel in airOS or UISP")
+            cur_c, off = cur_f, 0
+        if new == cur_c and width == cur_w:
+            raise FixError(f"{target['name']} is already centred on {new} MHz")
+        # Keep the control channel on the same side of the centre; at 20 MHz or less they are equal.
+        reach = width // 2 - 10
+        new_off = 0 if reach <= 0 else (1 if off > 0 else -1) * min(abs(off) or 10, reach)
+        control = new + new_off
+        if ckey:
+            out["edits"].append(_edit(cfg, ckey, new, want_old=live_c if live_c and cur_c == live_c else None))
+            out["edits"].append(_edit(cfg, "radio.1.freq", control,
+                                      want_old=live_f if live_f and cur_f == live_f else None))
+        else:
+            out["edits"].append(_edit(cfg, "radio.1.freq", new, want_old=live_f if live_f and cur_f == live_f else None))
+        if width != cur_w:
+            out["edits"].append(_edit(cfg, "radio.1.chanbw", width))
+        out["lines"] = [f"Centre frequency: {cur_c} → {new} MHz"
+                        + (f", width {cur_w} → {width} MHz" if width != cur_w else f" ({width} MHz wide)")]
+        if ckey and control != new:
+            out["lines"].append(f"Control channel follows: {cur_f} → {control} MHz")
+        if freqplan.is_dfs(lo, hi):
             out["wait_s"] = 300
             out["notes"].append(f"{new} MHz is a DFS (radar-checked) channel: the AP listens for about a minute "
                                 f"before it transmits, so the wait is 5 minutes")
@@ -212,7 +250,7 @@ def plan(kind, target, login_for, find_device=None, params=None):
                 continue
             if pc.get("radio.1.scan_list.status") == "enabled":
                 allowed = {_int(x) for x in pc.get("radio.1.scan_list.channels", "").split(",") if _int(x)}
-                if new not in allowed:
+                if not {new, control} & allowed:
                     blocked.append(f"{pname} (scan list: {', '.join(str(a) for a in sorted(allowed)) or 'empty'})")
         if blocked:
             raise FixError("these stations would not follow — their Frequency Scan List does not include "

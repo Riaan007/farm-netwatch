@@ -6,6 +6,11 @@ group on the Network diagram) must keep their frequencies apart; towers far
 from each other don't matter, towers close together can still hear each
 other.
 
+All frequencies here are CENTRE frequencies — the middle of the channel. airOS
+reports the control channel as `freq` and the middle as `centerFreq`; on a
+40 MHz channel they are 10 MHz apart (Riaan's Tweespruit, 2026-10-26: .201 freq
+5495 / centre 5505), so the band must be built around the centre.
+
 A LINK is an access point and the stations registered on it — they share one
 channel, so the plan moves links, never single radios, and the AP is the one
 that changes (the stations follow). Frequencies and widths come from the radio
@@ -84,14 +89,18 @@ def _links(radios, by_mac, by_ip):
             ap_of.setdefault(k, k)
     links = {}
     for member, ap in ap_of.items():
-        L = links.setdefault(ap, {"ap": ap, "members": set(), "freq": None, "width": None})
+        L = links.setdefault(ap, {"ap": ap, "members": set(), "freq": None, "width": None,
+                                  "control": None, "centre_known": False})
         L["members"].update({member, ap})
     for L in links.values():
         for k in [L["ap"]] + sorted(L["members"] - {L["ap"]}):
             s = (radios.get(k) or {}).get("sample") or {}
-            f, w = _num(s.get("freq")), _num(s.get("chanbw"))
+            f, c, w = _num(s.get("freq")), _num(s.get("center")), _num(s.get("chanbw"))
             if f and w and L["freq"] is None:
-                L["freq"], L["width"] = int(f), int(w)
+                # No centre reported (older firmware / not polled since the update):
+                # on 20 MHz the control channel IS the centre; wider is a guess.
+                L["freq"], L["width"], L["control"] = int(c or f), int(w), int(f)
+                L["centre_known"] = bool(c) or int(w) <= 20
     return links
 
 
@@ -209,6 +218,7 @@ def analyse(groups, group_of, radios, devices, names=None):
             "id": gid, "name": g.get("name") or gid,
             "near": [towers[o].get("name") or o for o in near[gid]],
             "links": [{"ap": ap, "name": name(ap), "freq": links[ap]["freq"], "width": links[ap]["width"],
+                       "control": links[ap]["control"], "centre_known": links[ap]["centre_known"],
                        "lo": band_now[ap][0] if ap in band_now else None, "hi": band_now[ap][1] if ap in band_now else None,
                        "dfs": is_dfs(*band_now[ap]) if ap in band_now else False,
                        "here": sorted(name(k) for k in links[ap]["members"] if group_of.get(k) == gid),
@@ -221,4 +231,6 @@ def analyse(groups, group_of, radios, devices, names=None):
     return {"towers": out_towers, "moves": moves, "guard_mhz": GUARD_MHZ, "near_km": NEAR_KM,
             "ranges": [list(r) for r in RANGES], "dfs": [list(r) for r in DFS],
             "summary": {"towers": len(out_towers), "clashes": sum(len(t["clashes"]) for t in out_towers),
-                        "moves": sum(1 for m in moves if m["to"])}}
+                        "moves": sum(1 for m in moves if m["to"]),
+                        # wide links whose centre the monitor has not read yet (until the next poll)
+                        "centre_unknown": sum(1 for L in links.values() if L["freq"] and not L["centre_known"])}}

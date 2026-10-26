@@ -146,11 +146,15 @@ def _init(c):
         CREATE INDEX IF NOT EXISTS idx_swp_key_ts ON switch_ports(key, ts);
         """
     )
+    # Columns added after the first release (old databases lack them).
+    have = {r[1] for r in c.execute("PRAGMA table_info(radio_samples)")}
+    if "center" not in have:
+        c.execute("ALTER TABLE radio_samples ADD COLUMN center TEXT")   # airOS centre MHz
     c.commit()
 
 
 # ---- radio telemetry --------------------------------------------------------
-_RADIO_COLS = ("ip", "mode", "ssid", "freq", "chanbw", "signal", "noise", "chain0",
+_RADIO_COLS = ("ip", "mode", "ssid", "freq", "center", "chanbw", "signal", "noise", "chain0",
                "chain1", "airtime", "cap_dl", "cap_ul", "tx_rate", "rx_rate", "links")
 _LINK_COLS = ("peer", "name", "ip", "model", "signal", "remote_signal", "score_dl",
               "score_ul", "tx", "rx", "latency", "distance")

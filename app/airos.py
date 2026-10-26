@@ -104,6 +104,9 @@ _FIELDS = {
     "mode":        ["wlanopmode", "opmode", "wlanmode", "mode"],
     "ssid":        ["wlanssid", "ssid", "essid"],
     "frequency":   ["wlanfreq", "freq", "frequency"],
+    # airOS 8 reports the control channel as freq and the channel's middle as
+    # centerFreq; they differ by 10 MHz (or 30) on a 40/80 MHz channel.
+    "centerFreq":  ["centerfreq", "wlancenterfreq", "center_freq"],
     "channelWidth": ["wlanchanbw", "chanbw", "channelwidth"],
     "signal":      ["wlanrssi", "signal", "wlansignal", "rssi"],
     "noise":       ["wlannoise", "noise", "noisef"],

@@ -29,7 +29,7 @@ FLASH = os.path.join(STUBS, "flash")           # what cfgmtd "wrote"
 
 def cfg_text(over=None):
     base = {"netconf.1.ip": "192.168.1.20", "wireless.1.mode": "ap-ptmp", "wireless.1.ssid": "Tower",
-            "radio.1.freq": "5480", "radio.1.chanbw": "40", "radio.1.txpower": "18", "radio.1.obey": "enabled",
+            "radio.1.freq": "5480", "radio.1.center.1.freq": "5490", "radio.1.chanbw": "40", "radio.1.txpower": "18", "radio.1.obey": "enabled",
             "radio.1.polling_11ac_11n_compat": "1"}
     base.update(over or {})
     return "\n".join(f"{k}={v}" for k, v in base.items() if v is not None) + "\n"
@@ -40,8 +40,8 @@ def wsta(n, model="PowerBeam 5AC"):
                         "remote": {"hostname": f"Sta{i}", "platform": model}} for i in range(n)])
 
 
-def ssh_out(cfg, peers, mode="ap-ptmp-ac", freq="5480", tx="18"):
-    status = f"wlanOpmode={mode}\nfreq={freq}\nwlanTxPower={tx}\n"
+def ssh_out(cfg, peers, mode="ap-ptmp-ac", freq="5480", tx="18", center="5490"):
+    status = f"wlanOpmode={mode}\nfreq={freq}\nwlanTxPower={tx}\n" + (f"centerFreq={center}\n" if center else "")
     return f"{status}{airos._CFG_MARK}\n{cfg}{airos._WSTA_MARK}\n{peers}"
 
 
@@ -129,7 +129,7 @@ class Planning(unittest.TestCase):
 
     def test_missing_key_is_refused_not_guessed(self):
         airos._ssh = FakeRadios({"10.0.0.1": (cfg_text({"radio.1.freq": None}), wsta(1), {})})
-        with self.assertRaisesRegex(wififix.FixError, "no radio.1.freq"):
+        with self.assertRaisesRegex(wififix.FixError, "current channel"):
             wififix.plan("channel", self.tgt(), lambda k: LOGIN, params={"freq": 5500})
 
     def test_channel_blocked_by_a_station_scan_list(self):
@@ -139,7 +139,8 @@ class Planning(unittest.TestCase):
         with self.assertRaisesRegex(wififix.FixError, "would not follow"):
             wififix.plan("channel", self.tgt(), lambda k: LOGIN, find, {"freq": 5660})
         p = wififix.plan("channel", self.tgt(), lambda k: LOGIN, find, {"freq": 5500})
-        self.assertEqual(p["edits"][0], {"key": "radio.1.freq", "old": "5480", "new": "5500"})
+        self.assertEqual(p["edits"], [{"key": "radio.1.center.1.freq", "old": "5490", "new": "5500"},
+                                      {"key": "radio.1.freq", "old": "5480", "new": "5490"}])
         self.assertEqual(p["wait_s"], 300)                       # 5500 is DFS
 
     def test_channel_needs_consent_for_unreadable_stations(self):
@@ -150,6 +151,45 @@ class Planning(unittest.TestCase):
                          {"freq": 5180, "accept_unverified": True})
         self.assertEqual(p["wait_s"], 120)
         self.assertTrue(p["notes"])
+
+    def test_channel_moves_centre_and_control_together(self):
+        """Tweespruit 2026-10-26: only radio.1.freq was changed, the centre stayed, every move was undone."""
+        airos._ssh = FakeRadios({"10.0.0.1": (cfg_text({"radio.1.freq": "5490", "radio.1.center.1.freq": "5500"}),
+                                              wsta(1), {"freq": "5490", "center": "5500"})})
+        p = wififix.plan("channel", self.tgt(), lambda k: LOGIN, lambda **k: None,
+                         {"freq": 5755, "accept_unverified": True})
+        self.assertEqual(p["edits"], [{"key": "radio.1.center.1.freq", "old": "5500", "new": "5755"},
+                                      {"key": "radio.1.freq", "old": "5490", "new": "5745"}])
+        self.assertIn("Centre frequency: 5500 → 5755 MHz", p["lines"][0])
+        self.assertEqual(p["wait_s"], 120)                       # 5735-5775 is not DFS
+        body = wififix.script(p["edits"], 1, 10)                 # both keys pass the script's whitelist
+        self.assertIn("radio.1.center.1.freq=5755", body)
+
+    def test_channel_width_change_puts_control_inside_the_channel(self):
+        airos._ssh = FakeRadios({"10.0.0.1": (cfg_text(), wsta(1), {})})
+        p = wififix.plan("channel", self.tgt(), lambda k: LOGIN, lambda **k: None,
+                         {"freq": 5200, "width": 20, "accept_unverified": True})
+        self.assertEqual([(e["key"], e["new"]) for e in p["edits"]],
+                         [("radio.1.center.1.freq", "5200"), ("radio.1.freq", "5200"), ("radio.1.chanbw", "20")])
+
+    def test_channel_without_centre_key(self):
+        # 20 MHz, firmware with no separate centre: control IS the centre, one key changes
+        airos._ssh = FakeRadios({"10.0.0.1": (cfg_text({"radio.1.center.1.freq": None, "radio.1.chanbw": "20"}),
+                                              wsta(1), {"center": "5480"})})
+        p = wififix.plan("channel", self.tgt(), lambda k: LOGIN, lambda **k: None,
+                         {"freq": 5200, "accept_unverified": True})
+        self.assertEqual(p["edits"], [{"key": "radio.1.freq", "old": "5480", "new": "5200"}])
+        # 40 MHz and the radio reports a centre its config does not hold: refuse, never guess
+        airos._ssh = FakeRadios({"10.0.0.1": (cfg_text({"radio.1.center.1.freq": None}), wsta(1), {})})
+        with self.assertRaisesRegex(wififix.FixError, "centre frequency its config does not hold"):
+            wififix.plan("channel", self.tgt(), lambda k: LOGIN, lambda **k: None,
+                         {"freq": 5200, "accept_unverified": True})
+
+    def test_channel_outside_the_band_is_refused(self):
+        airos._ssh = FakeRadios({"10.0.0.1": (cfg_text(), wsta(1), {})})
+        with self.assertRaisesRegex(wififix.FixError, "allowed 5 GHz ranges"):
+            wififix.plan("channel", self.tgt(), lambda k: LOGIN, lambda **k: None,
+                         {"freq": 5400, "accept_unverified": True})
 
     def test_script_rejects_unsafe_edits(self):
         with self.assertRaises(wififix.FixError):

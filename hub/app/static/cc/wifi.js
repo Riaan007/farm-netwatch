@@ -191,7 +191,7 @@
   function planHtml(p) {
     if (!(p.towers || []).length) return `<div class="empty"><b>No towers yet</b>In the Network tab, add a group of type “Tower / mast” for each high point and put its radios in it — then the plan checks their channels.</div>`;
     const sm = p.summary || {}, moves = p.moves || [];
-    const head = `<p class="note" style="margin:0 0 6px">${sm.clashes ? `<b class="bad">${CC.plural(sm.clashes, "clash", "clashes")}</b> on ${CC.plural(sm.towers, "tower")} · ${CC.plural(sm.moves, "move")} suggested` : `✓ No channel clashes on ${CC.plural(sm.towers, "tower")}`} · same tower: ${p.guard_mhz} MHz gap · towers within ${p.near_km} km planned together · <span style="color:var(--warn)">amber = DFS (radar check)</span></p>`;
+    const head = `<p class="note" style="margin:0 0 6px">${sm.clashes ? `<b class="bad">${CC.plural(sm.clashes, "clash", "clashes")}</b> on ${CC.plural(sm.towers, "tower")} · ${CC.plural(sm.moves, "move")} suggested` : `✓ No channel clashes on ${CC.plural(sm.towers, "tower")}`} · same tower: ${p.guard_mhz} MHz gap · towers within ${p.near_km} km planned together · frequencies are channel centres · <span style="color:var(--warn)">amber = DFS (radar check)</span>${sm.centre_unknown ? ` · <b class="bad">${CC.plural(sm.centre_unknown, "wide link")} not re-read yet</b> — placed from the control channel until the next radio read` : ""}</p>`;
     return head + p.towers.map((t) => {
       const mv = moves.filter((m) => m.towers.includes(t.name));
       return `<div class="wf-tower"><h4>${esc(t.name)}${t.near.length ? ` <span class="note">near ${esc(t.near.join(", "))}</span>` : ""}</h4>
