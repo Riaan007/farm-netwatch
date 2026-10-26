@@ -3,7 +3,10 @@
  * password dialog and, once logged in, re-send the SAME request. The dashboard's
  * many fetch() call sites stay unchanged. Styles are inline on purpose — Tailwind
  * only compiles classes it finds in the HTML files. The prompt is a modal
- * <dialog> so it also sits above another open <dialog> (the device picker). */
+ * <dialog> so it also sits above another open <dialog> (the device picker).
+ * The hidden username "netwatch-pi" makes Chrome file the Pi password as its own
+ * account. Without it Chrome saved it over the hub proxy's "admin" login on the
+ * same address (hub port 82xx) and the proxy's sign-in box came back every time. */
 (function () {
     const origFetch = window.fetch.bind(window);
     let prompt = null;   // one dialog for many concurrent 401s
@@ -44,7 +47,8 @@
             } else {
                 wrap.innerHTML = `<form class="card"><h2 id="nw-auth-title">&#128274; Log in to this Pi</h2>
                     <p>Saved device logins and Pi settings need the site password.</p>
-                    <input type="password" autocomplete="current-password" placeholder="Site password" aria-label="Site password" required>
+                    <input type="text" name="username" value="netwatch-pi" autocomplete="username" readonly tabindex="-1" aria-hidden="true" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+                    <input type="password" name="password" autocomplete="current-password" placeholder="Site password" aria-label="Site password" required>
                     <div class="err" aria-live="polite"></div>
                     <div class="row"><button type="button" data-x>Cancel</button><button class="pri" type="submit">Log in</button></div></form>`;
             }
@@ -56,7 +60,7 @@
             wrap.addEventListener('click', e => { if (e.target === wrap) done(false); });
             const form = wrap.querySelector('form');
             if (!form) { wrap.querySelector('[data-x]').focus(); return; }
-            const input = form.querySelector('input'), err = form.querySelector('.err'), btn = form.querySelector('.pri');
+            const input = form.querySelector('input[type=password]'), err = form.querySelector('.err'), btn = form.querySelector('.pri');
             input.focus();
             form.onsubmit = async e => {
                 e.preventDefault();
