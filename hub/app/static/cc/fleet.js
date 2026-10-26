@@ -620,7 +620,7 @@
       if (!this.list) return;
       $("#st-sites").innerHTML = !this.list.length ? `<div class="empty"><b>No sites</b>Use the wizard to add one.</div>` : `<ul class="alist">${this.list.map((s) => {
         const card = CC.site(s.id);
-        return `<li><span class="sev ${card ? ({ ok: "info", warn: "warn", fault: "bad", offline: "bad", paused: "unk" })[CC.siteState(card)] : "unk"}">${icon("site")}</span>
+        return `<li><span class="sev ${card ? ({ ok: "info", warn: "warn", fault: "warn", offline: "bad", paused: "unk" })[CC.siteState(card)] : "unk"}">${icon("site")}</span>
           <div style="min-width:0"><div class="t">${esc(s.name || s.id)} ${s.enabled ? "" : `<span class="b unk">Paused</span>`}</div>
           <div class="d"><span class="mono">${esc(s.id)} · ${esc(s.vpn_ip)}:${s.netwatch_port}</span>${s.kuma_url ? ` · Kuma ${esc(s.kuma_url)}/${esc(s.kuma_status_slug || "")}` : " · no Kuma"}</div></div>
           <div class="row" style="flex-wrap:nowrap">${s.wg_client_id ? `<button class="btn sm" data-act="enroll" data-id="${esc(s.id)}" title="Show the install command again">Setup cmd</button>` : ""}<button class="btn sm" data-act="edit" data-id="${esc(s.id)}">Edit</button><button class="btn sm danger" data-act="del" data-id="${esc(s.id)}" aria-label="Remove ${esc(s.name || s.id)}">${icon("x")}</button></div></li>`;

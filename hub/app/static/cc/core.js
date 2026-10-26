@@ -14,6 +14,8 @@
  *                          the site's own link diagnosis grades Needs attention
  *                          (a Poor link makes it a fault)
  *               ok       = none of the above
+ *               Only offline is red. A fault site is still reachable, so it is
+ *               drawn amber ("Online · fault") with a stronger card than warn.
  *  devices      MONITORED = on the site's Monitored list (the `watch` flag): the
  *               equipment the operator must see up or down. Listed first, offline
  *               ones on top; a monitored device never goes quiet.
@@ -321,7 +323,7 @@
   CC.STATE = {
     ok: { label: "Healthy", b: "ok", dot: "", card: "" },
     warn: { label: "Needs a look", b: "warn", dot: "warn", card: "st-warn" },
-    fault: { label: "Fault", b: "bad", dot: "bad", card: "st-bad" },
+    fault: { label: "Online · fault", b: "warn", dot: "warn", card: "st-fault" },
     offline: { label: "Offline", b: "bad", dot: "bad", card: "st-bad" },
     paused: { label: "Paused", b: "unk", dot: "unk", card: "st-unk" },
   };

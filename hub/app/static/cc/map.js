@@ -76,7 +76,7 @@
   };
 
   const pinCls = (d) => { const st = CC.devState(d); return st === "online" ? (d.category && d.category !== "unknown" ? "" : "myst") : st === "offline" ? "off" : "quiet"; };
-  const stateDot = { ok: "", warn: "warn", fault: "bad", offline: "bad", paused: "unk" };
+  const stateDot = { ok: "", warn: "warn", fault: "warn", offline: "bad", paused: "unk" };
 
   /** Where a site is: its own GPS, else the centre of its placed devices (approximate). */
   CC.siteGeo = (s) => {

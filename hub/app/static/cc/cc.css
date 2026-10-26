@@ -191,6 +191,7 @@ a.kpi:hover { border-color: var(--line2); background: var(--panel2); }
 .scard::before { content: ""; height: 3px; background: var(--ok); opacity: .8; }
 .scard.st-warn::before { background: var(--warn); } .scard.st-bad::before { background: var(--bad); } .scard.st-unk::before { background: var(--unk); }
 .scard.st-bad { border-color: rgba(251, 113, 133, .35); }
+.scard.st-fault::before { background: var(--warn); } .scard.st-fault { border-color: rgba(251, 191, 36, .35); }
 .scard .in { padding: 14px 16px; display: grid; gap: 10px; flex: 1; }
 .scard h3 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; }
 .scard h3 a { color: var(--ink); text-decoration: none; }
