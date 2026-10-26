@@ -47,14 +47,23 @@
         <label class="fld">New password<input class="inp" type="password" name="a" minlength="8" autocomplete="new-password" required></label>
         <label class="fld">Type it again<input class="inp" type="password" name="b" minlength="8" autocomplete="new-password" required></label>
         <div class="bad note" id="pp-err" aria-live="polite"></div>
-        <div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn pri">Set password</button></div></form>`);
-    $("#pp", d).onsubmit = async (e) => {
+        <div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn pri">Next</button></div></form>
+      <div class="dbd" id="pp-ok" hidden><p style="margin:0"><b>Set a new Pi password for ${esc(s.name)}?</b></p>
+        <ul class="muted" style="margin:0;padding-left:18px"><li>Anyone logged in on ${esc(s.name)}'s own Netwatch page is signed out.</li><li>From then on the page asks for this password before it shows saved device logins or changes settings.</li><li>The hub keeps working — it uses its own key, not this password.</li></ul>
+        <div class="bad note" id="pp-err2" aria-live="polite"></div>
+        <div class="row" style="justify-content:flex-end"><button type="button" class="btn" id="pp-back">Back</button><button type="button" class="btn pri" id="pp-yes">Yes, set it</button></div></div>`);
+    const form = $("#pp", d), ok = $("#pp-ok", d);
+    form.onsubmit = (e) => {
       e.preventDefault();
-      const f = e.target;
-      if (f.a.value !== f.b.value) { $("#pp-err", d).textContent = "The two entries differ."; return; }
-      await CC.busy(e.submitter, async () => {
-        try { await api(`/api/hub/sites/${s.id}/pi-password`, { method: "POST", body: { password: f.a.value } }); d.close(); CC.toast("Pi password set", "ok"); }
-        catch (err) { $("#pp-err", d).textContent = err.message; }
+      if (form.a.value !== form.b.value) { $("#pp-err", d).textContent = "The two entries differ."; return; }
+      $("#pp-err", d).textContent = "";
+      form.hidden = true; ok.hidden = false; $("#pp-yes", d).focus();
+    };
+    $("#pp-back", d).onclick = () => { ok.hidden = true; form.hidden = false; form.a.focus(); };
+    $("#pp-yes", d).onclick = async (e) => {
+      await CC.busy(e.currentTarget, async () => {
+        try { await api(`/api/hub/sites/${s.id}/pi-password`, { method: "POST", body: { password: form.a.value } }); d.close(); CC.toast(`Pi password set for ${s.name}`, "ok"); }
+        catch (err) { $("#pp-err2", d).textContent = err.message; }
       });
     };
   }
@@ -232,7 +241,7 @@
     },
   };
 
-  const EV = { new: ["New device", "info"], offline: ["Went offline", "bad"], online: ["Came online", "ok"], ip_change: ["IP changed", "warn"], replaced: ["Address taken over", "warn"], switch: ["Switch", "info"] };
+  const EV = { new: ["New device", "info"], offline: ["Went offline", "bad"], online: ["Came online", "ok"], ip_change: ["IP changed", "warn"], replaced: ["Address taken over", "warn"], switch: ["Switch", "info"], restart: ["Restarted", "info"], wifi_fix: ["Wi-Fi fix", "warn"] };
   function eventsList(evs, { compact = false } = {}) {
     if (!evs.length) return `<div class="empty"><b>No events</b>Nothing recorded for this filter.</div>`;
     // The same device flipping the same way every scan (phones with private
@@ -250,7 +259,7 @@
       const [label, tone] = EV[e.type] || [e.type, "unk"];
       const who = e.name || (e.detail && e.detail.type_label) || e.vendor || e.hostname || e.mac || "Unknown device";
       const det = e.detail || {};
-      const extra = e.type === "switch" && CC.switchEventText ? esc(CC.switchEventText(e)) : compact ? "" : [e.mac, e.hostname, det.model, det.ports, det.prev_name || det.prev_vendor || det.prev_mac ? "replaced " + (det.prev_name || det.prev_vendor || det.prev_mac) : ""].filter(Boolean).map(esc).join(" · ");
+      const extra = e.type === "wifi_fix" ? esc([det.result, det.changes].filter(Boolean).join(" · ")) : e.type === "switch" && CC.switchEventText ? esc(CC.switchEventText(e)) : compact ? "" : [e.mac, e.hostname, det.model, det.ports, det.prev_name || det.prev_vendor || det.prev_mac ? "replaced " + (det.prev_name || det.prev_vendor || det.prev_mac) : ""].filter(Boolean).map(esc).join(" · ");
       return `<li><span class="b ${tone === "info" ? "info" : tone} nodot" style="min-width:${compact ? 0 : 128}px;justify-content:center">${label}</span><div style="min-width:0"><div class="t" style="font-weight:600">${esc(who)} <span class="mono dim">${esc(e.ip || "")}</span></div>${extra ? `<div class="d">${extra}</div>` : ""}</div><span class="note" title="${esc(CC.when(e.ts))}" style="text-align:right;white-space:nowrap">${CC.ago(e.ts)}${e.__n ? `<br><span class="b warn nodot" title="Repeated since ${esc(CC.when(e.__first))}">×${e.__n}</span>` : ""}</span></li>`;
     }).join("")}</ul>`;
   }

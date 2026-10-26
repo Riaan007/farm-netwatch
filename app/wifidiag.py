@@ -181,11 +181,23 @@ def _thin(rows):
     return rows[::step] if step > 1 else rows
 
 
-def _step(text, where, check=None):
+def _step(text, where, check=None, fix=None):
     st = {"text": text, "where": where}            # where: "remote" (from the office) | "site"
     if check:
         st["check"] = check                        # the page's "Check now" → wifichecks.run()
+    if fix:
+        st["fix"] = fix                            # the page's "Fix…" → wififix (preview, confirm, auto-undo)
     return st
+
+
+def _fix(kind, target, **params):
+    """A step's safe fix, only when we can log in to every radio it touches."""
+    ends = [target] + [v for v in params.values() if isinstance(v, dict)]
+    if not all(e and e.get("monitored", True) and e.get("key") for e in ends):
+        return None
+    clean = {k: ({"key": v["key"], "name": v.get("name") or v["key"]} if isinstance(v, dict) else v)
+             for k, v in params.items()}
+    return {"kind": kind, "radio": target["key"], "name": target.get("name") or target["key"], "params": clean}
 
 
 def _chk(kinds, *ends):
@@ -352,7 +364,7 @@ def _diagnose(L, now, hour_of):
                    f"other signals on or next to {freq}.", "remote"),
              _step("If the channel is busy, move the AP to the quietest channel. First check every station's "
                    "Frequency Scan List includes the new channel, or they will not reconnect.", "remote",
-                   _chk(["settings"], ap, sta)),
+                   _chk(["settings"], ap, sta), _fix("channel", ap)),
              _step(fz_txt + " — trees close to the line are the usual cause when the signal is strong.", "site"),
              _step(f"Check {sta['name']}'s radio sits squarely in the dish feed and the dish is not rotated.", "site")],
             good="Link score above 80 in both directions.")
@@ -428,7 +440,7 @@ def _diagnose(L, now, hour_of):
                  f"Automatic power control or a country power limit on {quieter['name']}",
                  f"A weak transmitter or damaged cable at {quieter['name']}"],
                 [_step(f"Compare Output Power on {ap['name']} and {sta['name']} (airOS → Wireless) and match them.", "remote",
-                       _chk(["power"], ap, sta)),
+                       _chk(["power"], ap, sta), _fix("power", quieter, match=louder)),
                  _step(f"If the settings match, inspect {quieter['name']}'s cable and radio.", "site")],
                 good="Both ends within about 5 dB.")
 
@@ -510,7 +522,7 @@ def _radio_findings(r, stations, now):
                                "performance for every station on this AP"],
                     "steps": [_step("On the AP set airOS → Wireless → Wireless Mode to Access Point PtMP airMAX AC and save. "
                                     "Every connected station is an AC radio, so none needs Mixed mode.", "remote",
-                                    _chk(["settings"], r)),
+                                    _chk(["settings"], r), _fix("ac_mode", r)),
                               _step("Before saving, check each station shows airOS 8 firmware; do it when someone could "
                                     "reach the AP if a station does not come back.", "remote")],
                     "good": "Higher link scores and capacity on the AP's links."})

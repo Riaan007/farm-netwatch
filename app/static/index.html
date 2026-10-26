@@ -495,6 +495,12 @@
         .nw-chkres .f { display: flex; flex-wrap: wrap; gap: .15rem .6rem; color: #94a3b8; } .nw-chkres .f b { color: #e2e8f0; font-weight: 600; }
         .nw-chkres .f.ok b { color: #6ee7b7; } .nw-chkres .f.warn b { color: #fcd34d; } .nw-chkres .f.bad b { color: #fda4af; }
         .nw-chkres pre { margin: .2rem 0 0; width: 100%; white-space: pre-wrap; word-break: break-word; font-size: 11px; color: #cbd5e1; max-height: 12rem; overflow: auto; }
+        .nw-chkbtn.fix { border-color: rgba(251,191,36,.5); background: rgba(245,158,11,.12); color: #fde68a; } .nw-chkbtn.fix:hover:not(:disabled) { background: rgba(245,158,11,.22); }
+        .nw-fixres .warnbox { padding: .45rem .55rem; border-radius: .45rem; background: rgba(244,63,94,.1); border: 1px solid rgba(251,113,133,.3); color: #fecdd3; }
+        .nw-fixres .ln { color: #cbd5e1; } .nw-fixres .ln.note { color: #fcd34d; }
+        .nw-fixres code { font-family: ui-monospace, monospace; font-size: 11px; color: #a5f3fc; }
+        .nw-fixres .acts { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
+        .nw-fixres input[type=number], .nw-fixres select { background: #050b16; border: 1px solid rgba(148,163,184,.25); border-radius: .45rem; color: #e2e8f0; padding: .25rem .4rem; font-size: 12px; }
         .nw-chkres .sum { border-top: 1px solid rgba(148,163,184,.14); padding-top: .4rem; } .nw-chkres .ts { color: #64748b; font-size: 11px; }
         .nw-find .good { margin: .6rem 0 0; font-size: 12px; color: #6ee7b7; }
         .nw-wok { display: flex; gap: .6rem; align-items: center; padding: .7rem .9rem; border-radius: .7rem; background: rgba(16,185,129,.08); border: 1px solid rgba(52,211,153,.25); color: #a7f3d0; font-size: 13px; }
@@ -1075,6 +1081,7 @@
                     <label class="nw-tgl"><input id="setup-airos-setip" type="checkbox" data-track><b>Change IP for Ubiquiti airOS radios <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Edits the radio's config over SSH and <b>reboots it</b> — a wrong value can drop the link to a whole building. Needs the radio's SSH login saved. Turn off to hide the button on this site.</span></label>
                     <label class="nw-tgl"><input id="setup-mikrotik-manage" type="checkbox" data-track><b>Manage MikroTik routers <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Unlocks the write actions (rename, enable/disable ports, PoE, reboot) and the <b>web terminal</b> on a MikroTik's Tools tab — config power over the router. Finding routers by MAC and reading their status stay available whether this is on or off.</span></label>
                     <label class="nw-tgl"><input id="setup-switch-manage" type="checkbox" data-track><b>Manage switches <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Lets the Switches page (and the hub) turn Ubiquiti switch ports on and off, change PoE, power-cycle PoE devices, run cable tests and restart the switch. Ports the Pi or the router are on are always refused. Reading ports, PoE, traffic and the alerts stay on either way.</span></label>
+                    <label class="nw-tgl"><input id="setup-wifi-fix" type="checkbox" data-track><b>Wi-Fi fixes <span class="px-1.5 py-0.5 bg-amber-500/20 text-amber-200 rounded text-[9px] font-bold">CAREFUL</span></b><span>Adds Fix… buttons to the Wi-Fi page's "What to do" steps (here and on the hub): switch an AP from Mixed to AC, match transmit power on a link, move an AP's channel. Each shows exactly what will change and asks first. The radio applies it without saving, waits until every peer is back, and only then saves it — if they do not come back it puts the old settings back by itself.</span></label>
                     <label class="nw-tgl"><input id="setup-device-restart" type="checkbox" data-track><b>Restart devices <span class="px-1.5 py-0.5 bg-rose-500/20 text-rose-200 rounded text-[9px] font-bold">RISKY</span></b><span>Adds a Restart button (here and on the hub) to any device with a saved login — Hikvision cameras and NVRs, airOS radios, EdgeSwitches, MikroTik routers and SwOS switches. Every restart asks first, tests the login before it sends anything, then watches the device drop and come back so you know it really restarted. MikroTik routers and switches still need their own switch above.</span></label>
                 </div>
             </section>
@@ -1685,6 +1692,7 @@
             'wifi-toggle':     el => wifiToggle(el.dataset.link),
             'wifi-csv':        el => wifiCsv(el.dataset.link),
             'wifi-check':      el => wifiCheck(el),
+            'wifi-fix':        el => wifiFix(el),
         };
         document.addEventListener('click', (e) => {
             const el = e.target.closest('[data-nw-act]');
@@ -3308,6 +3316,7 @@
             document.getElementById('setup-mikrotik-manage').checked = !!(c.features && c.features.mikrotik_manage);
             document.getElementById('setup-switch-manage').checked = !!(c.features && c.features.switch_manage);
             document.getElementById('setup-device-restart').checked = !!(c.features && c.features.device_restart);
+            document.getElementById('setup-wifi-fix').checked = !!(c.features && c.features.wifi_fix);
             document.getElementById('setup-watchdog').checked = !!(c.sysmon && c.sysmon.watchdog);
             document.getElementById('kuma-auto-ip').textContent = PI_IP;
             const k = (c.integrations && c.integrations.kuma) || {};
@@ -3330,7 +3339,7 @@
         function updateSaveBar(){
             const bar = document.getElementById('save-bar');
             bar.hidden = !SETTINGS_DIRTY.size;
-            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management','setup-device-restart':'device restart'};
+            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management','setup-device-restart':'device restart','setup-wifi-fix':'Wi-Fi fixes'};
             const what = new Set([...SETTINGS_DIRTY].map(id => Object.entries(names).find(([k]) => id.startsWith(k)) ).filter(Boolean).map(x => x[1]));
             document.getElementById('save-bar-what').textContent = [...what].join(', ');
         }
@@ -3850,6 +3859,7 @@
             'replaced': {icon:'🔁', label:'Address taken over', cls:'text-orange-300 bg-orange-500/15'},
             'monitoring':{icon:'🔔', label:'Monitoring changed', cls:'text-cyan-300 bg-cyan-500/15'},
             'restart':  {icon:'⟳', label:'Restarted',          cls:'text-violet-300 bg-violet-500/15'},
+            'wifi_fix': {icon:'📡', label:'Wi-Fi fix',          cls:'text-amber-300 bg-amber-500/15'},
         };
         // What a restart actually ended up doing — the verdict app/restart.py reached.
         const RESTART_SAID={
@@ -3904,6 +3914,11 @@
                 bits.push(RESTART_SAID[d.restart] || d.restart || '');
                 if(d.method) bits.push('over '+d.method);
                 if(d.seconds_down) bits.push('offline '+d.seconds_down+'s');
+            }
+            if(e.type==='wifi_fix'){
+                bits.push(({applied:'applied and saved', reverted:'undone by the radio — peers did not come back', refused:'not done'})[d.result] || d.result || '');
+                if(d.changes) bits.push(d.changes);
+                if(d.error && d.result !== 'applied') bits.push(d.error);
             }
             if(e.mac) bits.push(e.mac);
             if(e.hostname) bits.push(e.hostname);
@@ -4317,6 +4332,7 @@
                 mikrotik_manage: document.getElementById('setup-mikrotik-manage').checked,
                 switch_manage: document.getElementById('setup-switch-manage').checked,
                 device_restart: document.getElementById('setup-device-restart').checked,
+                wifi_fix: document.getElementById('setup-wifi-fix').checked,
                 watchdog: document.getElementById('setup-watchdog').checked,
                 kuma_base_url: document.getElementById('setup-kuma-url').value,
                 kuma_auto_url: document.getElementById('setup-kuma-auto').checked,
@@ -4564,11 +4580,64 @@
             el.disabled = false; el.textContent = 'Check again';
         }
 
+        // "Fix…" on a step: preview (writes nothing) → Apply now → follow the radio until it saves or undoes.
+        async function wifiFix(el){
+            const fix = JSON.parse(el.dataset.fix || '{}'), li = el.closest('li'), out = li.querySelector('.nw-fixres');
+            out.hidden = false;
+            const post = async (url, body) => { const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}); const j = await r.json().catch(() => ({})); if(!r.ok || !j.ok) throw new Error(r.status === 401 ? 'log in with the Pi password first' : (j.error || 'failed (' + r.status + ')')); return j; };
+            const msg = (t, cls) => `<div class="f ${cls || ''}"><b>${esc(t)}</b></div>`;
+            const preview = async (params) => {
+                out.innerHTML = '<div class="ts">Reading the radios to build the plan — nothing is changed…</div>';
+                try {
+                    const j = await post('/api/wifi/fix/preview', {kind: fix.kind, radio: fix.radio, params});
+                    const p = j.plan;
+                    out.innerHTML = `<h6>${esc(p.label)} — ${esc(p.target.name)} <span class="ip">${esc(p.target.ip)}</span></h6>
+                        ${p.lines.map(x => `<div class="ln">• ${esc(x)}</div>`).join('')}
+                        ${(p.notes || []).map(x => `<div class="ln note">⚠ ${esc(x)}</div>`).join('')}
+                        <div class="warnbox">${esc(p.warn)}</div>
+                        <div class="ts">Changes: ${p.edits.map(e => `<code>${esc(e.key)} ${esc(e.old)} → ${esc(e.new)}</code>`).join(' · ')}</div>
+                        <div class="acts"><button type="button" class="nw-btn pri" data-go>Apply now</button><button type="button" class="nw-btn" data-x>Cancel</button></div>`;
+                    out.querySelector('[data-x]').onclick = () => { out.hidden = true; out.innerHTML = ''; };
+                    out.querySelector('[data-go]').onclick = async (e) => {
+                        e.currentTarget.disabled = true;
+                        try { await post('/api/wifi/fix/apply', {token: j.token, confirm: true}); }
+                        catch(err){ out.insertAdjacentHTML('beforeend', msg(err.message, 'bad')); return; }
+                        follow();
+                    };
+                } catch(err){ out.innerHTML = msg(err.message, 'bad') + (err.message.includes('Settings') ? '<div class="ts">Settings → Advanced → Wi-Fi fixes</div>' : ''); }
+            };
+            const follow = async () => {
+                for(;;){
+                    let job = {};
+                    try { const r = await fetch('/api/wifi/fix/' + encodeURIComponent(fix.radio)); job = ((await r.json()) || {}).job || {}; } catch(e){ /* keep trying */ }
+                    if(job.phase === 'done'){
+                        out.innerHTML = msg(job.msg || job.verdict, job.ok ? 'ok' : (job.verdict === 'reverted' ? 'warn' : 'bad'))
+                            + ((job.log || []).length ? `<details><summary class="ts">Radio log</summary><pre>${esc(job.log.join('\n'))}</pre></details>` : '');
+                        return;
+                    }
+                    out.innerHTML = `<div class="ts">⏳ ${esc(job.msg || 'Working…')}</div>`;
+                    await new Promise(r => setTimeout(r, 3000));
+                }
+            };
+            if(fix.kind === 'channel'){
+                out.innerHTML = `<h6>Move ${esc(fix.name)} to another channel</h6>
+                    <div class="acts"><label>New centre frequency <input type="number" min="4900" max="6100" step="5" data-f placeholder="e.g. 5180"> MHz</label>
+                    <label>Width <select data-w><option value="">keep</option><option>20</option><option>40</option><option>80</option></select></label></div>
+                    <label class="f"><input type="checkbox" data-u> Go ahead even for stations Netwatch can't log in to (if they don't follow, the AP moves back by itself)</label>
+                    <div class="acts"><button type="button" class="nw-btn pri" data-p>Preview</button><button type="button" class="nw-btn" data-x>Cancel</button></div>`;
+                out.querySelector('[data-x]').onclick = () => { out.hidden = true; out.innerHTML = ''; };
+                out.querySelector('[data-p]').onclick = () => preview({freq: +out.querySelector('[data-f]').value, width: +out.querySelector('[data-w]').value || undefined, accept_unverified: out.querySelector('[data-u]').checked});
+            } else {
+                preview(fix.params || {});
+            }
+        }
+
         function wfFinding(f){
             const steps = (f.steps || []).map(s => {
                 const c = s.check && (s.check.radios || []).length ? s.check : null;
                 return `<li><span>${esc(s.text)}</span><span class="nw-chkrow"><span class="nw-where ${esc(s.where)}">${WF_WHERE[s.where] || ''}</span>${c
-                    ? `<button type="button" class="nw-chkbtn" data-nw-act="wifi-check" data-kinds="${esc(c.kinds.join(','))}" data-radios="${esc(c.radios.join(','))}" title="Read the answer from the radio now — nothing is changed">Check now</button>` : ''}</span>${c ? '<div class="nw-chkres" hidden aria-live="polite"></div>' : ''}</li>`;
+                    ? `<button type="button" class="nw-chkbtn" data-nw-act="wifi-check" data-kinds="${esc(c.kinds.join(','))}" data-radios="${esc(c.radios.join(','))}" title="Read the answer from the radio now — nothing is changed">Check now</button>` : ''}${s.fix
+                    ? `<button type="button" class="nw-chkbtn fix" data-nw-act="wifi-fix" data-fix="${esc(JSON.stringify(s.fix))}" title="Preview the change first — nothing is changed until you apply it">Fix…</button>` : ''}</span>${c ? '<div class="nw-chkres" hidden aria-live="polite"></div>' : ''}${s.fix ? '<div class="nw-chkres nw-fixres" hidden aria-live="polite"></div>' : ''}</li>`;
             }).join('');
             return `<div class="nw-find ${esc(f.level)}">
                 <h4><span class="lv ${esc(f.level)}"></span>${esc(f.title)}</h4>

@@ -1452,6 +1452,48 @@ def api_site_wifi_check(site_id):
     return jsonify(j), (502 if r.status_code == 401 else r.status_code)
 
 
+def _wifi_fix_forward(site_id, path, method="GET", body=None, timeout=(3, 60)):
+    """Pass a Wi-Fi fix call to the site with the hub key. Never forwards a site
+    401 (the Control Center would read it as "signed out of the hub")."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    try:
+        r = requests.request(method, f"{siteapi.base_url(site)}{path}", json=body,
+                             headers=siteapi.headers(site), timeout=timeout)
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"Site unreachable: {e.__class__.__name__}"}), 502
+    try:
+        j = r.json()
+    except ValueError:
+        if r.status_code == 404:
+            return jsonify({"ok": False, "error": "This site's Netwatch is too old for Wi-Fi fixes — update it."}), 501
+        return jsonify({"ok": False, "error": f"Site answered {r.status_code}"}), 502
+    return jsonify(j), (502 if r.status_code == 401 else r.status_code)
+
+
+@app.route("/api/hub/sites/<site_id>/wifi/fix/preview", methods=["POST"])
+def api_site_wifi_fix_preview(site_id):
+    b = request.get_json(force=True, silent=True) or {}
+    body = {"kind": str(b.get("kind") or ""), "radio": str(b.get("radio") or ""),
+            "params": b.get("params") if isinstance(b.get("params"), dict) else {}}
+    return _wifi_fix_forward(site_id, "/api/wifi/fix/preview", "POST", body, timeout=(3, 90))
+
+
+@app.route("/api/hub/sites/<site_id>/wifi/fix/apply", methods=["POST"])
+def api_site_wifi_fix_apply(site_id):
+    b = request.get_json(force=True, silent=True) or {}
+    return _wifi_fix_forward(site_id, "/api/wifi/fix/apply", "POST",
+                             {"token": str(b.get("token") or ""), "confirm": b.get("confirm") is True})
+
+
+@app.route("/api/hub/sites/<site_id>/wifi/fix/<path:key>", methods=["GET"])
+def api_site_wifi_fix_state(site_id, key):
+    if ".." in key or "%" in key:
+        return jsonify({"ok": False, "error": "bad key"}), 400
+    return _wifi_fix_forward(site_id, f"/api/wifi/fix/{key}", timeout=(3, 20))
+
+
 @app.route("/api/hub/sites/<site_id>/wifi-doctor", methods=["POST"])
 def api_site_wifi_doctor(site_id):
     """Read the site's radio telemetry and have Gemini turn it into a work list."""

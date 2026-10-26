@@ -38,6 +38,7 @@ import topology
 import topology_routes
 import tunnels
 import wifichecks
+import wififix
 import wifidiag
 import kuma
 import notify
@@ -304,6 +305,8 @@ def api_setup():
         feats["switch_manage"] = bool(body["switch_manage"])
     if "device_restart" in body:
         feats["device_restart"] = bool(body["device_restart"])
+    if "wifi_fix" in body:
+        feats["wifi_fix"] = bool(body["wifi_fix"])
     if feats:
         patch["features"] = feats
     if "watchdog" in body:
@@ -546,6 +549,98 @@ def api_wifi_check():
         return jsonify(wifichecks.run(body.get("kinds") or [], devs, saved))
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+
+
+def _radio_target(key):
+    with scanner.lock:
+        d = scanner.devices.get(key) or scanner.devices.get((key or "").lower())
+        if not d:
+            return None
+        reg = scanner.registry.get(d.get("key") or key, {})
+        return {"key": d.get("key") or key, "ip": d.get("ip") or "",
+                "name": reg.get("name") or d.get("device_name") or d.get("name") or d.get("ip")}
+
+
+def _radio_by(mac=None, ip=None):
+    """A peer radio Netwatch knows, by its wireless MAC (= the key Ubiquiti
+    stations register with) or its IP."""
+    mac = (mac or "").lower()
+    with scanner.lock:
+        keys = [k for k, d in scanner.devices.items()
+                if (mac and (k.lower() == mac or (d.get("mac") or "").lower() == mac)) or (ip and d.get("ip") == ip)]
+    return _radio_target(keys[0]) if keys else None
+
+
+def _saved_login(key):
+    c = creds.get(key)
+    return c if c.get("password") else None
+
+
+def _wifi_fix_audit(p, job):
+    detail = {"wifi_fix": p["kind"], "result": job.get("verdict"),
+              "changes": ", ".join(f"{e['key']} {e['old']}→{e['new']}" for e in p["edits"])}
+    if not job.get("ok") and job.get("msg"):
+        detail["error"] = str(job["msg"])[:200]
+    try:
+        history.log_events([history.build_event("wifi_fix", {**p["target"]}, detail)])
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@app.route("/api/wifi/fix/preview", methods=["POST"])
+@guard
+def api_wifi_fix_preview():
+    """Plan a safe Wi-Fi fix — reads the radios, writes nothing. Returns the
+    plan and a token that /apply needs (valid 5 min)."""
+    if not config.load().get("features", {}).get("wifi_fix"):
+        return jsonify({"ok": False, "error": "Wi-Fi fixes are turned off in this site's Settings"}), 403
+    body = request.get_json(force=True, silent=True) or {}
+    target = _radio_target(str(body.get("radio") or ""))
+    if not target:
+        return jsonify({"ok": False, "error": "unknown radio"}), 404
+    if wififix.running(target["key"]):
+        return jsonify({"ok": False, "error": "a fix on this radio is still running", "job": wififix.state(target["key"])}), 409
+    raw = body.get("params") if isinstance(body.get("params"), dict) else {}
+    params = {k: raw[k] for k in ("freq", "width", "accept_unverified") if k in raw}
+    if isinstance(raw.get("match"), dict):
+        m = _radio_target(str(raw["match"].get("key") or ""))
+        if not m:
+            return jsonify({"ok": False, "error": "unknown radio to match"}), 404
+        params["match"] = m
+    try:
+        p = wififix.plan(str(body.get("kind") or ""), target, _saved_login, _radio_by, params)
+    except wififix.FixError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return jsonify({"ok": True, "token": wififix.remember(p), "plan": p})
+
+
+@app.route("/api/wifi/fix/apply", methods=["POST"])
+@guard
+def api_wifi_fix_apply():
+    """Run a previewed fix. Needs {"token", "confirm": true}; answers at once —
+    the change runs on the radio and the page polls GET /api/wifi/fix/<key>."""
+    if not config.load().get("features", {}).get("wifi_fix"):
+        return jsonify({"ok": False, "error": "Wi-Fi fixes are turned off in this site's Settings"}), 403
+    body = request.get_json(force=True, silent=True) or {}
+    if body.get("confirm") is not True:
+        return jsonify({"ok": False, "error": "confirm the fix first"}), 400
+    try:
+        p = wififix.take(body.get("token"))
+    except wififix.FixError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    login = _saved_login(p["target"]["key"])
+    if not login:
+        return jsonify({"ok": False, "error": "the radio's saved login is gone"}), 400
+    job = wififix.start(p, login, on_done=_wifi_fix_audit)
+    if job is None:
+        return jsonify({"ok": False, "error": "a fix on this radio is already running"}), 409
+    return jsonify({"ok": True, "job": job})
+
+
+@app.route("/api/wifi/fix/<path:key>")
+@guard
+def api_wifi_fix_state(key):
+    return jsonify({"ok": True, "job": wififix.state(key)})
 
 
 @app.route("/api/radio/links")

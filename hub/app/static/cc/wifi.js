@@ -93,7 +93,8 @@
         <div><h5>What to do</h5><ol class="steps">${(f.steps || []).map((st) => {
           const c = st.check && (st.check.radios || []).length ? st.check : null;
           return `<li><span>${esc(st.text)}</span><span class="wf-chkrow"><span class="where ${st.where}">${WHERE[st.where]}</span>${c
-            ? `<button type="button" class="wf-chkbtn" data-wf-check data-kinds="${esc(c.kinds.join(","))}" data-radios="${esc(c.radios.join(","))}" title="Read the answer from the radio now — nothing is changed">Check now</button>` : ""}</span>${c ? `<div class="wf-chkres" hidden aria-live="polite"></div>` : ""}</li>`;
+            ? `<button type="button" class="wf-chkbtn" data-wf-check data-kinds="${esc(c.kinds.join(","))}" data-radios="${esc(c.radios.join(","))}" title="Read the answer from the radio now — nothing is changed">Check now</button>` : ""}${st.fix
+            ? `<button type="button" class="wf-chkbtn fix" data-wf-fix="${esc(JSON.stringify(st.fix))}" title="Preview the change first — nothing is changed until you apply it">Fix…</button>` : ""}</span>${c ? `<div class="wf-chkres" hidden aria-live="polite"></div>` : ""}${st.fix ? `<div class="wf-chkres wf-fixres" hidden aria-live="polite"></div>` : ""}</li>`;
         }).join("")}</ol></div>
       </div>
       ${f.good ? `<p class="good">✓ Good result: ${esc(f.good)}</p>` : ""}
@@ -115,6 +116,59 @@
         + (sum ? `<div class="sum">${sum}</div>` : "") + `<div class="ts">Read from the radio at ${new Date().toLocaleTimeString()} · nothing was changed</div>`;
     } catch (e) { out.innerHTML = `<div class="f bad"><b>${esc(e.message)}</b></div>`; }
     btn.disabled = false; btn.textContent = "Check again";
+  }
+
+  // "Fix…" on a step: preview (writes nothing) → Apply now → follow the radio until it saves or undoes.
+  async function runFix(site, btn) {
+    const fix = JSON.parse(btn.dataset.wfFix || "{}"), out = btn.closest("li").querySelector(".wf-fixres");
+    const base = `/api/hub/sites/${encodeURIComponent(site.id)}/wifi/fix`;
+    const msg = (t, cls) => `<div class="f ${cls || ""}"><b>${esc(t)}</b></div>`;
+    out.hidden = false;
+    const follow = async () => {
+      for (;;) {
+        let job = {};
+        try { job = (await CC.api(`${base}/${encodeURIComponent(fix.radio)}`)).job || {}; } catch (e) { /* the radio's link may be restarting */ }
+        if (job.phase === "done") {
+          out.innerHTML = msg(job.msg || job.verdict, job.ok ? "ok" : job.verdict === "reverted" ? "warn" : "bad")
+            + ((job.log || []).length ? `<details><summary class="ts">Radio log</summary><pre>${esc(job.log.join("\n"))}</pre></details>` : "");
+          return;
+        }
+        out.innerHTML = `<div class="ts">⏳ ${esc(job.msg || "Working…")}</div>`;
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    };
+    const preview = async (params) => {
+      out.innerHTML = `<div class="ts">Reading the radios to build the plan — nothing is changed…</div>`;
+      try {
+        const j = await CC.api(`${base}/preview`, { method: "POST", timeout: 100000, body: { kind: fix.kind, radio: fix.radio, params } });
+        const p = j.plan;
+        out.innerHTML = `<h6>${esc(p.label)} — ${esc(p.target.name)} <span class="ip">${esc(p.target.ip)}</span></h6>
+          ${p.lines.map((x) => `<div class="ln">• ${esc(x)}</div>`).join("")}
+          ${(p.notes || []).map((x) => `<div class="ln note">⚠ ${esc(x)}</div>`).join("")}
+          <div class="warnbox">${esc(p.warn)}</div>
+          <div class="ts">Changes: ${p.edits.map((e) => `<code>${esc(e.key)} ${esc(e.old)} → ${esc(e.new)}</code>`).join(" · ")}</div>
+          <div class="acts"><button type="button" class="btn pri sm" data-go>Apply now</button><button type="button" class="btn sm" data-x>Cancel</button></div>`;
+        out.querySelector("[data-x]").onclick = () => { out.hidden = true; out.innerHTML = ""; };
+        out.querySelector("[data-go]").onclick = async (e) => {
+          e.currentTarget.disabled = true;
+          try { await CC.api(`${base}/apply`, { method: "POST", body: { token: j.token, confirm: true } }); }
+          catch (err) { out.insertAdjacentHTML("beforeend", msg(err.message, "bad")); return; }
+          follow();
+        };
+      } catch (err) { out.innerHTML = msg(err.message, "bad") + (/Settings/.test(err.message) ? `<div class="ts">Turn it on in the site's own Settings → Advanced → Wi-Fi fixes.</div>` : ""); }
+    };
+    if (fix.kind === "channel") {
+      out.innerHTML = `<h6>Move ${esc(fix.name)} to another channel</h6>
+        <div class="acts"><label>New centre frequency <input class="inp" style="width:90px" type="number" min="4900" max="6100" step="5" data-f placeholder="5180"> MHz</label>
+        <label>Width <select class="sel" data-w><option value="">keep</option><option>20</option><option>40</option><option>80</option></select></label></div>
+        <label class="f"><input type="checkbox" data-u> Go ahead even for stations Netwatch can't log in to (if they don't follow, the AP moves back by itself)</label>
+        <div class="acts"><button type="button" class="btn pri sm" data-p>Preview</button><button type="button" class="btn sm" data-x>Cancel</button></div>`;
+      out.querySelector("[data-x]").onclick = () => { out.hidden = true; out.innerHTML = ""; };
+      out.querySelector("[data-p]").onclick = () => preview({ freq: +out.querySelector("[data-f]").value,
+        width: +out.querySelector("[data-w]").value || undefined, accept_unverified: out.querySelector("[data-u]").checked });
+    } else {
+      preview(fix.params || {});
+    }
   }
 
   // Inline SVG line charts with a hover readout (no chart library: offline LAN).
@@ -317,6 +371,8 @@
         if (e.target.closest("[data-wf-info]")) { this.showInfo = !this.showInfo; return this.draw(CC.site(this.site)); }
         const c = e.target.closest("[data-wf-csv]");
         if (c) { const d = this.current(), l = d && d.links.find((x) => x.id === c.dataset.wfCsv); return l && csv(CC.site(this.site), l, series[`${this.site}|${HOURS}|${l.id}`]); }
+        const fx = e.target.closest("[data-wf-fix]");
+        if (fx) return runFix(CC.site(this.site), fx);
         const ck = e.target.closest("[data-wf-check]");
         if (ck) return runCheck(CC.site(this.site), ck);
         const tn = e.target.closest("[data-wf-tunnel]");

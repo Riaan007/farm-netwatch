@@ -96,6 +96,11 @@ DEFAULTS = {
         # MikroTik routers and switches ALSO need their own management switch
         # above, so turning this on can't reach past a site that said no there.
         "device_restart": False,
+        # Wi-Fi "Fix…" buttons (wififix.py): Mixed→AC, match transmit power, move
+        # an AP's channel. Each is previewed, confirmed, applied on the radio
+        # WITHOUT saving, and saved only when every peer is back — else the radio
+        # puts the old settings back by itself. Off by default.
+        "wifi_fix": False,
     },
     # Switch telemetry (switchmon.py): every EdgeSwitch/UISP switch with a saved
     # login is read over its own API on the LAN — its own thread and cadence,
