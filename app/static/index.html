@@ -506,7 +506,7 @@
         .nw-spec { width: 100%; height: auto; max-height: 160px; } .nw-spec .ax { fill: #64748b; font-size: 10px; text-anchor: middle; }
         .nw-spec rect.ok { fill: rgba(34,211,238,.35); stroke: #22d3ee; } .nw-spec rect.bad { fill: rgba(244,63,94,.35); stroke: #fb7185; }
         .nw-spec .lb { fill: #f1f5f9; font-size: 10.5px; font-weight: 600; }
-        .nw-tower ul.clash { margin: 0; padding-left: 1rem; font-size: 12.5px; display: grid; gap: .15rem; } .nw-tower ul.clash li.crit { color: #fda4af; } .nw-tower ul.clash li.warn { color: #fcd34d; }
+        .nw-tower ul.clash { margin: 0; padding-left: 1rem; font-size: 12.5px; display: grid; gap: .15rem; } .nw-tower ul.clash li.crit { color: #fda4af; } .nw-tower ul.clash li.warn { color: #fcd34d; } .nw-tower ul.clash li.info { color: #94a3b8; }
         .nw-tower ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; font-size: 12.5px; color: #cbd5e1; }
         .nw-tower ol.steps li { display: grid; grid-template-columns: minmax(0,1fr); gap: .25rem; } .nw-tower ol.steps li > * { grid-column: 1; }
         .nw-chkres .sum { border-top: 1px solid rgba(148,163,184,.14); padding-top: .4rem; } .nw-chkres .ts { color: #64748b; font-size: 11px; }
@@ -4633,7 +4633,7 @@
                     ${t.clashes.length ? `<ul class="clash">${t.clashes.map(c => `<li class="${c.level}">${esc(c.a_name)} and ${esc(c.b_name)} ${c.gap < 0 ? `overlap by ${Math.round(-c.gap)} MHz` : `are only ${Math.round(c.gap)} MHz apart`}${c.where === 'near' ? ` (on ${esc(c.tower)}, nearby)` : ''}</li>`).join('')}</ul>` : ''}
                     ${mv.length ? `<ol class="steps">${mv.map(m => {
                         const fix = {kind: 'channel', radio: m.ap, name: m.name, params: {freq: m.to, width: m.width}};
-                        return `<li><span>${m.to ? `Move <b>${esc(m.name)}</b> ${m.from} → ${m.to} MHz (${m.width} MHz wide)${m.dfs ? ' — DFS channel' : ''}` : `${esc(m.name)}: ${esc(m.note || 'no free channel')}`}</span>${m.to && p.fix_enabled
+                        return `<li><span>${m.to ? `Move <b>${esc(m.name)}</b> ${m.from} → ${m.to} MHz (${m.width} MHz wide)${m.dfs ? ' — DFS channel' : ''}${m.checked ? ` <span class="ts">— ${esc(m.checked)}</span>` : ''}` : `${esc(m.name)}: ${esc(m.note || 'no free channel')}`}</span>${m.to && p.fix_enabled
                             ? `<span class="nw-chkrow"><button type="button" class="nw-chkbtn fix" data-nw-act="wifi-fix" data-fix="${esc(JSON.stringify(fix))}" title="Preview the move first — nothing is changed until you apply it">Move…</button></span><div class="nw-chkres nw-fixres" hidden aria-live="polite"></div>`
                             : (m.to ? '<span class="ts">Turn on Settings → Advanced → Wi-Fi fixes to apply this from here.</span>' : '')}</li>`;
                     }).join('')}</ol>` : ''}

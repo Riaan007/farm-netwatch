@@ -79,6 +79,42 @@ class Plan(unittest.TestCase):
         self.assertEqual(out["summary"]["clashes"], 1)               # the clash is still reported
         self.assertEqual(out["moves"], [])                            # but nothing is proposed blind
 
+    def test_tweespruit_a_move_respects_every_tower(self):
+        """Riaan, 2026-10-26: moving .201 (Hoepel Rock + Newburry) to 5230/40 would sit 5 MHz from
+        Silo's 5185/40 — Silo is 8.5 km from Newburry but joined to it by a link. Real channels + GPS."""
+        T = {"hoep": {"name": "Hoepel Rock", "kind": "tower", "lat": -29.113113, "lon": 27.176688},
+             "newb": {"name": "Newburry", "kind": "tower", "lat": -29.2528, "lon": 27.201783},
+             "silo": {"name": "Silo", "kind": "tower", "lat": -29.176574, "lon": 27.14919},
+             "haz": {"name": "Hazeldene - Link", "kind": "tower", "lat": -29.267595, "lon": 27.112272},
+             "beth": {"name": "Bethal", "kind": "tower", "lat": -29.088951, "lon": 27.206694}}
+        k = lambda n: "bb:00:00:00:%02x:%02x" % (n // 256, n % 256)       # noqa: E731
+        ap201, st201, ap213, st213, ap203, st203 = k(201), k(1201), k(213), k(1213), k(203), k(1203)
+        ap222, st222, ap221, st221, ap224, st224, ap212, st212, ap204, st204 = (
+            k(222), k(1222), k(221), k(1221), k(224), k(1224), k(212), k(1212), k(204), k(1204))
+        radios = {ap201: r("ap-ptp-ac", 5480, 40, st201), st201: r("sta-ptp-ac", 5480, 40, ap201),
+                  ap213: r("ap-ptp-ac", 5480, 20, st213), ap203: r("ap-ptp-ac", 5480, 20, st203),
+                  ap222: r("ap-ptp-ac", 5530, 40, st222), st222: r("sta-ptp-ac", 5530, 40, ap222),
+                  ap221: r("ap-ptmp-ac", 5185, 40, st221), ap224: r("ap-ptp-ac", 5800, 20, st224),
+                  st224: r("sta-ptp-ac", 5800, 20, ap224), ap212: r("ap-ptp-ac", 5700, 20, st212),
+                  ap204: r("ap-ptp-ac", 5180, 20, st204)}
+        group_of = {ap201: "hoep", st201: "newb", ap213: "hoep", ap203: "newb", ap222: "silo", st222: "newb",
+                    ap221: "silo", ap224: "silo", st224: "haz", ap212: "hoep", st212: "beth", ap204: "haz"}
+        out = F.analyse(T, group_of, radios, devs(*radios, st213, st203, st221, st212, st204))
+        newb = next(t for t in out["towers"] if t["name"] == "Newburry")
+        self.assertIn("Silo", newb["near"])                        # joined by the .222 link, 8.5 km apart
+        moves = {m["ap"]: m for m in out["moves"]}
+        self.assertTrue(moves)
+        self.assertFalse([m for m in moves.values() if m["to"] == 5230 and m["width"] == 40])
+        final = {ap: F._band(moves[ap]["to"], moves[ap]["width"]) if ap in moves else F._band(f, w)
+                 for ap, f, w in ((ap201, 5480, 40), (ap213, 5480, 20), (ap203, 5480, 20), (ap222, 5530, 40),
+                                  (ap221, 5185, 40), (ap224, 5800, 20), (ap212, 5700, 20), (ap204, 5180, 20))}
+        for ap, m in moves.items():                                 # every move is clear of EVERY tower
+            self.assertTrue(m["to"], m)
+            self.assertIn("every tower", m["checked"])
+            for other, band in final.items():
+                if other != ap:
+                    self.assertGreaterEqual(F._gap(final[ap], band), F.GUARD_MHZ, (m, other, band))
+
     def test_candidates_stay_inside_the_band(self):
         c = F.candidates(80)
         self.assertTrue(all(any(lo <= x - 40 and x + 40 <= hi for lo, hi in F.RANGES) for x in c))

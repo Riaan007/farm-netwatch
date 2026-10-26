@@ -19,8 +19,9 @@ import math
 # airOS ZA country table); 5470-5725 is DFS (radar check before transmitting).
 RANGES = ((5150, 5350), (5470, 5725), (5725, 5850))
 DFS = ((5250, 5350), (5470, 5725))
-GUARD_MHZ = 10        # same tower: edge-to-edge gap wanted between two links
-NEAR_KM = 5.0         # towers closer than this are planned together (overlap only)
+GUARD_MHZ = 10        # edge-to-edge gap wanted between two links (a move keeps it to EVERY tower)
+NEAR_KM = 5.0         # towers this close, joined by a radio link, or with no GPS are "near":
+                      # their overlaps and close calls are reported as clashes
 STEP = 5
 
 
@@ -116,7 +117,20 @@ def analyse(groups, group_of, radios, devices, names=None):
     on = {gid: sorted({link_of[k] for k, g in group_of.items() if g == gid and k in link_of}) for gid in towers}
     unknown_here = {gid: [k for k, g in group_of.items() if g == gid and k in radios and k not in link_of]
                     for gid in towers}
-    near = {gid: [o for o in towers if o != gid and (_km(towers[gid], towers[o]) or 99) <= NEAR_KM] for gid in towers}
+    # A radio link between two towers points their dishes at each other — near at any distance.
+    tower_of = {}
+    for k, g in group_of.items():
+        if g in towers:
+            tower_of.setdefault(k, set()).add(g)
+    joined = set()
+    for ap, L in links.items():
+        ts = set().union(*(tower_of.get(m, set()) for m in L["members"]))
+        joined |= {(a, b) for a in ts for b in ts if a != b}
+
+    def is_near(a, b):
+        km = _km(towers[a], towers[b])
+        return (a, b) in joined or km is None or km <= NEAR_KM
+    near = {gid: [o for o in towers if o != gid and is_near(gid, o)] for gid in towers}
 
     def clashes(gid, band_of):
         out = []
@@ -129,8 +143,13 @@ def analyse(groups, group_of, radios, devices, names=None):
         for o in near[gid]:
             for a in here:
                 for b in on[o]:
-                    if band_of.get(b) and a != b and _gap(band_of[a], band_of[b]) < 0:
-                        out.append({"a": a, "b": b, "gap": _gap(band_of[a], band_of[b]), "level": "warn",
+                    if not band_of.get(b) or a == b or b in here:
+                        continue
+                    if any(a in on[x] and b in on[x] for x in towers):
+                        continue                    # already a same-tower clash where both are
+                    g = _gap(band_of[a], band_of[b])
+                    if g < GUARD_MHZ:
+                        out.append({"a": a, "b": b, "gap": g, "level": "warn" if g < 0 else "info",
                                     "where": "near", "tower": towers[o].get("name") or o})
         return out
 
@@ -138,37 +157,45 @@ def analyse(groups, group_of, radios, devices, names=None):
     # Moves: greedy, worst-clashing first; only links whose AP Netwatch can read.
     band_plan = dict(band_now)
     moves = []
-    order = sorted(links, key=lambda ap: -sum(1 for gid in towers for c in clashes(gid, band_plan) if ap in (c["a"], c["b"])))
+    # Worst-clashing first; on a tie move the link that disturbs less: fewer radios on it, then narrower.
+    order = sorted(links, key=lambda ap: (-sum(1 for gid in towers for c in clashes(gid, band_plan) if ap in (c["a"], c["b"])),
+                                          len(links[ap]["members"]), links[ap]["width"] or 0))
     for ap in order:
         L = links[ap]
         if not L["freq"] or not (radios.get(ap) or {}).get("ok"):
             continue
         mine = [gid for gid in towers if ap in on[gid]]
-        if not any(ap in (c["a"], c["b"]) for gid in mine for c in clashes(gid, band_plan)):
+        if not any(ap in (c["a"], c["b"]) and c["level"] != "info" for gid in mine for c in clashes(gid, band_plan)):
             continue
-        neighbours = {x for gid in mine for x in on[gid] + [y for o in near[gid] for y in on[o]]} - {ap}
-        best = None
-        for c in candidates(L["width"]):
-            b = _band(c, L["width"])
-            ok = True
-            for x in neighbours:
-                if not band_plan.get(x):
+        everywhere = {x for gid in towers for x in on[gid]} - {ap}
+        close_by = {x for gid in mine for x in on[gid] + [y for o in near[gid] for y in on[o]]} - {ap}
+
+        def pick(strict):
+            """strict: GUARD_MHZ clear of every link on every tower of the site.
+            Fallback: GUARD_MHZ to this tower and its near towers, no overlap elsewhere."""
+            best = None
+            for c in candidates(L["width"]):
+                b = _band(c, L["width"])
+                if any(band_plan.get(x) and _gap(b, band_plan[x]) < (GUARD_MHZ if strict or x in close_by else 0)
+                       for x in everywhere):
                     continue
-                same = any(x in on[gid] for gid in mine)
-                if _gap(b, band_plan[x]) < (GUARD_MHZ if same else 0):
-                    ok = False
-                    break
-            if not ok:
-                continue
-            score = (is_dfs(*b), abs(c - L["freq"]))     # prefer non-DFS, then the smallest move
-            if best is None or score < best[0]:
-                best = (score, c)
+                score = (is_dfs(*b), abs(c - L["freq"]))     # prefer non-DFS, then the smallest move
+                if best is None or score < best[0]:
+                    best = (score, c)
+            return best
+        best = pick(True)
+        relaxed = False
+        if not best:
+            best, relaxed = pick(False), True
         if best:
             c = best[1]
             band_plan[ap] = _band(c, L["width"])
             moves.append({"ap": ap, "name": name(ap), "from": L["freq"], "to": c, "width": L["width"],
                           "dfs": is_dfs(*band_plan[ap]),
-                          "towers": [towers[g].get("name") or g for g in mine]})
+                          "towers": [towers[g].get("name") or g for g in mine],
+                          "checked": ("clear of every link on every tower" if not relaxed else
+                                      "clear of this tower and the towers near it; it overlaps no other tower, "
+                                      "but is closer than " + str(GUARD_MHZ) + " MHz to one far away")})
         else:
             moves.append({"ap": ap, "name": name(ap), "from": L["freq"], "to": None, "width": L["width"],
                           "dfs": False, "towers": [towers[g].get("name") or g for g in mine],

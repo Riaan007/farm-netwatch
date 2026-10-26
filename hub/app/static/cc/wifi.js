@@ -200,7 +200,7 @@
         ${t.clashes.length ? `<ul class="clash">${t.clashes.map((c) => `<li class="${c.level}">${esc(c.a_name)} and ${esc(c.b_name)} ${c.gap < 0 ? `overlap by ${Math.round(-c.gap)} MHz` : `are only ${Math.round(c.gap)} MHz apart`}${c.where === "near" ? ` (on ${esc(c.tower)}, nearby)` : ""}</li>`).join("")}</ul>` : ""}
         ${mv.length ? `<ol class="mv">${mv.map((m) => {
           const fix = { kind: "channel", radio: m.ap, name: m.name, params: { freq: m.to, width: m.width } };
-          return `<li><span>${m.to ? `Move <b>${esc(m.name)}</b> ${m.from} → ${m.to} MHz (${m.width} MHz wide)${m.dfs ? " — DFS channel" : ""}` : `${esc(m.name)}: ${esc(m.note || "no free channel")}`}</span>${m.to && p.fix_enabled
+          return `<li><span>${m.to ? `Move <b>${esc(m.name)}</b> ${m.from} → ${m.to} MHz (${m.width} MHz wide)${m.dfs ? " — DFS channel" : ""}${m.checked ? ` <span class="note">— ${esc(m.checked)}</span>` : ""}` : `${esc(m.name)}: ${esc(m.note || "no free channel")}`}</span>${m.to && p.fix_enabled
             ? `<span class="wf-chkrow"><button type="button" class="wf-chkbtn fix" data-wf-fix="${esc(JSON.stringify(fix))}" title="Preview the move first — nothing is changed until you apply it">Move…</button></span><div class="wf-chkres wf-fixres" hidden aria-live="polite"></div>`
             : m.to ? `<span class="note">Turn on the site's Settings → Advanced → Wi-Fi fixes to apply this from here.</span>` : ""}</li>`;
         }).join("")}</ol>` : ""}</div>`;
