@@ -224,6 +224,8 @@
         : `<ul class="alist">${down.slice(0, 6).map((d) => `<li data-key="${esc(d.key)}" style="cursor:pointer"><span class="sev bad">↓</span><div style="min-width:0"><div class="t">${esc(CC.devName(d))}</div><div class="d">${CC.cat(d).icon} ${esc(CC.cat(d).label)} · <span class="mono">${esc(d.ip || "no IP")}</span> · last seen ${CC.ago(d.last_seen)}</div></div><span class="b bad nodot">${esc(CC.downFor(d))}</span></li>`).join("")}</ul>
           ${down.length > 6 ? `<a class="more" href="#/site/${enc(s.id)}/devices?list=monitored&state=offline" style="text-align:center;text-decoration:none">All ${down.length} offline</a>` : ""}
           <div class="pbd note" style="border-top:1px solid var(--line)">${mon.length - down.length} other monitored device${mon.length - down.length === 1 ? " is" : "s are"} online.</div>`;
+      const kumaNote = devs && CC.kumaWaitNote(mon);
+      if (kumaNote) $("#so-mon").insertAdjacentHTML("beforeend", `<div class="pbd note" style="border-top:1px solid var(--line)"><span class="b warn nodot">⏳ Uptime Kuma</span> ${esc(kumaNote)}</div>`);
       $("#so-types").innerHTML = !devs ? `<div class="skel" style="height:60px"></div>` : `<div class="stats">${CC.GROUPS.map(([g, label]) => {
         const ds = devs.filter((d) => CC.cat(d).group === g && CC.devState(d) !== "quiet");
         if (!ds.length) return "";
@@ -571,9 +573,16 @@
     const drawMon = () => {
       $("#dd-mon-row", dlg).classList.toggle("on", !!d.watch);
       $("#dd-mon", dlg).checked = !!d.watch;
-      $("#dd-mon-badge", dlg).hidden = !d.watch;
+      // a device switched on but not in Kuma yet is never shown as plainly "Monitored"
+      const wait = CC.kumaWait(d), badge = $("#dd-mon-badge", dlg);
+      badge.hidden = !d.watch;
+      badge.className = `b ${wait ? "warn" : "info"} nodot`;
+      badge.textContent = wait ? `⏳ ${wait.short}` : "🔔 Monitored";
+      badge.title = wait ? wait.long : "";
+      const kuma = wait ? ` ${wait.long}` : d.kuma_state === "push" ? " Uptime Kuma gets its status after every scan."
+        : d.kuma_state === "on" || (!("kuma_state" in d) && d.has_kuma && !d.kuma_paused) ? " Uptime Kuma pings it every minute." : "";
       $("#dd-mon-sub", dlg).textContent = d.watch
-        ? `Listed first with its online/offline state; the hub alerts when it goes offline or comes back.${d.has_kuma ? " Uptime Kuma pings it every minute." : ""}`
+        ? `Listed first with its online/offline state; the hub alerts when it goes offline or comes back.${kuma}`
         : "Listed under Other devices, and the hub does not alert on it. Switch on to watch it.";
     };
     drawMon();
@@ -584,7 +593,8 @@
         const res = await CC.setMonitored(siteId, on ? [key] : [], on ? [] : [key]);
         if ((res.failed || []).length || (res.unknown || []).length) throw new Error("the site did not accept the change");
         d.watch = on;
-        CC.toast(`${CC.devName(d)} ${on ? "is now monitored" : "is no longer monitored"}`, "ok");
+        const wait = CC.kumaWait(d);
+        CC.toast(`${CC.devName(d)} ${!on ? "is no longer monitored" : wait ? "is switched on — not in Uptime Kuma yet" : "is now monitored"}`, "ok");
       } catch (err) { CC.toast(`Not changed: ${err.message}`, "bad"); }
       e.target.disabled = false; row.classList.remove("busy");
       drawMon();

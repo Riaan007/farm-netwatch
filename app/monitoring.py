@@ -28,6 +28,13 @@ monitor deleted or paused/resumed in Kuma's own UI is noticed and put right.
 Only an explicit "off" pauses a monitor — a device nobody has switched either
 way (e.g. from an older backup) keeps its monitor running.
 
+The switch can be on before Kuma is set up (no admin login saved yet, or Kuma
+refusing it). Such a device is "waiting for Kuma", never shown as pinged by
+Kuma (kuma_state). While Kuma refuses Netwatch it is asked again after every
+scan, and saving the Kuma login in Settings (kuma_settings_changed) follows up
+every switched-on device at once: their monitors are made without anyone
+switching them again.
+
 Every switch is written to the device's history (event type "monitoring",
 detail {monitored, by}) so "who stopped watching the gate camera?" has an answer.
 
@@ -68,6 +75,8 @@ _rename_first = set()   # devices just renamed: their monitor is renamed before 
 _worker = None          # the running drain thread, or None (all four guarded by _lock)
 _tried = {}             # key -> last Kuma attempt (reconcile's retry spacing)
 _last_sync = 0.0
+_kuma = {"ok": None, "error": ""}   # could Netwatch log in to Kuma last time? (None: not tried; _lock)
+_errors = {}            # key -> why Kuma last refused to make or resume its monitor
 
 
 def is_monitored(reg):
@@ -85,6 +94,86 @@ def kuma_login():
 
 def kuma_follows():
     return kuma_login() is not None
+
+
+def _note_kuma(ok, error=""):
+    """Record whether Netwatch could log in to Kuma just now. Returns True when
+    it could and had not been able to before (Kuma just set up, or back)."""
+    with _lock:
+        back = ok and _kuma["ok"] is not True
+        _kuma.update(ok=bool(ok), error="" if ok else (error or "could not read Uptime Kuma"))
+    return back
+
+
+def _kuma_refused():
+    with _lock:
+        return _kuma["ok"] is False
+
+
+def kuma_status():
+    """Kuma as Netwatch last found it: {follows, ok, error}. follows = the
+    admin login is saved here; ok = it worked last time (None: not tried yet)."""
+    follows = kuma_follows()
+    with _lock:
+        k = dict(_kuma)
+    return {"follows": follows, "ok": k["ok"] if follows else None, "error": k["error"] if follows else ""}
+
+
+def kuma_state(key, reg, status):
+    """(state, why): where the device's Uptime Kuma monitor really stands, so
+    the UI never says Kuma checks a device it has no monitor for. `status` is
+    kuma_status(), read once per page.
+      "on"        Kuma has its monitor and checks it
+      "push"      a hand-made push monitor gets its status after every scan
+      "paused"    not monitored; its monitor is paused (history kept)
+      "setup"     switched on, but Kuma's admin login is not saved here: nothing
+                  is in Kuma yet; it is made once the login is saved
+      "no_login"  switched on, but Kuma can't be reached or refuses the saved
+                  login (`why`); asked again after every scan
+      "pending"   switched on and Kuma answers: its monitor is being made or resumed
+      "failed"    switched on, but Kuma would not make or resume it (`why`);
+                  tried again every RETRY_S
+      ""          not switched on and no monitor"""
+    reg = reg if isinstance(reg, dict) else {}
+    mid = reg.get("kuma_monitor_id")
+    if mid and not reg.get("kuma_paused"):
+        return "on", ""
+    if not mid and reg.get("kuma_token"):
+        return "push", ""
+    if not is_monitored(reg):
+        return ("paused" if mid else ""), ""
+    if not status["follows"]:
+        return "setup", ""
+    if status["ok"] is False:
+        return "no_login", status["error"]
+    if key in _errors:
+        return "failed", _errors[key]
+    return "pending", ""
+
+
+def _waiting(scanner):
+    """Every key whose Kuma monitor is out of step with its switch, whenever tried."""
+    return {k for k, reg in list(scanner.registry.items())
+            if isinstance(reg, dict) and _out_of_step(scanner, k, reg)}
+
+
+def _forget_kuma_notes():
+    with _lock:
+        _kuma.update(ok=None, error="")
+    _tried.clear()
+    _errors.clear()
+
+
+def kuma_settings_changed(scanner):
+    """Kuma's URL or admin login was saved in Settings: drop what the old
+    settings got from Kuma and follow every device up now — those switched on
+    before Kuma was set up get their monitors without being switched again."""
+    global _last_sync
+    _forget_kuma_notes()
+    if not kuma_follows():
+        return
+    _last_sync = time.time()
+    follow_kuma(scanner, sorted(_waiting(scanner)), sync=True)
 
 
 def _set_live(scanner, key, on):
@@ -155,6 +244,7 @@ def set_many(scanner, on=(), off=(), by=""):
             dirty = True
         if was != want:
             changed.append({"key": key, "monitored": want})
+            _errors.pop(key, None)      # an old refusal says nothing about this switch
         else:
             unchanged.append(key)
     if dirty:
@@ -213,6 +303,8 @@ def _drain(scanner):
             renames = []
             if sync:
                 keys |= _sync(scanner, renames)
+                if _kuma_refused():
+                    continue            # every other call would be refused too; reconcile asks again
             if keys:
                 _apply(scanner, keys)
             if renames:                 # after the on/off work: a name can wait, a switch shouldn't
@@ -254,11 +346,16 @@ def _sync(scanner, renames=None):
     and a monitor Netwatch made whose reply was lost is adopted. With a
     `renames` list, the monitors whose device was renamed are appended to it
     (see _plan_renames). Returns the keys this changed — their follow-up runs
-    straight away."""
+    straight away. When Kuma lets Netwatch in for the first time (just set up,
+    or back after refusing it), that is every device waiting for Kuma."""
     login = kuma_login()
-    mons = kuma.monitor_list(*login) if login else None
+    why = {}
+    mons = kuma.monitor_list(*login, why=why) if login else None
     if mons is None:
+        if login:
+            _note_kuma(False, why.get("error"))
         return set()
+    back = _note_kuma(True)
     states = {m["id"]: m["active"] for m in mons}
     changed = set()
     for key, reg in list(scanner.registry.items()):
@@ -289,7 +386,7 @@ def _sync(scanner, renames=None):
     noted = renames is not None and _plan_renames(scanner, mons, renames)
     if changed or noted:
         scanner.save_registry()
-    return changed
+    return changed | _waiting(scanner) if back else changed
 
 
 def _plan_renames(scanner, mons, out):
@@ -396,15 +493,20 @@ def _apply(scanner, keys):
             toggles.append((reg["kuma_monitor_id"], need == "resume", key, reg))
         elif need == "create":
             creates.append((key, reg))
-    dirty = False
+    dirty = refused = False
     if toggles:
         res = kuma.set_active_many(base, user, pw, [(mid, active) for mid, active, _k, _r in toggles])
         for mid, active, key, reg in toggles:
             r = res.get(mid) or {}
+            if r.get("down"):
+                _refused(key, r)
+                refused = True
+                continue
             reg = _current_entry(scanner, key, reg)
             if reg is None:
                 continue                # forgotten meanwhile (Forget deletes the monitor)
             if r.get("ok"):
+                _errors.pop(key, None)
                 if active:
                     reg.pop("kuma_paused", None)
                 else:
@@ -418,16 +520,33 @@ def _apply(scanner, keys):
                 if active and not reg.get("kuma_token"):
                     creates.append((key, reg))
             else:
+                _errors[key] = r.get("error") or "Kuma did not say why"
                 print(f"[monitoring] kuma {'resume' if active else 'pause'} #{mid} failed: "
                       f"{r.get('error')}", flush=True)
+        if not refused:
+            _note_kuma(True)            # it let Netwatch in, whatever it said about each monitor
+    if creates and refused:
+        for key, _reg in creates:       # Kuma just refused the toggles: it would refuse these too
+            _tried.pop(key, None)
+        creates = []
     if creates:
         regs = dict(creates)
         with scanner.lock:
             devs = {k: dict(scanner.devices[k]) for k in regs if k in scanner.devices}
-        # a monitor made earlier whose reply was lost carries our marker: adopt it
+        # a monitor made earlier whose reply was lost carries our marker: adopt it.
+        # Kuma's list can't be read (not set up yet, login refused, down): making
+        # them now would be refused too, or could duplicate one whose reply was lost.
+        why = {}
+        listing = kuma.monitor_list(base, user, pw, why=why)
+        if listing is None:
+            for key in regs:
+                _refused(key, {"error": why.get("error")})
+            listing, devs = [], {}
+        else:
+            _note_kuma(True)
         owned = _owned_ids(scanner)
         marked = {}
-        for mon in kuma.monitor_list(base, user, pw) or []:
+        for mon in listing:
             key = _marked_key(mon)
             if key in devs and mon["id"] not in owned:
                 marked.setdefault(key, mon)
@@ -437,9 +556,14 @@ def _apply(scanner, keys):
                  for k, d in devs.items() if d.get("ip") and k not in marked]
         res.update(kuma.provision_many(base, user, pw, items, 60) if items else {})
         for key, r in res.items():
+            if r.get("down"):
+                _refused(key, r)
+                continue
             if not r.get("ok"):
+                _errors[key] = r.get("error") or "Kuma did not say why"
                 print(f"[monitoring] kuma create for {key} failed: {r.get('error')}", flush=True)
                 continue
+            _errors.pop(key, None)
             reg = _current_entry(scanner, key, regs[key])
             if reg is None:
                 # forgotten while its monitor was being made: don't leave an orphan
@@ -463,19 +587,31 @@ def _apply(scanner, keys):
         scanner.save_registry()
 
 
+def _refused(key, r):
+    """Kuma itself turned this key's call away (unreachable, or the login was
+    refused — e.g. its admin is not created yet): noted for the whole site, and
+    the key is not spaced out by RETRY_S, so it goes as soon as Kuma answers."""
+    _note_kuma(False, r.get("error"))
+    _tried.pop(key, None)
+
+
 def reconcile(scanner):
     """After a scan: now and then have the worker read Kuma's real state, and
-    queue devices whose monitor is out of step, each at most once per RETRY_S."""
+    queue devices whose monitor is out of step, each at most once per RETRY_S.
+    While Kuma refuses Netwatch (e.g. its admin is not created yet) only the
+    read-back is tried, after every scan; once it gets in, every device
+    waiting for Kuma follows (_sync)."""
     global _last_sync
     if not kuma_follows():
         return
     now = time.time()
-    sync = now - _last_sync >= SYNC_S
+    refused = _kuma_refused()
+    sync = refused or now - _last_sync >= SYNC_S
     if sync:
         _last_sync = now
-    due = [key for key, reg in list(scanner.registry.items())
-           if isinstance(reg, dict) and now - _tried.get(key, 0) > RETRY_S
-           and _out_of_step(scanner, key, reg)]
+    due = [] if refused else [key for key, reg in list(scanner.registry.items())
+                              if isinstance(reg, dict) and now - _tried.get(key, 0) > RETRY_S
+                              and _out_of_step(scanner, key, reg)]
     if due or sync:
         follow_kuma(scanner, due, sync=sync)
 
@@ -485,7 +621,7 @@ def after_restore(scanner):
     Kuma exactly (a pause or resume made after the backup): read Kuma now."""
     global _last_sync
     seed(scanner)
-    _tried.clear()
+    _forget_kuma_notes()                # the restore may bring other Kuma settings too
     _last_sync = time.time()
     if kuma_follows():
         follow_kuma(scanner, [], sync=True)
@@ -581,10 +717,15 @@ def remove_unowned(scanner, ids):
 
 
 def summary(scanner):
-    """Counts for the page header / hub: monitored, how many up and down."""
+    """Counts for the page header / hub: monitored (switched on), how many up
+    and down, and how many of them Kuma really checks (in_kuma) or is still to
+    get (kuma_waiting: Kuma not set up, refusing Netwatch, or being made)."""
     with scanner.lock:
         live = {k: bool(d.get("online")) for k, d in scanner.devices.items()}
     mon = [k for k in live if is_monitored(scanner.registry.get(k))]
     up = sum(1 for k in mon if live[k])
+    st = kuma_status()
+    in_kuma = sum(1 for k in mon if kuma_state(k, scanner.registry.get(k), st)[0] in ("on", "push"))
     return {"monitored": len(mon), "online": up, "offline": len(mon) - up,
-            "kuma_follows": kuma_follows()}
+            "kuma_follows": st["follows"], "kuma_ok": st["ok"], "kuma_error": st["error"],
+            "in_kuma": in_kuma, "kuma_waiting": len(mon) - in_kuma}

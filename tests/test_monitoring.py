@@ -47,7 +47,7 @@ class Base(unittest.TestCase):
         self.real_follow = monitoring.follow_kuma
         self.follow = mock.patch.object(monitoring, "follow_kuma").start()
         self.addCleanup(mock.patch.stopall)
-        monitoring._tried.clear()
+        monitoring._forget_kuma_notes()             # _tried, and what Kuma said last time
         monitoring._last_sync = time.time()         # Kuma read-back is tested on its own
 
 
@@ -587,6 +587,162 @@ class Api(Base):
         self.assertEqual(j["offline_after"], config.load()["alerts"]["offline_after"])
         j = self.c.get("/api/monitoring").get_json()
         self.assertEqual((j["monitored"], j["online"], j["offline"]), (1, 1, 0))
+
+
+class KumaWaiting(Base):
+    """Devices switched on before Kuma is set up: never shown as in Kuma, and
+    made in Kuma once it is set up, without being switched again."""
+
+    def setUp(self):
+        super().setUp()
+        if os.path.exists(siteauth.AUTH_PATH):
+            os.remove(siteauth.AUTH_PATH)
+        siteauth.set_hub_key(KEY)
+        self.c = server.app.test_client()
+        self.prov = mock.patch.object(monitoring.kuma, "provision_many",
+                                      side_effect=lambda b, u, p, items, i: {k: {"ok": True, "monitor_id": 60 + n}
+                                                                             for n, (k, *_rest) in enumerate(items)}).start()
+        self.act = mock.patch.object(monitoring.kuma, "set_active_many",
+                                     side_effect=lambda b, u, p, items: {m: {"ok": True} for m, _ in items}).start()
+        self.listing = mock.patch.object(monitoring.kuma, "monitor_list", return_value=[]).start()
+        self.s.devices = {CAM: device(CAM, "10.0.0.2", name="Gate"), NVR: device(NVR, "10.0.0.3"),
+                          PHONE: device(PHONE, "10.0.0.4")}
+        self.s.registry = {CAM: {"watch": True}, NVR: {"watch": True}, PHONE: {}}
+        self.addCleanup(self.forget_kuma_login)
+
+    @staticmethod
+    def forget_kuma_login():
+        creds.set_("@kuma")                                     # an empty save clears it
+        config.update({"integrations": {"kuma": {"username": ""}}})
+
+    def feed(self):
+        return {d["key"]: d for d in self.c.get("/api/devices").get_json()["devices"]}
+
+    def run_worker(self):
+        """Let the real worker drain what was queued, then wait for it to stop."""
+        for _ in range(100):
+            if monitoring._worker is None:
+                return
+            time.sleep(0.02)
+        self.fail("the Kuma worker did not finish")
+
+    def test_switched_on_before_kuma_is_set_up_says_waiting_not_in_kuma(self):
+        self.assertIsNone(monitoring.kuma_login())
+        devs = self.feed()
+        self.assertTrue(devs[CAM]["watch"])                                    # the switch itself stays on
+        self.assertEqual((devs[CAM]["kuma_state"], devs[CAM]["has_kuma"]), ("setup", False))
+        self.assertEqual(devs[PHONE]["kuma_state"], "")
+        j = self.c.get("/api/monitoring").get_json()
+        self.assertEqual((j["monitored"], j["in_kuma"], j["kuma_waiting"], j["kuma_follows"]), (2, 0, 2, False))
+        self.assertEqual(self.c.get(f"/api/devices/{CAM}/kuma", environ_base=HUB).get_json()["state"], "setup")
+
+    def test_saving_the_kuma_login_makes_the_waiting_monitors(self):
+        self.s.registry[PHONE]["watch"] = False
+        with mock.patch.object(monitoring, "follow_kuma", self.real_follow):
+            r = self.c.post("/api/setup", json={"kuma_username": "admin", "kuma_password": "pw"},
+                            environ_base=HUB, headers={siteauth.HEADER: KEY})
+            self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+            self.run_worker()
+        self.assertEqual(sorted(i[0] for i in self.prov.call_args[0][3]), sorted([CAM, NVR]))
+        self.assertEqual(self.prov.call_count, 1)
+        self.assertEqual({self.s.registry[k]["kuma_monitor_id"] for k in (CAM, NVR)}, {60, 61})
+        self.assertNotIn("kuma_monitor_id", self.s.registry[PHONE])
+        self.assertEqual({k: d["kuma_state"] for k, d in self.feed().items()}, {CAM: "on", NVR: "on", PHONE: ""})
+        j = self.c.get("/api/monitoring").get_json()
+        self.assertEqual((j["in_kuma"], j["kuma_waiting"], j["kuma_ok"]), (2, 0, True))
+
+    def test_other_settings_do_not_touch_kuma(self):
+        with mock.patch.object(monitoring, "kuma_settings_changed") as changed:
+            self.c.post("/api/setup", json={"interval": config.load()["scan"]["interval_min"]},
+                        environ_base=HUB, headers={siteauth.HEADER: KEY})
+            changed.assert_not_called()
+            # re-saving the same login (e.g. once Kuma's admin is created) does follow up
+            for _ in range(2):
+                self.c.post("/api/setup", json={"kuma_username": "admin", "kuma_password": "pw"},
+                            environ_base=HUB, headers={siteauth.HEADER: KEY})
+            self.assertEqual(changed.call_count, 2)
+
+    def test_kuma_refusing_the_login_is_asked_again_every_scan_then_catches_up(self):
+        mock.patch.object(monitoring, "kuma_login", return_value=LOGIN).start()
+
+        def refused(*a, why=None, **kw):
+            why["error"] = "Incorrect username or password."
+            return None
+        self.listing.side_effect = refused                   # login saved, Kuma's admin not created yet
+        monitoring._last_sync = 0
+        monitoring.reconcile(self.s)
+        self.follow.assert_called_once()                     # sync + both due keys
+        _, keys = self.follow.call_args[0]
+        self.assertEqual(sorted(keys), sorted([CAM, NVR]))
+        monitoring._pending.update(keys)
+        with mock.patch.object(monitoring, "follow_kuma", self.real_follow):
+            self.real_follow(self.s, [], sync=True)
+            self.run_worker()
+        self.prov.assert_not_called()                        # nothing tried that Kuma would refuse
+        # one refused login per pass, not one per step: Kuma's 20 logins/min are
+        # shared with the operator's browser
+        self.assertEqual(self.listing.call_count, 1)
+        self.assertEqual(monitoring.kuma_state(CAM, self.s.registry[CAM], monitoring.kuma_status()),
+                         ("no_login", "Incorrect username or password."))
+        self.assertEqual(self.feed()[CAM]["kuma_why"], "Incorrect username or password.")
+        # the very next scan asks again (not after SYNC_S), with nothing else queued
+        self.follow.reset_mock()
+        monitoring.reconcile(self.s)
+        self.follow.assert_called_once_with(self.s, [], sync=True)
+        # the admin is created in Kuma: the read-back gets in and the waiting devices follow
+        self.listing.side_effect = None
+        self.listing.return_value = []
+        with mock.patch.object(monitoring, "follow_kuma", self.real_follow):
+            self.real_follow(self.s, [], sync=True)
+            self.run_worker()
+        self.assertEqual(sorted(i[0] for i in self.prov.call_args[0][3]), sorted([CAM, NVR]))
+        self.assertEqual(monitoring.kuma_state(CAM, self.s.registry[CAM], monitoring.kuma_status())[0], "on")
+
+    def test_a_refused_switch_is_not_spaced_out_by_the_retry_wait(self):
+        mock.patch.object(monitoring, "kuma_login", return_value=LOGIN).start()
+        self.prov.side_effect = lambda b, u, p, items, i: {k: {"ok": False, "error": "Incorrect username or password.",
+                                                               "down": True} for k, *_ in items}
+        monitoring._apply(self.s, {CAM})
+        self.assertNotIn(CAM, monitoring._tried)
+        self.assertTrue(monitoring._kuma_refused())
+        self.assertNotIn("kuma_monitor_id", self.s.registry[CAM])
+        # Kuma's list unreadable: nothing is made (a lost reply couldn't be adopted either)
+        monitoring._forget_kuma_notes()
+        self.prov.reset_mock()
+        self.listing.return_value = None
+        monitoring._apply(self.s, {CAM})
+        self.prov.assert_not_called()
+        self.assertTrue(monitoring._kuma_refused())
+        self.assertNotIn(CAM, monitoring._tried)
+
+    def test_a_monitor_kuma_will_not_make_says_why_and_waits(self):
+        mock.patch.object(monitoring, "kuma_login", return_value=LOGIN).start()
+        self.prov.side_effect = lambda b, u, p, items, i: {k: {"ok": False, "error": "Hostname is invalid"} for k, *_ in items}
+        monitoring._apply(self.s, {CAM})
+        st = monitoring.kuma_status()
+        self.assertEqual(monitoring.kuma_state(CAM, self.s.registry[CAM], st), ("failed", "Hostname is invalid"))
+        self.assertEqual(monitoring.kuma_state(NVR, self.s.registry[NVR], st), ("pending", ""))
+        self.assertIn(CAM, monitoring._tried)                # Kuma answered: the usual retry wait
+        monitoring.set_many(self.s, off=[CAM])
+        monitoring.set_many(self.s, on=[CAM])
+        self.assertEqual(monitoring.kuma_state(CAM, self.s.registry[CAM], monitoring.kuma_status())[0], "pending")
+
+    def test_states_say_only_what_kuma_has(self):
+        st = {"follows": True, "ok": True, "error": ""}
+        cases = [({"watch": True, "kuma_monitor_id": 3}, "on"),
+                 ({"kuma_monitor_id": 3}, "on"),                                  # nobody switched it: still checked
+                 ({"watch": True, "kuma_monitor_id": 3, "kuma_paused": True}, "pending"),   # to be resumed
+                 ({"watch": False, "kuma_monitor_id": 3, "kuma_paused": True}, "paused"),
+                 ({"watch": True, "kuma_token": "t"}, "push"),
+                 ({"watch": True, "kuma_monitor_id": 3, "kuma_token": "old"}, "on"),
+                 ({"watch": True}, "pending"),
+                 ({"watch": False}, ""), ({}, "")]
+        for reg, want in cases:
+            self.assertEqual(monitoring.kuma_state(CAM, reg, st)[0], want, reg)
+        self.assertEqual(monitoring.kuma_state(CAM, {"watch": True, "kuma_monitor_id": 3, "kuma_paused": True},
+                                               dict(st, follows=False))[0], "setup")
+        self.assertEqual(monitoring.kuma_state(CAM, {"watch": True}, dict(st, ok=False, error="x")), ("no_login", "x"))
+        self.assertEqual(monitoring.kuma_state(CAM, {"watch": True, "kuma_monitor_id": 3}, dict(st, ok=False))[0], "on")
 
 
 class Restore(Base):

@@ -351,20 +351,51 @@
     const j = await CC.api(`/api/hub/sites/${encodeURIComponent(siteId)}/monitoring`, { method: "POST", body: { monitor, stop }, timeout: 180000 });
     const bad = new Set([...(j.unknown || []), ...(j.failed || [])]);
     const byKey = new Map((S.devices[siteId] || []).map((d) => [d.key, d]));
-    monitor.forEach((k) => { if (!bad.has(k) && byKey.has(k)) byKey.get(k).watch = true; });
+    // until the next device poll, what Kuma has for a device just switched on — the site's summary says
+    const sum = j.summary || {}, wait = sum.kuma_follows === false ? "setup" : sum.kuma_ok === false ? "no_login" : "pending";
+    monitor.forEach((k) => {
+      const d = byKey.get(k);
+      if (bad.has(k) || !d) return;
+      d.watch = true;
+      if ("kuma_state" in d && !["on", "push"].includes(d.kuma_state)) Object.assign(d, { kuma_state: wait, kuma_why: wait === "no_login" ? sum.kuma_error || "" : "" });
+    });
     stop.forEach((k) => { if (!bad.has(k) && byKey.has(k)) byKey.get(k).watch = false; });
     emit();
     return j;
   };
   /** A site whose Netwatch predates the Monitored list (its device feed has no kuma_paused). */
   CC.siteLegacy = (id) => { const d = (S.devices[id] || [])[0]; return !!d && !("kuma_paused" in d); };
+  /** A monitored device Uptime Kuma does not check (yet), from the site's kuma_state
+   *  (app/monitoring.py kuma_state): {short, long}, else null — also for sites too old
+   *  to say. The hub never says Kuma pings a device it has no monitor for. */
+  CC.kumaWait = (d) => {
+    if (!d || !d.watch) return null;
+    const why = d.kuma_why ? ` (${d.kuma_why})` : "";
+    return {
+      setup: { short: "Waiting for Kuma setup", long: "Not in Uptime Kuma yet: Kuma is not set up on this site's Pi. Save Kuma's admin login on the site's Netwatch page (Settings → Uptime Kuma) and its monitor is made by itself — no need to switch it again." },
+      no_login: { short: "Waiting for Kuma", long: `Not in Uptime Kuma yet: Netwatch can't log in to it${why}. It asks again after every scan and makes the monitor as soon as it gets in.` },
+      pending: { short: "Being added to Kuma", long: "Its Uptime Kuma monitor is being made." },
+      failed: { short: "Not in Kuma", long: `Not in Uptime Kuma: Kuma would not add it${why}. Netwatch tries again later.` },
+    }[d.kuma_state] || null;
+  };
+  /** One line for a list of monitored devices some of which Kuma does not check yet ("" when none). */
+  CC.kumaWaitNote = (mon) => {
+    const w = mon.filter((d) => CC.kumaWait(d));
+    if (!w.length) return "";
+    const n = (st) => w.filter((d) => d.kuma_state === st).length;
+    const why = n("setup") ? "Uptime Kuma is not set up on this site's Pi. Save Kuma's admin login on the site's Netwatch page (Settings → Uptime Kuma) and their monitors are made by themselves."
+      : n("no_login") ? `Netwatch can't log in to this site's Uptime Kuma${w.find((d) => d.kuma_why) ? ` (${w.find((d) => d.kuma_why).kuma_why})` : ""}; it asks again after every scan.`
+      : n("failed") ? "Kuma would not add some of them; Netwatch tries again later." : "Their monitors are being made.";
+    return `${w.length} of ${CC.plural(mon.length, "monitored device")} ${w.length === 1 ? "is" : "are"} not in Uptime Kuma yet. ${why}`;
+  };
   CC.stopText = (legacySites = []) => "They move to Other devices and the hub stops alerting on them. "
     + (legacySites.length
       ? `${legacySites.join(", ")} still run${legacySites.length === 1 ? "s" : ""} an older Netwatch: there, a Kuma monitor the old 🔔 watch created is deleted and any other keeps running — update the site to have monitors paused instead.`
       : "Their Uptime Kuma monitors are paused (history kept).");
   CC.monitorToast = (res, site) => {
     const ch = res.changed || [], on = ch.filter((c) => c.monitored).length, off = ch.length - on;
-    const msg = [on ? `${CC.plural(on, "device")} now monitored` : "", off ? `${off} no longer monitored` : ""].filter(Boolean).join(" · ") || "Nothing to change";
+    const sum = res.summary || {}, noKuma = sum.kuma_follows === false || sum.kuma_ok === false;   // see CC.kumaWait
+    const msg = [on ? `${CC.plural(on, "device")} ${noKuma ? "switched on — not in Uptime Kuma until it is set up on the site" : "now monitored"}` : "", off ? `${off} no longer monitored` : ""].filter(Boolean).join(" · ") || "Nothing to change";
     CC.toast(`${site ? site.name + ": " : ""}${msg}${(res.failed || []).length ? ` · ${res.failed.length} failed` : ""}`, (res.failed || []).length ? "bad" : "ok");
   };
   /** The shared picker (monitorpicker.js, also used by the site's own page). */

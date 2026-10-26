@@ -321,11 +321,12 @@
     drawLists(el, st, siteId) {
       const scope = this.scope(st, siteId), list = this.list(st, siteId);
       const mon = scope.filter((d) => d.watch), monDown = mon.filter((d) => !d.online).length;
+      const kumaWait = mon.filter((d) => CC.kumaWait(d)).length;
       const other = scope.filter((d) => !d.watch), otherRecent = other.filter((d) => CC.devState(d) !== "quiet");
       const otherUp = otherRecent.filter((d) => d.online).length, quiet = other.length - otherRecent.length;
       const tab = (id, label, v, sub, cls = "") => `<button type="button" data-list="${id}" class="${list === id ? "on" : ""} ${cls}" aria-pressed="${list === id}"><b>${label}</b><span class="v">${v}</span><small>${sub}</small></button>`;
       $("#dv-lists", el).innerHTML =
-        tab("monitored", "🔔 Monitored", mon.length ? `${mon.length - monDown}<i>/${mon.length}</i>` : "0", !mon.length ? "none chosen yet" : monDown ? `<span class="bad">${monDown} offline</span> · ${mon.length - monDown} online` : `<span class="ok">all online</span>`, monDown ? "bad" : "")
+        tab("monitored", "🔔 Monitored", mon.length ? `${mon.length - monDown}<i>/${mon.length}</i>` : "0", !mon.length ? "none chosen yet" : (monDown ? `<span class="bad">${monDown} offline</span> · ${mon.length - monDown} online` : `<span class="ok">all online</span>`) + (kumaWait ? ` · <span class="warn">${kumaWait} not in Kuma yet</span>` : ""), monDown ? "bad" : "")
         + tab("other", "Other devices", other.length ? `${otherUp}<i>/${otherRecent.length}</i>` : "0", other.length ? `online this week${quiet ? ` · ${quiet} gone quiet` : ""}` : "none")
         + tab("all", "All devices", scope.length, "everything the site found");
       const pickSite = siteId || st.f.site;
@@ -402,11 +403,11 @@
             last = g;
           }
         }
-        const c = CC.cat(d);
+        const c = CC.cat(d), kw = CC.kumaWait(d);
         const sel = st.sel.has(d.__site.id + "|" + d.key);
         html += `<tr data-key="${esc(d.key)}" data-site="${esc(d.__site.id)}" tabindex="0" class="${sel ? "sel" : ""} ${d.watch && !d.online ? "down" : ""}">
           <td class="ck"><input type="checkbox" ${sel ? "checked" : ""} aria-label="Select ${esc(CC.devName(d))}"></td>
-          <td><div class="nm">${esc(CC.devName(d))}${d.watch && list === "all" ? ` <span title="Monitored" aria-label="Monitored">🔔</span>` : ""}${d.ip_conflict ? ` <span class="b warn nodot" title="IP conflict">conflict</span>` : ""}${CC.isMikrotik(d) ? ` <span class="tag">MikroTik</span>` : ""}</div><div class="sub">${esc([d.vendor && d.vendor !== CC.devName(d) ? d.vendor.replace(/,?\s*(Co\.,?\s*Ltd\.?|Ltd\.?|Inc\.?)$/i, "") : "", d.model].filter(Boolean).join(" · ") || d.mac || "")}</div></td>
+          <td><div class="nm">${esc(CC.devName(d))}${d.watch && list === "all" ? ` <span title="Monitored" aria-label="Monitored">🔔</span>` : ""}${kw ? ` <span class="b warn nodot" title="${esc(kw.long)}">⏳ ${esc(kw.short)}</span>` : ""}${d.ip_conflict ? ` <span class="b warn nodot" title="IP conflict">conflict</span>` : ""}${CC.isMikrotik(d) ? ` <span class="tag">MikroTik</span>` : ""}</div><div class="sub">${esc([d.vendor && d.vendor !== CC.devName(d) ? d.vendor.replace(/,?\s*(Co\.,?\s*Ltd\.?|Ltd\.?|Inc\.?)$/i, "") : "", d.model].filter(Boolean).join(" · ") || d.mac || "")}</div></td>
           ${siteId ? "" : `<td class="hide-m">${esc(d.__site.name)}</td>`}
           <td class="hide-m">${c.icon} ${esc(c.label)}</td>
           <td class="mono">${esc(d.ip || "—")}</td>

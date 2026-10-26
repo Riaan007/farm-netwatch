@@ -160,18 +160,19 @@ def provision_many(base_url, user, pw, items, interval=60, add_timeout=60):
     description)] — the last two optional. Kuma answers an `add` only after it has
     re-sent its whole monitor list, which is slow on a busy Pi with many monitors:
     hence the long `add_timeout` (a timed-out add may still have been created).
-    Returns {key: {ok, monitor_id, error}}."""
+    Returns {key: {ok, monitor_id, error, down}} — down: Kuma could not be
+    reached or refused the login, so nothing was tried."""
     items = [tuple(it)[:5] + (None,) * (5 - len(it)) for it in items]
     try:
         sio, _ = _connect(base_url)
     except Exception as e:
-        return {k: {"ok": False, "error": f"cannot reach Kuma: {e}"} for k, *_ in items}
+        return {k: {"ok": False, "error": f"cannot reach Kuma: {e}", "down": True} for k, *_ in items}
     out = {}
     tag_cache = {}
     try:
         ok, msg = _login(sio, user, pw)
         if not ok:
-            return {k: {"ok": False, "error": msg} for k, *_ in items}
+            return {k: {"ok": False, "error": msg, "down": True} for k, *_ in items}
         for key, name, ip, category, description in items:
             monitor = {"type": "ping", "name": name, "hostname": ip or "",
                        "interval": int(interval), "maxretries": 1,
@@ -389,15 +390,18 @@ def monitor_states(base_url, user, pw, wait=10):
     return None if mons is None else {m["id"]: m["active"] for m in mons}
 
 
-def monitor_list(base_url, user, pw, wait=10):
+def monitor_list(base_url, user, pw, wait=10, why=None):
     """Every monitor this Kuma has, as [{id, name, type, hostname, active,
     description}] (id order). None when it can't be read (unreachable, login
-    refused, no list within `wait` s)."""
+    refused, no list within `wait` s); a `why` dict then gets the reason as
+    why["error"]."""
     import threading
     got, listing = threading.Event(), {}
+    why = {} if why is None else why
     try:
         sio, _ = _connect(base_url)
-    except Exception:
+    except Exception as e:
+        why["error"] = f"cannot reach Kuma: {e}"[:200]
         return None
 
     @sio.on("monitorList")          # pushed right after login (see provision_internet)
@@ -408,15 +412,20 @@ def monitor_list(base_url, user, pw, wait=10):
         got.set()
 
     try:
-        ok, _msg = _login(sio, user, pw)
-        if not ok or not got.wait(wait):
+        ok, msg = _login(sio, user, pw)
+        if not ok:
+            why["error"] = msg
+            return None
+        if not got.wait(wait):
+            why["error"] = f"Kuma sent no monitor list within {wait} s"
             return None
         return sorted(({"id": int(m["id"]), "name": m.get("name") or "", "type": m.get("type") or "",
                         "hostname": m.get("hostname") or "", "active": bool(m.get("active")),
                         "description": m.get("description") or ""}
                        for m in listing.values() if isinstance(m, dict) and m.get("id") is not None),
                       key=lambda m: m["id"])
-    except Exception:
+    except Exception as e:
+        why["error"] = str(e)[:200] or "could not read Kuma's monitor list"
         return None
     finally:
         try:
@@ -429,19 +438,20 @@ def set_active_many(base_url, user, pw, items):
     """Pause (active False) or resume (active True) monitors in ONE admin session.
     A paused monitor keeps its history and stops checking and alerting; editMonitor
     (ensure_ping's IP follow) leaves it paused. items: [(monitor_id, active)].
-    Returns {monitor_id: {ok, error, gone}} — gone: Kuma no longer has it."""
+    Returns {monitor_id: {ok, error, gone, down}} — gone: Kuma no longer has it;
+    down: Kuma could not be reached or refused the login."""
     items = [(mid, bool(active)) for mid, active in items if mid]
     if not items:
         return {}
     try:
         sio, _ = _connect(base_url)
     except Exception as e:
-        return {mid: {"ok": False, "error": f"cannot reach Kuma: {e}"} for mid, _ in items}
+        return {mid: {"ok": False, "error": f"cannot reach Kuma: {e}", "down": True} for mid, _ in items}
     out = {}
     try:
         ok, msg = _login(sio, user, pw)
         if not ok:
-            return {mid: {"ok": False, "error": msg} for mid, _ in items}
+            return {mid: {"ok": False, "error": msg, "down": True} for mid, _ in items}
         for mid, active in items:
             try:
                 r = sio.call("resumeMonitor" if active else "pauseMonitor", mid, timeout=15) or {}

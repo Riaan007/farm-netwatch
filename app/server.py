@@ -313,11 +313,16 @@ def api_setup():
     if "watchdog" in body:
         patch["sysmon"] = {"watchdog": bool(body["watchdog"])}
     # admin password -> obfuscated creds store (only when a non-empty value is sent)
+    kuma_was = monitoring.kuma_login()
     if body.get("kuma_password"):
         uname = body.get("kuma_username") or config.load()["integrations"]["kuma"].get("username", "")
         creds.set_("@kuma", username=uname, password=body["kuma_password"])
     patch = {k: v for k, v in patch.items() if v is not None}
     config.update(patch)
+    # Kuma just set up (or its login re-saved, e.g. once its admin exists): the
+    # devices switched on meanwhile get their monitors now, not after a retry.
+    if body.get("kuma_password") or monitoring.kuma_login() != kuma_was:
+        monitoring.kuma_settings_changed(scanner)
     # Category overrides are replaced wholesale (a deep-merge could never clear a
     # category once set), so handle them after the merge.
     if "categories" in body and isinstance(body["categories"], dict):
@@ -335,6 +340,7 @@ def api_devices():
     have = creds.keys_with_creds()
     devices = scanner.get_devices()
     plugged = switchmon.monitor.mac_map()
+    kuma_st = monitoring.kuma_status()
     with scanner.lock:
         missed = dict(scanner.miss)
     for d in devices:                      # flag only; never expose the secret here
@@ -347,6 +353,8 @@ def api_devices():
         d["has_kuma"] = bool(_kreg.get("kuma_monitor_id") or _kreg.get("kuma_token"))
         d["kuma_paused"] = bool(_kreg.get("kuma_paused"))
         d["watch"] = monitoring.is_monitored(_kreg)   # = "Monitored" (see monitoring.py)
+        # what Kuma really has for it: "on", or e.g. "setup" = switched on, Kuma not set up yet
+        d["kuma_state"], d["kuma_why"] = monitoring.kuma_state(d.get("key"), _kreg, kuma_st)
         d["geo"] = _kreg.get("geo") or None         # {lat, lon, note, ts} — set by hand
         ms = _kreg.get("meta_src")                  # model/serial/firmware filled in: {field: "nvr"|"hostname"}
         d["meta_src"] = dict(ms) if isinstance(ms, dict) else {}
@@ -1962,7 +1970,10 @@ def api_kuma(key):
     reg = scanner.registry.get(key, {})
     token = reg.get("kuma_token") or ""
     shown = token if siteauth.allowed(request, session) else ""
+    state, why = monitoring.kuma_state(key, reg, monitoring.kuma_status())
     return jsonify({
+        "state": state,             # monitoring.kuma_state: on / setup / no_login / pending / failed / …
+        "why": why,
         "token": shown,
         "has_token": bool(token),
         "monitor_id": reg.get("kuma_monitor_id", 0),
