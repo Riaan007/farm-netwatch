@@ -103,7 +103,7 @@
 
   // "Check now" on a From-the-office step: the site reads the radios (read-only).
   async function runCheck(site, btn) {
-    const out = btn.closest("li").querySelector(".wf-chkres");
+    const out = btn.closest("[data-fixhost], li").querySelector(".wf-chkres");
     btn.disabled = true; btn.textContent = "Checking…";
     out.hidden = false; out.innerHTML = `<div class="ts">Reading the radio over SSH…</div>`;
     const fact = (f) => `<div class="f ${esc(f.level || "")}"><span>${esc(f.label)}</span>${String(f.value).includes("\n") ? `<pre>${esc(f.value)}</pre>` : `<b>${esc(f.value)}</b>`}</div>`;
@@ -120,7 +120,7 @@
 
   // "Fix…" on a step: preview (writes nothing) → Apply now → follow the radio until it saves or undoes.
   async function runFix(site, btn) {
-    const fix = JSON.parse(btn.dataset.wfFix || "{}"), out = btn.closest("li").querySelector(".wf-fixres");
+    const fix = JSON.parse(btn.dataset.wfFix || "{}"), out = btn.closest("[data-fixhost], li").querySelector(".wf-fixres");
     const base = `/api/hub/sites/${encodeURIComponent(site.id)}/wifi/fix`;
     const msg = (t, cls) => `<div class="f ${cls || ""}"><b>${esc(t)}</b></div>`;
     out.hidden = false;
@@ -171,40 +171,120 @@
     }
   }
 
-  // ---- Frequency plan per tower (site /api/wifi/plan → freqplan.py) ----
-  function spectrum(t, p) {
-    const X0 = 5150, X1 = 5850, W = 700, sx = (f) => ((f - X0) / (X1 - X0)) * W;
-    const rows = [], placed = [];
-    for (const l of t.links.filter((l) => l.lo != null).sort((a, b) => a.lo - b.lo)) {
-      let r = 0; while (placed.some((q) => q.r === r && q.hi + 6 > l.lo)) r++;
-      placed.push({ r, hi: l.hi }); rows.push({ l, r });
-    }
-    const nr = Math.max(1, ...rows.map((x) => x.r + 1)), H = 22 + nr * 26;
-    const bg = p.ranges.map((r) => [r[0], r[1], "rgba(34,211,238,.07)"]).concat(p.dfs.map((r) => [r[0], r[1], "rgba(245,158,11,.10)"]));
-    return `<svg class="wf-spec" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Channels on ${esc(t.name)}">
-      <rect x="0" y="0" width="${W}" height="${H - 16}" fill="rgba(148,163,184,.08)"/>
-      ${bg.map((b) => `<rect x="${sx(b[0])}" y="0" width="${sx(b[1]) - sx(b[0])}" height="${H - 16}" fill="${b[2]}"/>`).join("")}
-      ${[5200, 5300, 5500, 5600, 5700, 5800].map((f) => `<text x="${sx(f)}" y="${H - 3}" class="ax">${f}</text>`).join("")}
-      ${rows.map(({ l, r }) => `<g><rect x="${sx(l.lo)}" y="${4 + r * 26}" width="${Math.max(3, sx(l.hi) - sx(l.lo))}" height="20" rx="3" class="${l.clash ? "bad" : "ok"}"/><text x="${sx(l.lo) + 4}" y="${18 + r * 26}" class="lb">${esc(l.name)} · ${l.freq}/${l.width}</text></g>`).join("")}
-    </svg>`;
+  // ---- Frequency plan (site /api/wifi/plan → freqplan.py) ----------------------------------
+  // One chart for the whole site: a lane per tower, the 5 GHz band across, every link a bar
+  // at its real channel (centre ± width/2). "After the moves" redraws the bars where the
+  // suggested moves put them, so the plan can be judged before anything is touched.
+  const FP_X0 = 5150, FP_X1 = 5850, FP_ROW = 30, FP_PX = 760;   // FP_PX: rough track width for label packing
+  const LV = { crit: 3, warn: 2, info: 1 };
+  const fpPct = (f) => ((f - FP_X0) / (FP_X1 - FP_X0)) * 100;
+  const pairKey = (a, b) => [a, b].sort().join("|");
+
+  function planModel(p, nameOf) {
+    const nm = (k, fallback) => nameOf(k) || fallback || k;
+    const moves = (p.moves || []).map((m, i) => ({ ...m, n: i + 1, name: nm(m.ap, m.name) }));
+    const moved = Object.fromEntries(moves.filter((m) => m.to).map((m) => [m.ap, m]));
+    const band = {};                                                // ap -> [lo, hi] now
+    (p.towers || []).forEach((t) => t.links.forEach((l) => { if (l.lo != null) band[l.ap] = [l.lo, l.hi]; }));
+    const after = (ap) => (moved[ap] ? [moved[ap].to - moved[ap].width / 2, moved[ap].to + moved[ap].width / 2] : band[ap]);
+    const gap = (x, y) => Math.max(x[0], y[0]) - Math.min(x[1], y[1]);
+    // the same pair is reported on both towers: one card, every tower named
+    const clashes = new Map();
+    (p.towers || []).forEach((t) => t.clashes.forEach((c) => {
+      const k = pairKey(c.a, c.b), cur = clashes.get(k);
+      const where = c.where === "same" ? t.name : [t.name, c.tower].sort().join(" ↔ ");
+      if (!cur) clashes.set(k, { ...c, a_name: nm(c.a, c.a_name), b_name: nm(c.b, c.b_name), places: [where], same: c.where === "same" });
+      else {
+        if (!cur.places.includes(where)) cur.places.push(where);
+        if (LV[c.level] > LV[cur.level]) cur.level = c.level;
+        cur.same = cur.same || c.where === "same";
+      }
+    }));
+    const list = [...clashes.values()].map((c) => {
+      const by = [moved[c.a], moved[c.b]].filter(Boolean);
+      const ga = band[c.a] && band[c.b] ? gap(after(c.a), after(c.b)) : null;
+      return { ...c, by, fixed: by.length > 0 && ga != null && ga >= p.guard_mhz, gapAfter: ga };
+    }).sort((x, y) => LV[y.level] - LV[x.level] || x.gap - y.gap);
+    // worst level per (tower, ap) for colouring the bars
+    const lvl = {};
+    (p.towers || []).forEach((t) => t.clashes.forEach((c) => [c.a, c.b].forEach((ap) => {
+      const k = t.id + "|" + ap; if (!lvl[k] || LV[c.level] > LV[lvl[k]]) lvl[k] = c.level;
+    })));
+    moves.forEach((m) => { m.fixes = list.filter((c) => c.by.includes(m)); });
+    return { moves, moved, list, lvl, after, nm };
   }
-  function planHtml(p) {
-    if (!(p.towers || []).length) return `<div class="empty"><b>No towers yet</b>In the Network tab, add a group of type “Tower / mast” for each high point and put its radios in it — then the plan checks their channels.</div>`;
-    const sm = p.summary || {}, moves = p.moves || [];
-    const head = `<p class="note" style="margin:0 0 6px">${sm.clashes ? `<b class="bad">${CC.plural(sm.clashes, "clash", "clashes")}</b> on ${CC.plural(sm.towers, "tower")} · ${CC.plural(sm.moves, "move")} suggested` : `✓ No channel clashes on ${CC.plural(sm.towers, "tower")}`} · same tower: ${p.guard_mhz} MHz gap · towers within ${p.near_km} km planned together · frequencies are channel centres · <span style="color:var(--warn)">amber = DFS (radar check)</span>${sm.centre_unknown ? ` · <b class="bad">${CC.plural(sm.centre_unknown, "wide link")} not re-read yet</b> — placed from the control channel until the next radio read` : ""}</p>`;
-    return head + p.towers.map((t) => {
-      const mv = moves.filter((m) => m.towers.includes(t.name));
-      return `<div class="wf-tower"><h4>${esc(t.name)}${t.near.length ? ` <span class="note">near ${esc(t.near.join(", "))}</span>` : ""}</h4>
-        ${t.links.length ? spectrum(t, p) : `<p class="note">No radio on this tower that the site reads.</p>`}
-        ${t.unknown.length ? `<p class="note">Frequency unknown (no login saved): ${esc(t.unknown.join(", "))}</p>` : ""}
-        ${t.clashes.length ? `<ul class="clash">${t.clashes.map((c) => `<li class="${c.level}">${esc(c.a_name)} and ${esc(c.b_name)} ${c.gap < 0 ? `overlap by ${Math.round(-c.gap)} MHz` : `are only ${Math.round(c.gap)} MHz apart`}${c.where === "near" ? ` (on ${esc(c.tower)}, nearby)` : ""}</li>`).join("")}</ul>` : ""}
-        ${mv.length ? `<ol class="mv">${mv.map((m) => {
-          const fix = { kind: "channel", radio: m.ap, name: m.name, params: { freq: m.to, width: m.width } };
-          return `<li><span>${m.to ? `Move <b>${esc(m.name)}</b> ${m.from} → ${m.to} MHz (${m.width} MHz wide)${m.dfs ? " — DFS channel" : ""}${m.checked ? ` <span class="note">— ${esc(m.checked)}</span>` : ""}` : `${esc(m.name)}: ${esc(m.note || "no free channel")}`}</span>${m.to && p.fix_enabled
-            ? `<span class="wf-chkrow"><button type="button" class="wf-chkbtn fix" data-wf-fix="${esc(JSON.stringify(fix))}" title="Preview the move first — nothing is changed until you apply it">Move…</button></span><div class="wf-chkres wf-fixres" hidden aria-live="polite"></div>`
-            : m.to ? `<span class="note">Turn on the site's Settings → Advanced → Wi-Fi fixes to apply this from here.</span>` : ""}</li>`;
-        }).join("")}</ol>` : ""}</div>`;
-    }).join("");
+
+  function fpLane(t, M, mode) {
+    const items = t.links.filter((l) => l.lo != null).map((l) => {
+      const mv = M.moved[l.ap], useNew = mode === "after" && mv;
+      const lo = useNew ? mv.to - mv.width / 2 : l.lo, hi = useNew ? mv.to + mv.width / 2 : l.hi;
+      const name = M.nm(l.ap, l.name), f = useNew ? mv.to : l.freq;
+      const st = useNew ? "moved" : mode === "after" ? "ok" : M.lvl[t.id + "|" + l.ap] || "ok";
+      const label = `${name} · ${f}`;
+      const lw = (label.length * 6.6 + 14) * ((FP_X1 - FP_X0) / FP_PX);        // label width in MHz
+      const left = hi + lw > FP_X1;                                              // no room right of the bar → put it left
+      return { l, lo, hi, name, f, st, mv, label, left, ext: left ? [lo - lw, hi] : [lo, hi + lw], ghost: useNew ? [l.lo, l.hi] : null };
+    }).sort((a, b) => a.ext[0] - b.ext[0]);
+    const rows = [];
+    items.forEach((it) => { let r = 0; while ((rows[r] || []).some((x) => x.ext[1] + 4 > it.ext[0] && x.ext[0] < it.ext[1] + 4)) r++; (rows[r] = rows[r] || []).push(it); it.r = r; });
+    const h = Math.max(1, rows.length) * FP_ROW + 8;
+    const tip = (it) => `${it.name}\n${it.f} MHz centre · ${it.l.width} MHz wide (${Math.round(it.lo)}–${Math.round(it.hi)})${it.l.dfs && !it.mv ? "\nDFS channel (radar check)" : ""}${it.mv ? `\nSuggested: ${it.mv.from} → ${it.mv.to} MHz` : ""}${(it.l.here || []).length ? "\nOn this tower: " + it.l.here.join(", ") : ""}`;
+    const bars = items.map((it) => `${it.ghost ? `<i class="fp-ghost" style="left:${fpPct(it.ghost[0])}%;width:${fpPct(it.ghost[1]) - fpPct(it.ghost[0])}%;top:${it.r * FP_ROW + 6}px"></i>` : ""}
+      <div class="fp-it s-${it.st}${it.left ? " lft" : ""}" data-ap="${esc(it.l.ap)}" tabindex="0" title="${esc(tip(it))}" style="--l:${fpPct(it.lo)}%;--w:${fpPct(it.hi) - fpPct(it.lo)}%;top:${it.r * FP_ROW + 6}px">
+        <i class="fp-bar"></i><span class="fp-lb"><b>${esc(it.name)}</b> ${it.f}${it.mv && mode !== "after" ? ` <em title="A move is suggested">→ ${it.mv.to}</em>` : ""}</span></div>`).join("");
+    const unk = (t.unknown || []).length ? `<small class="fp-unk" title="${esc(t.unknown.join(", "))}">+${t.unknown.length} unread</small>` : "";
+    return `<div class="fp-lane"><div class="fp-tw"><b title="${esc(t.name)}">${esc(t.name)}</b><small>${t.near.length ? "near " + esc(t.near.join(", ")) : "on its own"}</small>${unk}</div>
+      <div class="fp-track" style="height:${h}px">${items.length ? bars : `<span class="fp-none">No radio here that the site can read</span>`}</div></div>`;
+  }
+
+  function fpChart(p, M, mode) {
+    const zones = [].concat(
+      (p.ranges || []).map((r) => `<i class="fp-z ok" style="left:${fpPct(r[0])}%;width:${fpPct(r[1]) - fpPct(r[0])}%"></i>`),
+      (p.dfs || []).map((r) => `<i class="fp-z dfs" style="left:${fpPct(r[0])}%;width:${fpPct(r[1]) - fpPct(r[0])}%"></i>`),
+      [`<i class="fp-z no" style="left:${fpPct(5350)}%;width:${fpPct(5470) - fpPct(5350)}%" title="5350–5470 MHz may not be used"></i>`]).join("");
+    const ticks = []; for (let f = 5200; f <= 5800; f += 50) ticks.push(`<span class="${f % 100 ? "mn" : ""}" style="left:${fpPct(f)}%">${f % 100 ? "" : f}</span>`);
+    const bands = [[5150, 5250, "U-NII-1"], [5250, 5350, "U-NII-2 · DFS"], [5350, 5470, "not allowed"], [5470, 5725, "U-NII-2C · DFS"], [5725, 5850, "U-NII-3"]]
+      .map(([a, b, l]) => `<span style="left:${fpPct(a)}%;width:${fpPct(b) - fpPct(a)}%">${l}</span>`).join("");
+    return `<div class="fp-scroll"><div class="fp">
+      <div class="fp-head"><div class="fp-corner">Tower</div><div class="fp-axis"><div class="fp-bands">${bands}</div><div class="fp-ticks">${ticks.join("")}</div></div></div>
+      <div class="fp-body"><div class="fp-zones">${zones}</div>${p.towers.map((t) => fpLane(t, M, mode)).join("")}</div>
+      <div class="fp-foot"><div></div><div class="fp-ticks">${ticks.join("")}</div></div>
+    </div></div>`;
+  }
+
+  function planHtml(p, nameOf, mode) {
+    if (!(p.towers || []).length) return `<div class="empty"><b>No towers yet</b>On the Network tab, make a group of type “Tower / mast” for each high point and put its radios in it — the plan then keeps their channels apart.</div>`;
+    const M = planModel(p, nameOf);
+    const real = M.list.filter((c) => c.level !== "info"), close = M.list.filter((c) => c.level === "info");
+    const todo = M.moves.filter((m) => m.to);
+    const left = real.filter((c) => !c.fixed).length;
+    const sm = p.summary || {};
+    const verdict = !real.length ? `<div class="fp-verdict ok"><span class="dot"></span><div><b>No channel clashes</b><span>Every link on every tower keeps ${p.guard_mhz} MHz clear of its neighbours.</span></div></div>`
+      : `<div class="fp-verdict ${real.some((c) => c.level === "crit") ? "bad" : "warn"}"><span class="dot"></span><div><b>${CC.plural(real.length, "channel clash", "channel clashes")}</b><span>${todo.length ? `${CC.plural(todo.length, "move")} would clear ${left ? `${real.length - left} of them` : "all of them"}` : "No move found — try narrower channels"}${close.length ? ` · ${CC.plural(close.length, "close call")} to keep an eye on` : ""}</span></div></div>`;
+    const stats = `<div class="fp-stats"><span><b>${p.towers.length}</b> towers</span><span><b>${new Set(p.towers.flatMap((t) => t.links.map((l) => l.ap))).size}</b> links</span><span><b>${p.guard_mhz}</b> MHz gap wanted</span><span>towers within <b>${p.near_km}</b> km or linked are planned together</span></div>`;
+    const legend = `<div class="fp-legend"><span><i class="k ok"></i>clear</span><span><i class="k crit"></i>overlap on one tower</span><span><i class="k warn"></i>clash with a nearby tower</span><span><i class="k info"></i>close call</span>${mode === "after" ? `<span><i class="k moved"></i>moved</span>` : `<span><em>→ 5735</em> move suggested</span>`}<span><i class="k dfsz"></i>DFS band (radar check)</span></div>`;
+    const clashCard = (c) => `<li class="fp-cl ${c.level}${c.fixed ? " fixed" : ""}" data-pair="${esc(c.a)}|${esc(c.b)}">
+      <span class="sevdot"></span>
+      <div><b>${esc(c.a_name)}</b> <span class="dim">and</span> <b>${esc(c.b_name)}</b>
+        <div class="d">${c.gap < 0 ? `overlap by <b>${Math.round(-c.gap)} MHz</b>` : `only <b>${Math.round(c.gap)} MHz</b> apart`} · ${c.same ? "same tower" : "nearby towers"}: ${esc(c.places.join(" · "))}</div>
+        ${c.by.length ? `<div class="d ${c.fixed ? "ok" : ""}">${c.fixed ? "✓ Cleared by" : "Helped by"} move ${c.by.map((m) => m.n).join(" + ")}</div>` : `<div class="d dim">No move suggested for this pair</div>`}</div></li>`;
+    const moveCard = (m) => {
+      const fix = { kind: "channel", radio: m.ap, name: m.name, params: { freq: m.to, width: m.width } };
+      return `<li class="fp-mv" data-ap="${esc(m.ap)}" data-fixhost>
+        <span class="n">${m.n}</span>
+        <div class="body"><div class="mvtop"><b>${esc(m.name)}</b>${m.to ? `<span class="fq"><s>${m.from}</s><i>→</i><b>${m.to}</b> MHz</span><span class="tag">${m.width} MHz wide</span>${m.dfs ? `<span class="b warn nodot" title="Radar-checked channel: the AP listens about a minute before it transmits">DFS</span>` : ""}` : `<span class="b bad nodot">no free channel</span>`}</div>
+          <div class="d">${m.to ? `${esc((m.towers || []).join(" · "))}${m.fixes.length ? ` · clears ${CC.plural(m.fixes.filter((c) => c.fixed).length || m.fixes.length, "clash", "clashes")}` : ""}${m.checked ? ` · <span class="dim">${esc(m.checked)}</span>` : ""}` : esc(m.note || "")}</div>
+          ${m.to ? (p.fix_enabled ? `<div class="acts"><button type="button" class="btn sm pri" data-wf-fix="${esc(JSON.stringify(fix))}" title="Reads the radios and shows exactly what would change — nothing is changed until you press Apply">Preview move…</button><span class="note">Undoes itself if the link does not come back</span></div><div class="wf-chkres wf-fixres" hidden aria-live="polite"></div>`
+            : `<div class="note">To apply moves from here, turn on <b>Settings → Advanced → Wi-Fi fixes</b> on the site's own Netwatch.</div>`) : ""}</div></li>`;
+    };
+    return `<div class="fp-top">${verdict}${stats}</div>
+      <div class="fp-bar-row"><div class="seg" role="group" aria-label="Show channels" data-fp-mode><button data-m="now" class="${mode !== "after" ? "on" : ""}">Now</button><button data-m="after" class="${mode === "after" ? "on" : ""}"${todo.length ? "" : " disabled"}>After the moves${todo.length ? ` (${todo.length})` : ""}</button></div>${legend}</div>
+      ${sm.centre_unknown ? `<div class="banner">${CC.plural(sm.centre_unknown, "wide link")} not re-read since the update — placed from its control channel until the next radio read.</div>` : ""}
+      ${fpChart(p, M, mode)}
+      <div class="fp-cols">
+        <section><h3>Suggested moves <small>${todo.length ? "one link at a time · each one previewed first" : ""}</small></h3>${M.moves.length ? `<ol class="fp-mvs">${M.moves.map(moveCard).join("")}</ol>` : `<p class="note">Nothing to move.</p>`}</section>
+        <section><h3>Clashes <small>${real.length ? `${real.length} to fix` : "none"}${close.length ? ` · ${close.length} close` : ""}</small></h3>${M.list.length ? `<ul class="fp-cls">${M.list.map(clashCard).join("")}</ul>` : `<p class="note">✓ Nothing overlaps.</p>`}</section>
+      </div>`;
   }
 
   // Inline SVG line charts with a hover readout (no chart library: offline LAN).
@@ -375,24 +455,39 @@
     open: new Set(), where: "", showInfo: false, data: {},
     enter(s, el) {
       this.site = s.id;
-      const want = CC.params().get("link");
+      const want = CC.params().get("link"), v = CC.params().get("view");
       if (want) this.open.add(want);
-      el.innerHTML = `<div class="row wf-bar">
-          <div class="seg" role="group" aria-label="Time range" id="wt-range">${[[24, "24 h"], [168, "7 days"], [720, "30 days"]].map(([h, l]) => `<button data-h="${h}" class="${h === HOURS ? "on" : ""}">${l}</button>`).join("")}</div>
-          <span class="note" id="wt-at"></span>
-          <span style="margin-left:auto" class="row">
+      let saved = ""; try { saved = localStorage.getItem("cc.wifi.view") || ""; } catch (e) { /* private mode */ }
+      this.view = want ? "links" : ["links", "plan", "radios"].includes(v) ? v : ["links", "plan", "radios"].includes(saved) ? saved : "links";
+      this.plan = null; this.planMode = "now";
+      const tab = (k, label) => `<button role="tab" data-v="${k}" aria-selected="${this.view === k}" class="${this.view === k ? "on" : ""}">${label} <span class="ct" id="wt-c-${k}"></span></button>`;
+      el.innerHTML = `<div class="wt-head">
+          <nav class="wt-views" role="tablist" aria-label="Wi-Fi views">${tab("links", "Links")}${tab("plan", "Frequency plan")}${tab("radios", "Radios")}</nav>
+          <div class="wt-tools">
+            <div class="seg" role="group" aria-label="Time range" id="wt-range">${[[24, "24 h"], [168, "7 days"], [720, "30 days"]].map(([h, l]) => `<button data-h="${h}" class="${h === HOURS ? "on" : ""}">${l}</button>`).join("")}</div>
+            <span class="note" id="wt-at"></span>
             <button class="btn sm" id="wt-poll" title="Ask the site to read every radio now">${icon("refresh")} Read radios now</button>
-          </span></div>
-        <div id="wt-kpis"></div>
+          </div></div>
         <div id="wt-legacy"></div>
-        <div class="cols"><div>
-          <section class="panel"><div class="phd"><h2>What to do</h2><div class="seg" role="group" aria-label="Where" id="wt-where"><button data-w="" class="on">All</button><button data-w="remote">From the office</button><button data-w="site">On site</button></div></div><div id="wt-fix"></div></section>
-          <section class="panel"><div class="phd"><h2>Frequency plan per tower</h2><span class="note">Links on one tower must keep their channels apart · towers come from the Network diagram</span></div><div class="pbd" id="wt-plan"><div class="skel" style="height:90px"></div></div></section>
-          <section class="panel"><div class="phd"><h2>Links <small>grouped by access point</small></h2><button class="btn sm ghost" id="wt-all">Open all</button></div><div class="pbd" id="wt-links"><div class="skel" style="height:140px"></div></div></section>
-        </div><div>
-          <section class="panel"><div class="phd"><h2>Radios</h2></div><div id="wt-radios"></div></section>
-          <section class="panel"><div class="phd"><h2>Reading the numbers</h2></div><div class="pbd">${GUIDE}</div></section>
-        </div></div>`;
+        <div class="wt-pane" data-pane="links"${this.view === "links" ? "" : " hidden"}>
+          <div id="wt-kpis"></div>
+          <div class="cols wt-cols"><div>
+            <section class="panel"><div class="phd"><h2>Links <small id="wt-n"></small></h2><div class="row">
+              <div class="seg" role="group" aria-label="Show" id="wt-filt"><button data-f="" class="on">All</button><button data-f="attn">Needs attention</button><button data-f="good">Healthy</button></div>
+              <button class="btn sm ghost" id="wt-all">Open all</button></div></div>
+              <div class="pbd" id="wt-links"><div class="skel" style="height:140px"></div></div></section>
+          </div><div>
+            <section class="panel wt-todo"><div class="phd"><h2>What to do</h2><div class="seg" role="group" aria-label="Where" id="wt-where"><button data-w="" class="on">All</button><button data-w="remote">Office</button><button data-w="site">On site</button></div></div><div id="wt-fix"></div></section>
+          </div></div>
+        </div>
+        <div class="wt-pane" data-pane="plan"${this.view === "plan" ? "" : " hidden"}>
+          <section class="panel"><div class="phd"><h2>Frequency plan</h2><span class="note">Towers come from the Network diagram · channels from the last radio read · frequencies are channel centres</span></div>
+            <div class="pbd" id="wt-plan"><div class="skel" style="height:220px"></div></div></section>
+        </div>
+        <div class="wt-pane" data-pane="radios"${this.view === "radios" ? "" : " hidden"}>
+          <div class="cols"><section class="panel"><div class="phd"><h2>Radios</h2><span class="note">every radio the site reads</span></div><div id="wt-radios"></div></section>
+          <section class="panel"><div class="phd"><h2>Reading the numbers</h2></div><div class="pbd">${GUIDE}</div></section></div>
+        </div>`;
       $$("#wt-range button").forEach((b) => (b.onclick = () => {
         HOURS = +b.dataset.h;
         try { localStorage.setItem(HOURS_KEY, HOURS); } catch (e) { /* ignore */ }
@@ -400,9 +495,20 @@
         this.load(CC.site(this.site));
       }));
       $$("#wt-where button").forEach((b) => (b.onclick = () => { this.where = b.dataset.w; $$("#wt-where button").forEach((x) => x.classList.toggle("on", x === b)); this.draw(CC.site(this.site)); }));
-      $("#wt-all").onclick = () => { const d = this.current(); if (!d) return; const ids = (d.links || []).map((l) => l.id); if (this.open.size >= ids.length) this.open.clear(); else ids.forEach((i) => this.open.add(i)); this.draw(CC.site(this.site)); };
+      $$("#wt-filt button").forEach((b) => (b.onclick = () => { this.filt = b.dataset.f; $$("#wt-filt button").forEach((x) => x.classList.toggle("on", x === b)); this.draw(CC.site(this.site)); }));
+      this.filt = "";
+      $("#wt-all").onclick = () => { const d = this.current(); if (!d) return; const ids = this.shown(d).map((l) => l.id); if (ids.every((i) => this.open.has(i))) ids.forEach((i) => this.open.delete(i)); else ids.forEach((i) => this.open.add(i)); this.draw(CC.site(this.site)); };
       $("#wt-poll").onclick = (e) => this.poll(CC.site(this.site), e.currentTarget);
+      $("#wt-range").hidden = this.view === "plan";
       el.onclick = (e) => {
+        const vb = e.target.closest(".wt-views [data-v]");
+        if (vb) return this.setView(vb.dataset.v);
+        const mb = e.target.closest("[data-fp-mode] button");
+        if (mb && !mb.disabled) { this.planMode = mb.dataset.m; return this.renderPlan(); }
+        const pg = e.target.closest("[data-plan-goto]");
+        if (pg) { this.setView("plan"); setTimeout(() => { const m = $(`.fp-mv[data-ap="${CSS.escape(pg.dataset.planGoto)}"]`); if (m) { m.scrollIntoView({ behavior: "smooth", block: "center" }); m.classList.add("flash"); setTimeout(() => m.classList.remove("flash"), 1400); } }, 60); return; }
+        const go = e.target.closest("[data-fp-goto]");
+        if (go) { const m = $(`.fp-mv[data-ap="${CSS.escape(go.dataset.fpGoto)}"]`); if (m) { m.scrollIntoView({ behavior: "smooth", block: "center" }); m.classList.add("flash"); setTimeout(() => m.classList.remove("flash"), 1200); } return; }
         const t = e.target.closest("[data-wf-toggle]");
         if (t) return this.toggle(t.dataset.wfToggle);
         if (e.target.closest("[data-wf-info]")) { this.showInfo = !this.showInfo; return this.draw(CC.site(this.site)); }
@@ -414,18 +520,52 @@
         if (ck) return runCheck(CC.site(this.site), ck);
         const tn = e.target.closest("[data-wf-tunnel]");
         if (tn) return openAirOS(CC.site(this.site), tn.dataset.wfTunnel, tn);
+        const it = e.target.closest(".fp-it[data-ap]");
+        if (it) { const m = $(`.fp-mv[data-ap="${CSS.escape(it.dataset.ap)}"]`); if (m) m.scrollIntoView({ behavior: "smooth", block: "center" }); }
       };
+      // pointing at a link anywhere in the plan lights it up on every tower, its move and its clashes
+      const hl = (aps) => { $$(".hl", el).forEach((x) => x.classList.remove("hl")); aps.forEach((ap) => $$(`.fp-it[data-ap="${CSS.escape(ap)}"], .fp-mv[data-ap="${CSS.escape(ap)}"]`, el).forEach((x) => x.classList.add("hl"))); if (aps.length) $$(".fp-cl", el).forEach((x) => { if (aps.some((ap) => x.dataset.pair.split("|").includes(ap))) x.classList.add("hl"); }); el.classList.toggle("fp-hl", aps.length > 0); };
+      el.onmouseover = (e) => { const x = e.target.closest(".fp-it[data-ap], .fp-mv[data-ap], .fp-cl[data-pair]"); if (!x) return hl([]); hl(x.dataset.ap ? [x.dataset.ap] : x.dataset.pair.split("|")); };
+      el.onfocusin = el.onmouseover;
       el.onkeydown = (e) => { const t = e.target.closest("[data-wf-toggle]"); if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); this.toggle(t.dataset.wfToggle); } };
       this.load(s, want);
     },
+    setView(v) {
+      this.view = v;
+      try { localStorage.setItem("cc.wifi.view", v); } catch (e) { /* ignore */ }
+      $$(".wt-views [data-v]").forEach((b) => { b.classList.toggle("on", b.dataset.v === v); b.setAttribute("aria-selected", b.dataset.v === v); });
+      $$(".wt-pane").forEach((p) => (p.hidden = p.dataset.pane !== v));
+      $("#wt-range").hidden = v === "plan";
+      const url = `#/site/${enc(this.site)}/wifi${v === "links" ? "" : "?view=" + v}`;
+      if (location.hash !== url) history.replaceState(null, "", url);
+      if (v === "plan" && !this.plan) this.loadPlan(CC.site(this.site));
+    },
+    shown(d) {
+      const ls = d.links || [];
+      return this.filt === "attn" ? ls.filter((l) => l.grade === "crit" || l.grade === "warn") : this.filt === "good" ? ls.filter((l) => l.grade === "good" || l.grade === "watch") : ls;
+    },
+    nameOf(k) {
+      const d = this.current(), r = d && (d.radios || []).find((x) => String(x.key).toLowerCase() === String(k).toLowerCase());
+      return r && r.name && !/^\d+\.\d+\.\d+\.\d+$/.test(r.name) ? r.name : "";
+    },
+    renderPlan() {
+      const el = $("#wt-plan");
+      if (!el || !this.plan) return;
+      if (el.querySelector(".wf-fixres:not([hidden])")) return;          // never redraw under a running move
+      el.innerHTML = planHtml(this.plan, (k) => this.nameOf(k), this.planMode);
+      const real = new Set(); (this.plan.towers || []).forEach((t) => t.clashes.forEach((c) => { if (c.level !== "info") real.add(pairKey(c.a, c.b)); }));
+      const ct = $("#wt-c-plan");
+      if (ct) { ct.textContent = real.size || "✓"; ct.className = "ct " + (real.size ? "warn" : "ok"); }
+    },
     current() { return HOURS === 168 ? S.wifiLinks[this.site] : this.data[`${this.site}|${HOURS}`]; },
     async loadPlan(s) {
-      const el = $("#wt-plan");
-      if (!el || el.querySelector(".wf-fixres:not([hidden])")) return;
+      if (!s || !$("#wt-plan") || $("#wt-plan .wf-fixres:not([hidden])")) return;
       try {
         const p = await api(`/api/hub/sites/${encodeURIComponent(s.id)}/wifi/plan`, { timeout: 40000 });
-        if (this.site === s.id && $("#wt-plan")) $("#wt-plan").innerHTML = planHtml(p);
-      } catch (e) { if ($("#wt-plan")) $("#wt-plan").innerHTML = `<div class="empty"><b>No frequency plan</b>${esc(e.message)}</div>`; }
+        if (this.site !== s.id) return;
+        this.plan = p; this.renderPlan();
+        if (this.view === "links") this.draw(CC.site(s.id));             // channel chips use the plan's centres
+      } catch (e) { if ($("#wt-plan") && !this.plan) $("#wt-plan").innerHTML = `<div class="empty"><b>No frequency plan</b>${esc(e.message)}${/404|501|too old/i.test(e.message) ? " — update the site's Netwatch." : ""}</div>`; }
     },
     async load(s, focus, fresh) {
       if (!s) return;
@@ -495,22 +635,46 @@
       $("#wt-kpis").innerHTML = kpis(d.summary, { worst: worstL && { link: worstL, label: worstL.name, href: linkHref(s.id, worstL) } });
       const fixes = (d.fixes || []).filter((f) => !this.where || f.where === this.where).map((f) => ({ ...f, site: s }));
       $("#wt-fix").innerHTML = (d.radios || []).length ? fixList(fixes, { showInfo: this.showInfo }) : `<div class="empty"><b>No radios are read at this site</b>The site reads Ubiquiti airOS radios that have a saved SSH login — add them on the site's Netwatch page (Logins).</div>`;
-      $("#wt-all").hidden = !links.length;
-      $("#wt-all").textContent = this.open.size >= links.length && links.length ? "Close all" : "Open all";
+      const attn = links.filter((l) => l.grade === "crit" || l.grade === "warn").length;
+      const cl = $("#wt-c-links"); if (cl) { cl.textContent = attn || links.length; cl.className = "ct " + (attn ? "warn" : ""); cl.title = attn ? `${attn} need attention` : `${links.length} links`; }
+      const cr = $("#wt-c-radios"); if (cr) { const un = (d.summary.radios || 0) - (d.summary.radios_read || 0); cr.textContent = un ? `${d.summary.radios_read}/${d.summary.radios}` : d.summary.radios || ""; cr.className = "ct " + (un ? "warn" : ""); }
+      $$("#wt-filt button").forEach((b) => { const n = b.dataset.f === "attn" ? attn : b.dataset.f === "good" ? links.length - attn : links.length; b.innerHTML = `${{ "": "All", attn: "Needs attention", good: "Healthy" }[b.dataset.f]} <span class="dim">${n}</span>`; });
+      const shown = this.shown(d);
+      $("#wt-n").textContent = links.length ? `${shown.length} of ${links.length} · grouped by access point` : "";
+      $("#wt-all").hidden = !shown.length;
+      $("#wt-all").textContent = shown.length && shown.every((l) => this.open.has(l.id)) ? "Close all" : "Open all";
+      // centre + width from the frequency plan when it is loaded (the link data carries the control channel)
+      const chan = {};
+      ((this.plan && this.plan.towers) || []).forEach((t) => t.links.forEach((l) => { chan[String(l.ap).toUpperCase()] = l; }));
+      const mv = Object.fromEntries(((this.plan && this.plan.moves) || []).filter((m) => m.to).map((m) => [String(m.ap).toUpperCase(), m]));
       const byAp = new Map();
-      links.forEach((l) => { if (!byAp.has(l.ap.mac)) byAp.set(l.ap.mac, []); byAp.get(l.ap.mac).push(l); });
+      shown.forEach((l) => { if (!byAp.has(l.ap.mac)) byAp.set(l.ap.mac, []); byAp.get(l.ap.mac).push(l); });
       const radioBy = Object.fromEntries((d.radios || []).map((r) => [String(r.key).toUpperCase(), r]));
       const groups = [...byAp.entries()].sort((a, b) => Math.min(...a[1].map((l) => RANK[l.grade])) - Math.min(...b[1].map((l) => RANK[l.grade])) || a[1][0].ap.name.localeCompare(b[1][0].ap.name));
-      $("#wt-links").innerHTML = !links.length ? `<div class="empty"><b>No links in this period</b>${(d.radios || []).length ? "The radios answered, but none had a connected station." : "No radios are read yet."}</div>` : groups.map(([mac, ls]) => {
-        const ap = ls[0].ap, r = radioBy[mac], m = ls[0].metrics || {};
-        const st = (r && r.stats) || {}, air = st.airtime || {};
-        const meta = [ap.model, ap.ip, m.freq_label, m.width ? m.width + " MHz" : "", r && r.ssid ? "SSID " + r.ssid : ""].filter(Boolean).map(esc).join(" · ");
-        const notes = (r ? r.findings || [] : []).map(findingHtml).join("");
-        return `<div class="wf-ap"><div class="wf-aph"><span class="ico">${icon("wifi")}</span><b>${esc(ap.name)}</b><span class="note">${meta}</span>
-            ${m.ap_mixed ? `<span class="b warn nodot">Mixed mode</span>` : ""}${air.now != null ? `<span class="tag">Air ${num(air.now)}%${air.max != null ? " · peak " + num(air.max) + "%" : ""}</span>` : ""}${(st.noise || {}).now != null ? `<span class="tag">Noise ${num(st.noise.now)} dBm</span>` : ""}<span class="tag">${CC.plural(ls.length, "link")}</span></div>
-          ${notes}${ls.map((l) => linkCard(s, l, this.open.has(l.id))).join("")}</div>`;
-      }).join("");
+      $("#wt-links").innerHTML = !links.length ? `<div class="empty"><b>No links in this period</b>${(d.radios || []).length ? "The radios answered, but none had a connected station." : "No radios are read yet."}</div>`
+        : !shown.length ? `<div class="empty"><b>${this.filt === "attn" ? "Nothing needs attention" : "No healthy links"}</b>${this.filt === "attn" ? "Every link is healthy in this period." : "Every link has something to look at."}</div>`
+        : groups.map(([mac, ls]) => {
+          const ap = ls[0].ap, r = radioBy[mac], m = ls[0].metrics || {}, c = chan[mac], move = mv[mac];
+          const st = (r && r.stats) || {}, air = st.airtime || {};
+          const notes = r ? (r.findings || []) : [];
+          const worstN = notes.some((f) => f.level === "crit") ? "crit" : notes.some((f) => f.level === "warn") ? "warn" : "info";
+          const chanTxt = c && c.freq ? `${c.freq} MHz · ${c.width} wide` : m.freq_label ? `${m.freq_label}${m.width ? " · " + m.width + " wide" : ""}` : "";
+          const airCls = air.max >= 80 || air.now >= 80 ? "warn" : "";
+          return `<div class="wf-ap">
+            <div class="wf-aph"><span class="ico">${icon("wifi")}</span>
+              <div class="wf-apn"><b>${esc(ap.name)}</b><span class="note">${[ap.model, ap.ip, r && r.ssid ? "SSID " + r.ssid : ""].filter(Boolean).map(esc).join(" · ")}</span></div>
+              <div class="wf-apchips">
+                ${chanTxt ? `<span class="chip${c && c.clash ? " warn" : ""}" title="${c ? "Channel centre and width" : "Control channel"}${c && c.clash ? " — clashes with another link, see Frequency plan" : ""}">${icon("wifi")} ${esc(chanTxt)}${c && c.dfs ? " · DFS" : ""}</span>` : ""}
+                ${move ? `<button type="button" class="chip mv" data-plan-goto="${esc(move.ap)}" title="The frequency plan suggests moving this link">→ ${move.to} MHz suggested</button>` : ""}
+                ${air.now != null ? `<span class="chip ${airCls}" title="Share of the channel in use${air.max != null ? " · peak " + num(air.max) + "%" : ""}">Air ${num(air.now)}%${air.max != null ? `<small> · peak ${num(air.max)}%</small>` : ""}</span>` : ""}
+                ${(st.noise || {}).now != null ? `<span class="chip">Noise ${num(st.noise.now)} dBm</span>` : ""}
+                ${m.ap_mixed ? `<span class="chip warn">Mixed mode</span>` : ""}
+              </div></div>
+            ${notes.length ? `<details class="wf-apnotes ${worstN}"><summary><span class="sevdot"></span>${notes.length === 1 ? esc(notes[0].title) : `${notes.length} notes on this access point: ${esc(notes.map((f) => f.title).join(" · "))}`}</summary>${notes.map(findingHtml).join("")}</details>` : ""}
+            ${ls.map((l) => linkCard(s, l, this.open.has(l.id))).join("")}</div>`;
+        }).join("");
       $("#wt-radios").innerHTML = radiosHtml(d);
+      if (this.plan) this.renderPlan();                                   // names come with the link data
       // charts for open links: series come per link, on demand
       links.filter((l) => this.open.has(l.id)).forEach((l) => {
         const root = $(`.wf-link[data-link="${CSS.escape(l.id)}"]`);

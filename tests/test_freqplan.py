@@ -134,6 +134,15 @@ class Plan(unittest.TestCase):
                 if other != ap:
                     self.assertGreaterEqual(F._gap(final[ap], band), F.GUARD_MHZ, (m, other, band))
 
+    def test_links_are_named_by_hostname_not_ip(self):
+        # the scanner only knows the AP by IP; its station reports the AP's hostname over the link
+        radios = {A1: r("ap-ptp-ac", 5480, 20, S1), S1: r("sta-ptp-ac", 5480, 20, A1)}
+        radios[S1]["links"][0]["name"] = "Nubery-Link-AP"
+        devices = {A1: {"key": A1, "mac": A1, "name": "192.168.1.201", "ip": "192.168.1.201"}, S1: {"key": S1, "mac": S1, "name": "Sta"}}
+        out = F.analyse(TOWERS, {A1: "t1"}, radios, devices)
+        self.assertEqual(out["towers"][0]["links"][0]["name"] if out["towers"][0]["links"] else
+                         next(t for t in out["towers"] if t["links"])["links"][0]["name"], "Nubery-Link-AP")
+
     def test_candidates_stay_inside_the_band(self):
         c = F.candidates(80)
         self.assertTrue(all(any(lo <= x - 40 and x + 40 <= hi for lo, hi in F.RANGES) for x in c))

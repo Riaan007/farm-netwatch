@@ -120,7 +120,20 @@ def analyse(groups, group_of, radios, devices, names=None):
         by_mac.setdefault(k.lower(), k)
     links = _links(radios, by_mac, by_ip)
     link_of = {m: ap for ap, L in links.items() for m in L["members"]}
-    name = lambda k: names.get(k) or (devices.get(k) or {}).get("name") or (radios.get(k) or {}).get("name") or k  # noqa: E731
+    # A radio the scanner only knows by IP is still named by its peers (wstalist hostname).
+    heard = {}
+    for r in radios.values():
+        for ln in r.get("links") or []:
+            peer = by_mac.get((ln.get("peer") or "").lower())
+            if peer and ln.get("name"):
+                heard.setdefault(peer, ln["name"])
+    is_ip = lambda v: bool(v) and all(p.isdigit() for p in str(v).split(".")) and str(v).count(".") == 3  # noqa: E731
+
+    def name(k):
+        for v in (names.get(k), (devices.get(k) or {}).get("name"), (radios.get(k) or {}).get("name")):
+            if v and not is_ip(v) and v.lower() != k.lower():
+                return v
+        return heard.get(k) or (devices.get(k) or {}).get("ip") or k
 
     towers = {gid: g for gid, g in groups.items() if g.get("kind") == "tower"}
     on = {gid: sorted({link_of[k] for k, g in group_of.items() if g == gid and k in link_of}) for gid in towers}
