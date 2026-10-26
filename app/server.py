@@ -37,6 +37,7 @@ import sysmon
 import topology
 import topology_routes
 import tunnels
+import wifichecks
 import wifidiag
 import kuma
 import notify
@@ -519,6 +520,32 @@ def api_radio_poll():
         args=(cfg, devices, scanner_registry),
         kwargs={"force": True}, daemon=True).start()
     return jsonify({"ok": True, "started": True})
+
+
+@app.route("/api/wifi/check", methods=["POST"])
+@guard
+def api_wifi_check():
+    """Answer a Wi-Fi diagnosis step on the spot ("Check now"). Body:
+    {kinds: [power|uptime|log|settings|login], radios: [device keys]}.
+    Read-only over SSH with each radio's saved login; needs the site login or
+    the hub key because it uses those saved logins."""
+    body = request.get_json(force=True, silent=True) or {}
+    keys = [k for k in (body.get("radios") or []) if isinstance(k, str)][:wifichecks.MAX_RADIOS]
+    with scanner.lock:
+        devs = []
+        for k in keys:
+            d = scanner.devices.get(k) or scanner.devices.get(k.lower())
+            if d:
+                reg = scanner.registry.get(d.get("key") or k, {})
+                devs.append({"key": d.get("key") or k, "ip": d.get("ip") or "",
+                             "name": reg.get("name") or d.get("device_name") or d.get("name") or d.get("ip")})
+    if not devs:
+        return jsonify({"ok": False, "error": "none of those radios is known on this site"}), 404
+    try:
+        saved = lambda k: (lambda c: c if c.get("password") else None)(creds.get(k))
+        return jsonify(wifichecks.run(body.get("kinds") or [], devs, saved))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
 
 
 @app.route("/api/radio/links")

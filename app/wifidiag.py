@@ -181,8 +181,17 @@ def _thin(rows):
     return rows[::step] if step > 1 else rows
 
 
-def _step(text, where):
-    return {"text": text, "where": where}         # where: "remote" (from the office) | "site"
+def _step(text, where, check=None):
+    st = {"text": text, "where": where}            # where: "remote" (from the office) | "site"
+    if check:
+        st["check"] = check                        # the page's "Check now" → wifichecks.run()
+    return st
+
+
+def _chk(kinds, *ends):
+    """A step's on-the-spot check, only for ends we can log in to."""
+    keys = [e["key"] for e in ends if e and e.get("monitored", True) and e.get("key")]
+    return {"kinds": list(kinds), "radios": keys} if keys else None
 
 
 # ---- assembling physical links -------------------------------------------
@@ -276,7 +285,8 @@ def _diagnose(L, now, hour_of):
              "Something is now in the path: trees that grew, a new building, a shed roof",
              "Output power was turned down on one of the radios",
              "Water in a connector or a damaged cable at one end"],
-            [_step(f"Check Output Power on both radios (airOS → Wireless) — it should not be turned down.", "remote"),
+            [_step(f"Check Output Power on both radios (airOS → Wireless) — it should not be turned down.", "remote",
+                   _chk(["power"], ap, sta)),
              _step(f"On {sta['name']} open Tools → Align Antenna. Loosen the mount, sweep slowly left/right, "
                    f"then up/down, and lock it where the signal peaks.", "site"),
              _step(("Re-aim the AP sector so it faces this station's direction." if _is_sector(ap.get("model"))
@@ -308,8 +318,10 @@ def _diagnose(L, now, hour_of):
             causes = [f"Only one direction got weaker, so {quiet['name']} is transmitting less",
                       f"Output power changed on {quiet['name']}",
                       f"Cable, connector or radio fault at {quiet['name']}"]
-            steps = [_step(f"Check Output Power and any recent settings change on {quiet['name']}.", "remote"),
-                     _step(f"Check {quiet['name']}'s uptime and log — a reboot or reset can drop power settings.", "remote"),
+            steps = [_step(f"Check Output Power and any recent settings change on {quiet['name']}.", "remote",
+                           _chk(["power", "settings"], quiet)),
+                     _step(f"Check {quiet['name']}'s uptime and log — a reboot or reset can drop power settings.", "remote",
+                           _chk(["uptime", "log"], quiet)),
                      _step(f"Inspect the cable and connectors at {quiet['name']}.", "site")]
         add(lvl, "signal_drop", f"Signal {worst_drop:.0f} dB below normal", ev, causes, steps,
             good="Signal back within 3 dB of its normal level.")
@@ -339,7 +351,8 @@ def _diagnose(L, now, hour_of):
             [_step(f"Run Tools → airView on {ap['name']} and on {sta['name']} for a few minutes each. Look for "
                    f"other signals on or next to {freq}.", "remote"),
              _step("If the channel is busy, move the AP to the quietest channel. First check every station's "
-                   "Frequency Scan List includes the new channel, or they will not reconnect.", "remote"),
+                   "Frequency Scan List includes the new channel, or they will not reconnect.", "remote",
+                   _chk(["settings"], ap, sta)),
              _step(fz_txt + " — trees close to the line are the usual cause when the signal is strong.", "site"),
              _step(f"Check {sta['name']}'s radio sits squarely in the dish feed and the dish is not rotated.", "site")],
             good="Link score above 80 in both directions.")
@@ -414,7 +427,8 @@ def _diagnose(L, now, hour_of):
                 [f"{quieter['name']} is set to lower output power than {louder['name']}",
                  f"Automatic power control or a country power limit on {quieter['name']}",
                  f"A weak transmitter or damaged cable at {quieter['name']}"],
-                [_step(f"Compare Output Power on {ap['name']} and {sta['name']} (airOS → Wireless) and match them.", "remote"),
+                [_step(f"Compare Output Power on {ap['name']} and {sta['name']} (airOS → Wireless) and match them.", "remote",
+                       _chk(["power"], ap, sta)),
                  _step(f"If the settings match, inspect {quieter['name']}'s cable and radio.", "site")],
                 good="Both ends within about 5 dB.")
 
@@ -431,7 +445,8 @@ def _diagnose(L, now, hour_of):
             [f"{sta['name']} lost power (PoE injector, UPS or battery — check solar sites at night)",
              "Lightning or water damage to the cable",
              "Severe interference or a big alignment change"],
-            [_step(f"Check {sta['name']}'s uptime in airOS: a short uptime means it rebooted — a power problem.", "remote"),
+            [_step(f"Check {sta['name']}'s uptime in airOS: a short uptime means it rebooted — a power problem.", "remote",
+                   _chk(["uptime", "log"], sta)),
              _step(f"Check the power supply, PoE injector and surge protection at {sta['name']}.", "site")],
             good="No disconnections.")
 
@@ -485,7 +500,7 @@ def _radio_findings(r, stations, now):
             why, fix = "The radio did not answer over SSH", "Check it is online; if it is, check SSH access and the saved login."
         return [{"id": "unreadable", "level": "info", "title": "Can't read this radio",
                  "evidence": [r.get("error") or "no reply"], "causes": [why],
-                 "steps": [_step(fix, "remote")], "good": None}]
+                 "steps": [_step(fix, "remote", _chk(["login"], r))], "good": None}]
     if "mixed" in mode and stations and all("ac" in (s.get("model") or "").lower() for s in stations):
         out.append({"id": "mixed_mode", "level": "warn", "title": "AP in airMAX Mixed mode, but every station is AC",
                     "evidence": [f"Wireless mode {mode}",
@@ -494,7 +509,8 @@ def _radio_findings(r, stations, now):
                     "causes": ["Mixed mode keeps older airMAX M radios able to connect and gives up some AC "
                                "performance for every station on this AP"],
                     "steps": [_step("On the AP set airOS → Wireless → Wireless Mode to Access Point PtMP airMAX AC and save. "
-                                    "Every connected station is an AC radio, so none needs Mixed mode.", "remote"),
+                                    "Every connected station is an AC radio, so none needs Mixed mode.", "remote",
+                                    _chk(["settings"], r)),
                               _step("Before saving, check each station shows airOS 8 firmware; do it when someone could "
                                     "reach the AP if a station does not come back.", "remote")],
                     "good": "Higher link scores and capacity on the AP's links."})

@@ -1425,6 +1425,33 @@ def api_site_radio_poll(site_id):
     return jsonify({"ok": True, "started": True})
 
 
+@app.route("/api/hub/sites/<site_id>/wifi/check", methods=["POST"])
+def api_site_wifi_check(site_id):
+    """Forward a Wi-Fi step's "Check now" to the site (read-only radio reads),
+    with the hub key — the site reads its saved radio logins for it."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    body = request.get_json(force=True, silent=True) or {}
+    kinds = [k for k in (body.get("kinds") or []) if isinstance(k, str)][:5]
+    radios = [k for k in (body.get("radios") or []) if isinstance(k, str)][:8]
+    if not kinds or not radios:
+        return jsonify({"ok": False, "error": "nothing to check"}), 400
+    try:
+        r = requests.post(f"{siteapi.base_url(site)}/api/wifi/check", json={"kinds": kinds, "radios": radios},
+                          headers=siteapi.headers(site), timeout=(3, 60))
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"Site unreachable: {e.__class__.__name__}"}), 502
+    if r.status_code == 404 and "radios" not in r.text:
+        return jsonify({"ok": False, "error": "This site's Netwatch is too old for Check now — update it."}), 501
+    try:
+        j = r.json()
+    except ValueError:
+        return jsonify({"ok": False, "error": f"Site answered {r.status_code}"}), 502
+    # never pass the site's 401 on: the Control Center reads a 401 as "signed out of the hub"
+    return jsonify(j), (502 if r.status_code == 401 else r.status_code)
+
+
 @app.route("/api/hub/sites/<site_id>/wifi-doctor", methods=["POST"])
 def api_site_wifi_doctor(site_id):
     """Read the site's radio telemetry and have Gemini turn it into a work list."""

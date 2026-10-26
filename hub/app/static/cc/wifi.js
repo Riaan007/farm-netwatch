@@ -90,10 +90,31 @@
       ${(f.evidence || []).length ? `<ul class="ev">${f.evidence.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}
       <div class="fcols">
         <div><h5>Likely causes</h5><ol>${(f.causes || []).map((c) => `<li>${esc(c)}</li>`).join("")}</ol></div>
-        <div><h5>What to do</h5><ol class="steps">${(f.steps || []).map((st) => `<li><span>${esc(st.text)}</span><span class="where ${st.where}">${WHERE[st.where]}</span></li>`).join("")}</ol></div>
+        <div><h5>What to do</h5><ol class="steps">${(f.steps || []).map((st) => {
+          const c = st.check && (st.check.radios || []).length ? st.check : null;
+          return `<li><span>${esc(st.text)}</span><span class="wf-chkrow"><span class="where ${st.where}">${WHERE[st.where]}</span>${c
+            ? `<button type="button" class="wf-chkbtn" data-wf-check data-kinds="${esc(c.kinds.join(","))}" data-radios="${esc(c.radios.join(","))}" title="Read the answer from the radio now — nothing is changed">Check now</button>` : ""}</span>${c ? `<div class="wf-chkres" hidden aria-live="polite"></div>` : ""}</li>`;
+        }).join("")}</ol></div>
       </div>
       ${f.good ? `<p class="good">✓ Good result: ${esc(f.good)}</p>` : ""}
     </div>`;
+  }
+
+  // "Check now" on a From-the-office step: the site reads the radios (read-only).
+  async function runCheck(site, btn) {
+    const out = btn.closest("li").querySelector(".wf-chkres");
+    btn.disabled = true; btn.textContent = "Checking…";
+    out.hidden = false; out.innerHTML = `<div class="ts">Reading the radio over SSH…</div>`;
+    const fact = (f) => `<div class="f ${esc(f.level || "")}"><span>${esc(f.label)}</span>${String(f.value).includes("\n") ? `<pre>${esc(f.value)}</pre>` : `<b>${esc(f.value)}</b>`}</div>`;
+    try {
+      const j = await CC.api(`/api/hub/sites/${encodeURIComponent(site.id)}/wifi/check`, { method: "POST", timeout: 70000,
+        body: { kinds: btn.dataset.kinds.split(","), radios: btn.dataset.radios.split(",") } });
+      const sum = (j.summary || []).map(fact).join("");
+      out.innerHTML = (j.results || []).map((r) => `<div><h6>${esc(r.name)} <span class="ip">${esc(r.ip || "")}</span></h6>${r.ok
+        ? (r.facts || []).map(fact).join("") : `<div class="f bad"><b>${esc(r.error || "could not read")}</b></div>`}</div>`).join("")
+        + (sum ? `<div class="sum">${sum}</div>` : "") + `<div class="ts">Read from the radio at ${new Date().toLocaleTimeString()} · nothing was changed</div>`;
+    } catch (e) { out.innerHTML = `<div class="f bad"><b>${esc(e.message)}</b></div>`; }
+    btn.disabled = false; btn.textContent = "Check again";
   }
 
   // Inline SVG line charts with a hover readout (no chart library: offline LAN).
@@ -296,6 +317,8 @@
         if (e.target.closest("[data-wf-info]")) { this.showInfo = !this.showInfo; return this.draw(CC.site(this.site)); }
         const c = e.target.closest("[data-wf-csv]");
         if (c) { const d = this.current(), l = d && d.links.find((x) => x.id === c.dataset.wfCsv); return l && csv(CC.site(this.site), l, series[`${this.site}|${HOURS}|${l.id}`]); }
+        const ck = e.target.closest("[data-wf-check]");
+        if (ck) return runCheck(CC.site(this.site), ck);
         const tn = e.target.closest("[data-wf-tunnel]");
         if (tn) return openAirOS(CC.site(this.site), tn.dataset.wfTunnel, tn);
       };

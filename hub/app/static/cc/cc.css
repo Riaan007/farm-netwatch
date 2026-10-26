@@ -409,6 +409,15 @@ pre.out { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(2
 .wf-find ol.steps li { display: grid; grid-template-columns: 20px minmax(0,1fr); gap: 2px 8px; counter-increment: st; }
 .wf-find ol.steps li::before { content: counter(st); width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: #0b1322; background: var(--muted); margin-top: 1px; }
 .wf-find ol.steps li .where { grid-column: 2; justify-self: start; }
+.wf-find ol.steps li .wf-chkrow { grid-column: 2; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; } .wf-chkrow .where { grid-column: auto; }
+.wf-chkbtn { height: 22px; padding: 0 9px; border-radius: 99px; border: 1px solid rgba(34, 211, 238, .45); background: var(--info-bg); color: #a5f3fc; font-size: 11px; font-weight: 650; cursor: pointer; }
+.wf-chkbtn:hover:not(:disabled) { background: rgba(34, 211, 238, .22); } .wf-chkbtn:disabled { opacity: .55; cursor: wait; }
+.wf-chkres { grid-column: 2; margin-top: 5px; padding: 8px 10px; border-radius: 9px; background: rgba(2, 6, 23, .55); border: 1px solid var(--line); font-size: 12.5px; display: grid; gap: 8px; }
+.wf-chkres h6 { margin: 0 0 3px; font-size: 12.5px; color: var(--ink); } .wf-chkres h6 .ip { color: var(--dim); font-weight: 500; font-family: ui-monospace, monospace; }
+.wf-chkres .f { display: flex; flex-wrap: wrap; gap: 2px 10px; color: var(--muted); } .wf-chkres .f b { color: var(--ink); font-weight: 600; }
+.wf-chkres .f.ok b { color: var(--ok); } .wf-chkres .f.warn b { color: var(--warn); } .wf-chkres .f.bad b { color: var(--bad); }
+.wf-chkres pre { margin: 3px 0 0; width: 100%; white-space: pre-wrap; word-break: break-word; font-size: 11.5px; color: var(--ink2); max-height: 200px; overflow: auto; }
+.wf-chkres .sum { border-top: 1px solid var(--line); padding-top: 6px; } .wf-chkres .ts { color: var(--dim); font-size: 11.5px; }
 .wf-find .good { margin: 9px 0 0; font-size: 12.5px; color: #6ee7b7; }
 .banner.ok-banner { border-color: rgba(52,211,153,.35); background: var(--ok-bg); color: #a7f3d0; margin: 0; }
 .wf-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
