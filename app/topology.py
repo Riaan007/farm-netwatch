@@ -638,6 +638,8 @@ def create_link(d, body, devices, radios=()):
          "label": _text(body.get("label"), 60), "notes": _multiline(body.get("notes"), 500),
          "source": "discovered" if _s(body.get("source")) == "discovered" else "manual",
          "evidence": _text(body.get("evidence"), 300), "created_ts": int(time.time())}
+    if re.fullmatch(r"s-[0-9a-f]{12}", _s(body.get("sug"))):
+        L["sug"] = body["sug"]                  # deleting it later dismisses the suggestion
     d["links"][lid] = L
     for end in (a, b):          # a device you wire up is on the diagram from now on
         m = d["nodes"].setdefault(end, {})
@@ -670,8 +672,11 @@ def update_link(d, lid, body, devices, radios=()):
 
 
 def delete_link(d, lid):
-    if d["links"].pop(lid, None) is None:
+    L = d["links"].pop(lid, None)
+    if L is None:
         raise TopologyError("That connection no longer exists", 404)
+    if L.get("sug"):                            # drawn from the readings: don't draw it again
+        d["dismissed"][L["sug"]] = int(time.time())
     return {"id": lid}
 
 
@@ -727,7 +732,69 @@ def _connected_via_passive(d, a, b, depth=4, adj=None):
     return False
 
 
-def suggestions(d, devices, eligible, switches=None, routers=None, radios=None, now=None):
+_NET_KINDS = ("radio", "ptp", "router", "wifi-router", "switch")
+PAIR_GAP_MS = 0.8                 # an air hop adds at least this much to the far radio
+
+
+def _radio_mode(radios, k):
+    r = (radios or {}).get(k) or {}
+    return str(((r.get("sample") or {}).get("mode")) or r.get("mode") or "").lower()
+
+
+def _first_behind(cands, devices, radios, by_mac, by_ip, toward_pi):
+    """The network device plugged straight into a busy port, or (None, "") when
+    the readings can't tell. A switch table lists who is behind a port, not in
+    what order, so only these are decided:
+      - one network device on the port → it
+      - otherwise only radios Netwatch reads (and Wi-Fi hotspot units, which are
+        end points) may be there — a managed switch or router could sit in front
+        of them or behind them, so then nothing is guessed — and those radios
+        must form ONE wireless chain (each other's peers):
+          * exactly one PtMP access point in it → the AP (a sector serves the
+            others from the switch side)
+          * exactly two radios, one link → by response time, measured from the
+            Pi: when the Pi is behind this port the radio on the switch is the
+            FARTHER (slower) one, else the nearer one — and clearly apart."""
+    if len(cands) == 1:
+        return cands[0], "the only network device"
+    rset = [k for k in cands if (radios or {}).get(k)]
+    wired = [k for k in cands if k not in rset and (devices.get(k) or {}).get("category") != "internet-ap"]
+    if wired or not rset:
+        return None, ""
+    peers = {k: set() for k in rset}
+    for k in rset:
+        for ln in (radios[k].get("links") or []):
+            p = by_mac.get(mac_norm(ln.get("peer")))
+            if not p and ln.get("ip") and len(by_ip.get(ln["ip"], [])) == 1:
+                p = by_ip[ln["ip"]][0]
+            if p in peers and p != k:
+                peers[k].add(p)
+                peers[p].add(k)
+    seen, todo = {rset[0]}, [rset[0]]
+    while todo:
+        for p in peers[todo.pop()]:
+            if p not in seen:
+                seen.add(p)
+                todo.append(p)
+    if seen != set(rset):
+        return None, ""
+    sectors = [k for k in rset if _radio_mode(radios, k).startswith("ap") and "ptmp" in _radio_mode(radios, k)]
+    if len(sectors) == 1:
+        n = len(rset) - 1
+        return sectors[0], f"the access point serving the other {n} radio{'s' if n != 1 else ''} seen there"
+    if len(rset) == 2:
+        try:
+            t = sorted((float(devices[k].get("rtt")), k) for k in rset)
+        except (TypeError, ValueError):
+            return None, ""
+        if t[1][0] - t[0][0] >= PAIR_GAP_MS:
+            k = t[1][1] if toward_pi else t[0][1]
+            return k, ("the radio of the link nearest the switch" + (" (Netwatch's Pi is behind this port, so "
+                       "it is the farther of the two from the Pi)" if toward_pi else ""))
+    return None, ""
+
+
+def suggestions(d, devices, eligible, switches=None, routers=None, radios=None, now=None, self_macs=()):
     """Connections the site's own readings prove, not yet on the diagram.
 
     devices   {key: device}; eligible = ids allowed as endpoints
@@ -756,6 +823,7 @@ def suggestions(d, devices, eligible, switches=None, routers=None, radios=None, 
         out.append(s)
 
     kind_of = {k: device_kind(dev, d["nodes"].get(k), radios or {}) for k, dev in devices.items()}
+    self_macs = {mac_norm(m) for m in self_macs or () if mac_norm(m)}
     adj = _link_adj(d)
     table = {"switch": "switch address table", "router": "router bridge table"}
 
@@ -764,17 +832,28 @@ def suggestions(d, devices, eligible, switches=None, routers=None, radios=None, 
             return
         unit_name = device_title(devices[unit_key])
         for port_id, port_name, macs, uplink in port_rows:
-            if uplink:
-                continue                       # many MACs behind it: another switch or a radio link
             macs = list(dict.fromkeys(m for m in (mac_norm(x.get("mac") if isinstance(x, dict) else x)
                                                    for x in macs) if m))
+            toward_pi = bool(self_macs & set(macs))
             known = list(dict.fromkeys(k for k in (by_mac.get(m) for m in macs) if k and k != unit_key))
             if not macs or not known:
                 continue
             label = port_name if port_name and not re.fullmatch(r"(port\s*)?\d+(/\d+)?", str(port_name), re.I) else ""
             port_txt = f"port {str(port_id).split('/')[-1]}" + (f" ({label})" if label else "")
             inside = [k for k in known if k in eligible]
-            network = [k for k in inside if kind_of.get(k) in ("radio", "ptp", "router", "wifi-router", "switch")]
+            network = [k for k in inside if kind_of.get(k) in _NET_KINDS]
+            if uplink or len(network) > 1:
+                # busy port (radio link / another switch): link only the device right behind it
+                first, how = _first_behind(network, devices, radios, by_mac, by_ip, toward_pi) if network else (None, "")
+                if first and not _connected_via_passive(d, unit_key, first, adj=adj):
+                    add({"id": _sid("eth", unit_key, port_id, first), "type": "link", "medium": "ethernet",
+                         "a": unit_key, "a_port": str(port_id), "b": first, "b_port": "",
+                         "source": unit_kind, "ts": ts,
+                         "evidence": f"{device_title(devices[first])} is {how} on {port_txt} of {unit_name}; "
+                                     f"the other {len(macs) - 1} address{'es' if len(macs) > 2 else ''} there "
+                                     f"are behind it ({table[unit_kind]})"})
+                if uplink or first:
+                    continue
             if len(macs) == 1 or (len(network) == 1 and len(macs) < UPLINK_MACS):
                 k = known[0] if len(macs) == 1 else network[0]
                 if k not in eligible or _connected_via_passive(d, unit_key, k, adj=adj):
@@ -862,7 +941,24 @@ def accept_suggestion(d, sug, devices, radios=()):
         raise TopologyError("That suggestion needs a decision — open it to choose what to do")
     return create_link(d, {"a": sug["a"], "a_port": sug.get("a_port"), "b": sug["b"],
                            "b_port": sug.get("b_port"), "medium": sug["medium"],
-                           "source": "discovered", "evidence": sug.get("evidence")}, devices, radios)
+                           "source": "discovered", "evidence": sug.get("evidence"), "sug": sug.get("id")},
+                       devices, radios)
+
+
+def auto_link_wired(d, sugs, devices, radios=()):
+    """Draw every wired connection a switch or router table proves (type link,
+    source switch/router) without asking. A drawn link that is later deleted
+    dismisses its suggestion, so it is not drawn again. NOCHANGE when none."""
+    done = 0
+    for s in sugs:
+        if s.get("type") != "link" or s.get("source") not in ("switch", "router"):
+            continue
+        try:
+            accept_suggestion(d, s, devices, radios)
+            done += 1
+        except TopologyError:
+            pass
+    return done or NOCHANGE
 
 
 def insert_passive(d, sug, body, devices):
@@ -1038,7 +1134,7 @@ def _link_metrics(a, b, radios, by_mac_key):
 
 
 def build(d, devices, registry=None, radios=None, switches=None, routers=None, problems=None,
-          now=None, scope="infra", gateway=None):
+          now=None, scope="infra", gateway=None, self_macs=()):
     """Everything both views draw, from ONE document.
 
     devices   scanner records (list); registry {key: registry entry} (asset radio_role);
@@ -1093,7 +1189,7 @@ def build(d, devices, registry=None, radios=None, switches=None, routers=None, p
         elif state != "quiet" or dev.get("watch"):
             others.append({"id": k, "name": device_title(dev), "ip": dev.get("ip") or "", "kind": kind, "state": state})
 
-    sugg = suggestions(d, devs, eligible, switches, routers, radios, now)
+    sugg = suggestions(d, devs, eligible, switches, routers, radios, now, self_macs)
 
     by_mac_key = {}
     for k, dev in devs.items():

@@ -8,6 +8,7 @@ the result of its own change without a second round trip over a farm link.
 """
 import base64
 import functools
+import os
 import time
 
 from flask import Blueprint, jsonify, request, send_file, session
@@ -113,8 +114,26 @@ def _gateway():
     return _GW["ip"]
 
 
+def _self_macs():
+    """This Pi's own MAC addresses (host network) — which switch port it is behind."""
+    out = []
+    try:
+        for n in os.listdir("/sys/class/net"):
+            try:
+                with open(f"/sys/class/net/{n}/address") as f:
+                    m = f.read().strip()
+                if m and m != "00:00:00:00:00:00":
+                    out.append(m)
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return out
+
+
 def _inputs():
     return {
+        "self_macs": _self_macs(),
         "gateway": _gateway(),
         "devices": _devices(),
         "registry": scanner.registry,
@@ -141,7 +160,18 @@ def _graph_payload(force=False, scope=None, inp=None):
         d = store.doc()
         g = topology.build(d, inp["devices"], inp["registry"], inp["radios"], inp["switches"],
                            inp["routers"], inp["problems"], now=now, scope=view_scope,
-                           gateway=inp.get("gateway"))
+                           gateway=inp.get("gateway"), self_macs=inp.get("self_macs", ()))
+        if view_scope == "infra" and not force and not store.broken:
+            # Switch/router tables that prove a wire are drawn straight away (deleting
+            # one dismisses it); radio and shared-port findings stay suggestions.
+            if topology.auto_link_wired(d, g["suggestions"], _dev_map(inp), inp["radios"]) is not topology.NOCHANGE:
+                try:
+                    store._write()
+                except topology.TopologyError as e:
+                    print("topology:", e, flush=True)
+                g = topology.build(d, inp["devices"], inp["registry"], inp["radios"], inp["switches"],
+                                   inp["routers"], inp["problems"], now=now, scope=view_scope,
+                                   gateway=inp.get("gateway"), self_macs=inp.get("self_macs", ()))
         ch = topology.layout(d, g, force=force, scope=scope)
         # "Every device" is a look, not a layout: it must not hand every phone a saved spot.
         if (view_scope == "infra" or force) and topology.apply_layout(d, ch, force=force):
@@ -377,7 +407,8 @@ def _current_suggestions(inp):
         d = store.doc()
         g = topology.build(d, inp["devices"], inp["registry"], inp["radios"], inp["switches"],
                            inp["routers"], inp["problems"], gateway=inp.get("gateway"),
-                           scope="all" if request.args.get("scope") == "all" else "infra")
+                           scope="all" if request.args.get("scope") == "all" else "infra",
+                           self_macs=inp.get("self_macs", ()))
     return {s["id"]: s for s in g["suggestions"]}
 
 
