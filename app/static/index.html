@@ -501,6 +501,14 @@
         .nw-fixres code { font-family: ui-monospace, monospace; font-size: 11px; color: #a5f3fc; }
         .nw-fixres .acts { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
         .nw-fixres input[type=number], .nw-fixres select { background: #050b16; border: 1px solid rgba(148,163,184,.25); border-radius: .45rem; color: #e2e8f0; padding: .25rem .4rem; font-size: 12px; }
+        .nw-tower { padding: .6rem 0; border-top: 1px solid rgba(148,163,184,.12); display: grid; gap: .4rem; } .nw-tower:first-of-type { border-top: 0; }
+        .nw-tower h4 { margin: 0; font-size: 13.5px; font-weight: 700; color: #f1f5f9; } .nw-tower .ts { color: #64748b; font-size: 11.5px; font-weight: 500; }
+        .nw-spec { width: 100%; height: auto; max-height: 160px; } .nw-spec .ax { fill: #64748b; font-size: 10px; text-anchor: middle; }
+        .nw-spec rect.ok { fill: rgba(34,211,238,.35); stroke: #22d3ee; } .nw-spec rect.bad { fill: rgba(244,63,94,.35); stroke: #fb7185; }
+        .nw-spec .lb { fill: #f1f5f9; font-size: 10.5px; font-weight: 600; }
+        .nw-tower ul.clash { margin: 0; padding-left: 1rem; font-size: 12.5px; display: grid; gap: .15rem; } .nw-tower ul.clash li.crit { color: #fda4af; } .nw-tower ul.clash li.warn { color: #fcd34d; }
+        .nw-tower ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; font-size: 12.5px; color: #cbd5e1; }
+        .nw-tower ol.steps li { display: grid; grid-template-columns: minmax(0,1fr); gap: .25rem; } .nw-tower ol.steps li > * { grid-column: 1; }
         .nw-chkres .sum { border-top: 1px solid rgba(148,163,184,.14); padding-top: .4rem; } .nw-chkres .ts { color: #64748b; font-size: 11px; }
         .nw-find .good { margin: .6rem 0 0; font-size: 12px; color: #6ee7b7; }
         .nw-wok { display: flex; gap: .6rem; align-items: center; padding: .7rem .9rem; border-radius: .7rem; background: rgba(16,185,129,.08); border: 1px solid rgba(52,211,153,.25); color: #a7f3d0; font-size: 13px; }
@@ -799,6 +807,12 @@
                         </div>
                     </div>
                     <div id="wifi-fix" class="nw-wfix"></div>
+                </section>
+                <section class="nw-panel" id="wifi-plan-panel">
+                    <div class="nw-dhead">
+                        <div><h2>Frequency plan per tower</h2><p>Links on the same tower must keep their channels apart; towers close together can hear each other. Towers come from the Network diagram.</p></div>
+                    </div>
+                    <div id="wifi-plan" class="nw-body"><div class="nw-empty">Loading…</div></div>
                 </section>
                 <section class="nw-panel">
                     <div class="nw-dhead">
@@ -4441,6 +4455,7 @@
             }
             WF.data = d;
             renderWifiPage();
+            loadWifiPlan();
             if(focus) setTimeout(() => wifiFocus(focus), 60);
         }
 
@@ -4580,6 +4595,52 @@
             el.disabled = false; el.textContent = 'Check again';
         }
 
+        // ---- Frequency plan per tower (/api/wifi/plan → freqplan.py) ----
+        async function loadWifiPlan(){
+            const el = document.getElementById('wifi-plan');
+            if(el.querySelector('.nw-fixres:not([hidden])')) return;
+            let p;
+            try { p = await (await fetch('/api/wifi/plan')).json(); } catch(e){ p = {ok: false, error: String(e)}; }
+            if(!p.ok){ el.innerHTML = `<div class="nw-empty">${esc(p.error || 'Could not build the plan')}</div>`; return; }
+            el.innerHTML = wfPlanHtml(p);
+        }
+        function wfSpectrum(t, p){
+            const X0 = 5150, X1 = 5850, W = 700, sx = f => ((f - X0) / (X1 - X0)) * W;
+            const rows = []; const placed = [];
+            for(const l of t.links.filter(l => l.lo != null).sort((a, b) => a.lo - b.lo)){
+                let r = 0; while(placed.some(q => q.r === r && q.hi + 6 > l.lo)) r++;
+                placed.push({r, hi: l.hi}); rows.push({l, r});
+            }
+            const nr = Math.max(1, ...rows.map(x => x.r + 1)), H = 22 + nr * 26;
+            const bg = [[X0, X1, 'rgba(148,163,184,.08)']].concat(p.ranges.map(r => [r[0], r[1], 'rgba(34,211,238,.07)']), p.dfs.map(r => [r[0], r[1], 'rgba(245,158,11,.10)']));
+            return `<svg class="nw-spec" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Channels on ${esc(t.name)}">
+                ${bg.map(b => `<rect x="${sx(b[0])}" y="0" width="${sx(b[1]) - sx(b[0])}" height="${H - 16}" fill="${b[2]}"/>`).join('')}
+                ${[5200, 5300, 5500, 5600, 5700, 5800].map(f => `<text x="${sx(f)}" y="${H - 3}" class="ax">${f}</text>`).join('')}
+                ${rows.map(({l, r}) => `<g><rect x="${sx(l.lo)}" y="${4 + r * 26}" width="${Math.max(3, sx(l.hi) - sx(l.lo))}" height="20" rx="3" class="${l.clash ? 'bad' : 'ok'}"/><text x="${sx(l.lo) + 4}" y="${18 + r * 26}" class="lb">${esc(l.name)} · ${l.freq}/${l.width}</text></g>`).join('')}
+            </svg>`;
+        }
+        function wfPlanHtml(p){
+            if(!p.towers.length) return `<div class="nw-empty"><b>No towers yet</b>On the Network page, add a group of type “Tower / mast” for each high point and put its radios in it — then the plan checks their channels.</div>`;
+            const moves = p.moves || [];
+            const s = p.summary || {};
+            const head = `<div class="nw-help" style="margin-bottom:.4rem">${s.clashes ? `<b class="t-warn">${s.clashes} clash${s.clashes === 1 ? '' : 'es'}</b> on ${s.towers} tower${s.towers === 1 ? '' : 's'} · ${s.moves} move${s.moves === 1 ? '' : 's'} suggested` : `✓ No channel clashes on ${s.towers} tower${s.towers === 1 ? '' : 's'}`} · same tower: ${p.guard_mhz} MHz gap wanted · towers within ${p.near_km} km planned together · <span style="color:#fcd34d">amber band = DFS (radar check)</span></div>`;
+            return head + p.towers.map(t => {
+                const mv = moves.filter(m => m.towers.includes(t.name));
+                return `<div class="nw-tower">
+                    <h4>${esc(t.name)}${t.near.length ? ` <span class="ts">near ${esc(t.near.join(', '))}</span>` : ''}</h4>
+                    ${t.links.length ? wfSpectrum(t, p) : '<div class="ts">No radio on this tower that Netwatch reads.</div>'}
+                    ${t.unknown.length ? `<div class="ts">Frequency unknown (no login saved): ${esc(t.unknown.join(', '))}</div>` : ''}
+                    ${t.clashes.length ? `<ul class="clash">${t.clashes.map(c => `<li class="${c.level}">${esc(c.a_name)} and ${esc(c.b_name)} ${c.gap < 0 ? `overlap by ${Math.round(-c.gap)} MHz` : `are only ${Math.round(c.gap)} MHz apart`}${c.where === 'near' ? ` (on ${esc(c.tower)}, nearby)` : ''}</li>`).join('')}</ul>` : ''}
+                    ${mv.length ? `<ol class="steps">${mv.map(m => {
+                        const fix = {kind: 'channel', radio: m.ap, name: m.name, params: {freq: m.to, width: m.width}};
+                        return `<li><span>${m.to ? `Move <b>${esc(m.name)}</b> ${m.from} → ${m.to} MHz (${m.width} MHz wide)${m.dfs ? ' — DFS channel' : ''}` : `${esc(m.name)}: ${esc(m.note || 'no free channel')}`}</span>${m.to && p.fix_enabled
+                            ? `<span class="nw-chkrow"><button type="button" class="nw-chkbtn fix" data-nw-act="wifi-fix" data-fix="${esc(JSON.stringify(fix))}" title="Preview the move first — nothing is changed until you apply it">Move…</button></span><div class="nw-chkres nw-fixres" hidden aria-live="polite"></div>`
+                            : (m.to ? '<span class="ts">Turn on Settings → Advanced → Wi-Fi fixes to apply this from here.</span>' : '')}</li>`;
+                    }).join('')}</ol>` : ''}
+                </div>`;
+            }).join('');
+        }
+
         // "Fix…" on a step: preview (writes nothing) → Apply now → follow the radio until it saves or undoes.
         async function wifiFix(el){
             const fix = JSON.parse(el.dataset.fix || '{}'), li = el.closest('li'), out = li.querySelector('.nw-fixres');
@@ -4619,7 +4680,7 @@
                     await new Promise(r => setTimeout(r, 3000));
                 }
             };
-            if(fix.kind === 'channel'){
+            if(fix.kind === 'channel' && !(fix.params && fix.params.freq)){
                 out.innerHTML = `<h6>Move ${esc(fix.name)} to another channel</h6>
                     <div class="acts"><label>New centre frequency <input type="number" min="4900" max="6100" step="5" data-f placeholder="e.g. 5180"> MHz</label>
                     <label>Width <select data-w><option value="">keep</option><option>20</option><option>40</option><option>80</option></select></label></div>
@@ -4839,7 +4900,8 @@
             a.download = 'wifi-' + l.name.replace(/[^A-Za-z0-9_-]+/g, '-') + '-' + WF.hours + 'h.csv';
             a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
         }
-        setInterval(() => { if(PAGE === 'wifi' && !document.hidden) loadWifiPage(); }, 120000);
+        // never redraw under an open Fix… panel — it may be following a change on a radio
+        setInterval(() => { if(PAGE === 'wifi' && !document.hidden && !document.querySelector('#page-wifi .nw-fixres:not([hidden])')) loadWifiPage(); }, 120000);
 
         function refresh(){ pollStatus(); loadDevices(); loadInternet(); loadSysinfo(); loadWifiTile(); loadHubBadge(); loadMonitoring(); }
 

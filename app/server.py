@@ -37,6 +37,7 @@ import sysmon
 import topology
 import topology_routes
 import tunnels
+import freqplan
 import wifichecks
 import wififix
 import wifidiag
@@ -641,6 +642,25 @@ def api_wifi_fix_apply():
 @guard
 def api_wifi_fix_state(key):
     return jsonify({"ok": True, "job": wififix.state(key)})
+
+
+@app.route("/api/wifi/plan")
+def api_wifi_plan():
+    """Frequency plan per tower (freqplan.py): each Network-diagram tower's links,
+    their channels, clashes and a conflict-free move for each — read-only, from
+    the radio monitor's last read. Moves are applied with the channel fix."""
+    with topology_routes.store.lock:
+        d = topology_routes.store.doc()
+        groups = {gid: {"name": g.get("name"), "kind": g.get("kind"), "lat": g.get("lat"), "lon": g.get("lon")}
+                  for gid, g in d["groups"].items()}
+        group_of = {k: n.get("group") for k, n in d["nodes"].items() if n.get("group")}
+    with scanner.lock:
+        devices = {k: dict(v) for k, v in scanner.devices.items()}
+        names = {k: r.get("name") for k, r in scanner.registry.items() if r.get("name")}
+    radios = radiomon.monitor.snapshot()["radios"]
+    out = freqplan.analyse(groups, group_of, radios, devices, names)
+    out["fix_enabled"] = bool(config.load().get("features", {}).get("wifi_fix"))
+    return jsonify({"ok": True, **out})
 
 
 @app.route("/api/radio/links")

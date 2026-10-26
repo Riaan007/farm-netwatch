@@ -1494,6 +1494,12 @@ def api_site_wifi_fix_state(site_id, key):
     return _wifi_fix_forward(site_id, f"/api/wifi/fix/{key}", timeout=(3, 20))
 
 
+@app.route("/api/hub/sites/<site_id>/wifi/plan", methods=["GET"])
+def api_site_wifi_plan(site_id):
+    """A site's per-tower frequency plan (read-only)."""
+    return _wifi_fix_forward(site_id, "/api/wifi/plan", timeout=(3, 30))
+
+
 @app.route("/api/hub/sites/<site_id>/wifi-doctor", methods=["POST"])
 def api_site_wifi_doctor(site_id):
     """Read the site's radio telemetry and have Gemini turn it into a work list."""

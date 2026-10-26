@@ -157,7 +157,7 @@
         };
       } catch (err) { out.innerHTML = msg(err.message, "bad") + (/Settings/.test(err.message) ? `<div class="ts">Turn it on in the site's own Settings → Advanced → Wi-Fi fixes.</div>` : ""); }
     };
-    if (fix.kind === "channel") {
+    if (fix.kind === "channel" && !(fix.params && fix.params.freq)) {
       out.innerHTML = `<h6>Move ${esc(fix.name)} to another channel</h6>
         <div class="acts"><label>New centre frequency <input class="inp" style="width:90px" type="number" min="4900" max="6100" step="5" data-f placeholder="5180"> MHz</label>
         <label>Width <select class="sel" data-w><option value="">keep</option><option>20</option><option>40</option><option>80</option></select></label></div>
@@ -169,6 +169,42 @@
     } else {
       preview(fix.params || {});
     }
+  }
+
+  // ---- Frequency plan per tower (site /api/wifi/plan → freqplan.py) ----
+  function spectrum(t, p) {
+    const X0 = 5150, X1 = 5850, W = 700, sx = (f) => ((f - X0) / (X1 - X0)) * W;
+    const rows = [], placed = [];
+    for (const l of t.links.filter((l) => l.lo != null).sort((a, b) => a.lo - b.lo)) {
+      let r = 0; while (placed.some((q) => q.r === r && q.hi + 6 > l.lo)) r++;
+      placed.push({ r, hi: l.hi }); rows.push({ l, r });
+    }
+    const nr = Math.max(1, ...rows.map((x) => x.r + 1)), H = 22 + nr * 26;
+    const bg = p.ranges.map((r) => [r[0], r[1], "rgba(34,211,238,.07)"]).concat(p.dfs.map((r) => [r[0], r[1], "rgba(245,158,11,.10)"]));
+    return `<svg class="wf-spec" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Channels on ${esc(t.name)}">
+      <rect x="0" y="0" width="${W}" height="${H - 16}" fill="rgba(148,163,184,.08)"/>
+      ${bg.map((b) => `<rect x="${sx(b[0])}" y="0" width="${sx(b[1]) - sx(b[0])}" height="${H - 16}" fill="${b[2]}"/>`).join("")}
+      ${[5200, 5300, 5500, 5600, 5700, 5800].map((f) => `<text x="${sx(f)}" y="${H - 3}" class="ax">${f}</text>`).join("")}
+      ${rows.map(({ l, r }) => `<g><rect x="${sx(l.lo)}" y="${4 + r * 26}" width="${Math.max(3, sx(l.hi) - sx(l.lo))}" height="20" rx="3" class="${l.clash ? "bad" : "ok"}"/><text x="${sx(l.lo) + 4}" y="${18 + r * 26}" class="lb">${esc(l.name)} · ${l.freq}/${l.width}</text></g>`).join("")}
+    </svg>`;
+  }
+  function planHtml(p) {
+    if (!(p.towers || []).length) return `<div class="empty"><b>No towers yet</b>In the Network tab, add a group of type “Tower / mast” for each high point and put its radios in it — then the plan checks their channels.</div>`;
+    const sm = p.summary || {}, moves = p.moves || [];
+    const head = `<p class="note" style="margin:0 0 6px">${sm.clashes ? `<b class="bad">${CC.plural(sm.clashes, "clash", "clashes")}</b> on ${CC.plural(sm.towers, "tower")} · ${CC.plural(sm.moves, "move")} suggested` : `✓ No channel clashes on ${CC.plural(sm.towers, "tower")}`} · same tower: ${p.guard_mhz} MHz gap · towers within ${p.near_km} km planned together · <span style="color:var(--warn)">amber = DFS (radar check)</span></p>`;
+    return head + p.towers.map((t) => {
+      const mv = moves.filter((m) => m.towers.includes(t.name));
+      return `<div class="wf-tower"><h4>${esc(t.name)}${t.near.length ? ` <span class="note">near ${esc(t.near.join(", "))}</span>` : ""}</h4>
+        ${t.links.length ? spectrum(t, p) : `<p class="note">No radio on this tower that the site reads.</p>`}
+        ${t.unknown.length ? `<p class="note">Frequency unknown (no login saved): ${esc(t.unknown.join(", "))}</p>` : ""}
+        ${t.clashes.length ? `<ul class="clash">${t.clashes.map((c) => `<li class="${c.level}">${esc(c.a_name)} and ${esc(c.b_name)} ${c.gap < 0 ? `overlap by ${Math.round(-c.gap)} MHz` : `are only ${Math.round(c.gap)} MHz apart`}${c.where === "near" ? ` (on ${esc(c.tower)}, nearby)` : ""}</li>`).join("")}</ul>` : ""}
+        ${mv.length ? `<ol class="mv">${mv.map((m) => {
+          const fix = { kind: "channel", radio: m.ap, name: m.name, params: { freq: m.to, width: m.width } };
+          return `<li><span>${m.to ? `Move <b>${esc(m.name)}</b> ${m.from} → ${m.to} MHz (${m.width} MHz wide)${m.dfs ? " — DFS channel" : ""}` : `${esc(m.name)}: ${esc(m.note || "no free channel")}`}</span>${m.to && p.fix_enabled
+            ? `<span class="wf-chkrow"><button type="button" class="wf-chkbtn fix" data-wf-fix="${esc(JSON.stringify(fix))}" title="Preview the move first — nothing is changed until you apply it">Move…</button></span><div class="wf-chkres wf-fixres" hidden aria-live="polite"></div>`
+            : m.to ? `<span class="note">Turn on the site's Settings → Advanced → Wi-Fi fixes to apply this from here.</span>` : ""}</li>`;
+        }).join("")}</ol>` : ""}</div>`;
+    }).join("");
   }
 
   // Inline SVG line charts with a hover readout (no chart library: offline LAN).
@@ -351,6 +387,7 @@
         <div id="wt-legacy"></div>
         <div class="cols"><div>
           <section class="panel"><div class="phd"><h2>What to do</h2><div class="seg" role="group" aria-label="Where" id="wt-where"><button data-w="" class="on">All</button><button data-w="remote">From the office</button><button data-w="site">On site</button></div></div><div id="wt-fix"></div></section>
+          <section class="panel"><div class="phd"><h2>Frequency plan per tower</h2><span class="note">Links on one tower must keep their channels apart · towers come from the Network diagram</span></div><div class="pbd" id="wt-plan"><div class="skel" style="height:90px"></div></div></section>
           <section class="panel"><div class="phd"><h2>Links <small>grouped by access point</small></h2><button class="btn sm ghost" id="wt-all">Open all</button></div><div class="pbd" id="wt-links"><div class="skel" style="height:140px"></div></div></section>
         </div><div>
           <section class="panel"><div class="phd"><h2>Radios</h2></div><div id="wt-radios"></div></section>
@@ -382,8 +419,17 @@
       this.load(s, want);
     },
     current() { return HOURS === 168 ? S.wifiLinks[this.site] : this.data[`${this.site}|${HOURS}`]; },
+    async loadPlan(s) {
+      const el = $("#wt-plan");
+      if (!el || el.querySelector(".wf-fixres:not([hidden])")) return;
+      try {
+        const p = await api(`/api/hub/sites/${encodeURIComponent(s.id)}/wifi/plan`, { timeout: 40000 });
+        if (this.site === s.id && $("#wt-plan")) $("#wt-plan").innerHTML = planHtml(p);
+      } catch (e) { if ($("#wt-plan")) $("#wt-plan").innerHTML = `<div class="empty"><b>No frequency plan</b>${esc(e.message)}</div>`; }
+    },
     async load(s, focus, fresh) {
       if (!s) return;
+      this.loadPlan(s);
       const id = s.id, h = HOURS;
       const have = h === 168 ? S.wifiLinks[id] : this.data[`${id}|${h}`];
       this.draw(s);
@@ -424,6 +470,7 @@
       // The fleet loader emits every 20 s; only redraw when this site's link data changed,
       // otherwise open links, charts and hover would reset under the reader.
       if (!s || s.id !== this.site || !$("#wt-links")) return;
+      if ($(".wf-fixres:not([hidden])")) return;          // never redraw under a fix that may be running
       const d = this.current();
       const key = d ? `${d.__at}|${d.cached_at}|${!!d.error}` : "";
       if (key === this.drawnKey) { if (d) $("#wt-at").textContent = `${d.stale ? "last known · " : ""}read ${CC.ago(d.cached_at || d.__at)}${d.poll_min ? ` · radios polled every ${d.poll_min} min` : ""}`; return; }
