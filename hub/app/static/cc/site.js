@@ -87,7 +87,7 @@
   }
 
   async function wifiDoctor(s) {
-    const d = CC.dialog(`<div class="dhd"><div><h2>Wi-Fi Doctor · ${esc(s.name)}</h2><p>Gemini reads the wireless trends and writes a work list</p></div><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div>
+    const d = CC.dialog(`<div class="dhd"><div><h2>Wi-Fi Doctor · ${esc(s.name)}</h2><p>Gemini reads the wireless trends and writes a work list</p></div><div class="row"><button class="btn" id="wd-print" hidden title="Print this work list">${icon("print")} Print</button><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div></div>
       <div class="dbd" id="wd"><div class="skel" style="height:24px"></div><div class="skel" style="height:120px"></div><p class="note" style="margin:0">Analysing — usually 10–30 seconds.</p></div>`, { cls: "modal wide" });
     try {
       const j = await api(`/api/hub/sites/${s.id}/wifi-doctor`, { method: "POST", timeout: 120000 });
@@ -101,6 +101,9 @@
           ${(l.likely_causes || []).length ? `<div class="note">Likely: ${l.likely_causes.map(esc).join(" · ")}</div>` : ""}
           ${(l.actions || []).length ? `<ul style="margin:6px 0 0;padding-left:18px">${l.actions.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
         ${(a.watch || []).length ? `<div class="sect"><h3>Keep an eye on</h3><ul style="margin:0;padding-left:18px">${a.watch.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}`;
+      const pb = $("#wd-print", d);
+      pb.hidden = false;
+      pb.onclick = () => window.wdPrint(s.name, j);
     } catch (e) {
       $("#wd", d).innerHTML = `<div class="banner bad">${esc(e.message)}</div><p class="note" style="margin:0">${e.status === 409 ? "This site has no wireless telemetry yet — save SSH logins on its Ubiquiti radios in the site's Netwatch." : "Wi-Fi Doctor needs a Gemini key under Settings → Alerts & AI."}</p>`;
     }

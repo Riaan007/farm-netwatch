@@ -233,7 +233,10 @@
                     <h2 class="text-lg font-bold text-slate-100">📡 Wi-Fi Doctor</h2>
                     <p id="wd-sub" class="text-xs text-slate-500">Wireless links analysed by Gemini, grounded in this site's own telemetry.</p>
                 </div>
+                <div class="flex items-center gap-2">
+                <button id="wd-print" onclick="printWifi()" class="hidden btn btn-ghost" title="Print this work list">🖨 Print</button>
                 <button onclick="closeWifi()" aria-label="Close" class="w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xl leading-none">&times;</button>
+                </div>
             </div>
             <div id="wd-body" class="p-5 overflow-y-auto text-sm space-y-4"></div>
         </div>
@@ -328,6 +331,7 @@
         </div>
     </div>
 
+    <script src="/static/cc/wdprint.js"></script>
     <script>
         const siteId = location.pathname.split('/').pop();
         let card = null;
@@ -946,6 +950,8 @@
         // ---- AI-driven PDF report (Gemini via the hub) ----
         // ---- Wi-Fi Doctor: site telemetry -> Gemini -> a work list ----
         function closeWifi(){ document.getElementById('wifi-modal').classList.add('hidden'); }
+        let wdLast = null;
+        function printWifi(){ if(wdLast) wdPrint(document.title.split(' · ')[0] || siteId, wdLast); }
         function wdEsc(s){
             return String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
         }
@@ -955,6 +961,7 @@
             const body = document.getElementById('wd-body');
             document.getElementById('wifi-modal').classList.remove('hidden');
             body.innerHTML = '<p class="text-slate-400">Reading the radios and analysing…</p>';
+            wdLast = null; document.getElementById('wd-print').classList.add('hidden');
             btn.disabled = true; lbl.textContent = 'Analysing…';
             try {
                 const r = await fetch(`/api/hub/sites/${siteId}/wifi-doctor`, {method: 'POST'});
@@ -993,6 +1000,7 @@
                     : '';
                 h += list('Do these first', a.site_actions) + list('Keep an eye on', a.watch);
                 body.innerHTML = h;
+                wdLast = j; document.getElementById('wd-print').classList.remove('hidden');
             } catch(e){
                 body.innerHTML = '<p class="text-rose-300">Request failed: '+wdEsc(e)+'</p>';
             } finally {
