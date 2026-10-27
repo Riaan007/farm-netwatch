@@ -501,14 +501,6 @@
         .nw-fixres code { font-family: ui-monospace, monospace; font-size: 11px; color: #a5f3fc; }
         .nw-fixres .acts { display: flex; gap: .45rem; flex-wrap: wrap; align-items: center; }
         .nw-fixres input[type=number], .nw-fixres select { background: #050b16; border: 1px solid rgba(148,163,184,.25); border-radius: .45rem; color: #e2e8f0; padding: .25rem .4rem; font-size: 12px; }
-        .nw-tower { padding: .6rem 0; border-top: 1px solid rgba(148,163,184,.12); display: grid; gap: .4rem; } .nw-tower:first-of-type { border-top: 0; }
-        .nw-tower h4 { margin: 0; font-size: 13.5px; font-weight: 700; color: #f1f5f9; } .nw-tower .ts { color: #64748b; font-size: 11.5px; font-weight: 500; }
-        .nw-spec { width: 100%; height: auto; max-height: 160px; } .nw-spec .ax { fill: #64748b; font-size: 10px; text-anchor: middle; }
-        .nw-spec rect.ok { fill: rgba(34,211,238,.35); stroke: #22d3ee; } .nw-spec rect.bad { fill: rgba(244,63,94,.35); stroke: #fb7185; }
-        .nw-spec .lb { fill: #f1f5f9; font-size: 10.5px; font-weight: 600; }
-        .nw-tower ul.clash { margin: 0; padding-left: 1rem; font-size: 12.5px; display: grid; gap: .15rem; } .nw-tower ul.clash li.crit { color: #fda4af; } .nw-tower ul.clash li.warn { color: #fcd34d; } .nw-tower ul.clash li.info { color: #94a3b8; }
-        .nw-tower ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; font-size: 12.5px; color: #cbd5e1; }
-        .nw-tower ol.steps li { display: grid; grid-template-columns: minmax(0,1fr); gap: .25rem; } .nw-tower ol.steps li > * { grid-column: 1; }
         .nw-chkres .sum { border-top: 1px solid rgba(148,163,184,.14); padding-top: .4rem; } .nw-chkres .ts { color: #64748b; font-size: 11px; }
         .nw-find .good { margin: .6rem 0 0; font-size: 12px; color: #6ee7b7; }
         .nw-wok { display: flex; gap: .6rem; align-items: center; padding: .7rem .9rem; border-radius: .7rem; background: rgba(16,185,129,.08); border: 1px solid rgba(52,211,153,.25); color: #a7f3d0; font-size: 13px; }
@@ -542,6 +534,127 @@
         .nw-wguide dt { font-size: 12.5px; font-weight: 700; color: #e2e8f0; }
         .nw-wguide dd { margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5; }
         .nw-wguide b.g { color: #6ee7b7; } .nw-wguide b.a { color: #fcd34d; } .nw-wguide b.r { color: #fda4af; }
+        /* wi-fi views, link cards, frequency plan (2026-10-27: same design as the hub's Control Center) */
+        #page-wifi { --line: rgba(148,163,184,.16); --line2: rgba(148,163,184,.28); --ink: #e2e8f0; --ink2: #cbd5e1; --muted: #94a3b8; --dim: #64748b;
+            --cyan: #22d3ee; --cyan2: #67e8f9; --ok: #34d399; --ok-bg: rgba(16,185,129,.14); --warn: #fbbf24; --warn-bg: rgba(245,158,11,.14); --bad: #fb7185;
+            --unk-bg: rgba(148,163,184,.13); --mono: ui-monospace, Menlo, Consolas, monospace; }
+        .nw-wviews { display: flex; gap: 2px; margin: -.3rem 0 1rem; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+        .nw-wviews button { border: 0; border-radius: 0; background: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px 10px; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--muted); font-size: 13.5px; font-weight: 650; white-space: nowrap; }
+        .nw-wviews button:hover { color: var(--ink); }
+        .nw-wviews button.on { color: var(--ink); border-bottom-color: var(--cyan); }
+        .nw-wviews .ct { min-width: 20px; height: 19px; padding: 0 6px; border-radius: 99px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--unk-bg); color: var(--ink2); font-variant-numeric: tabular-nums; }
+        .nw-wviews .ct:empty { display: none; }
+        .nw-wviews .ct.warn { background: var(--warn-bg); color: #fcd34d; } .nw-wviews .ct.ok { background: var(--ok-bg); color: #6ee7b7; }
+        #page-wifi .nw-wgrid > * { min-width: 0; }
+        #page-wifi .nw-dhead .nw-tools { flex-wrap: wrap; max-width: 100%; }
+        #wifi-filt { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+        #wifi-filt button { flex: none; }
+        .nw-wn { font-size: 12px; font-weight: 500; color: var(--dim); margin-left: .3rem; }
+        #wifi-filt .n { color: var(--dim); margin-left: 3px; } #wifi-filt button.on .n { color: #a5f3fc; }
+        .nw-wtodo { position: sticky; top: calc(var(--nw-stick) + 14px); max-height: calc(100vh - var(--nw-stick) - 28px); display: flex; flex-direction: column; }
+        .nw-wtodo > #wifi-fix { overflow: auto; min-height: 0; }
+        .nw-wap { border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: rgba(2,6,23,.22); }
+        .nw-wap + .nw-wap { margin-top: 14px; }
+        .nw-waph { gap: 10px 12px; }
+        .nw-wapn { min-width: 0; flex: 1 1 200px; display: grid; }
+        .nw-wapn b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-wapn .meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nw-wapchips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .nw-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 99px; border: 1px solid var(--line); background: rgba(148,163,184,.07); color: var(--ink2); font-size: 11.5px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .nw-chip small { color: var(--dim); font-weight: 600; font-size: 11px; }
+        .nw-chip.warn { border-color: rgba(251,191,36,.35); background: var(--warn-bg); color: #fcd34d; }
+        button.nw-chip.mv { cursor: pointer; border-color: rgba(52,211,153,.4); background: var(--ok-bg); color: #6ee7b7; }
+        button.nw-chip.mv:hover { background: rgba(16,185,129,.24); }
+        .nw-wapnotes { margin: 9px 0 2px; border: 1px solid var(--line); border-left: 3px solid var(--fc, #60a5fa); border-radius: 10px; background: rgba(15,23,42,.4); }
+        .nw-wapnotes.warn { --fc: var(--warn); } .nw-wapnotes.crit { --fc: var(--bad); }
+        .nw-wapnotes summary { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 12.5px; color: var(--ink2); list-style: none; }
+        .nw-wapnotes summary span:not(.sevdot) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .nw-wapnotes summary::-webkit-details-marker { display: none; }
+        .nw-wapnotes summary::after { content: "Show"; margin-left: auto; font-size: 11px; color: var(--cyan2); font-weight: 650; flex: none; }
+        .nw-wapnotes[open] summary::after { content: "Hide"; }
+        .nw-wapnotes .sevdot, .fp-cl .sevdot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--fc, #60a5fa); }
+        .nw-wapnotes > .nw-find { margin: 0 10px 10px; }
+        .nw-wgrid-r { grid-template-columns: minmax(0, 1fr) minmax(300px, 420px); }
+        .fp-top { display: flex; gap: 12px 24px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+        .fp-verdict { display: flex; gap: 12px; align-items: center; padding: 10px 16px 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(148,163,184,.06); }
+        .fp-verdict .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--vc); box-shadow: 0 0 0 4px color-mix(in srgb, var(--vc) 22%, transparent); }
+        .fp-verdict b { display: block; font-size: 15px; color: #f1f5f9; } .fp-verdict span:not(.dot) { font-size: 12.5px; color: var(--muted); }
+        .fp-verdict.ok { --vc: var(--ok); } .fp-verdict.warn { --vc: var(--warn); border-color: rgba(251,191,36,.3); } .fp-verdict.bad { --vc: var(--bad); border-color: rgba(251,113,133,.35); }
+        .fp-stats { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--muted); } .fp-stats b { color: var(--ink); font-variant-numeric: tabular-nums; }
+        .fp-bar-row { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; margin-bottom: 10px; }
+        .fp-bar-row .nw-seg button:disabled { opacity: .45; cursor: default; }
+        .fp-banner { margin-bottom: 10px; padding: .5rem .75rem; border-radius: .6rem; border: 1px solid rgba(251,191,36,.3); background: var(--warn-bg); color: #fde68a; font-size: 12.5px; }
+        .fp-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--muted); }
+        .fp-legend span { display: inline-flex; align-items: center; gap: 6px; }
+        .fp-legend em { font-style: normal; color: #6ee7b7; font-weight: 700; }
+        .fp-legend .k { width: 16px; height: 9px; border-radius: 3px; display: inline-block; background: var(--bc); border: 1px solid var(--bl); }
+        .k.ok, .fp-it.s-ok { --bc: rgba(34,211,238,.4); --bl: #22d3ee; }
+        .k.crit, .fp-it.s-crit { --bc: rgba(244,63,94,.55); --bl: #fb7185; }
+        .k.warn, .fp-it.s-warn { --bc: rgba(245,158,11,.5); --bl: #fbbf24; }
+        .k.info, .fp-it.s-info { --bc: rgba(148,163,184,.3); --bl: #94a3b8; }
+        .k.moved, .fp-it.s-moved { --bc: rgba(16,185,129,.45); --bl: #34d399; }
+        .k.dfsz { --bc: rgba(245,158,11,.14); --bl: rgba(245,158,11,.3); }
+        .fp-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: rgba(2,6,23,.35); }
+        .fp { --lab: 168px; min-width: 760px; position: relative; }
+        .fp-head, .fp-foot { display: grid; grid-template-columns: var(--lab) minmax(0, 1fr); }
+        .fp-head { border-bottom: 1px solid var(--line); }
+        .fp-corner { padding: 8px 12px; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); font-weight: 700; align-self: end; }
+        .fp-axis, .fp-foot > .fp-ticks { position: relative; margin-right: 14px; }
+        .fp-bands { position: relative; height: 24px; }
+        .fp-bands span { position: absolute; top: 6px; font-size: 10px; color: var(--dim); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .02em; }
+        .fp-ticks { position: relative; height: 20px; }
+        .fp-ticks span { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+        .fp-ticks span.mn::after { content: ""; position: absolute; left: 50%; top: 4px; width: 1px; height: 5px; background: var(--line2); }
+        .fp-body { position: relative; }
+        .fp-zones { position: absolute; top: 0; bottom: 0; left: var(--lab); right: 14px; pointer-events: none; }
+        .fp-z { position: absolute; top: 0; bottom: 0; }
+        .fp-z.ok { background: rgba(34,211,238,.035); border-left: 1px dashed rgba(148,163,184,.18); border-right: 1px dashed rgba(148,163,184,.18); }
+        .fp-z.dfs { background: rgba(245,158,11,.07); }
+        .fp-z.no { background: repeating-linear-gradient(135deg, rgba(148,163,184,.07) 0 6px, transparent 6px 12px); }
+        .fp-lane { position: relative; display: grid; grid-template-columns: var(--lab) minmax(0, 1fr); border-top: 1px solid var(--line); }
+        .fp-lane:first-of-type { border-top: 0; }
+        .fp-lane:hover { background: rgba(148,163,184,.03); }
+        .fp-tw { padding: 8px 10px 8px 12px; display: grid; align-content: center; gap: 1px; min-width: 0; border-right: 1px solid var(--line); background: rgba(10,17,32,.7); position: sticky; left: 0; z-index: 2; }
+        .fp-tw b { font-size: 13px; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .fp-tw small { font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .fp-tw .fp-unk { color: var(--warn); }
+        .fp-track { position: relative; margin-right: 14px; min-height: 38px; }
+        .fp-none { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--dim); }
+        .fp-it { position: absolute; left: var(--l); width: var(--w); height: 20px; outline: none; cursor: pointer; }
+        .fp-bar { position: absolute; inset: 0; border-radius: 5px; background: var(--bc); border: 1.5px solid var(--bl); min-width: 4px; transition: box-shadow .12s; }
+        .fp-it.s-moved .fp-bar { border-style: dashed; }
+        .fp-lb { position: absolute; left: calc(100% + 6px); top: 1px; font-size: 11.5px; color: var(--ink2); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
+        .fp-lb b { color: var(--ink); font-weight: 650; }
+        .fp-lb em { font-style: normal; color: #6ee7b7; font-weight: 700; }
+        .fp-it.lft .fp-lb { left: auto; right: calc(100% + 6px); }
+        .fp-it.s-crit .fp-lb b { color: #fda4af; } .fp-it.s-warn .fp-lb b { color: #fcd34d; } .fp-it.s-moved .fp-lb b { color: #6ee7b7; }
+        .fp-ghost { position: absolute; height: 20px; border: 1.5px dotted rgba(148,163,184,.5); border-radius: 5px; pointer-events: none; }
+        .fp-hl .fp-it:not(.hl) { opacity: .28; }
+        .fp-it.hl .fp-bar, .fp-it:focus-visible .fp-bar { box-shadow: 0 0 0 3px rgba(34,211,238,.35); }
+        .fp-foot { border-top: 1px solid var(--line); }
+        .fp-cols { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 18px; margin-top: 18px; align-items: start; }
+        .fp-cols h3 { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: #f1f5f9; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+        .fp-cols h3 small { font-weight: 500; color: var(--dim); font-size: 12px; }
+        .fp-cols .ts, .fp-mv .ts { font-size: 11.5px; color: var(--dim); }
+        .fp-mvs, .fp-cls { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+        .fp-mv { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(15,23,42,.45); transition: border-color .15s, background .15s; }
+        .fp-mv .n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #052e22; background: var(--ok); }
+        .fp-mv .mvtop { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
+        .fp-mv .mvtop > b { font-size: 14px; color: #f1f5f9; }
+        .fp-mv .fq { font-family: var(--mono); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); }
+        .fp-mv .fq s { color: var(--dim); } .fp-mv .fq i { font-style: normal; color: var(--dim); } .fp-mv .fq b { color: #6ee7b7; font-size: 14px; }
+        .fp-mv .d { font-size: 12px; color: var(--muted); margin-top: 3px; }
+        .fp-mv .acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+        .fp-mv .nw-chkres { margin-top: 8px; }
+        .fp-mv.hl, .fp-cl.hl { border-color: rgba(34,211,238,.5); background: rgba(34,211,238,.06); }
+        .fp-mv.flash { animation: fpflash 1.2s ease; }
+        @keyframes fpflash { 0%, 60% { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(34,211,238,.25); } }
+        .fp-cl { --fc: #94a3b8; display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 10px; align-items: start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; color: var(--ink2); background: rgba(15,23,42,.35); }
+        .fp-cl .sevdot { margin-top: 6px; } .fp-cl > div > b { color: #f1f5f9; }
+        .fp-cl.crit { --fc: var(--bad); } .fp-cl.warn { --fc: var(--warn); }
+        .fp-cl .d { font-size: 12px; color: var(--muted); margin-top: 2px; } .fp-cl .d.ok { color: #6ee7b7; } .fp-cl .d b { color: var(--ink2); }
+        @media (max-width: 1100px) { .nw-wtodo { position: static; max-height: 420px; } .nw-wgrid > aside.nw-wcol:has(.nw-wtodo) { order: -1; } }
+        @media (max-width: 860px) { .fp-cols { grid-template-columns: 1fr; } .fp { --lab: 112px; min-width: 680px; } .fp-verdict { flex: 1 1 100%; } .nw-wviews button { padding: 9px 11px 10px; } }
         @media (max-width: 1100px) { .nw-wgrid { grid-template-columns: 1fr; } }
         @media (max-width: 760px) {
             .nw-wrow { grid-template-columns: minmax(0,1fr) auto 16px; gap: .4rem .7rem; }
@@ -794,39 +907,52 @@
                 <button class="nw-ib" id="wifi-poll" onclick="wifiPoll()" title="Read every radio now instead of waiting for the next poll"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v5h5M20 20v-5h-5M5 9a7.5 7.5 0 0 1 13.5-2.5M19 15a7.5 7.5 0 0 1-13.5 2.5"/></svg><span class="lbl">Read radios now</span></button>
             </div>
         </div>
-        <section id="wifi-kpis" class="nw-kpis" aria-label="Wireless summary"></section>
-        <div class="nw-wgrid">
-            <div class="nw-wcol">
-                <section class="nw-panel" id="wifi-fix-panel">
-                    <div class="nw-dhead">
-                        <div><h2>What to do</h2><p>Worst first, and what can be done from the office before anyone drives out.</p></div>
-                        <div class="nw-tools">
-                            <div class="nw-seg" role="group" aria-label="Where" id="wifi-where">
-                                <button data-where="" class="on">All</button><button data-where="remote">From the office</button><button data-where="site">On site</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="wifi-fix" class="nw-wfix"></div>
-                </section>
-                <section class="nw-panel" id="wifi-plan-panel">
-                    <div class="nw-dhead">
-                        <div><h2>Frequency plan per tower</h2><p>Links on the same tower must keep their channels apart; towers close together can hear each other. Towers come from the Network diagram.</p></div>
-                    </div>
-                    <div id="wifi-plan" class="nw-body"><div class="nw-empty">Loading…</div></div>
-                </section>
+        <nav class="nw-wviews" role="tablist" aria-label="Wi-Fi views" id="wifi-views">
+            <button role="tab" data-wv="links" class="on" aria-selected="true">Links <span class="ct" id="wifi-c-links"></span></button><button role="tab" data-wv="plan" aria-selected="false">Frequency plan <span class="ct" id="wifi-c-plan"></span></button><button role="tab" data-wv="radios" aria-selected="false">Radios <span class="ct" id="wifi-c-radios"></span></button>
+        </nav>
+        <div class="nw-wpane" data-pane="links">
+            <section id="wifi-kpis" class="nw-kpis" aria-label="Wireless summary"></section>
+            <div class="nw-wgrid">
                 <section class="nw-panel">
                     <div class="nw-dhead">
-                        <div><h2>Links</h2><p id="wifi-links-sub">Grouped by access point. Open a link for its diagnosis and charts.</p></div>
-                        <div class="nw-tools"><button class="nw-btn sm" onclick="wifiExpandAll()" id="wifi-expand">Open all</button></div>
+                        <div><h2>Links <small id="wifi-links-n" class="nw-wn"></small></h2><p id="wifi-links-sub">Grouped by access point. Open a link for its diagnosis and charts.</p></div>
+                        <div class="nw-tools">
+                            <div class="nw-seg" role="group" aria-label="Show" id="wifi-filt"><button data-f="" class="on">All</button><button data-f="attn">Needs attention</button><button data-f="good">Healthy</button></div>
+                            <button class="nw-btn sm" onclick="wifiExpandAll()" id="wifi-expand">Open all</button>
+                        </div>
                     </div>
                     <div id="wifi-links" class="nw-body">Loading…</div>
                 </section>
+                <aside class="nw-wcol">
+                    <section class="nw-panel nw-wtodo" id="wifi-fix-panel">
+                        <div class="nw-dhead">
+                            <div><h2>What to do</h2><p>Worst first.</p></div>
+                            <div class="nw-tools">
+                                <div class="nw-seg" role="group" aria-label="Where" id="wifi-where">
+                                    <button data-where="" class="on">All</button><button data-where="remote">Office</button><button data-where="site">On site</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="wifi-fix" class="nw-wfix"></div>
+                    </section>
+                </aside>
             </div>
-            <aside class="nw-wcol">
+        </div>
+        <div class="nw-wpane" data-pane="plan" hidden>
+            <section class="nw-panel" id="wifi-plan-panel">
+                <div class="nw-dhead">
+                    <div><h2>Frequency plan</h2><p>Towers come from the Network diagram · channels from the last radio read · frequencies are channel centres.</p></div>
+                </div>
+                <div id="wifi-plan" class="nw-body"><div class="nw-empty">Loading…</div></div>
+            </section>
+        </div>
+        <div class="nw-wpane" data-pane="radios" hidden>
+            <div class="nw-wgrid nw-wgrid-r">
                 <section class="nw-panel">
                     <div class="nw-dhead"><div><h2>Radios</h2><p>Every radio Netwatch reads over SSH.</p></div></div>
                     <div id="wifi-radios"></div>
                 </section>
+                <aside class="nw-wcol">
                 <section class="nw-panel nw-wguide">
                     <div class="nw-dhead"><div><h2>Reading the numbers</h2><p>The same limits the alerts use.</p></div></div>
                     <dl>
@@ -839,7 +965,8 @@
                         <dt>Fresnel zone</dt><dd>The oval around the line between two radios that must stay clear. Trees inside it keep the signal strong but ruin the link score.</dd>
                     </dl>
                 </section>
-            </aside>
+                </aside>
+            </div>
         </div>
       </div>
 
@@ -3300,8 +3427,9 @@
                 showMapPage(qp.get('focus'), qp.get('place'));
             }
             if(PAGE === 'wifi'){
-                const link = new URLSearchParams(query || '').get('link');
+                const qp = new URLSearchParams(query || ''), link = qp.get('link'), v = qp.get('view');
                 if(link) WF.open.add(link);
+                wifiSetView(link ? 'links' : ['links','plan','radios'].includes(v) ? v : WF.view, true);
                 loadWifiPage(link);
             }
             if(PAGE === 'units'){
@@ -4453,7 +4581,8 @@
         function jumpToWifi(){ location.hash = '#/wifi'; }
 
         // ---- Wi-Fi page: links, diagnosis, fix list (data + rules: /api/radio/links → wifidiag.py) ----
-        const WF = { hours: 168, where: '', data: null, open: new Set(), charts: {}, showInfo: false, loading: false };
+        const WF = { hours: 168, where: '', filt: '', view: 'links', plan: null, planMode: 'now', data: null, open: new Set(), charts: {}, showInfo: false, loading: false };
+        try { const v = localStorage.getItem('nw.wifi.view'); if(['links','plan','radios'].includes(v)) WF.view = v; } catch(e){}
         try { const h = parseInt(localStorage.getItem('nw.wifi.hours'), 10); if([24,168,720].includes(h)) WF.hours = h; } catch(e){}
         const WF_GRADE = { good: 'Healthy', watch: 'Watch', warn: 'Needs attention', crit: 'Poor' };
         const WF_WHERE = { remote: 'From the office', site: 'On site' };
@@ -4483,6 +4612,48 @@
             document.querySelectorAll('#wifi-where button').forEach(x => x.classList.toggle('on', x === b));
             renderWifiFixes();
         }));
+        document.querySelectorAll('#wifi-filt button').forEach(b => b.addEventListener('click', () => {
+            WF.filt = b.dataset.f;
+            document.querySelectorAll('#wifi-filt button').forEach(x => x.classList.toggle('on', x === b));
+            renderWifiLinks();
+        }));
+        document.querySelectorAll('#wifi-views [data-wv]').forEach(b => b.addEventListener('click', () => wifiSetView(b.dataset.wv)));
+        // Links / Frequency plan / Radios: one view at a time, remembered, and in the URL (#/wifi?view=plan)
+        function wifiSetView(v, keepUrl){
+            WF.view = v;
+            try { localStorage.setItem('nw.wifi.view', v); } catch(e){}
+            document.querySelectorAll('#wifi-views [data-wv]').forEach(b => { b.classList.toggle('on', b.dataset.wv === v); b.setAttribute('aria-selected', b.dataset.wv === v); });
+            document.querySelectorAll('#page-wifi .nw-wpane').forEach(p => p.hidden = p.dataset.pane !== v);
+            document.getElementById('wifi-range').hidden = v === 'plan';
+            if(!keepUrl){ const url = '#/wifi' + (v === 'links' ? '' : '?view=' + v); if(location.hash !== url) history.replaceState(null, '', url); }
+            if(v === 'plan' && !WF.plan) loadWifiPlan();
+        }
+        function wifiPlanGoto(ap, view){
+            if(view) wifiSetView('plan');
+            setTimeout(() => {
+                const m = document.querySelector(`#wifi-plan .fp-mv[data-ap="${CSS.escape(ap)}"]`);
+                if(m){ m.scrollIntoView({ behavior: 'smooth', block: 'center' }); m.classList.add('flash'); setTimeout(() => m.classList.remove('flash'), 1400); }
+            }, 60);
+        }
+        (() => {
+            const el = document.getElementById('wifi-plan');
+            el.addEventListener('click', (e) => {
+                const mb = e.target.closest('[data-fp-mode] button');
+                if(mb && !mb.disabled){ WF.planMode = mb.dataset.m; return renderWifiPlan(); }
+                const it = e.target.closest('.fp-it[data-ap]');
+                if(it) wifiPlanGoto(it.dataset.ap);
+            });
+            // pointing at a link lights it up on every tower, with its move and its clashes
+            const hl = (aps) => {
+                el.querySelectorAll('.hl').forEach(x => x.classList.remove('hl'));
+                aps.forEach(ap => el.querySelectorAll(`.fp-it[data-ap="${CSS.escape(ap)}"], .fp-mv[data-ap="${CSS.escape(ap)}"]`).forEach(x => x.classList.add('hl')));
+                if(aps.length) el.querySelectorAll('.fp-cl').forEach(x => { if(aps.some(ap => x.dataset.pair.split('|').includes(ap))) x.classList.add('hl'); });
+                el.classList.toggle('fp-hl', aps.length > 0);
+            };
+            const over = (e) => { const x = e.target.closest('.fp-it[data-ap], .fp-mv[data-ap], .fp-cl[data-pair]'); hl(!x ? [] : x.dataset.ap ? [x.dataset.ap] : x.dataset.pair.split('|')); };
+            el.addEventListener('mouseover', over); el.addEventListener('focusin', over);
+            el.addEventListener('mouseleave', () => hl([]));
+        })();
 
         async function loadWifiPage(focus){
             if(WF.loading) return;
@@ -4527,9 +4698,14 @@
             document.getElementById('wifi-kpis').innerHTML = tiles.map(([k, v, sub, cls, link]) =>
                 `<${link ? `button data-nw-act="wifi-link" data-link="${esc(link)}"` : 'div'} class="nw-kpi ${cls}"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${esc(sub)}</span></${link ? 'button' : 'div'}>`).join('');
 
+            const cl = document.getElementById('wifi-c-links');
+            cl.textContent = attn || (links.length || ''); cl.className = 'ct' + (attn ? ' warn' : ''); cl.title = attn ? attn + ' need attention' : links.length + ' links';
+            const cr = document.getElementById('wifi-c-radios');
+            cr.textContent = unread ? `${sm.radios_read||0}/${sm.radios||0}` : (sm.radios || ''); cr.className = 'ct' + (unread ? ' warn' : '');
             renderWifiFixes();
             renderWifiLinks();
             renderWifiRadios();
+            if(WF.plan) renderWifiPlan();                                   // names come with the link data
         }
 
         function renderWifiFixes(){
@@ -4560,31 +4736,45 @@
                 document.getElementById('wifi-expand').hidden = true;
                 return;
             }
-            document.getElementById('wifi-expand').hidden = false;
-            document.getElementById('wifi-expand').textContent = WF.open.size >= links.length ? 'Close all' : 'Open all';
+            const attn = links.filter(l => l.grade === 'crit' || l.grade === 'warn').length;
+            document.querySelectorAll('#wifi-filt button').forEach(b => { const n = b.dataset.f === 'attn' ? attn : b.dataset.f === 'good' ? links.length - attn : links.length; b.innerHTML = `${{'': 'All', attn: 'Needs attention', good: 'Healthy'}[b.dataset.f]} <span class="n">${n}</span>`; });
+            const shown = wfShown();
+            document.getElementById('wifi-links-n').textContent = `${shown.length} of ${links.length}`;
+            document.getElementById('wifi-expand').hidden = !shown.length;
+            document.getElementById('wifi-expand').textContent = shown.length && shown.every(l => WF.open.has(l.id)) ? 'Close all' : 'Open all';
+            if(!shown.length){
+                box.innerHTML = `<div class="nw-empty"><b>${WF.filt === 'attn' ? 'Nothing needs attention' : 'No healthy links'}</b>${WF.filt === 'attn' ? 'Every link is healthy in this period.' : 'Every link has something to look at.'}</div>`;
+                return;
+            }
+            // channel centre + width from the frequency plan once it is loaded (the link data carries the control channel)
+            const chan = {}, mv = {};
+            ((WF.plan && WF.plan.towers) || []).forEach(t => t.links.forEach(l => { chan[String(l.ap).toUpperCase()] = l; }));
+            ((WF.plan && WF.plan.moves) || []).filter(m => m.to).forEach(m => { mv[String(m.ap).toUpperCase()] = m; });
             const byAp = new Map();
-            links.forEach(l => { const k = l.ap.mac; if(!byAp.has(k)) byAp.set(k, []); byAp.get(k).push(l); });
+            shown.forEach(l => { const k = l.ap.mac; if(!byAp.has(k)) byAp.set(k, []); byAp.get(k).push(l); });
             const radioByMac = Object.fromEntries(radios.map(r => [String(r.key).toUpperCase(), r]));
             const rank = { crit: 0, warn: 1, watch: 2, good: 3 };
             const groups = [...byAp.entries()].sort((a, b) =>
                 Math.min(...a[1].map(l => rank[l.grade])) - Math.min(...b[1].map(l => rank[l.grade])) || a[1][0].ap.name.localeCompare(b[1][0].ap.name));
             box.innerHTML = groups.map(([mac, ls]) => {
-                const ap = ls[0].ap, r = radioByMac[mac], m = ls[0].metrics;
-                const cur = (r && r.current) || {}, st = (r && r.stats) || {};
-                const air = st.airtime || {};
-                const meta = [ap.model, m.freq_label, m.width ? m.width + ' MHz' : '', r && r.ssid ? 'SSID ' + r.ssid : ''].filter(Boolean).map(esc).join(' · ');
+                const ap = ls[0].ap, r = radioByMac[mac], m = ls[0].metrics, c = chan[String(mac).toUpperCase()], move = mv[String(mac).toUpperCase()];
+                const st = (r && r.stats) || {}, air = st.airtime || {};
+                const meta = [ap.model, r && r.ssid ? 'SSID ' + r.ssid : '', ls.length + ' link' + (ls.length === 1 ? '' : 's')].filter(Boolean).map(esc).join(' · ');
+                const chanTxt = c && c.freq ? `${c.freq} MHz · ${c.width} wide` : m.freq_label ? `${m.freq_label}${m.width ? ' · ' + m.width + ' wide' : ''}` : '';
                 const chips = [
-                    m.ap_mixed ? `<span class="nw-grade warn" title="airMAX Mixed mode">Mixed mode</span>` : '',
-                    air.now != null ? `<span class="nw-tag" title="Share of the channel in use now; peak over the period">Air time ${wfNum(air.now)}%${air.max != null ? ' · peak ' + wfNum(air.max) + '%' : ''}</span>` : '',
-                    (st.noise || {}).now != null ? `<span class="nw-tag">Noise ${wfNum(st.noise.now)} dBm</span>` : '',
-                    `<span class="nw-tag">${ls.length} link${ls.length===1?'':'s'}</span>`,
+                    chanTxt ? `<span class="nw-chip${c && c.clash ? ' warn' : ''}" title="${c ? 'Channel centre and width' : 'Control channel'}${c && c.clash ? ' — clashes with another link, see Frequency plan' : ''}">${esc(chanTxt)}${c && c.dfs ? ' · DFS' : ''}</span>` : '',
+                    move ? `<button type="button" class="nw-chip mv" onclick="wifiPlanGoto(this.dataset.ap, true)" data-ap="${esc(move.ap)}" title="The frequency plan suggests moving this link">→ ${move.to} MHz suggested</button>` : '',
+                    air.now != null ? `<span class="nw-chip${air.max >= 80 || air.now >= 80 ? ' warn' : ''}" title="Share of the channel in use now; peak over the period">Air ${wfNum(air.now)}%${air.max != null ? `<small> · peak ${wfNum(air.max)}%</small>` : ''}</span>` : '',
+                    (st.noise || {}).now != null ? `<span class="nw-chip">Noise ${wfNum(st.noise.now)} dBm</span>` : '',
+                    m.ap_mixed ? `<span class="nw-chip warn" title="airMAX Mixed mode">Mixed mode</span>` : '',
                 ].join('');
-                const notes = (r ? r.findings || [] : []).map(f => wfFinding(f)).join('');
+                const notes = r ? r.findings || [] : [];
+                const worstN = notes.some(f => f.level === 'crit') ? 'crit' : notes.some(f => f.level === 'warn') ? 'warn' : 'info';
                 return `<div class="nw-wap" id="wf-ap-${esc(mac.replace(/:/g,''))}">
-                    <div class="nw-waph"><span class="ico">${WF_ICON}</span><b>${esc(ap.name)}</b>
-                        ${ap.ip ? `<a class="mono" href="http://${esc(ap.ip)}" target="_blank" rel="noopener" title="Open this radio's airOS page">${esc(ap.ip)}</a>` : ''}
-                        <span class="meta">${meta}</span>${chips}</div>
-                    ${notes ? `<div class="nw-wapnote">${notes}</div>` : ''}
+                    <div class="nw-waph"><span class="ico">${WF_ICON}</span>
+                        <div class="nw-wapn"><b>${esc(ap.name)}</b><span class="meta">${ap.ip ? `<a class="mono" href="http://${esc(ap.ip)}" target="_blank" rel="noopener" title="Open this radio's airOS page">${esc(ap.ip)}</a> · ` : ''}${meta}</span></div>
+                        <div class="nw-wapchips">${chips}</div></div>
+                    ${notes.length ? `<details class="nw-wapnotes ${worstN}"><summary><span class="sevdot"></span><span>${notes.length === 1 ? esc(notes[0].title) : `${notes.length} notes on this access point: ${esc(notes.map(f => f.title).join(' · '))}`}</span></summary>${notes.map(f => wfFinding(f)).join('')}</details>` : ''}
                     ${ls.map(wfLinkHtml).join('')}
                 </div>`;
             }).join('');
@@ -4638,50 +4828,137 @@
             el.disabled = false; el.textContent = 'Check again';
         }
 
-        // ---- Frequency plan per tower (/api/wifi/plan → freqplan.py) ----
+        // ---- Frequency plan (/api/wifi/plan → freqplan.py) ----
+        // One chart for the whole site: a lane per tower, the 5 GHz band across, every link a bar
+        // at its real channel (centre ± width/2). "After the moves" redraws the bars where the
+        // suggested moves put them, so the plan can be judged before anything is touched.
+        // Same layout as the hub's Control Center (hub/app/static/cc/wifi.js).
         async function loadWifiPlan(){
             const el = document.getElementById('wifi-plan');
-            if(el.querySelector('.nw-fixres:not([hidden])')) return;
+            if(el.querySelector('.nw-fixres:not([hidden])')) return;          // never redraw under a running move
             let p;
             try { p = await (await fetch('/api/wifi/plan')).json(); } catch(e){ p = {ok: false, error: String(e)}; }
-            if(!p.ok){ el.innerHTML = `<div class="nw-empty">${esc(p.error || 'Could not build the plan')}</div>`; return; }
-            el.innerHTML = wfPlanHtml(p);
+            if(!p.ok){ if(!WF.plan) el.innerHTML = `<div class="nw-empty">${esc(p.error || 'Could not build the plan')}</div>`; return; }
+            WF.plan = p;
+            renderWifiPlan();
+            if(WF.data) renderWifiLinks();                                   // channel chips use the plan's centres
         }
-        function wfSpectrum(t, p){
-            const X0 = 5150, X1 = 5850, W = 700, sx = f => ((f - X0) / (X1 - X0)) * W;
-            const rows = []; const placed = [];
-            for(const l of t.links.filter(l => l.lo != null).sort((a, b) => a.lo - b.lo)){
-                let r = 0; while(placed.some(q => q.r === r && q.hi + 6 > l.lo)) r++;
-                placed.push({r, hi: l.hi}); rows.push({l, r});
-            }
-            const nr = Math.max(1, ...rows.map(x => x.r + 1)), H = 22 + nr * 26;
-            const bg = [[X0, X1, 'rgba(148,163,184,.08)']].concat(p.ranges.map(r => [r[0], r[1], 'rgba(34,211,238,.07)']), p.dfs.map(r => [r[0], r[1], 'rgba(245,158,11,.10)']));
-            return `<svg class="nw-spec" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Channels on ${esc(t.name)}">
-                ${bg.map(b => `<rect x="${sx(b[0])}" y="0" width="${sx(b[1]) - sx(b[0])}" height="${H - 16}" fill="${b[2]}"/>`).join('')}
-                ${[5200, 5300, 5500, 5600, 5700, 5800].map(f => `<text x="${sx(f)}" y="${H - 3}" class="ax">${f}</text>`).join('')}
-                ${rows.map(({l, r}) => `<g><rect x="${sx(l.lo)}" y="${4 + r * 26}" width="${Math.max(3, sx(l.hi) - sx(l.lo))}" height="20" rx="3" class="${l.clash ? 'bad' : 'ok'}"/><text x="${sx(l.lo) + 4}" y="${18 + r * 26}" class="lb">${esc(l.name)} · ${l.freq}/${l.width}</text></g>`).join('')}
-            </svg>`;
+        const FP_X0 = 5150, FP_X1 = 5850, FP_ROW = 30, FP_PX = 760;   // FP_PX: rough track width for label packing
+        const FP_LV = { crit: 3, warn: 2, info: 1 };
+        const fpPct = (f) => ((f - FP_X0) / (FP_X1 - FP_X0)) * 100;
+        const fpPair = (a, b) => [a, b].sort().join('|');
+        const fpPlural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + 's')}`;
+        function wfNameOf(k){
+            const r = ((WF.data && WF.data.radios) || []).find(x => String(x.key).toLowerCase() === String(k).toLowerCase());
+            return r && r.name && !/^\d+\.\d+\.\d+\.\d+$/.test(r.name) ? r.name : '';
         }
-        function wfPlanHtml(p){
-            if(!p.towers.length) return `<div class="nw-empty"><b>No towers yet</b>On the Network page, add a group of type “Tower / mast” for each high point and put its radios in it — then the plan checks their channels.</div>`;
-            const moves = p.moves || [];
-            const s = p.summary || {};
-            const head = `<div class="nw-help" style="margin-bottom:.4rem">${s.clashes ? `<b class="t-warn">${s.clashes} clash${s.clashes === 1 ? '' : 'es'}</b> on ${s.towers} tower${s.towers === 1 ? '' : 's'} · ${s.moves} move${s.moves === 1 ? '' : 's'} suggested` : `✓ No channel clashes on ${s.towers} tower${s.towers === 1 ? '' : 's'}`} · same tower: ${p.guard_mhz} MHz gap wanted · towers within ${p.near_km} km planned together · frequencies are channel centres · <span style="color:#fcd34d">amber band = DFS (radar check)</span>${s.centre_unknown ? ` · <span class="t-warn">${s.centre_unknown} wide link${s.centre_unknown === 1 ? '' : 's'} not re-read yet — placed from the control channel until the next radio read</span>` : ''}</div>`;
-            return head + p.towers.map(t => {
-                const mv = moves.filter(m => m.towers.includes(t.name));
-                return `<div class="nw-tower">
-                    <h4>${esc(t.name)}${t.near.length ? ` <span class="ts">near ${esc(t.near.join(', '))}</span>` : ''}</h4>
-                    ${t.links.length ? wfSpectrum(t, p) : '<div class="ts">No radio on this tower that Netwatch reads.</div>'}
-                    ${t.unknown.length ? `<div class="ts">Frequency unknown (no login saved): ${esc(t.unknown.join(', '))}</div>` : ''}
-                    ${t.clashes.length ? `<ul class="clash">${t.clashes.map(c => `<li class="${c.level}">${esc(c.a_name)} and ${esc(c.b_name)} ${c.gap < 0 ? `overlap by ${Math.round(-c.gap)} MHz` : `are only ${Math.round(c.gap)} MHz apart`}${c.where === 'near' ? ` (on ${esc(c.tower)}, nearby)` : ''}</li>`).join('')}</ul>` : ''}
-                    ${mv.length ? `<ol class="steps">${mv.map(m => {
-                        const fix = {kind: 'channel', radio: m.ap, name: m.name, params: {freq: m.to, width: m.width}};
-                        return `<li><span>${m.to ? `Move <b>${esc(m.name)}</b> ${m.from} → ${m.to} MHz (${m.width} MHz wide)${m.dfs ? ' — DFS channel' : ''}${m.checked ? ` <span class="ts">— ${esc(m.checked)}</span>` : ''}` : `${esc(m.name)}: ${esc(m.note || 'no free channel')}`}</span>${m.to && p.fix_enabled
-                            ? `<span class="nw-chkrow"><button type="button" class="nw-chkbtn fix" data-nw-act="wifi-fix" data-fix="${esc(JSON.stringify(fix))}" title="Preview the move first — nothing is changed until you apply it">Move…</button></span><div class="nw-chkres nw-fixres" hidden aria-live="polite"></div>`
-                            : (m.to ? '<span class="ts">Turn on Settings → Advanced → Wi-Fi fixes to apply this from here.</span>' : '')}</li>`;
-                    }).join('')}</ol>` : ''}
+        function fpModel(p){
+            const nm = (k, fallback) => wfNameOf(k) || fallback || k;
+            const moves = (p.moves || []).map((m, i) => ({ ...m, n: i + 1, name: nm(m.ap, m.name) }));
+            const moved = Object.fromEntries(moves.filter(m => m.to).map(m => [m.ap, m]));
+            const band = {};
+            (p.towers || []).forEach(t => t.links.forEach(l => { if(l.lo != null) band[l.ap] = [l.lo, l.hi]; }));
+            const after = (ap) => moved[ap] ? [moved[ap].to - moved[ap].width / 2, moved[ap].to + moved[ap].width / 2] : band[ap];
+            const gap = (x, y) => Math.max(x[0], y[0]) - Math.min(x[1], y[1]);
+            // the same pair is reported on both towers: one card, every tower named
+            const clashes = new Map();
+            (p.towers || []).forEach(t => t.clashes.forEach(c => {
+                const k = fpPair(c.a, c.b), cur = clashes.get(k);
+                const where = c.where === 'same' ? t.name : [t.name, c.tower].sort().join(' ↔ ');
+                if(!cur) clashes.set(k, { ...c, a_name: nm(c.a, c.a_name), b_name: nm(c.b, c.b_name), places: [where], same: c.where === 'same' });
+                else {
+                    if(!cur.places.includes(where)) cur.places.push(where);
+                    if(FP_LV[c.level] > FP_LV[cur.level]) cur.level = c.level;
+                    cur.same = cur.same || c.where === 'same';
+                }
+            }));
+            const list = [...clashes.values()].map(c => {
+                const by = [moved[c.a], moved[c.b]].filter(Boolean);
+                const ga = band[c.a] && band[c.b] ? gap(after(c.a), after(c.b)) : null;
+                return { ...c, by, fixed: by.length > 0 && ga != null && ga >= p.guard_mhz };
+            }).sort((x, y) => FP_LV[y.level] - FP_LV[x.level] || x.gap - y.gap);
+            const lvl = {};                                                // worst level per (tower, ap): bar colour
+            (p.towers || []).forEach(t => t.clashes.forEach(c => [c.a, c.b].forEach(ap => {
+                const k = t.id + '|' + ap; if(!lvl[k] || FP_LV[c.level] > FP_LV[lvl[k]]) lvl[k] = c.level;
+            })));
+            moves.forEach(m => { m.fixes = list.filter(c => c.by.includes(m)); });
+            return { moves, moved, list, lvl, nm };
+        }
+        function fpLane(t, M, mode){
+            const items = t.links.filter(l => l.lo != null).map(l => {
+                const mv = M.moved[l.ap], useNew = mode === 'after' && mv;
+                const lo = useNew ? mv.to - mv.width / 2 : l.lo, hi = useNew ? mv.to + mv.width / 2 : l.hi;
+                const name = M.nm(l.ap, l.name), f = useNew ? mv.to : l.freq;
+                const st = useNew ? 'moved' : mode === 'after' ? 'ok' : M.lvl[t.id + '|' + l.ap] || 'ok';
+                const label = `${name} · ${f}`;
+                const lw = (label.length * 6.6 + 14) * ((FP_X1 - FP_X0) / FP_PX);        // label width in MHz
+                const left = hi + lw > FP_X1;                                              // no room right of the bar → put it left
+                return { l, lo, hi, name, f, st, mv, left, ext: left ? [lo - lw, hi] : [lo, hi + lw], ghost: useNew ? [l.lo, l.hi] : null };
+            }).sort((a, b) => a.ext[0] - b.ext[0]);
+            const rows = [];
+            items.forEach(it => { let r = 0; while((rows[r] || []).some(x => x.ext[1] + 4 > it.ext[0] && x.ext[0] < it.ext[1] + 4)) r++; (rows[r] = rows[r] || []).push(it); it.r = r; });
+            const h = Math.max(1, rows.length) * FP_ROW + 8;
+            const tip = (it) => `${it.name}\n${it.f} MHz centre · ${it.l.width} MHz wide (${Math.round(it.lo)}–${Math.round(it.hi)})${it.l.dfs && !it.mv ? '\nDFS channel (radar check)' : ''}${it.mv ? `\nSuggested: ${it.mv.from} → ${it.mv.to} MHz` : ''}${(it.l.here || []).length ? '\nOn this tower: ' + it.l.here.join(', ') : ''}`;
+            const bars = items.map(it => `${it.ghost ? `<i class="fp-ghost" style="left:${fpPct(it.ghost[0])}%;width:${fpPct(it.ghost[1]) - fpPct(it.ghost[0])}%;top:${it.r * FP_ROW + 6}px"></i>` : ''}
+                <div class="fp-it s-${it.st}${it.left ? ' lft' : ''}" data-ap="${esc(it.l.ap)}" tabindex="0" title="${esc(tip(it))}" style="--l:${fpPct(it.lo)}%;--w:${fpPct(it.hi) - fpPct(it.lo)}%;top:${it.r * FP_ROW + 6}px">
+                    <i class="fp-bar"></i><span class="fp-lb"><b>${esc(it.name)}</b> ${it.f}${it.mv && mode !== 'after' ? ` <em title="A move is suggested">→ ${it.mv.to}</em>` : ''}</span></div>`).join('');
+            const unk = (t.unknown || []).length ? `<small class="fp-unk" title="${esc(t.unknown.join(', '))}">+${t.unknown.length} unread</small>` : '';
+            return `<div class="fp-lane"><div class="fp-tw"><b title="${esc(t.name)}">${esc(t.name)}</b><small>${t.near.length ? 'near ' + esc(t.near.join(', ')) : 'on its own'}</small>${unk}</div>
+                <div class="fp-track" style="height:${h}px">${items.length ? bars : '<span class="fp-none">No radio here that Netwatch can read</span>'}</div></div>`;
+        }
+        function fpChart(p, M, mode){
+            const zones = [].concat(
+                (p.ranges || []).map(r => `<i class="fp-z ok" style="left:${fpPct(r[0])}%;width:${fpPct(r[1]) - fpPct(r[0])}%"></i>`),
+                (p.dfs || []).map(r => `<i class="fp-z dfs" style="left:${fpPct(r[0])}%;width:${fpPct(r[1]) - fpPct(r[0])}%"></i>`),
+                [`<i class="fp-z no" style="left:${fpPct(5350)}%;width:${fpPct(5470) - fpPct(5350)}%" title="5350–5470 MHz may not be used"></i>`]).join('');
+            const ticks = []; for(let f = 5200; f <= 5800; f += 50) ticks.push(`<span class="${f % 100 ? 'mn' : ''}" style="left:${fpPct(f)}%">${f % 100 ? '' : f}</span>`);
+            const bands = [[5150, 5250, 'U-NII-1'], [5250, 5350, 'U-NII-2 · DFS'], [5350, 5470, 'not allowed'], [5470, 5725, 'U-NII-2C · DFS'], [5725, 5850, 'U-NII-3']]
+                .map(([a, b, l]) => `<span style="left:${fpPct(a)}%;width:${fpPct(b) - fpPct(a)}%">${l}</span>`).join('');
+            return `<div class="fp-scroll"><div class="fp">
+                <div class="fp-head"><div class="fp-corner">Tower</div><div class="fp-axis"><div class="fp-bands">${bands}</div><div class="fp-ticks">${ticks.join('')}</div></div></div>
+                <div class="fp-body"><div class="fp-zones">${zones}</div>${p.towers.map(t => fpLane(t, M, mode)).join('')}</div>
+                <div class="fp-foot"><div></div><div class="fp-ticks">${ticks.join('')}</div></div>
+            </div></div>`;
+        }
+        function wfPlanHtml(p, mode){
+            if(!(p.towers || []).length) return `<div class="nw-empty"><b>No towers yet</b>On the Network page, add a group of type “Tower / mast” for each high point and put its radios in it — the plan then keeps their channels apart.</div>`;
+            const M = fpModel(p);
+            const real = M.list.filter(c => c.level !== 'info'), close = M.list.filter(c => c.level === 'info');
+            const todo = M.moves.filter(m => m.to), left = real.filter(c => !c.fixed).length, sm = p.summary || {};
+            const verdict = !real.length ? `<div class="fp-verdict ok"><span class="dot"></span><div><b>No channel clashes</b><span>Every link on every tower keeps ${p.guard_mhz} MHz clear of its neighbours.</span></div></div>`
+                : `<div class="fp-verdict ${real.some(c => c.level === 'crit') ? 'bad' : 'warn'}"><span class="dot"></span><div><b>${fpPlural(real.length, 'channel clash', 'channel clashes')}</b><span>${todo.length ? `${fpPlural(todo.length, 'move')} would clear ${left ? `${real.length - left} of them` : 'all of them'}` : 'No move found — try narrower channels'}${close.length ? ` · ${fpPlural(close.length, 'close call')} to keep an eye on` : ''}</span></div></div>`;
+            const stats = `<div class="fp-stats"><span><b>${p.towers.length}</b> towers</span><span><b>${new Set(p.towers.flatMap(t => t.links.map(l => l.ap))).size}</b> links</span><span><b>${p.guard_mhz}</b> MHz gap wanted</span><span>towers within <b>${p.near_km}</b> km or linked are planned together</span></div>`;
+            const legend = `<div class="fp-legend"><span><i class="k ok"></i>clear</span><span><i class="k crit"></i>overlap on one tower</span><span><i class="k warn"></i>clash with a nearby tower</span><span><i class="k info"></i>close call</span>${mode === 'after' ? '<span><i class="k moved"></i>moved</span>' : '<span><em>→ 5735</em> move suggested</span>'}<span><i class="k dfsz"></i>DFS band (radar check)</span></div>`;
+            const clashCard = (c) => `<li class="fp-cl ${c.level}${c.fixed ? ' fixed' : ''}" data-pair="${esc(c.a)}|${esc(c.b)}">
+                <span class="sevdot"></span>
+                <div><b>${esc(c.a_name)}</b> <span class="t-dim">and</span> <b>${esc(c.b_name)}</b>
+                    <div class="d">${c.gap < 0 ? `overlap by <b>${Math.round(-c.gap)} MHz</b>` : `only <b>${Math.round(c.gap)} MHz</b> apart`} · ${c.same ? 'same tower' : 'nearby towers'}: ${esc(c.places.join(' · '))}</div>
+                    ${c.by.length ? `<div class="d ${c.fixed ? 'ok' : ''}">${c.fixed ? '✓ Cleared by' : 'Helped by'} move ${c.by.map(m => m.n).join(' + ')}</div>` : '<div class="d t-dim">No move suggested for this pair</div>'}</div></li>`;
+            const moveCard = (m) => {
+                const fix = { kind: 'channel', radio: m.ap, name: m.name, params: { freq: m.to, width: m.width } };
+                return `<li class="fp-mv" data-ap="${esc(m.ap)}">
+                    <span class="n">${m.n}</span>
+                    <div class="body"><div class="mvtop"><b>${esc(m.name)}</b>${m.to ? `<span class="fq"><s>${m.from}</s><i>→</i><b>${m.to}</b> MHz</span><span class="nw-tag">${m.width} MHz wide</span>${m.dfs ? '<span class="nw-grade warn" title="Radar-checked channel: the AP listens about a minute before it transmits">DFS</span>' : ''}` : '<span class="nw-grade crit">no free channel</span>'}</div>
+                        <div class="d">${m.to ? `${esc((m.towers || []).join(' · '))}${m.fixes.length ? ` · clears ${fpPlural(m.fixes.filter(c => c.fixed).length || m.fixes.length, 'clash', 'clashes')}` : ''}${m.checked ? ` · <span class="t-dim">${esc(m.checked)}</span>` : ''}` : esc(m.note || '')}</div>
+                        ${m.to ? (p.fix_enabled ? `<div class="acts"><button type="button" class="nw-btn sm pri" data-nw-act="wifi-fix" data-fix="${esc(JSON.stringify(fix))}" title="Reads the radios and shows exactly what would change — nothing is changed until you press Apply">Preview move…</button><span class="ts">Undoes itself if the link does not come back</span></div><div class="nw-chkres nw-fixres" hidden aria-live="polite"></div>`
+                            : '<div class="ts">To apply moves from here, turn on <b>Settings → Advanced → Wi-Fi fixes</b>.</div>') : ''}</div></li>`;
+            };
+            return `<div class="fp-top">${verdict}${stats}</div>
+                <div class="fp-bar-row"><div class="nw-seg" role="group" aria-label="Show channels" data-fp-mode><button data-m="now" class="${mode !== 'after' ? 'on' : ''}">Now</button><button data-m="after" class="${mode === 'after' ? 'on' : ''}"${todo.length ? '' : ' disabled'}>After the moves${todo.length ? ` (${todo.length})` : ''}</button></div>${legend}</div>
+                ${sm.centre_unknown ? `<div class="fp-banner">${fpPlural(sm.centre_unknown, 'wide link')} not re-read since the update — placed from its control channel until the next radio read.</div>` : ''}
+                ${fpChart(p, M, mode)}
+                <div class="fp-cols">
+                    <section><h3>Suggested moves <small>${todo.length ? 'one link at a time · each one previewed first' : ''}</small></h3>${M.moves.length ? `<ol class="fp-mvs">${M.moves.map(moveCard).join('')}</ol>` : '<p class="ts">Nothing to move.</p>'}</section>
+                    <section><h3>Clashes <small>${real.length ? `${real.length} to fix` : 'none'}${close.length ? ` · ${close.length} close` : ''}</small></h3>${M.list.length ? `<ul class="fp-cls">${M.list.map(clashCard).join('')}</ul>` : '<p class="ts">✓ Nothing overlaps.</p>'}</section>
                 </div>`;
-            }).join('');
+        }
+        function renderWifiPlan(){
+            const el = document.getElementById('wifi-plan');
+            if(!WF.plan || el.querySelector('.nw-fixres:not([hidden])')) return;
+            el.innerHTML = wfPlanHtml(WF.plan, WF.planMode);
+            const real = new Set(); (WF.plan.towers || []).forEach(t => t.clashes.forEach(c => { if(c.level !== 'info') real.add(fpPair(c.a, c.b)); }));
+            const ct = document.getElementById('wifi-c-plan');
+            ct.textContent = (WF.plan.towers || []).length ? (real.size || '✓') : ''; ct.className = 'ct ' + (real.size ? 'warn' : 'ok');
         }
 
         // "Fix…" on a step: preview (writes nothing) → Apply now → follow the radio until it saves or undoes.
@@ -4883,23 +5160,31 @@
             const el = document.getElementById('wf-' + id);
             const l = (WF.data.links || []).find(x => x.id === id);
             if(el && l){ el.outerHTML = wfLinkHtml(l); if(WF.open.has(id)) wfDrawCharts(id); }
-            document.getElementById('wifi-expand').textContent = WF.open.size >= (WF.data.links || []).length ? 'Close all' : 'Open all';
+            document.getElementById('wifi-expand').textContent = wfShown().every(l => WF.open.has(l.id)) ? 'Close all' : 'Open all';
             const url = '#/wifi' + (WF.open.has(id) ? '?link=' + id : '');
             if(location.hash !== url) history.replaceState(null, '', url);
         }
+        function wfShown(){
+            const ls = (WF.data && WF.data.links) || [];
+            return WF.filt === 'attn' ? ls.filter(l => l.grade === 'crit' || l.grade === 'warn') : WF.filt === 'good' ? ls.filter(l => l.grade === 'good' || l.grade === 'watch') : ls;
+        }
         function wifiExpandAll(){
-            const ids = (WF.data.links || []).map(l => l.id);
-            if(WF.open.size >= ids.length) WF.open.clear(); else ids.forEach(i => WF.open.add(i));
+            const ids = wfShown().map(l => l.id);
+            if(ids.every(i => WF.open.has(i))) ids.forEach(i => WF.open.delete(i)); else ids.forEach(i => WF.open.add(i));
             renderWifiLinks();
         }
         function wifiFocus(id){
+            if(WF.view !== 'links') wifiSetView('links');
+            if(!wfShown().some(l => l.id === id)){ WF.filt = ''; document.querySelectorAll('#wifi-filt button').forEach(x => x.classList.toggle('on', !x.dataset.f)); WF.open.add(id); renderWifiLinks(); }
             if(!WF.open.has(id)){ WF.open.add(id); renderWifiLinks(); }
             const el = document.getElementById('wf-' + id);
             if(el){ el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('open'); }
         }
         function wifiFocusRadio(key){
-            const el = document.getElementById('wf-ap-' + String(key).toUpperCase().replace(/:/g, '')) || document.getElementById('wifi-radios');
-            if(el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const id = 'wf-ap-' + String(key).toUpperCase().replace(/:/g, '');
+            if(!document.getElementById(id)) return wifiSetView('radios');     // a station or a radio with no link: its row is on Radios
+            if(WF.view !== 'links') wifiSetView('links');
+            setTimeout(() => { const el = document.getElementById(id); if(el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 30);
         }
 
         function renderWifiRadios(){
