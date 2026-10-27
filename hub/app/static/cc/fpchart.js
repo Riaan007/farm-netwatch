@@ -8,7 +8,9 @@
    the allowed band and recolours every bar as clashes appear or clear. A dropped bar is a
    DRAFT kept in this browser; nothing reaches a radio until "Preview move…" → Apply.
    Clash rules mirror app/freqplan.py: same tower < guard MHz apart = clash (overlap =
-   critical), near towers overlapping = clash, near towers < guard apart = close call. */
+   critical), near links overlapping = clash, near links < guard apart = close call. "Near" is
+   the plan's near_links (closest radios within near_km, from the Network-map GPS); a site on
+   an older build sends none, so its near towers are used instead. */
 (function () {
   "use strict";
   const X0 = 5150, X1 = 5850, ROW = 30, PX = 760, STEP = 5;
@@ -50,6 +52,14 @@
     return { L, towersOf, auto, to, now, after, byId: Object.fromEntries((p.towers || []).map((t) => [t.id, t])) };
   }
 
+  // Two links that may not share a channel: on one tower, or near by GPS (old sites: on near towers).
+  function close(p, M, a, b) {
+    const ta = M.towersOf[a] || [], tb = M.towersOf[b] || [];
+    if (ta.some((t) => tb.includes(t))) return true;
+    if (p.near_links) return (p.near_links[a] || []).includes(b);
+    return true;
+  }
+
   function clashes(p, M, bands) {
     const out = new Map(), lvl = {};
     const add = (t, a, b, g, level, where, other) => {
@@ -66,6 +76,15 @@
         const g = gapOf(bands[a], bands[b]);
         if (g < p.guard_mhz) add(t, a, b, g, g < 0 ? "crit" : "warn", "same");
       }));
+      if (p.near_links) {
+        here.forEach((a) => (p.near_links[a] || []).forEach((b) => {
+          if (!bands[b] || here.includes(b)) return;
+          const o = M.byId[(M.towersOf[b] || [])[0]]; if (!o) return;
+          const g = gapOf(bands[a], bands[b]);
+          if (g < p.guard_mhz) add(t, a, b, g, g < 0 ? "warn" : "info", "near", o);
+        }));
+        return;
+      }
       (t.near_ids || (p.towers || []).filter((o) => (t.near || []).includes(o.name)).map((o) => o.id)).forEach((oid) => {
         const o = M.byId[oid]; if (!o) return;
         here.forEach((a) => on(o).forEach((b) => {
@@ -85,18 +104,20 @@
     return { n: hit.length, cost: Math.round(hit.reduce((s, n) => s + loud(n.signal), 0) * 10) / 10, nets: hit };
   }
 
-  // Best channels for one link: clear of every other link as planned, then quiet (in whole steps: a faint
-  // network under about -80 dBm alone does not justify a move), then non-DFS, then a small move.
+  // Best channels for one link: clear of every link on its towers and every near link as planned (a
+  // far link's channel may be shared), then quiet (in whole steps: a faint network under about -80 dBm
+  // alone does not justify a move), then non-DFS, then clear of EVERY link before sharing, then a small move.
   function ranked(p, M, ap, k) {
     const l = M.L[ap]; if (!l || l.freq == null) return [];
     const out = [];
     candidates(p, l.width).forEach((c) => {
       const b = band(c, l.width);
-      if (Object.keys(M.after).some((x) => x !== ap && gapOf(b, M.after[x]) < p.guard_mhz)) return;
+      const hit = Object.keys(M.after).filter((x) => x !== ap && gapOf(b, M.after[x]) < p.guard_mhz);
+      if (hit.some((x) => close(p, M, ap, x))) return;
       const h = heardOn(p, M, ap, b);
-      out.push({ c, dfs: isDfs(p, b), heard: h.n, cost: h.cost });
+      out.push({ c, dfs: isDfs(p, b), heard: h.n, cost: h.cost, shares: hit.map((x) => (M.L[x] || {}).name || x) });
     });
-    out.sort((x, y) => Math.floor(x.cost) - Math.floor(y.cost) || x.dfs - y.dfs || Math.abs(x.c - l.freq) - Math.abs(y.c - l.freq));
+    out.sort((x, y) => Math.floor(x.cost) - Math.floor(y.cost) || x.dfs - y.dfs || (x.shares.length > 0) - (y.shares.length > 0) || Math.abs(x.c - l.freq) - Math.abs(y.c - l.freq));
     return out.slice(0, k || 3);
   }
 
@@ -158,9 +179,9 @@
     const nOf = Object.fromEntries(moves.map((m) => [m.ap, m.n]));
     const kept = Object.keys(drafts).filter((ap) => M.L[ap] && drafts[ap] === M.L[ap].freq && M.auto[ap]);
     const others = new Set((p.towers || []).flatMap((t) => (t.others || []).map((n) => n.bssid))).size;
-    const verdict = !nowReal.length ? `<div class="fp-verdict ok"><span class="dot"></span><div><b>No channel clashes</b><span>Every link on every tower keeps ${p.guard_mhz} MHz clear of its neighbours.</span></div></div>`
+    const verdict = !nowReal.length ? `<div class="fp-verdict ok"><span class="dot"></span><div><b>No channel clashes</b><span>Every link keeps ${p.guard_mhz} MHz clear of the links on its towers${p.near_links ? ` and within ${p.near_km} km` : " and nearby"}.</span></div></div>`
       : `<div class="fp-verdict ${nowReal.some((c) => c.level === "crit") ? "bad" : "warn"}"><span class="dot"></span><div><b>${plural(nowReal.length, "channel clash", "channel clashes")}</b><span>${moves.length ? (aftReal.length ? `the plan below leaves ${plural(aftReal.length, "clash", "clashes")}` : `the ${plural(moves.length, "move")} below clear all of them`) : "drag a bar to plan a move"}</span></div></div>`;
-    const stats = `<div class="fp-stats"><span><b>${p.towers.length}</b> towers</span><span><b>${Object.keys(M.L).length}</b> links</span><span><b>${p.guard_mhz}</b> MHz gap wanted</span><span><b>${others}</b> other networks heard</span><span>towers within <b>${p.near_km}</b> km or linked are planned together</span></div>`;
+    const stats = `<div class="fp-stats"><span><b>${p.towers.length}</b> towers</span><span><b>${Object.keys(M.L).length}</b> links</span><span><b>${p.guard_mhz}</b> MHz gap wanted</span><span><b>${others}</b> other networks heard</span><span>${p.near_links ? `links within <b>${p.near_km}</b> km of each other (Network-map GPS) keep apart · farther apart they may share` : `towers within <b>${p.near_km}</b> km or linked are planned together`}</span></div>`;
     const legend = `<div class="fp-legend"><span><i class="k ok"></i>clear</span><span><i class="k crit"></i>overlap on one tower</span><span><i class="k warn"></i>clash with a nearby tower</span><span><i class="k info"></i>close call</span>${mode === "after" ? `<span><i class="k moved"></i>moved</span>` : `<span><em>→ 5735</em> move planned</span>`}<span><i class="k oth"></i>other Wi-Fi (scan)</span><span><i class="k dfsz"></i>DFS band</span></div>`;
     const name = (ap) => esc((M.L[ap] || {}).name || ap);
     // clash cards: every pair that clashes now or after the plan
@@ -197,7 +218,7 @@
       const cur = heardOn(p, M, l.ap, M.after[l.ap]), best = ranked(p, M, l.ap, 3);
       const f = M.to[l.ap] != null ? M.to[l.ap] : l.freq;
       return `<li data-ap="${esc(l.ap)}"><div class="nm"><b>${esc(l.name)}</b><small>${f} MHz · ${l.width} wide · ${cur.n ? plural(cur.n, "other network") + " heard" : "no other network heard"}</small></div>
-        <div class="ch">${best.map((x) => `<button type="button" class="fp-best${x.c === f ? " on" : ""}" data-fp-set="${esc(l.ap)}" data-c="${x.c}" title="${x.heard ? plural(x.heard, "other network") + " heard here" : "No other network heard here"}${x.dfs ? " · DFS" : ""} · clear of every link">${x.c}${x.dfs ? "<small>DFS</small>" : ""}${x.heard ? `<small>${x.heard} heard</small>` : `<small>quiet</small>`}</button>`).join("") || `<span class="dim">no clear channel at this width</span>`}</div></li>`;
+        <div class="ch">${best.map((x) => `<button type="button" class="fp-best${x.c === f ? " on" : ""}" data-fp-set="${esc(l.ap)}" data-c="${x.c}" title="${x.heard ? plural(x.heard, "other network") + " heard here" : "No other network heard here"}${x.dfs ? " · DFS" : ""} · ${x.shares.length ? `clear of every link nearby · shares with ${esc(x.shares.join(", "))} (more than ${p.near_km} km away)` : "clear of every link"}">${x.c}${x.dfs ? "<small>DFS</small>" : ""}${x.shares.length ? "<small>shared</small>" : ""}${x.heard ? `<small>${x.heard} heard</small>` : x.shares.length ? "" : `<small>quiet</small>`}</button>`).join("") || `<span class="dim">no clear channel at this width</span>`}</div></li>`;
     }).join("");
     const anyScan = (p.towers || []).some((t) => (t.scanned || []).length);
     return `<div class="fp-top">${verdict}${stats}</div>
@@ -211,7 +232,7 @@
           ${kept.length ? `<p class="${ui.note}">Left where they are: ${kept.map((ap) => `${name(ap)} <button type="button" class="fp-linkb" data-fp-reset="${esc(ap)}">undo</button>`).join(" · ")}</p>` : ""}</section>
         <section><h3>Clashes <small>${nowReal.length ? `${nowReal.length} now` : "none now"}${moves.length ? ` · ${aftReal.length} with the plan` : ""}</small></h3>${clashCards.length ? `<ul class="fp-cls">${clashCards.join("")}</ul>` : `<p class="${ui.note}">✓ Nothing overlaps.</p>`}</section>
       </div>
-      <section class="fp-bestsec"><h3>Best channels per link <small>${anyScan ? "clear of every other link as planned, then the fewest and quietest other networks, then non-DFS" : "clear of every other link as planned · scan a tower to also avoid other Wi-Fi"}</small></h3><ul class="fp-bests">${bestRows}</ul></section>`;
+      <section class="fp-bestsec"><h3>Best channels per link <small>${anyScan ? "clear of every nearby link as planned, then the fewest and quietest other networks, then non-DFS, then not shared" : "clear of every nearby link as planned, non-DFS first · scan a tower to also avoid other Wi-Fi"}</small></h3><ul class="fp-bests">${bestRows}</ul></section>`;
   }
 
   // ---- mount: state, drag, scan -------------------------------------------------------
@@ -268,7 +289,7 @@
       const mine = S.list.filter((x) => x.level !== "info" && (x.a === ap || x.b === ap));
       const h = heardOn(plan, M, ap, M.after[ap]);
       const tipEl = el.querySelector(".fp-drag") || el.appendChild(Object.assign(document.createElement("div"), { className: "fp-drag" }));
-      tipEl.innerHTML = `<b>${c} MHz</b>${isDfs(plan, M.after[ap]) ? " · DFS" : ""}<br>${mine.length ? `<span class="bad">clashes with ${mine.map((x) => esc(M.L[x.a === ap ? x.b : x.a].name)).join(", ")}</span>` : `<span class="ok">clear of every link</span>`}${h.n ? ` · ${plural(h.n, "other network")}` : (plan.towers || []).some((t) => (t.scanned || []).length) ? " · quiet" : ""}`;
+      tipEl.innerHTML = `<b>${c} MHz</b>${isDfs(plan, M.after[ap]) ? " · DFS" : ""}<br>${mine.length ? `<span class="bad">clashes with ${mine.map((x) => esc(M.L[x.a === ap ? x.b : x.a].name)).join(", ")}</span>` : (() => { const far = Object.keys(M.after).filter((x) => x !== ap && gapOf(M.after[ap], M.after[x]) < plan.guard_mhz && !close(plan, M, ap, x)); return far.length ? `<span class="ok">clear of every link nearby</span> · shares with ${esc(far.map((x) => M.L[x].name).join(", "))} (far away)` : `<span class="ok">clear of every link</span>`; })()}${h.n ? ` · ${plural(h.n, "other network")}` : (plan.towers || []).some((t) => (t.scanned || []).length) ? " · quiet" : ""}`;
       return tipEl;
     }
     el.addEventListener("pointerdown", (e) => {

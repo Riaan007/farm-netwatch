@@ -100,7 +100,7 @@ class Plan(unittest.TestCase):
 
     def test_tweespruit_a_move_respects_every_tower(self):
         """Riaan, 2026-10-26: moving .201 (Hoepel Rock + Newburry) to 5230/40 would sit 5 MHz from
-        Silo's 5185/40 — Silo is 8.5 km from Newburry but joined to it by a link. Real channels + GPS."""
+        Silo's 5185/40 — its Hoepel Rock end is 7.5 km from Silo, within NEAR_KM. Real channels + GPS."""
         T = {"hoep": {"name": "Hoepel Rock", "kind": "tower", "lat": -29.113113, "lon": 27.176688},
              "newb": {"name": "Newburry", "kind": "tower", "lat": -29.2528, "lon": 27.201783},
              "silo": {"name": "Silo", "kind": "tower", "lat": -29.176574, "lon": 27.14919},
@@ -120,7 +120,8 @@ class Plan(unittest.TestCase):
                     ap221: "silo", ap224: "silo", st224: "haz", ap212: "hoep", st212: "beth", ap204: "haz"}
         out = F.analyse(T, group_of, radios, devs(*radios, st213, st203, st221, st212, st204))
         newb = next(t for t in out["towers"] if t["name"] == "Newburry")
-        self.assertIn("Silo", newb["near"])                        # joined by the .222 link, 8.5 km apart
+        self.assertNotIn("Silo", newb["near"])                     # 9.9 km apart: the label goes by tower GPS
+        self.assertIn(ap221, out["near_links"][ap201])              # but .201 (Hoepel Rock end) is 7.5 km from Silo
         moves = {m["ap"]: m for m in out["moves"]}
         self.assertTrue(moves)
         self.assertFalse([m for m in moves.values() if m["to"] == 5230 and m["width"] == 40])
@@ -178,6 +179,83 @@ class Plan(unittest.TestCase):
         out = F.analyse(TOWERS, {A1: "t1", S1: "t1"}, radios, devs(A1, S1), scans=scans)
         self.assertEqual(out["summary"]["others"], 0)
         self.assertEqual(out["moves"], [])
+
+    # Tweespruit's Network-map GPS (2026-10-27): towers + the poles their stations sit on.
+    TW = {"silo": {"name": "Silo", "kind": "tower", "lat": -29.176574, "lon": 27.14919},
+          "west": {"name": "Westminster T", "kind": "tower", "lat": -29.175771, "lon": 27.144816},
+          "n8": {"name": "603/712 N8 T", "kind": "tower", "lat": -29.189528, "lon": 27.153321},
+          "haz": {"name": "Hazeldene - Link", "kind": "tower", "lat": -29.267595, "lon": 27.112272},
+          "hazcam": {"name": "Hazeldene - Camera", "kind": "pole", "lat": -29.254555, "lon": 27.087842},
+          "hoep": {"name": "Hoepel Rock", "kind": "tower", "lat": -29.113113, "lon": 27.176688},
+          "newb": {"name": "Newburry", "kind": "tower", "lat": -29.2528, "lon": 27.201783}}
+    K = staticmethod(lambda n: "cc:00:00:00:%02x:%02x" % (n // 256, n % 256))
+
+    def _sectors(self, f221, f204, w221=40, **kw):
+        """Sec120 on Silo (stations on Westminster + 603/712), Sec90 on Hazeldene - Link (station at the
+        Hazeldene camera pole), and the Silo↔Hazeldene link that joins the two towers."""
+        k = self.K
+        ap221, w, n8, ap204, hc, ap224, st224 = k(221), k(120), k(130), k(204), k(150), k(224), k(223)
+        radios = {ap221: r("ap-ptmp-ac", f221, w221, w, n8), w: r("sta-ptmp-ac", f221, w221, ap221),
+                  n8: r("sta-ptmp-ac", f221, w221, ap221), ap204: r("ap-ptmp-ac", f204, 20, hc),
+                  hc: r("sta-ptmp-ac", f204, 20, ap204), ap224: r("ap-ptp-ac", 5800, 20, st224),
+                  st224: r("sta-ptp-ac", 5800, 20, ap224)}
+        group_of = {ap221: "silo", w: "west", n8: "n8", ap204: "haz", hc: "hazcam", ap224: "silo", st224: "haz"}
+        group_of.update(kw.pop("group_of", {}))
+        return radios, group_of, ap221, ap204
+
+    def test_far_sectors_may_share_a_channel_though_their_towers_are_linked(self):
+        """Riaan 2026-10-27: Silo (Sec120) and Hazeldene (Sec90) are not close — closest radios 9.6 km."""
+        radios, group_of, ap221, ap204 = self._sectors(5185, 5180)
+        out = F.analyse(self.TW, group_of, radios, devs(*radios))
+        self.assertEqual(out["summary"]["clashes"], 0, [t["clashes"] for t in out["towers"]])
+        self.assertEqual(out["moves"], [])
+        silo = next(t for t in out["towers"] if t["name"] == "Silo")
+        self.assertNotIn("Hazeldene - Link", silo["near"])           # linked, but its links are all far
+        self.assertNotIn(ap204, out["near_links"].get(ap221, []))
+
+    def test_without_gps_linked_towers_are_still_near(self):
+        bare = {g: {"name": v["name"], "kind": v["kind"]} for g, v in self.TW.items()}
+        radios, group_of, ap221, ap204 = self._sectors(5185, 5180)
+        out = F.analyse(bare, group_of, radios, devs(*radios))
+        silo = next(t for t in out["towers"] if t["name"] == "Silo")
+        self.assertEqual([(c["where"], c["level"]) for c in silo["clashes"]], [("near", "warn")])
+
+    def test_a_link_within_8_km_still_clashes(self):
+        """Riaan 2026-10-26: the Hoepel Rock–Newburry link (.201) can interfere with Sec120 Silo — 7.5 km."""
+        k = self.K
+        radios, group_of, ap221, ap204 = self._sectors(5230, 5180)
+        ap201, st201 = k(201), k(1201)
+        radios.update({ap201: r("ap-ptp-ac", 5230, 40, st201), st201: r("sta-ptp-ac", 5230, 40, ap201)})
+        group_of.update({ap201: "hoep", st201: "newb"})
+        out = F.analyse(self.TW, group_of, radios, devs(*radios))
+        silo = next(t for t in out["towers"] if t["name"] == "Silo")
+        hit = [c for c in silo["clashes"] if {c["a"], c["b"]} == {ap221, ap201}]
+        self.assertEqual(len(hit), 1)
+        self.assertEqual((hit[0]["where"], hit[0]["level"], hit[0]["km"]), ("near", "warn", 7.5))
+        for m in out["moves"]:                                       # a move never lands within 10 MHz of it
+            other = F._band(5230, 40) if m["ap"] == ap221 else F._band(5230, 40)
+            self.assertGreaterEqual(F._gap(F._band(m["to"], 40), other), F.GUARD_MHZ, m)
+
+    def test_a_device_pin_beats_its_group(self):
+        """A station pinned 1 km from the Hazeldene sector makes Sec120 near it, whatever its pole says."""
+        radios, group_of, ap221, ap204 = self._sectors(5185, 5180)
+        out = F.analyse(self.TW, group_of, radios, devs(*radios),
+                        geo={self.K(130): {"lat": -29.262, "lon": 27.110}})
+        self.assertIn(ap204, out["near_links"].get(ap221, []))
+        haz = next(t for t in out["towers"] if t["name"] == "Hazeldene - Link")
+        self.assertEqual([({c["a"], c["b"]}, c["where"]) for c in haz["clashes"]], [({ap204, ap221}, "near")])
+
+    def test_best_channels_may_reuse_a_far_link(self):
+        """A non-DFS channel shared with a link 9.6 km away beats a clean DFS one, and says so.
+        Sec120 at 80 MHz: Silo's own Hazeldene link at 5800 leaves no room in 5725-5850, so the only
+        non-DFS room left (5150-5250) is where far-away Sec90 sits."""
+        radios, group_of, ap221, ap204 = self._sectors(5530, 5190, w221=80)
+        out = F.analyse(self.TW, group_of, radios, devs(*radios))
+        silo = next(t for t in out["towers"] if t["name"] == "Silo")
+        best = next(x for x in silo["links"] if x["ap"] == ap221)["best"]
+        self.assertFalse(best[0]["dfs"], best)
+        self.assertEqual([(r_["ap"], r_["km"]) for r_ in best[0]["reuses"]], [(ap204, 9.6)])
+        self.assertTrue(all(not b["dfs"] and b["reuses"] for b in best), best)   # ahead of every clean DFS channel
 
     def test_candidates_stay_inside_the_band(self):
         c = F.candidates(80)

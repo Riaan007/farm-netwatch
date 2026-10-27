@@ -666,8 +666,9 @@ def api_wifi_plan():
     with scanner.lock:
         devices = {k: dict(v) for k, v in scanner.devices.items()}
         names = {k: r.get("name") for k, r in scanner.registry.items() if r.get("name")}
+        geo = {k: r["geo"] for k, r in scanner.registry.items() if r.get("geo")}
     radios = radiomon.monitor.snapshot()["radios"]
-    out = freqplan.analyse(groups, group_of, radios, devices, names, wifiscan.load())
+    out = freqplan.analyse(groups, group_of, radios, devices, names, wifiscan.load(), geo)
     out["fix_enabled"] = bool(config.load().get("features", {}).get("wifi_fix"))
     return jsonify({"ok": True, **out})
 
