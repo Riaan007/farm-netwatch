@@ -1494,6 +1494,20 @@ def api_site_wifi_fix_state(site_id, key):
     return _wifi_fix_forward(site_id, f"/api/wifi/fix/{key}", timeout=(3, 20))
 
 
+@app.route("/api/hub/sites/<site_id>/wifi/scan", methods=["POST"])
+def api_site_wifi_scan(site_id):
+    """Site survey from one station (the site's wifiscan.py); its link blinks ~20 s."""
+    b = request.get_json(force=True, silent=True) or {}
+    return _wifi_fix_forward(site_id, "/api/wifi/scan", "POST", {"radio": str(b.get("radio") or "")}, timeout=(3, 30))
+
+
+@app.route("/api/hub/sites/<site_id>/wifi/scan/<path:key>", methods=["GET"])
+def api_site_wifi_scan_state(site_id, key):
+    if ".." in key or "%" in key:
+        return jsonify({"ok": False, "error": "bad key"}), 400
+    return _wifi_fix_forward(site_id, f"/api/wifi/scan/{key}", timeout=(3, 20))
+
+
 @app.route("/api/hub/sites/<site_id>/wifi/plan", methods=["GET"])
 def api_site_wifi_plan(site_id):
     """A site's per-tower frequency plan (read-only)."""

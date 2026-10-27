@@ -40,6 +40,7 @@ import tunnels
 import freqplan
 import wifichecks
 import wififix
+import wifiscan
 import wifidiag
 import kuma
 import notify
@@ -666,9 +667,38 @@ def api_wifi_plan():
         devices = {k: dict(v) for k, v in scanner.devices.items()}
         names = {k: r.get("name") for k, r in scanner.registry.items() if r.get("name")}
     radios = radiomon.monitor.snapshot()["radios"]
-    out = freqplan.analyse(groups, group_of, radios, devices, names)
+    out = freqplan.analyse(groups, group_of, radios, devices, names, wifiscan.load())
     out["fix_enabled"] = bool(config.load().get("features", {}).get("wifi_fix"))
     return jsonify({"ok": True, **out})
+
+
+@app.route("/api/wifi/scan", methods=["POST"])
+@guard
+def api_wifi_scan():
+    """Site survey from one STATION (wifiscan.py): {radio: key}. Its link drops
+    for ~10-30 s while it listens, so it is behind the same switch as the fixes
+    (Settings → Advanced → Wi-Fi fixes). Answers at once; poll GET /api/wifi/scan/<key>."""
+    if not config.load().get("features", {}).get("wifi_fix"):
+        return jsonify({"ok": False, "error": "Wi-Fi fixes are turned off in this site's Settings"}), 403
+    body = request.get_json(force=True, silent=True) or {}
+    target = _radio_target(str(body.get("radio") or ""))
+    if not target:
+        return jsonify({"ok": False, "error": "unknown radio"}), 404
+    login = _saved_login(target["key"])
+    if not login:
+        return jsonify({"ok": False, "error": "no saved login for this radio"}), 400
+    if wififix.running(target["key"]):
+        return jsonify({"ok": False, "error": "a fix on this radio is running"}), 409
+    job = wifiscan.start(target, login)
+    if job is None:
+        return jsonify({"ok": False, "error": "a scan on this radio is already running"}), 409
+    return jsonify({"ok": True, "job": job})
+
+
+@app.route("/api/wifi/scan/<path:key>")
+@guard
+def api_wifi_scan_state(key):
+    return jsonify({"ok": True, "job": wifiscan.state(key)})
 
 
 @app.route("/api/radio/links")

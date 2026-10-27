@@ -143,6 +143,42 @@ class Plan(unittest.TestCase):
         self.assertEqual(out["towers"][0]["links"][0]["name"] if out["towers"][0]["links"] else
                          next(t for t in out["towers"] if t["links"])["links"][0]["name"], "Nubery-Link-AP")
 
+    def test_other_networks_steer_a_move_to_a_quiet_channel(self):
+        # a clash on Silo; the station scanned and hears a loud neighbour on the nearest free channels
+        radios = {A1: r("ap-ptp-ac", 5180, 20, S1), S1: r("sta-ptp-ac", 5180, 20, A1),
+                  A2: r("ap-ptp-ac", 5185, 20, S2), S2: r("sta-ptp-ac", 5185, 20, A2)}
+        loud = [{"bssid": "11:22:33:44:55:%02X" % i, "ssid": "Neighbour", "freq": f, "width": 20, "lo": f - 10, "hi": f + 10,
+                 "signal": -55} for i, f in enumerate(range(5200, 5350, 20))]
+        scans = {S1: {"ts": 1, "name": "Sta", "networks": loud}}
+        out = F.analyse(TOWERS, {A1: "t1", A2: "t1", S1: "t1"}, radios, devs(A1, S1, A2, S2), scans=scans)
+        m = next(m for m in out["moves"] if m["to"])
+        self.assertTrue(all(F._gap(F._band(m["to"], 20), (n["lo"], n["hi"])) >= 5 for n in loud), m)
+        self.assertEqual(m["heard_to"], 0)
+        silo = next(t for t in out["towers"] if t["name"] == "Silo")
+        self.assertEqual(len(silo["others"]), len(loud))
+        self.assertEqual(silo["scan_from"], [{"key": S1, "name": "02"}])
+        self.assertEqual(out["summary"]["others"], len(loud))
+
+    def test_a_link_on_a_busy_channel_gets_a_quieter_one(self):
+        radios = {A1: r("ap-ptp-ac", 5500, 20, S1), S1: r("sta-ptp-ac", 5500, 20, A1)}
+        scans = {S1: {"ts": 1, "networks": [{"bssid": "11:22:33:44:55:66", "ssid": "X", "freq": 5500, "width": 20,
+                                             "lo": 5490, "hi": 5510, "signal": -60}]}}
+        out = F.analyse(TOWERS, {A1: "t1", S1: "t1"}, radios, devs(A1, S1), scans=scans)
+        self.assertEqual([(m["why"], m["heard_from"], m["heard_to"]) for m in out["moves"]], [("busy", 1, 0)])
+        L = out["towers"][0]["links"][0] if out["towers"][0]["links"] else next(t for t in out["towers"] if t["links"])["links"][0]
+        self.assertEqual(L["heard"], 1)
+        self.assertTrue(L["best"] and L["best"][0]["heard"] == 0)
+
+    def test_our_own_radios_are_not_other_networks(self):
+        radios = {A1: r("ap-ptp-ac", 5500, 20, S1), S1: r("sta-ptp-ac", 5500, 20, A1)}
+        radios[A1]["sample"]["ssid"] = "Tower"
+        scans = {S1: {"ts": 1, "networks": [
+            {"bssid": A1.upper(), "ssid": "?", "freq": 5500, "width": 20, "lo": 5490, "hi": 5510, "signal": -50},
+            {"bssid": "11:22:33:44:55:77", "ssid": "Tower", "freq": 5600, "width": 20, "lo": 5590, "hi": 5610, "signal": -50}]}}
+        out = F.analyse(TOWERS, {A1: "t1", S1: "t1"}, radios, devs(A1, S1), scans=scans)
+        self.assertEqual(out["summary"]["others"], 0)
+        self.assertEqual(out["moves"], [])
+
     def test_candidates_stay_inside_the_band(self):
         c = F.candidates(80)
         self.assertTrue(all(any(lo <= x - 40 and x + 40 <= hi for lo, hi in F.RANGES) for x in c))

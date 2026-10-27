@@ -17,6 +17,11 @@ that changes (the stations follow). Frequencies and widths come from the radio
 monitor's last read; nothing here talks to a radio. Applying a move goes
 through wififix's channel fix (preview, confirm, auto-undo), which also checks
 the stations' scan lists — this plan cannot see those.
+
+OTHER Wi-Fi (not ours) comes from site surveys a station on a tower ran
+(wifiscan.py, on demand). Each network heard there costs a channel it touches,
+more the louder it is, and moves and the "best channels" per link prefer quiet
+ones — after keeping clear of our own links, which stays the hard rule.
 """
 import math
 
@@ -28,6 +33,15 @@ GUARD_MHZ = 10        # edge-to-edge gap wanted between two links (a move keeps 
 NEAR_KM = 5.0         # towers this close, joined by a radio link, or with no GPS are "near":
                       # their overlaps and close calls are reported as clashes
 STEP = 5
+BUSY_COST = 2.0       # a link this "busy" with other networks gets a quieter channel suggested
+
+
+def _loud(signal):
+    """How much one other network on a channel costs, by how loud it is heard. Channels are
+    compared in whole steps, so one faint network (under about -80 dBm) never forces a move."""
+    if signal is None:
+        return 1.0
+    return 4.0 if signal >= -60 else 2.0 if signal >= -70 else 1.0 if signal >= -80 else 0.3
 
 
 def _num(v):
@@ -104,11 +118,12 @@ def _links(radios, by_mac, by_ip):
     return links
 
 
-def analyse(groups, group_of, radios, devices, names=None):
+def analyse(groups, group_of, radios, devices, names=None, scans=None):
     """groups {gid: {name, kind, lat, lon}}; group_of {device key: gid};
-    radios = radiomon snapshot {key: …}; devices {key: device}.
+    radios = radiomon snapshot {key: …}; devices {key: device};
+    scans = wifiscan.load() {radio key: {ts, name, networks: [...]}}.
     Returns {"towers": [...], "moves": [...], "summary": {...}}."""
-    names = names or {}
+    names, scans = names or {}, scans or {}
     by_mac, by_ip = {}, {}
     for k, d in devices.items():
         m = (d.get("mac") or (k if ":" in k else "")).lower()
@@ -153,6 +168,32 @@ def analyse(groups, group_of, radios, devices, names=None):
         km = _km(towers[a], towers[b])
         return (a, b) in joined or km is None or km <= NEAR_KM
     near = {gid: [o for o in towers if o != gid and is_near(gid, o)] for gid in towers}
+
+    # Other networks heard from each tower (site surveys), never our own radios.
+    own_macs = {m.upper() for m in by_mac} | {str(k).upper() for k in radios}
+    for r in radios.values():
+        own_macs |= {str(ln.get("peer") or "").upper() for ln in r.get("links") or []}
+    own_ssids = {str((r.get("sample") or {}).get("ssid") or "") for r in radios.values()} - {""}
+    gid_of = {k.lower(): g for k, g in group_of.items()}
+    others = {gid: {} for gid in towers}
+    scanned = {gid: [] for gid in towers}
+    for k, rec in scans.items():
+        gid = gid_of.get(str(k).lower())
+        if gid not in towers:
+            continue
+        scanned[gid].append({"ts": rec.get("ts"), "by": name(k) if k in devices or k in radios else rec.get("name") or k})
+        for n in rec.get("networks") or []:
+            if n.get("bssid", "").upper() in own_macs or (n.get("ssid") and n["ssid"] in own_ssids):
+                continue
+            cur = others[gid].get(n["bssid"])
+            if not cur or (n.get("signal") or -200) > (cur.get("signal") or -200):
+                others[gid][n["bssid"]] = {**n, "seen": rec.get("ts")}
+    others = {gid: sorted(v.values(), key=lambda n: n["lo"]) for gid, v in others.items()}
+
+    def heard_on(gids, band):
+        """(cost, count) of other networks on these towers touching this band (or within 5 MHz)."""
+        hit = [n for g in gids for n in others.get(g, []) if _gap(band, (n["lo"], n["hi"])) < 5]
+        return round(sum(_loud(n.get("signal")) for n in hit), 1), len(hit)
 
     def clashes(gid, band_of):
         out = []
@@ -201,7 +242,7 @@ def analyse(groups, group_of, radios, devices, names=None):
                 if any(band_plan.get(x) and _gap(b, band_plan[x]) < (GUARD_MHZ if strict or x in close_by else 0)
                        for x in everywhere):
                     continue
-                score = (is_dfs(*b), abs(c - L["freq"]))     # prefer non-DFS, then the smallest move
+                score = (math.floor(heard_on(mine, b)[0]), is_dfs(*b), abs(c - L["freq"]))   # quiet, then non-DFS, then the smallest move
                 if best is None or score < best[0]:
                     best = (score, c)
             return best
@@ -213,15 +254,49 @@ def analyse(groups, group_of, radios, devices, names=None):
             c = best[1]
             band_plan[ap] = _band(c, L["width"])
             moves.append({"ap": ap, "name": name(ap), "from": L["freq"], "to": c, "width": L["width"],
-                          "dfs": is_dfs(*band_plan[ap]),
+                          "dfs": is_dfs(*band_plan[ap]), "why": "clash",
+                          "heard_from": heard_on(mine, band_now[ap])[1], "heard_to": heard_on(mine, band_plan[ap])[1],
                           "towers": [towers[g].get("name") or g for g in mine],
                           "checked": ("clear of every link on every tower" if not relaxed else
                                       "clear of this tower and the towers near it; it overlaps no other tower, "
                                       "but is closer than " + str(GUARD_MHZ) + " MHz to one far away")})
         else:
             moves.append({"ap": ap, "name": name(ap), "from": L["freq"], "to": None, "width": L["width"],
-                          "dfs": False, "towers": [towers[g].get("name") or g for g in mine],
+                          "dfs": False, "why": "clash", "towers": [towers[g].get("name") or g for g in mine],
                           "note": "no free channel at this width — try a narrower channel"})
+
+    def ranked(ap):
+        """Channels for this link, best first: clear of every other link (as planned), then quiet."""
+        L, mine = links[ap], [gid for gid in towers if ap in on[gid]]
+        rest = {x for gid in towers for x in on[gid]} - {ap}
+        out = []
+        for c in candidates(L["width"]):
+            b = _band(c, L["width"])
+            if any(band_plan.get(x) and _gap(b, band_plan[x]) < GUARD_MHZ for x in rest):
+                continue
+            cost, n = heard_on(mine, b)
+            out.append(((math.floor(cost), is_dfs(*b), abs(c - L["freq"])), {"freq": c, "dfs": is_dfs(*b), "heard": n, "cost": cost}))
+        out.sort(key=lambda x: x[0])
+        return [x[1] for x in out]
+
+    # Links that clash with nothing of ours but share their channel with loud neighbours.
+    moved_aps = {m["ap"] for m in moves}
+    for ap, L in links.items():
+        if ap in moved_aps or not L["freq"] or not (radios.get(ap) or {}).get("ok"):
+            continue
+        mine = [gid for gid in towers if ap in on[gid]]
+        cost_now, n_now = heard_on(mine, band_now[ap])
+        if cost_now < BUSY_COST:
+            continue
+        best = ranked(ap)[:1]
+        if best and best[0]["cost"] <= cost_now - BUSY_COST:
+            c = best[0]["freq"]
+            band_plan[ap] = _band(c, L["width"])
+            moves.append({"ap": ap, "name": name(ap), "from": L["freq"], "to": c, "width": L["width"],
+                          "dfs": best[0]["dfs"], "why": "busy", "heard_from": n_now, "heard_to": best[0]["heard"],
+                          "towers": [towers[g].get("name") or g for g in mine],
+                          "checked": f"quieter: {n_now} other network{'s' if n_now != 1 else ''} heard on the "
+                                     f"current channel, {best[0]['heard']} on this one · clear of every link on every tower"})
 
     out_towers = []
     for gid, g in towers.items():
@@ -235,9 +310,17 @@ def analyse(groups, group_of, radios, devices, names=None):
                        "lo": band_now[ap][0] if ap in band_now else None, "hi": band_now[ap][1] if ap in band_now else None,
                        "dfs": is_dfs(*band_now[ap]) if ap in band_now else False,
                        "here": sorted(name(k) for k in links[ap]["members"] if group_of.get(k) == gid),
-                       "clash": ap in bad, "readable": bool((radios.get(ap) or {}).get("ok"))}
+                       "clash": ap in bad, "readable": bool((radios.get(ap) or {}).get("ok")),
+                       "heard": heard_on([gid], band_now[ap])[1] if ap in band_now else 0,
+                       "best": ranked(ap)[:3] if ap in band_now and (radios.get(ap) or {}).get("ok") else []}
                       for ap in on[gid]],
+            "others": others[gid],
+            "scanned": sorted(scanned[gid], key=lambda x: -(x["ts"] or 0))[:1],
+            "scan_from": [{"key": k, "name": name(k)} for k, gg in group_of.items()
+                          if gg == gid and (radios.get(k) or {}).get("ok")
+                          and str((radios[k].get("sample") or {}).get("mode") or radios[k].get("mode") or "").lower().startswith("sta")],
             "unknown": [name(k) for k in unknown_here[gid]],
+            "near_ids": near[gid],
             "clashes": [{**c, "a_name": name(c["a"]), "b_name": name(c["b"])} for c in cl],
         })
     out_towers.sort(key=lambda t: (-len(t["clashes"]), t["name"]))
@@ -245,5 +328,6 @@ def analyse(groups, group_of, radios, devices, names=None):
             "ranges": [list(r) for r in RANGES], "dfs": [list(r) for r in DFS],
             "summary": {"towers": len(out_towers), "clashes": sum(len(t["clashes"]) for t in out_towers),
                         "moves": sum(1 for m in moves if m["to"]),
+                        "others": len({n["bssid"] for v in others.values() for n in v}),
                         # wide links whose centre the monitor has not read yet (until the next poll)
                         "centre_unknown": sum(1 for L in links.values() if L["freq"] and not L["centre_known"])}}

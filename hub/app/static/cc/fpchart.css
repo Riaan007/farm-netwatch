@@ -1,0 +1,54 @@
+/* Frequency plan chart: drag, other Wi-Fi, scan, best channels. Shared by the site page
+   (app/static/fpchart.css) and the hub (hub/app/static/cc/fpchart.css) — keep IDENTICAL.
+   Uses the page's tokens (--line, --ink, --muted, --dim, --cyan, --ok, --warn, --bad ...). */
+.fp-it.drag { cursor: grab; touch-action: none; }
+.fp-dragging, .fp-dragging .fp-it.drag { cursor: grabbing; user-select: none; }
+.fp-dragging .fp-lb { opacity: .85; }
+.fp-it.drag:hover .fp-bar { box-shadow: 0 0 0 3px rgba(34, 211, 238, .25); }
+.fp-drag { position: absolute; z-index: 20; pointer-events: none; padding: 7px 10px; border-radius: 9px; background: #0b1324; border: 1px solid var(--line2); box-shadow: 0 8px 24px rgba(0, 0, 0, .45); font-size: 12px; color: var(--ink2); white-space: nowrap; line-height: 1.45; }
+.fp-drag b { color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+.fp-drag .ok, .fp-mv .d.ok, .fp-mv b.ok { color: #6ee7b7; }
+.fp-drag .bad, .fp-mv .d.bad, .fp-mv b.bad, .fp-cl .d.bad { color: #fda4af; }
+.fp-hint { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.fp-hint b { color: var(--ink2); }
+.fp-linkb { border: 0; background: none; padding: 0; color: var(--cyan2); font: inherit; font-weight: 650; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+/* other Wi-Fi heard by a scan: a thin strip under each lane's bars */
+.fp-oth { position: absolute; height: 7px; border-radius: 2px; background: repeating-linear-gradient(135deg, #94a3b8 0 3px, #64748b 3px 6px); pointer-events: auto; cursor: help; }
+.k.oth { --bc: #94a3b8; --bl: #64748b; background: repeating-linear-gradient(135deg, #94a3b8 0 3px, #64748b 3px 6px) !important; }
+.fp-tw .fp-scl { color: var(--muted); }
+.fp-scanb { justify-self: start; margin-top: 3px; height: 20px; padding: 0 8px; border-radius: 99px; border: 1px solid rgba(34, 211, 238, .45); background: rgba(34, 211, 238, .1); color: #a5f3fc; font-size: 10.5px; font-weight: 650; cursor: pointer; }
+.fp-scanb:hover { background: rgba(34, 211, 238, .2); }
+.fp-scanbox { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 10px; padding: 10px 12px; border: 1px solid rgba(34, 211, 238, .35); border-radius: 12px; background: rgba(34, 211, 238, .06); font-size: 12.5px; color: var(--ink2); }
+.fp-scanbox b { color: var(--ink); }
+.fp-scanbox select { background: #050b16; border: 1px solid var(--line2); border-radius: 7px; color: var(--ink); padding: 3px 6px; font-size: 12.5px; }
+.fp-scanbox > span { flex: 1 1 320px; color: var(--muted); }
+.fp-scanbox .acts { flex: none; display: inline-flex; gap: 8px; }
+
+/* planned moves */
+.fp-mv.draft { border-color: rgba(167, 139, 250, .45); }
+.fp-mv.draft .n { background: #a78bfa; color: #1e1036; }
+.fp-why { font-size: 11px; font-weight: 650; color: var(--dim); }
+.fp-why.me { color: #c4b5fd; }
+.fp-mv .d b { font-variant-numeric: tabular-nums; }
+
+/* best channels per link */
+.fp-bestsec { margin-top: 18px; }
+.fp-bestsec h3 { margin: 0 0 8px; font-size: 13px; font-weight: 700; color: var(--ink); display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.fp-bestsec h3 small { font-weight: 500; color: var(--dim); font-size: 12px; }
+.fp-bests { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
+.fp-bests li { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(15, 23, 42, .35); transition: border-color .15s, background .15s; }
+.fp-bests li.hl { border-color: rgba(34, 211, 238, .5); background: rgba(34, 211, 238, .06); }
+.fp-bests li.flash { animation: fpflash 1.2s ease; }
+.fp-bests .nm { display: grid; min-width: 0; }
+.fp-bests .nm b { font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-bests .nm small { font-size: 11.5px; color: var(--dim); }
+.fp-bests .ch { display: flex; gap: 6px; flex-wrap: wrap; }
+.fp-best { display: inline-grid; justify-items: center; min-width: 58px; padding: 4px 8px; border-radius: 9px; border: 1px solid var(--line2); background: rgba(148, 163, 184, .06); color: var(--ink); font: 650 13px/1.15 var(--mono, monospace); cursor: pointer; }
+.fp-best small { font: 600 10px/1.2 inherit; font-family: inherit; color: var(--dim); }
+.fp-best:hover { border-color: rgba(52, 211, 153, .6); background: rgba(16, 185, 129, .12); }
+.fp-best.on { border-color: #34d399; background: rgba(16, 185, 129, .16); color: #6ee7b7; }
+@media (max-width: 860px) { .fp-bests { grid-template-columns: 1fr; } }
+.fp-cl.cleared { --fc: var(--ok); opacity: .9; }
+.fp-track { user-select: none; -webkit-user-select: none; }
+.fp-it.drag .fp-lb { pointer-events: auto; cursor: grab; }
