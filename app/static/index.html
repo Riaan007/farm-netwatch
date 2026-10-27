@@ -1788,13 +1788,29 @@
             return list.slice().sort(by);
         }
         function featureBadges(d){ return (d.features||[]).filter(f => featureNames[f]).map(f=>`<span class="feature-badge ${featureColors[f]||'bg-slate-400'}" title="${featureNames[f]}">${f}</span>`).join(''); }
+        // A monitored device Uptime Kuma does not check (yet): d.kuma_state from /api/devices
+        // (app/monitoring.py kuma_state). Never say Kuma pings a device it has no monitor for.
+        function kumaWait(d){
+            if(!d || !d.watch) return null;
+            const why = d.kuma_why ? ` (${d.kuma_why})` : '';
+            return {
+                setup:    { short: 'Waiting for Kuma setup', long: "Not in Uptime Kuma yet: Kuma is not set up on this Pi. Save Kuma's admin login in Settings → Uptime Kuma and its monitor is made by itself — no need to switch it again." },
+                no_login: { short: 'Waiting for Kuma', long: `Not in Uptime Kuma yet: Netwatch can't log in to it${why}. It asks again after every scan and makes the monitor as soon as it gets in.` },
+                pending:  { short: 'Being added to Kuma', long: 'Its Uptime Kuma monitor is being made.' },
+                failed:   { short: 'Not in Kuma', long: `Not in Uptime Kuma: Kuma would not add it${why}. Netwatch tries again later.` },
+            }[d.kuma_state] || null;
+        }
         function flagIcons(d){
             const risky = (d.ports||[]).some(p => RISKY_PORTS[p]);
+            const kw = kumaWait(d);
             return [
                 d.watch && LIST === 'all' ? '<span title="Monitored">🔔</span>' : '',
                 d.geo ? '<span title="On the map">📍</span>' : '',
                 d.has_credentials ? '<span title="Login saved">🔑</span>' : '',
-                d.has_kuma ? (d.kuma_paused ? '<span title="Uptime Kuma monitor paused (not monitored)" style="opacity:.4">📈</span>' : '<span title="Uptime Kuma pings it every minute">📈</span>') : '',
+                kw ? `<span title="${esc(kw.short + ' — ' + kw.long)}">⏳</span>`
+                    : d.kuma_state === 'on' ? '<span title="Uptime Kuma pings it every minute">📈</span>'
+                    : d.kuma_state === 'push' ? '<span title="Uptime Kuma gets its status after every scan">📈</span>'
+                    : d.kuma_state === 'paused' ? '<span title="Uptime Kuma monitor paused (not monitored)" style="opacity:.4">📈</span>' : '',
                 d.link ? '<span title="Linked to another device">🔗</span>' : '',
                 d.ip_conflict ? `<span title="IP conflict — another device also answers ${esc(d.ip)}">⚠️</span>` : (d.ip_rotated ? `<span title="Address recently held by a different MAC (rotating private Wi-Fi address or DHCP reuse)">🔁</span>` : ''),
                 risky ? '<span title="Risky exposed port (Telnet/FTP/…)">🔓</span>' : '',
@@ -1914,11 +1930,12 @@
             const box = document.getElementById('list-tabs');
             if(!box) return;
             const mon = scope.filter(d => d.watch), monDown = mon.filter(d => !d.online).length;
+            const kumaWaiting = mon.filter(d => kumaWait(d)).length;
             const other = scope.filter(d => !d.watch), otherRecent = other.filter(d => devState(d) !== 'quiet');
             const otherUp = otherRecent.filter(d => d.online).length, otherQuiet = other.length - otherRecent.length;
             const tab = (id, label, v, sub, cls) => `<button type="button" data-list="${id}" class="${LIST === id ? 'on' : ''} ${cls || ''}" aria-pressed="${LIST === id}"><b>${label}</b><span class="v">${v}</span><small>${sub}</small></button>`;
             box.innerHTML = tab('monitored', '🔔 Monitored', mon.length ? `${mon.length - monDown}<i>/${mon.length}</i>` : '0',
-                    !mon.length ? 'choose what to watch' : monDown ? `<span class="dn">${monDown} offline</span> · ${mon.length - monDown} online` : `<span class="up">all online</span>`, monDown ? 'bad' : '')
+                    !mon.length ? 'choose what to watch' : (monDown ? `<span class="dn">${monDown} offline</span> · ${mon.length - monDown} online` : `<span class="up">all online</span>`) + (kumaWaiting ? ` · ⏳ ${kumaWaiting} not in Kuma` : ''), monDown ? 'bad' : '')
                 + tab('other', 'Other devices', other.length ? `${otherUp}<i>/${otherRecent.length}</i>` : '0', other.length ? `online this week${otherQuiet ? ` · ${otherQuiet} gone quiet` : ''}` : 'none')
                 + tab('all', 'All devices', scope.length, 'everything found here');
         }
@@ -2144,14 +2161,22 @@
             const j = await r.json().catch(() => ({}));
             if(r.status === 401) throw new Error('Changing monitoring needs the Pi password — log in and try again.');
             if(!r.ok || !j.ok) throw new Error(j.error || `The Pi answered ${r.status}.`);
-            (j.changed || []).forEach(c => { const d = DEV_BY_KEY[c.key]; if(d) d.watch = c.monitored; });
+            const sum = j.summary || {}, wait = sum.kuma_follows === false ? 'setup' : sum.kuma_ok === false ? 'no_login' : 'pending';
+            (j.changed || []).forEach(c => {
+                const d = DEV_BY_KEY[c.key];
+                if(!d) return;
+                d.watch = c.monitored;
+                // until the next refresh: what Kuma has for a device just switched on
+                if(c.monitored && !['on','push'].includes(d.kuma_state)) Object.assign(d, { kuma_state: wait, kuma_why: wait === 'no_login' ? sum.kuma_error || '' : '' });
+            });
             if(j.summary) MON_INFO = {...(MON_INFO || {}), ...j.summary};
             renderGrid(); renderSetMonSum();
             return j;
         }
         function monitoringToast(j){
             const ch = j.changed || [], on = ch.filter(c => c.monitored).length, off = ch.length - on;
-            nwToast([on ? `${on} device${on===1?'':'s'} now monitored` : '', off ? `${off} no longer monitored` : ''].filter(Boolean).join(' · ') || 'Nothing to change', 'ok');
+            const sum = j.summary || {}, noKuma = sum.kuma_follows === false || sum.kuma_ok === false;
+            nwToast([on ? `${on} device${on===1?'':'s'} ${noKuma ? 'switched on — not in Uptime Kuma until it is set up (Settings → Uptime Kuma)' : 'now monitored'}` : '', off ? `${off} no longer monitored` : ''].filter(Boolean).join(' · ') || 'Nothing to change', 'ok');
         }
         async function setMonitored(monitor, stop){
             try { monitoringToast(await postMonitoring(monitor, stop)); return true; }
@@ -2180,7 +2205,8 @@
                 type: d => ({ icon: catIcon[d.category] || '•', label: catLabel[d.category] || d.category || 'Unknown', group: monGroup(d) }),
                 groups: MON_GROUPS,
                 pick: pick === '@key' ? null : pick,
-                note: MON_INFO && MON_INFO.kuma_follows ? 'Uptime Kuma follows this list: a monitored device gets a 60-second ping monitor, and one taken off the list has its monitor paused.' : '',
+                note: MON_INFO && MON_INFO.kuma_follows ? 'Uptime Kuma follows this list: a monitored device gets a 60-second ping monitor, and one taken off the list has its monitor paused.'
+                    : MON_INFO ? "Uptime Kuma is not set up on this Pi yet: devices you switch on are listed first and the hub alerts on them, but they go into Kuma only once its admin login is saved in Settings → Uptime Kuma — no need to switch them again." : '',
                 save: (c) => postMonitoring(c.monitor, c.stop),
                 preset: pool.map(d => d.key),
             });
@@ -2192,7 +2218,16 @@
             const m = MON_INFO;
             el.innerHTML = !m ? 'Unknown.' : !m.monitored
                 ? 'No devices are monitored yet. Choose the equipment you need to see online or offline — the hub then alerts when one of them drops.'
-                : `<b>${m.monitored}</b> device${m.monitored===1?' is':'s are'} monitored — ${m.online} online, ${m.offline ? `<b style="color:#fda4af">${m.offline} offline</b>` : '0 offline'}. ${m.kuma_follows ? 'Uptime Kuma follows the list.' : 'Uptime Kuma is not set up here, so only the hub alerts.'}`;
+                : `<b>${m.monitored}</b> device${m.monitored===1?' is':'s are'} monitored — ${m.online} online, ${m.offline ? `<b style="color:#fda4af">${m.offline} offline</b>` : '0 offline'}. ${kumaSum(m)}`;
+        }
+        // What Uptime Kuma really has of the Monitored list (/api/monitoring: in_kuma, kuma_waiting).
+        function kumaSum(m){
+            const w = m.kuma_waiting || 0, are = w === 1 ? 'is' : 'are';
+            if(!w) return 'Uptime Kuma follows the list.';
+            const notIn = w < m.monitored ? `${w} of them ${are} not` : w === 1 ? 'it is not' : 'none of them is';
+            if(!m.kuma_follows) return `Uptime Kuma is not set up here: ${notIn} in Kuma, so only the hub alerts for ${w === 1 ? 'it' : 'them'}. Save Kuma's admin login in Settings → Uptime Kuma and their monitors are made by themselves.`;
+            if(m.kuma_ok === false) return `Netwatch can't log in to Uptime Kuma${m.kuma_error ? ` (${esc(m.kuma_error)})` : ''}, so ${notIn} in Kuma yet; it asks again after every scan.`;
+            return `Uptime Kuma checks ${m.in_kuma}; ${w} ${are} still being added.`;
         }
 
         // ---- per-device diagnostics ----
@@ -2867,11 +2902,16 @@
                 document.getElementById('kuma-token').value = k.token || '';
                 document.getElementById('kuma-pushurl').innerText = k.push_url ? ('Push URL: ' + k.push_url) : '';
                 const mid = k.monitor_id || 0;
-                st.textContent = mid > 0
-                    ? (k.paused ? `Monitor #${mid} is paused — this device is not monitored (its history is kept).` : `Monitor #${mid} pings this device every 60 seconds.`)
-                    : k.has_token ? "A hand-made push monitor receives this device's status after every scan."
-                    : !k.follows ? 'Uptime Kuma is not set up on this Pi (Settings → Uptime Kuma).'
-                    : k.monitored ? 'Its Kuma monitor is being created…' : 'No Kuma monitor — switch Monitored on to add one.';
+                // k.state = app/monitoring.py kuma_state: what Kuma really has, never more
+                st.textContent = {
+                    on: `Monitor #${mid} pings this device every 60 seconds.`,
+                    paused: `Monitor #${mid} is paused — this device is not monitored (its history is kept).`,
+                    push: "A hand-made push monitor receives this device's status after every scan.",
+                    setup: "Not in Uptime Kuma yet: Kuma is not set up on this Pi. Save its admin login in Settings → Uptime Kuma and the monitor is made by itself.",
+                    no_login: `Not in Uptime Kuma yet: Netwatch can't log in to it${k.why ? ` (${k.why})` : ''}. It asks again after every scan.`,
+                    pending: mid > 0 ? `Monitor #${mid} is being resumed…` : 'Its Kuma monitor is being created…',
+                    failed: `Not in Uptime Kuma: Kuma would not add it${k.why ? ` (${k.why})` : ''}. Netwatch tries again later.`,
+                }[k.state] || (!k.follows ? 'Uptime Kuma is not set up on this Pi (Settings → Uptime Kuma).' : 'No Kuma monitor — switch Monitored on to add one.');
             } catch(e){ st.textContent = ''; }
         }
         async function saveKuma(){
@@ -2884,8 +2924,11 @@
         function renderMonRow(dev){
             const on = !!(dev && dev.watch);
             document.getElementById('mon-row').classList.toggle('on', on);
+            const kw = kumaWait(dev);
+            const kuma = kw ? ' ' + kw.long : dev && dev.kuma_state === 'push' ? ' Uptime Kuma gets its status after every scan.'
+                : dev && dev.kuma_state === 'on' ? ' Uptime Kuma pings it every minute.' : '';
             document.getElementById('mon-row-sub').textContent = on
-                ? `On the Monitored list: shown first with its online/offline state, and the hub alerts when it goes offline or comes back.${MON_INFO && MON_INFO.kuma_follows ? ' Uptime Kuma pings it every minute.' : ''}`
+                ? `On the Monitored list: shown first with its online/offline state, and the hub alerts when it goes offline or comes back.${kuma}`
                 : 'Not monitored — listed under Other devices. Switch on to keep an eye on it and get alerts when it drops.';
         }
         async function toggleWatch(){
