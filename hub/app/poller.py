@@ -301,6 +301,8 @@ class Poller:
                 fire = "online"
 
         self._maybe_alert_offline(sid, site, fire, miss)
+        if status is not None:
+            self._maybe_alert_dhcp(sid, site, status)
 
         total = len(devices) if devices else None
         online = sum(1 for d in devices if d.get("online")) if devices else None
@@ -348,6 +350,40 @@ class Poller:
         else:
             notify.push(alerts, f"Site back online: {name}",
                         f"'{name}' is reachable from the hub again.",
+                        tags=["white_check_mark"])
+
+    def _maybe_alert_dhcp(self, sid, site, status):
+        """ntfy when a site's DHCP guard reports a NEW rogue DHCP server, or when
+        the last one is gone. Edge-triggered on the set of server MACs, like the
+        conflict alert; the site keeps a server listed until it has missed two
+        checks in a row, so a lost offer doesn't flap this. Sites without the
+        guard send no `dhcp_guard` block and are left alone."""
+        guard = status.get("dhcp_guard")
+        if not isinstance(guard, dict):
+            return
+        rogues = {r.get("mac"): r for r in guard.get("rogues") or [] if r.get("mac")}
+        with self._lock:
+            snap = self._snap.setdefault(sid, {})
+            prev = set(snap.get("dhcp_alerted") or [])
+            snap["dhcp_alerted"] = sorted(rogues)
+        new = [rogues[m] for m in sorted(set(rogues) - prev)]
+        cleared = prev and not rogues
+        if new:
+            print(f"[poller] {sid}: rogue DHCP server {', '.join(r['mac'] for r in new)}", flush=True)
+        alerts = hubconfig.load().get("alerts", {})
+        if not alerts.get("notify_rogue_dhcp", True) or not site.get("alerts_enabled", True):
+            return
+        name = site.get("name") or sid
+        if new:
+            lines = [f"{r['mac']}{' (' + r['vendor'] + ')' if r.get('vendor') else ''}: {r.get('detail', '')}"
+                     for r in new]
+            notify.push(alerts, f"Rogue DHCP server: {name}",
+                        "\n".join(lines) + "\n\nDevices that take its addresses drop off the farm "
+                        "network. Find the unit and switch its DHCP off, or set it to AP/bridge mode.",
+                        priority="high", tags=["rotating_light"])
+        elif cleared:
+            notify.push(alerts, f"Rogue DHCP server gone: {name}",
+                        f"Only the farm's own router answers DHCP at '{name}' again.",
                         tags=["white_check_mark"])
 
     def _maybe_alert_conflict(self, sid, site, conflict_ips, reachable, have_devices):

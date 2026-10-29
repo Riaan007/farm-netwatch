@@ -674,6 +674,7 @@
           <label class="fld">Topic <span class="dim" style="font-weight:400">blank = off · use a hard-to-guess name</span><input class="inp mono" name="ntfy_topic"></label>
           <label class="chk"><input type="checkbox" name="notify_site_offline"> Alert when a site goes offline</label>
           <label class="chk"><input type="checkbox" name="notify_ip_conflict"> Alert on new IP conflicts</label>
+          <label class="chk"><input type="checkbox" name="notify_rogue_dhcp"> Alert when a rogue DHCP server appears on a farm network</label>
           <label class="chk"><input type="checkbox" name="notify_device_offline"> Alert when a monitored device goes offline or comes back</label>
           <p class="note" style="margin:-4px 0 0 24px">One message per site, naming the devices. Pick the devices on each site's Devices tab.</p>
           <div class="note" id="al-msg" aria-live="polite"></div>
@@ -688,11 +689,11 @@
       try {
         const [a, g] = await Promise.all([api("/api/hub/alerts"), api("/api/hub/ai")]);
         al.ntfy_server.value = a.ntfy_server || "https://ntfy.sh"; al.ntfy_topic.value = a.ntfy_topic || "";
-        al.notify_site_offline.checked = a.notify_site_offline !== false; al.notify_ip_conflict.checked = a.notify_ip_conflict !== false; al.notify_device_offline.checked = a.notify_device_offline !== false;
+        al.notify_site_offline.checked = a.notify_site_offline !== false; al.notify_ip_conflict.checked = a.notify_ip_conflict !== false; al.notify_device_offline.checked = a.notify_device_offline !== false; al.notify_rogue_dhcp.checked = a.notify_rogue_dhcp !== false;
         ai.model.value = g.gemini_model || ""; ai.key.placeholder = g.key_set ? `saved (…${g.key_tail}) — leave blank to keep` : "not set";
         $("#ai-clear").disabled = !g.key_set;
       } catch (e) { CC.toast(e.message, "bad"); }
-      const saveAlerts = () => api("/api/hub/alerts", { method: "POST", body: { ntfy_server: al.ntfy_server.value.trim(), ntfy_topic: al.ntfy_topic.value.trim(), notify_site_offline: al.notify_site_offline.checked, notify_ip_conflict: al.notify_ip_conflict.checked, notify_device_offline: al.notify_device_offline.checked } });
+      const saveAlerts = () => api("/api/hub/alerts", { method: "POST", body: { ntfy_server: al.ntfy_server.value.trim(), ntfy_topic: al.ntfy_topic.value.trim(), notify_site_offline: al.notify_site_offline.checked, notify_ip_conflict: al.notify_ip_conflict.checked, notify_device_offline: al.notify_device_offline.checked, notify_rogue_dhcp: al.notify_rogue_dhcp.checked } });
       al.onsubmit = async (e) => { e.preventDefault(); await CC.busy(e.submitter, async () => { try { await saveAlerts(); $("#al-msg").textContent = "Saved."; } catch (err) { $("#al-msg").textContent = err.message; } }); };
       $("#al-test").onclick = (e) => CC.busy(e.currentTarget, async () => { try { await saveAlerts(); await api("/api/hub/alerts/test", { method: "POST" }); $("#al-msg").textContent = "Test sent — check your phone."; } catch (err) { $("#al-msg").textContent = err.message; } });
       ai.onsubmit = async (e) => {

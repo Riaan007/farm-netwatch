@@ -203,6 +203,8 @@ def _site_card(site):
         "reach_24h": sitehistory.reachability_pct(site["id"], 86400),
         "pi_health": _pi_health_level(snap),
         "api_auth": snap.get("api_auth"),
+        # Rogue DHCP servers the site's guard is tracking (sites before the guard send none).
+        "rogue_dhcp": (status.get("dhcp_guard") or {}).get("rogues") or [],
     }
 
 
@@ -265,6 +267,8 @@ def api_alerts():
             patch["notify_ip_conflict"] = bool(body["notify_ip_conflict"])
         if "notify_device_offline" in body:
             patch["notify_device_offline"] = bool(body["notify_device_offline"])
+        if "notify_rogue_dhcp" in body:
+            patch["notify_rogue_dhcp"] = bool(body["notify_rogue_dhcp"])
         hubconfig.update({"alerts": patch})
         return jsonify({"ok": True})
     a = hubconfig.load()["alerts"]
@@ -272,7 +276,8 @@ def api_alerts():
                     "ntfy_topic": a.get("ntfy_topic", ""),
                     "notify_site_offline": a.get("notify_site_offline", True),
                     "notify_ip_conflict": a.get("notify_ip_conflict", True),
-                    "notify_device_offline": a.get("notify_device_offline", True)})
+                    "notify_device_offline": a.get("notify_device_offline", True),
+                    "notify_rogue_dhcp": a.get("notify_rogue_dhcp", True)})
 
 
 @app.route("/api/hub/alerts/test", methods=["POST"])

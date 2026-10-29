@@ -22,6 +22,7 @@ import credtest
 import config
 import creds
 import edgeswitch
+import dhcpguard
 import hikvision
 import history
 import hubvpn
@@ -131,6 +132,7 @@ def api_status():
         "vpn": cfg["vpn"]["mode"],
         "features": cfg.get("features", {}),
         "server_ip": kuma.lan_ip(),   # this Pi's own LAN address, shown in the UI
+        "dhcp_guard": dhcpguard.monitor.summary(),   # rogue DHCP servers; the hub alerts on these
         "auth": siteauth.state(request, session),   # booleans; the hub claims on hub_key_set=false
     })
 
@@ -1843,7 +1845,34 @@ def api_switch_backup_download(key, name):
 def api_problems():
     """All detected problems (IP conflict, risky ports, duplicate MAC, IP drift,
     degrading wireless links) for the dashboard's Problems panel."""
-    return jsonify({"problems": scanner.problems() + _radio_problems() + _switch_problems()})
+    return jsonify({"problems": scanner.problems() + _radio_problems() + _switch_problems()
+                    + dhcpguard.monitor.problems()})
+
+
+@app.route("/api/dhcp-guard")
+def api_dhcp_guard():
+    """The rogue DHCP guard: last check (every server that answered, with its
+    verdict) and the suspects it is tracking."""
+    return jsonify(dhcpguard.monitor.snapshot())
+
+
+@app.route("/api/dhcp-guard/check", methods=["POST"])
+@guard
+def api_dhcp_guard_check():
+    """Run a DHCP check now (one DISCOVER from a made-up MAC; takes no lease)."""
+    return jsonify({"ok": dhcpguard.monitor.run_now()})
+
+
+@app.route("/api/dhcp-guard/allow", methods=["POST"])
+@guard
+def api_dhcp_guard_allow():
+    """Mark a DHCP server as meant to be there: {mac}."""
+    body = request.get_json(force=True) or {}
+    cfg = dhcpguard.monitor.allow(config.load(), body.get("mac"))
+    if cfg is None:
+        return jsonify({"ok": False, "error": "a valid MAC is required"}), 400
+    config.save(cfg)
+    return jsonify({"ok": True, "allowed": cfg["dhcp_guard"]["allowed"]})
 
 
 def _radio_problems():
@@ -2552,6 +2581,7 @@ def main():
     switchmon.monitor.on_identity = scanner.set_device_name
     switchmon.monitor.on_meta = _switch_meta
     switchmon.monitor.start(scanner.get_devices, lambda: scanner.registry, config.load)
+    dhcpguard.monitor.start(config.load, scanner.get_devices, switchmon.monitor.mac_map)
     port = int(os.environ.get("NETWATCH_PORT", "8090"))
     app.run(host="0.0.0.0", port=port, threaded=True)
 

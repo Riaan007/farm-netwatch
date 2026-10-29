@@ -138,6 +138,17 @@ DEFAULTS = {
     "sysmon": {
         "watchdog": False,
     },
+    # Rogue DHCP guard (dhcpguard.py): one DHCPDISCOVER every interval_min from a
+    # made-up MAC — never takes a lease — and a problem + alert for any server that
+    # is not the Pi's default gateway or in `allowed` (MACs or server IPs).
+    # iface "" = the default-route interface.
+    "dhcp_guard": {
+        "enabled": True,
+        "interval_min": 10,
+        "alerts": True,
+        "allowed": [],
+        "iface": "",
+    },
     # Extra IP addresses Netwatch puts on the Pi at boot so it can sit on several
     # subnets at once (each {iface, cidr, target, label, managed}). cidr is the Pi's
     # host address+prefix on that LAN, e.g. "10.5.2.50/24". Additive only — never

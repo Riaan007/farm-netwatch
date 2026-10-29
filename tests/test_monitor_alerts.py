@@ -227,5 +227,47 @@ class Route(unittest.TestCase):
         self.assertFalse(hubconfig.load()["alerts"]["notify_device_offline"])
 
 
+
+class RogueDhcp(unittest.TestCase):
+    """poller._maybe_alert_dhcp: page once per new rogue server, once when all gone."""
+    ROGUE = {"mac": "d4:0d:ab:03:bc:79", "ip": "10.1.1.1", "level": "crit", "vendor": "Cudy",
+             "detail": "Hands out 10.1.1.123 (10.1.1.0/24) — not the farm network"}
+
+    def setUp(self):
+        use_site()
+        self.p = poller_mod.Poller()
+        self.push = mock.patch.object(poller_mod.notify, "push").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def status(self, *rogues):
+        return {"dhcp_guard": {"checked_ts": 1, "servers": 1 + len(rogues), "rogues": list(rogues)}}
+
+    def test_new_rogue_pages_once_and_gone_pages_once(self):
+        self.p._maybe_alert_dhcp("farm-a", SITE, self.status())
+        self.push.assert_not_called()
+        self.p._maybe_alert_dhcp("farm-a", SITE, self.status(self.ROGUE))
+        self.assertEqual(self.push.call_count, 1)
+        args, kw = self.push.call_args
+        self.assertEqual(args[1], "Rogue DHCP server: Farm A")
+        self.assertIn("d4:0d:ab:03:bc:79 (Cudy): Hands out 10.1.1.123", args[2])
+        self.assertEqual(kw["priority"], "high")
+        self.p._maybe_alert_dhcp("farm-a", SITE, self.status(self.ROGUE))
+        self.assertEqual(self.push.call_count, 1)
+        self.p._maybe_alert_dhcp("farm-a", SITE, self.status())
+        self.assertEqual(self.push.call_count, 2)
+        self.assertEqual(self.push.call_args[0][1], "Rogue DHCP server gone: Farm A")
+
+    def test_old_sites_and_the_switch_are_respected(self):
+        self.p._maybe_alert_dhcp("farm-a", SITE, {"site": {}})          # no guard on that build
+        use_site(notify_rogue_dhcp=False)
+        self.p._maybe_alert_dhcp("farm-a", SITE, self.status(self.ROGUE))
+        self.push.assert_not_called()
+
+    def test_site_card_carries_the_rogues(self):
+        with mock.patch.object(server.poller, "snapshot", return_value={"status": self.status(self.ROGUE)}), \
+                server.app.test_request_context("/"):
+            card = server._site_card(SITE)
+        self.assertEqual(card["rogue_dhcp"][0]["mac"], "d4:0d:ab:03:bc:79")
+
 if __name__ == "__main__":
     unittest.main()

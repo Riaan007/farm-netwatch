@@ -1587,6 +1587,7 @@
             replaced:          {label:'Device replaced at IP', sev:'low'},
             wifi_degraded:     {label:'Wi-Fi link',           sev:'high'},
             switch:            {label:'Switch',               sev:'high'},
+            rogue_dhcp:        {label:'Rogue DHCP server',    sev:'high'},
         };
         const SEV_STYLE = {high:'border-red-500/40 bg-red-500/10 text-red-200',
             medium:'border-amber-400/40 bg-amber-500/10 text-amber-200',
@@ -1698,6 +1699,12 @@
             if(!r.ok){ nwToast('Not changed: ' + whyNotSaved(r, await r.json().catch(() => ({}))), 'bad'); return; }
             setTimeout(refresh, 2500);
         }
+        async function allowDhcp(mac){
+            if(!confirm('Allow DHCP server '+mac+'?\n\nOnly do this if the unit is MEANT to hand out addresses on this network (for example a second router you put there on purpose). Netwatch stops flagging it.\n\n(Undo: Settings file, dhcp_guard → allowed.)')) return;
+            const r = await fetch('/api/dhcp-guard/allow',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mac:mac})});
+            if(!r.ok){ nwToast('Not changed: ' + whyNotSaved(r, await r.json().catch(() => ({}))), 'bad'); return; }
+            renderProblems();
+        }
         async function renderProblems(){
             const box = document.getElementById('conflict-monitor');
             try { PROBLEMS = (await (await fetch('/api/problems')).json()).problems || []; }
@@ -1732,6 +1739,10 @@
                     ? `<button data-nw-act="bridge-mark" data-mac="${esc(p.mac)}"
                         class="px-2.5 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 rounded-lg text-[11px] font-bold whitespace-nowrap">🌉 It's a bridge — track clients by IP</button>`
                     : '';
+                const allowBtn = (p.type === 'rogue_dhcp' && p.mac)
+                    ? `<button data-nw-act="dhcp-allow" data-mac="${esc(p.mac)}"
+                        class="px-2.5 py-1 bg-white/10 hover:bg-white/15 border border-white/15 rounded-lg text-[11px] font-bold whitespace-nowrap">It's meant to be here — allow</button>`
+                    : '';
                 const clearBtn = (p.type === 'ip_conflict' || p.type === 'identity_rotated')
                     ? `<button data-nw-act="conflict-clear" data-ip="${esc(p.ip||'')}" data-soft="${p.type === 'identity_rotated' ? 1 : ''}"
                         class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold whitespace-nowrap">✓ Clear & re-test</button>`
@@ -1741,7 +1752,7 @@
                         <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-white/10">${esc(meta.label)}</span>
                         <span class="font-mono font-bold text-sm">${esc(p.ip||'')}</span>
                         <span class="text-xs opacity-80">${esc(p.detail||'')}</span>
-                        <span class="ml-auto">${ack}${bridge}${clearBtn}</span>
+                        <span class="ml-auto">${ack}${bridge}${clearBtn}${allowBtn}</span>
                     </div>
                     <div class="flex flex-wrap gap-2 mt-2">${(p.devices||[]).map(chipFor).join('')}</div>
                     ${p.fix ? `<p class="text-[11px] mt-2 opacity-70">→ ${esc(p.fix)}</p>` : ''}
@@ -1820,6 +1831,7 @@
             'open-device':     el => openModal(el.dataset.key, el.dataset.ip),
             'ack-ip':          el => ackIp(el.dataset.key),
             'bridge-mark':     el => markBridge(el.dataset.mac),
+            'dhcp-allow':      el => allowDhcp(el.dataset.mac),
             'bridge-remove':   el => removeBridge(el.dataset.mac),
             'conflict-clear':  el => clearConflict(el.dataset.ip, !!el.dataset.soft),
             'net-addr-remove': el => netRemoveAddress(el.dataset.iface, el.dataset.cidr),
@@ -4047,6 +4059,8 @@
             'monitoring':{icon:'🔔', label:'Monitoring changed', cls:'text-cyan-300 bg-cyan-500/15'},
             'restart':  {icon:'⟳', label:'Restarted',          cls:'text-violet-300 bg-violet-500/15'},
             'wifi_fix': {icon:'📡', label:'Wi-Fi fix',          cls:'text-amber-300 bg-amber-500/15'},
+            'rogue_dhcp':     {icon:'🚨', label:'Rogue DHCP server', cls:'text-rose-300 bg-rose-500/15'},
+            'rogue_dhcp_gone':{icon:'✅', label:'Rogue DHCP gone',   cls:'text-emerald-300 bg-emerald-500/15'},
         };
         // What a restart actually ended up doing — the verdict app/restart.py reached.
         const RESTART_SAID={

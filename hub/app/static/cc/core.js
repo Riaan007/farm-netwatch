@@ -277,6 +277,8 @@
         `Checked ${CC.ago(net.checked_ts)} from the site Pi`, link());
     }
     if (s.kuma && s.kuma.down) add("bad", CC.plural(s.kuma.down, "Kuma monitor") + " down", "Uptime Kuma status page", link());
+    (s.rogue_dhcp || []).forEach((r) => add(r.level === "crit" ? "bad" : "warn", "Rogue DHCP server",
+      `${r.mac}${r.vendor ? " (" + r.vendor + ")" : ""}: ${r.detail || "a second DHCP server answers"}`, link()));
     if (s.pi_health === "crit") add("bad", "Site Pi critical", "Temperature, disk, power or storage — see Pi health", link("health"));
     if (s.stale) add("warn", "Device list out of date", `Last device refresh ${CC.ago(s.fetched_at)}`, link("devices"));
     if (s.conflicts) add("warn", CC.plural(s.conflicts, "IP address conflict"), "Two devices answering on one address", link("problems"));
