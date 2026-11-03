@@ -311,6 +311,7 @@ class Scanner:
         self.seen_keys = set()     # every key ever observed (for "new device")
         self.mac_multi_ip = {}     # mac -> [ips] when one MAC answers on 2+ IPs (last scan)
         self.mac_owner = {}        # mac -> the device itself, as it answered discovery
+        self._bridge_ips = {}      # marked bridge mac -> [ips] seen behind it (last scan)
         # Proxy-ARP bridge MACs (scan.bridge_macs): sightings carrying one of
         # these MACs are keyed per-IP — see _resolve_key.
         self._bridge_macs = self._load_bridge_macs(config.load())
@@ -638,6 +639,10 @@ class Scanner:
             # Known bridge MACs are expected to do this — not a problem.
             self.mac_multi_ip = {m: sorted(ips) for m, ips in mac_ips.items()
                                  if len(ips) > 1 and m not in self._bridge_macs}
+            # Marked bridges no longer raise the problem, but we still want to
+            # know which IP is the radio itself (Settings -> Wireless bridges).
+            self._bridge_ips = {m: sorted(ips) for m, ips in mac_ips.items()
+                                if m in self._bridge_macs}
             self._find_mac_owners()
             # A "replaced" event only when the old occupant didn't show this scan
             # (otherwise it's a live IP conflict, surfaced separately).
@@ -886,10 +891,13 @@ class Scanner:
         ARP for its clients with its own MAC, so the scan can't tell which IP is
         the radio — but the radio answers Ubiquiti discovery (or MikroTik MNDP)
         with its real address, hostname and model."""
-        macs = set(self.mac_multi_ip)
-        owners = {}
+        seen = {**self._bridge_ips, **self.mac_multi_ip}
+        macs = set(seen)
+        # a marked bridge this (targeted) scan didn't touch keeps its last answer
+        owners = {m: o for m, o in self.mac_owner.items()
+                  if m in self._bridge_macs and m not in macs}
         if macs:
-            ips = sorted({ip for v in self.mac_multi_ip.values() for ip in v})
+            ips = sorted({ip for v in seen.values() for ip in v})
             try:
                 found = ubnt.discover(timeout=3, unicast=ips)
             except OSError:
@@ -901,14 +909,14 @@ class Scanner:
                              "model": f.get("model") or f.get("platform", ""),
                              "firmware": f.get("firmware", ""), "essid": f.get("essid", ""),
                              "source": "Ubiquiti discovery"}
-            if macs - set(owners):
+            if macs - set(found):
                 try:
                     mt = mikrotik.discover(timeout=3).get("neighbors", [])
                 except OSError:
                     mt = []
                 for n in mt:
                     m = identify.normalize_mac(n.get("mac", ""))
-                    if m in macs and m not in owners:
+                    if m in macs and m not in found:
                         owners[m] = {"ip": n.get("ipv4"), "ips": [], "hostname": n.get("identity", ""),
                                      "model": n.get("board", ""), "firmware": n.get("version", ""),
                                      "essid": "", "source": "MikroTik neighbour discovery"}

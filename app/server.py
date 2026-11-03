@@ -1945,7 +1945,8 @@ def api_bridge_macs():
     camera behind the link shows as its own device. POST {mac, enable}."""
     cur = set(config.load()["scan"].get("bridge_macs") or [])
     if request.method == "GET":
-        return jsonify({"bridge_macs": sorted(cur)})
+        return jsonify({"bridge_macs": sorted(cur),
+                        "owners": {m: scanner.mac_owner[m] for m in cur if m in scanner.mac_owner}})
     if not siteauth.allowed(request, session):     # a scan setting
         return siteauth._denied(request, session)
     body = request.get_json(force=True)

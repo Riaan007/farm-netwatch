@@ -106,6 +106,26 @@ class OwnerTest(unittest.TestCase):
             self.s._find_mac_owners()
         d.assert_not_called()
 
+    def test_marked_bridge_still_named(self):
+        """Once marked as a bridge there is no problem card, but Settings still
+        shows which IP is the radio — and a scan that didn't touch it keeps it."""
+        self.s.mac_multi_ip = {}
+        self.s._bridge_macs = {BRIDGE}
+        self.s._bridge_ips = {BRIDGE: IPS}
+        found = {BRIDGE: dict(ubnt.parse(reply()), mac=BRIDGE, ip="192.168.1.151")}
+        with mock.patch.object(ubnt, "discover", return_value=found):
+            self.s._find_mac_owners()
+        self.assertEqual(self.s.mac_owner[BRIDGE]["ip"], "192.168.1.151")
+        self.assertFalse([p for p in self.s.problems() if p["type"] == "same_mac_multi_ip"])
+        self.s._bridge_ips = {}                       # targeted scan elsewhere
+        with mock.patch.object(ubnt, "discover") as d:
+            self.s._find_mac_owners()
+        d.assert_not_called()
+        self.assertEqual(self.s.mac_owner[BRIDGE]["ip"], "192.168.1.151")
+        self.s._bridge_macs = set()                   # un-marked: forgotten
+        self.s._find_mac_owners()
+        self.assertEqual(self.s.mac_owner, {})
+
     def test_tunnel_reaches_ips_behind_the_bridge(self):
         self.s.mac_owner = {BRIDGE: {"ip": "192.168.1.151"}}
         with mock.patch.object(scanner, "scanner", self.s):

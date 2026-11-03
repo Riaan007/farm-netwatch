@@ -1728,10 +1728,17 @@
         async function loadBridges(){
             const box = document.getElementById('bridge-list');
             try {
-                const macs = (await (await fetch('/api/bridge-macs')).json()).bridge_macs || [];
+                const res = await (await fetch('/api/bridge-macs')).json();
+                const macs = res.bridge_macs || [], owners = res.owners || {};
+                const ownerTxt = m => {
+                    const o = owners[m];
+                    if(!o) return '<span class="text-slate-400"> — its own IP not found yet (no Ubiquiti / MikroTik discovery answer)</span>';
+                    const bits = [o.model, o.hostname && '"' + o.hostname + '"', o.essid && 'Wi-Fi ' + o.essid].filter(Boolean).map(esc).join(' · ');
+                    return ` — the device itself: <a href="http://${esc(o.ip)}/" target="_blank" rel="noopener" class="font-mono font-bold underline">${esc(o.ip)}</a>${bits ? ' ' + bits : ''}`;
+                };
                 box.innerHTML = macs.length ? macs.map(m => `
                     <div class="flex items-center justify-between gap-2 text-xs p-1.5 border rounded-lg">
-                        <span class="font-mono">${esc(fmtBridgeMac(m))}</span>
+                        <span><span class="font-mono">${esc(fmtBridgeMac(m))}</span>${ownerTxt(m)}</span>
                         <button data-nw-act="bridge-remove" data-mac="${esc(m)}" class="px-2 py-0.5 bg-red-500/15 hover:bg-red-500/25 text-red-300 rounded text-[11px]">Remove — track by MAC again</button>
                     </div>`).join('')
                     : '<span class="text-[11px] text-slate-400">none — mark one from a "Same MAC, multiple IPs" problem card</span>';
