@@ -635,3 +635,66 @@ button.chip.mv:hover { background: rgba(16, 185, 129, .24); }
   .fp { --lab: 112px; min-width: 680px; }
   .fp-verdict { flex: 1 1 100%; }
 }
+
+/* ---- time keeping (time.js) ------------------------------------------------- */
+.nav .count.tm-navon { background: var(--ok-bg); color: var(--ok); font-weight: 650; }
+.k-remote { background: var(--cyan); } .k-onsite { background: var(--ok); } .k-travel { background: var(--warn); }
+.k-dev { background: var(--violet); } .k-general { background: var(--unk); }
+.k-unassigned { background: repeating-linear-gradient(45deg, var(--warn) 0 4px, rgba(251, 191, 36, .25) 4px 8px); }
+.tm-clock { display: flex; gap: 14px 18px; align-items: center; flex-wrap: wrap; padding: 16px 18px; margin-bottom: 4px; }
+.tm-clock .st { flex: 1 1 260px; min-width: 0; }
+.tm-clock .big { font-size: 20px; font-weight: 750; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.tm-clock .btn { min-height: 44px; padding: 8px 16px; font-size: 14px; }
+.tm-clock .sel { min-height: 44px; max-width: 100%; }
+.tm-clock.tm-on { border-color: rgba(52, 211, 153, .45); background: linear-gradient(180deg, rgba(16, 185, 129, .13), rgba(16, 185, 129, .03)); }
+.tm-clock.tm-drive { border-color: rgba(251, 191, 36, .4); background: linear-gradient(180deg, rgba(245, 158, 11, .12), rgba(245, 158, 11, .03)); }
+.tm-clock.tm-drive .eyebrow { color: var(--warn); }
+.tm-date { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 16px 0 12px; }
+.tm-date h2 { margin: 0 4px; font-size: 16px; min-width: 0; }
+.tm-strip { position: relative; height: 26px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; }
+.tm-strip i { position: absolute; top: 4px; bottom: 4px; border-radius: 4px; min-width: 3px; }
+.tm-strip i.draft { opacity: .55; }
+.tm-ticks { position: relative; height: 16px; margin-bottom: 6px; font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.tm-ticks span { position: absolute; top: 2px; transform: translateX(-1px); }
+.tm-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+.tm-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.tm-legend i { width: 12px; height: 10px; border-radius: 3px; display: inline-block; }
+.tm-grp { display: flex; align-items: baseline; gap: 10px; padding: 9px 18px; border-top: 1px solid var(--line); background: rgba(148, 163, 184, .05); flex-wrap: wrap; }
+.tm-grp:first-child { border-top: 0; }
+.tm-grp b { font-size: 13px; }
+.tm-grp .tnum { margin-left: auto; font-weight: 700; color: var(--ink2); }
+.tm-grp.warn { background: var(--warn-bg); }
+.tm-grp.warn b { color: #fcd34d; }
+.tm-row { display: grid; grid-template-columns: 104px 52px minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; padding: 10px 18px; border-top: 1px solid rgba(148, 163, 184, .08); }
+.tm-row .when { font-family: var(--mono); font-size: 13px; color: var(--ink2); white-space: nowrap; }
+.tm-row .dur { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; }
+.tm-row .what { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.tm-row .src { font-size: 12px; color: var(--dim); }
+.tm-row .nt { flex-basis: 100%; font-size: 12.5px; color: var(--ink2); overflow-wrap: anywhere; }
+.tm-row .acts { display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+.tm-row .acts .sel { min-height: 28px; padding: 3px 26px 3px 9px; font-size: 12px; }
+.tm-row.draft { box-shadow: inset 3px 0 0 var(--warn); }
+.tm-row.unassigned { background: rgba(245, 158, 11, .05); }
+.tm-kind { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 700; color: #04121a; }
+.tm-kind.k-general, .tm-kind.k-dev { color: #0b1020; }
+.tm-h2 { font-size: 14px; margin: 22px 0 10px; color: var(--ink2); }
+.tm-farms { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.tm-farms .panel + .panel { margin-top: 0; }
+.tm-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.tm-fields.wide { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.tm-phone { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.tm-phlist { display: grid; gap: 6px; max-height: 52vh; overflow-y: auto; }
+.tm-ph { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; text-align: left; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; }
+.tm-ph:hover { border-color: var(--cyan); }
+.tm-ph > span:first-child { display: grid; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 860px) {
+  .tm-row { grid-template-columns: auto auto minmax(0, 1fr); padding: 10px 14px; }
+  .tm-row .what, .tm-row .acts { grid-column: 1 / -1; justify-content: flex-start; }
+  .tm-clock .row { width: 100%; }
+  .tm-clock .row .btn { flex: 1 1 140px; justify-content: center; }
+  .tm-clock .row .sel { flex: 1 1 100%; width: 100%; }
+  .tm-fields { grid-template-columns: 1fr 1fr; }
+  .tm-farms { grid-template-columns: 1fr; }
+  .tm-ph { grid-template-columns: minmax(0, 1fr) auto; }
+  .tm-ph > span:nth-child(2) { display: none; }
+}

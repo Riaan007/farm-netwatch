@@ -280,6 +280,7 @@ class HubTunnelManager:
                 "ip": r["ip"], "port": r["port"], "conns": r["t"].conns(),
                 "allowed": sorted(r["t"].allowed),
                 "created_at": int(r["t"].created_at),
+                "last_active": int(r["t"].last_active),
                 "scheme": "https" if r["port"] == 443 else
                           ("http" if r["port"] in WEB_PORTS else "")}
 

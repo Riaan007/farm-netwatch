@@ -21,6 +21,7 @@ import os
 import requests
 
 import hubconfig
+import timekeeping
 
 VPN_SUBNET = ipaddress.ip_network("10.8.0.0/24")
 CADDY_ADMIN = "http://localhost:2019"
@@ -119,6 +120,18 @@ def _kuma_hostport(site):
     return hp or None
 
 
+# Access log for time keeping (timekeeping.py reads it as /data/caddy/logs/access.log):
+# a request through a site's proxy port is a sign the operator is working on that
+# farm. Requests the pages make on a timer are skipped — they come whether anyone
+# looks or not — and headers are dropped (nothing secret, small lines).
+ACCESS_LOG = ("\tlog {\n\t\toutput file /etc/caddy/logs/access.log {\n\t\t\troll_size 5MiB\n"
+              "\t\t\troll_keep 2\n\t\t}\n\t\tformat filter {\n\t\t\trequest>headers delete\n"
+              "\t\t\trequest>tls delete\n\t\t\tresp_headers delete\n\t\t}\n\t}\n")
+SKIP_NETWATCH = ("\t@nwbg {\n\t\tmethod GET\n\t\tpath " + " ".join(timekeeping.PROXY_BACKGROUND)
+                 + "\n\t}\n\tlog_skip @nwbg\n")
+SKIP_KUMA = "\t@kumabg path /socket.io/*\n\tlog_skip @kumabg\n"
+
+
 def render_caddyfile(cfg):
     """Return the Caddyfile text. Fail closed: if there's no Basic Auth hash yet,
     emit a config with NO proxied sites rather than exposing them unprotected."""
@@ -131,10 +144,10 @@ def render_caddyfile(cfg):
 
     blocks = []
 
-    def block(port, target, label, header=None):
+    def block(port, target, label, header=None, skip=""):
         rp = (f"\treverse_proxy {target} {{\n\t\theader_up {header[0]} {header[1]}\n\t}}\n"
               if header else f"\treverse_proxy {target}\n")
-        blocks.append(f"# {label}\n:{port} {{\n{basic}{rp}}}\n")
+        blocks.append(f"# {label}\n:{port} {{\n{basic}{skip}{ACCESS_LOG}{rp}}}\n")
 
     for s in cfg["sites"]:
         if not is_proxied(s):
@@ -146,9 +159,9 @@ def render_caddyfile(cfg):
             # Tell the site page where ITS Kuma is on this hub; without it the
             # page's Kuma button pointed at <hub>:3001 = the hub's own Kuma.
             block(nw, f"{s['vpn_ip']}:{s.get('netwatch_port', 8090)}", f"{s['id']} netwatch",
-                  ("X-Netwatch-Kuma-Port", kp) if kuma_ok else None)
+                  ("X-Netwatch-Kuma-Port", kp) if kuma_ok else None, SKIP_NETWATCH)
         if kuma_ok:
-            block(kp, kt, f"{s['id']} kuma")
+            block(kp, kt, f"{s['id']} kuma", skip=SKIP_KUMA)
     return "\n".join(head) + "\n" + "\n".join(blocks)
 
 
@@ -169,7 +182,7 @@ def _reload(text):
 
 
 def write_caddyfile(text):
-    os.makedirs(os.path.dirname(CADDYFILE), exist_ok=True)
+    os.makedirs(os.path.join(os.path.dirname(CADDYFILE), "logs"), exist_ok=True)
     tmp = CADDYFILE + ".tmp"
     with open(tmp, "w") as f:
         f.write(text)
