@@ -104,6 +104,18 @@ DEFAULTS = {
         # WITHOUT saving, and saved only when every peer is back — else the radio
         # puts the old settings back by itself. Off by default.
         "wifi_fix": False,
+        # Camera pictures on the Cameras tab (campics.py), here and on the hub. On
+        # by default — every picture needs the site login or the hub key; a client
+        # who says no turns it off, which also deletes the saved pictures.
+        "camera_pictures": True,
+    },
+    # Camera pictures (campics.py): each camera's small picture is read again
+    # every refresh_min on the LAN (0 = only when someone looks), and its last
+    # good one is kept on disk at most every save_hours so an offline camera
+    # still shows what it looks at.
+    "camera": {
+        "refresh_min": 30,
+        "save_hours": 6,
     },
     # Switch telemetry (switchmon.py): every EdgeSwitch/UISP switch with a saved
     # login is read over its own API on the LAN — its own thread and cadence,

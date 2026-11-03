@@ -840,6 +840,13 @@ class Scanner:
         except Exception as e:  # noqa: BLE001 - names are cosmetic; never break scanning
             print("names pass error:", e, flush=True)
 
+    def nvr_lists(self):
+        """Every NVR's latest channel list still within NVR_LIST_KEEP_S:
+        {nvr key: (read at, nvr ip, channels)} — the Cameras tab routes pictures
+        of cameras with no login of their own through these."""
+        now = time.time()
+        return {k: v for k, v in list(self._nvr_lists.items()) if now - v[0] < NVR_LIST_KEEP_S}
+
     def _fill_meta(self, devices, lists):
         """Model/serial/firmware for the cameras no login has read: from the NVR
         connected to them (nvr_details over `lists`, {nvr key: (read at, nvr ip,

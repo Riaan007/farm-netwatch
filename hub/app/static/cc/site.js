@@ -6,7 +6,7 @@
   const view = () => $("#view");
   const enc = encodeURIComponent;
   const TABS = [
-    ["overview", "Overview"], ["devices", "Devices"], ["network", "Network"], ["map", "Map"], ["wifi", "Wi-Fi"], ["switches", "Managed"], ["problems", "Problems"], ["health", "Pi health"],
+    ["overview", "Overview"], ["devices", "Devices"], ["cameras", "Cameras"], ["network", "Network"], ["map", "Map"], ["wifi", "Wi-Fi"], ["switches", "Managed"], ["problems", "Problems"], ["health", "Pi health"],
     ["history", "History"], ["backups", "Backups"], ["access", "Remote access"],
   ];
 
@@ -308,6 +308,12 @@
     leave: () => CC.wifiTab.leave(),
   };
 
+  TABS_IMPL.cameras = {
+    enter: (s, el) => CC.camTab.enter(s, el),
+    update: (s) => CC.camTab.update(s),
+    leave: () => CC.camTab.leave(),
+  };
+
   TABS_IMPL.switches = {
     enter: (s, el) => CC.switchTab.enter(s, el),
     update: (s) => CC.switchTab.update(s),
@@ -571,6 +577,7 @@
       <div class="dft">${s.links && s.links.netwatch ? `<a class="btn" href="${esc(s.links.netwatch)}" target="_blank" rel="noopener">Edit on site Netwatch ${icon("ext")}</a>` : ""}<a class="btn" href="#/site/${enc(s.id)}/network?focus=${enc(d.key)}" data-close title="Where it sits in the network diagram">Network</a><a class="btn" href="#/site/${enc(s.id)}/history?q=${enc(d.ip || d.mac || "")}" data-close>${icon("history")} History</a><button class="btn pri" data-close>Close</button></div>`, { cls: "drawer" });
 
     if (CC.switchDrawer) CC.switchDrawer(dlg, siteId, d);
+    if (CC.cameraDrawer) CC.cameraDrawer(dlg, siteId, d);
 
     // Monitored switch: the site's own list (hub key) — the hub alerts on it, Kuma follows it there.
     const drawMon = () => {

@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
     <link rel="stylesheet" href="/static/fpchart.css">
+    <link rel="stylesheet" href="/static/camview.css">
     <style>
         :root { color-scheme: dark; }
         body { background-color: #070b14; }
@@ -825,6 +826,7 @@
                 <button type="button" id="nw-mini" class="nw-mini" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="Back to the top"><i></i><span>Netwatch</span></button>
                 <nav class="nw-pages" aria-label="Pages">
                     <a href="#/" data-page="devices" class="on" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="lbl">Devices</span></a>
+                    <a href="#/cameras" data-page="cameras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h3l2-3h8l2 3h3v13H3z"/><circle cx="12" cy="13" r="4"/></svg><span class="lbl">Cameras</span></a>
                     <a href="#/network" data-page="network"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h6v5H4zM14 4h6v5h-6zM9 15h6v5H9zM7 9v3h10V9M12 12v3"/></svg><span class="lbl">Network</span></a>
                     <a href="#/map" data-page="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6-3-6 3zM9 7v13M15 4v13"/></svg><span class="lbl">Map</span></a>
                     <a href="#/wifi" data-page="wifi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 20h.01"/></svg><span class="lbl">Wi-Fi</span></a>
@@ -977,6 +979,13 @@
         </div>
       </div>
 
+      <div id="page-cameras" hidden>
+        <div class="nw-phead" id="cams-head">
+            <div><div class="nw-eyebrow">Cameras</div><h1>What every camera sees</h1><p>A current picture from each camera, read with its own login or through the recorder it is on. Click one for a large picture and its details. Cameras that are off show their last saved picture.</p></div>
+        </div>
+        <div id="cams-host"></div>
+      </div>
+
       <div id="page-units" hidden>
         <div class="nw-phead">
             <div><div class="nw-eyebrow">Network</div><h1>Managed units</h1><p>Every switch and router this site manages, in one place: each port, what is plugged into it, link speed, PoE power and the controls — read from the unit itself, so you never have to open its own web page.</p></div>
@@ -1045,6 +1054,7 @@
                 <a href="#/settings/hub" data-sec="hub"><span>🔗</span>Central hub<i class="st" id="snav-st-hub"></i></a>
                 <a href="#/settings/network" data-sec="network"><span>🌐</span>Network<i class="st" id="snav-st-network"></i></a>
                 <a href="#/settings/bridges" data-sec="bridges"><span>🌉</span>Wireless bridges<i class="st" id="snav-st-bridges"></i></a>
+                <a href="#/settings/cameras" data-sec="cameras"><span>📷</span>Cameras<i class="st" id="snav-st-cameras"></i></a>
                 <a href="#/settings/backup" data-sec="backup"><span>💾</span>Backup & restore<i class="st" id="snav-st-backup"></i></a>
                 <a href="#/settings/maintenance" data-sec="maintenance"><span>🧹</span>Maintenance<i class="st" id="snav-st-maintenance"></i></a>
                 <a href="#/settings/security" data-sec="security"><span>🔒</span>Security<i class="st" id="snav-st-security"></i></a>
@@ -1187,6 +1197,19 @@
                         <span id="backup-result" class="text-xs"></span>
                     </div>
                     <p class="nw-help">Everything needed to rebuild this site on a new Pi: settings, device names and categories, saved logins and the hub-VPN link. The central hub also takes an encrypted backup every day. <b>Treat a downloaded file like a password</b> — it is not encrypted.</p>
+                </div>
+            </section>
+
+            <section class="nw-sec" id="set-cameras">
+                <header><span class="ico">📷</span><div><h2>Cameras</h2><p>Pictures on the Cameras page, here and on the hub.</p></div></header>
+                <div class="nw-sbody">
+                    <label class="nw-tgl"><input id="setup-camera-pictures" type="checkbox" data-track><b>Camera pictures</b><span>Shows a current picture of every camera that has a saved login, or that is on a recorder with a saved login. Pictures are kept in memory; one small picture per camera is saved on this Pi so a camera that is off still shows what it looks at. Every picture needs this Pi's password or the hub. Switching this off also deletes the saved pictures.</span></label>
+                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+                        <span class="text-sm text-slate-300">Read a new picture from each camera every</span>
+                        <input id="setup-camera-refresh" type="number" min="0" max="1440" value="30" class="nw-inp" style="width:5rem;text-align:center" data-track>
+                        <span class="text-sm text-slate-300">minutes</span>
+                    </div>
+                    <p class="nw-help">This happens on the farm network only, one camera at a time. 0 = only when someone opens the Cameras page.</p>
                 </div>
             </section>
 
@@ -1384,6 +1407,7 @@
                             <button onclick="runCommand('ping')" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">Ping</button>
                             <button onclick="runCommand('port')" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">Port…</button>
                             <button onclick="runCommand('tracert')" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold">Tracert</button>
+                            <button id="cam-page-btn" onclick="openCameraPage(CURRENT_KEY)" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">📷 Camera page</button>
                             <button id="hik-btn" onclick="fetchHik()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold hidden">📷 Camera info</button>
                             <button id="setip-btn" onclick="openSetIp()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold hidden">🛠️ Change IP</button>
                             <button id="airos-wifi-btn" onclick="fetchAirosWifi()" class="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-bold hidden">📡 Wi-Fi info (airOS)</button>
@@ -1569,6 +1593,7 @@
     <script src="/static/monitorpicker.js"></script>
     <script src="/static/topoview.js"></script>
     <script src="/static/fpchart.js"></script>
+    <script src="/static/camview.js"></script>
     <script src="/static/vendor/leaflet/leaflet.js"></script>
     <script>
         let DATA = { targets: [], devices: [] };
@@ -2790,6 +2815,63 @@
                 else { toast(r.error||'Adopt failed', 'bad'); if(btn){ btn.disabled=false; btn.textContent='Adopt & track'; } }
             } catch(e){ toast('Adopt failed', 'bad'); if(btn){ btn.disabled=false; btn.textContent='Adopt & track'; } }
         }
+        // --- Cameras page — the grid and the camera view are /static/camview.js, shared with
+        // the hub's Control Center. Every picture needs the Pi login (auth.js asks once). ----
+        const CAMS = { data: null, at: 0, grid: null, one: null, timer: null, gen: 0 };
+        function camPicUrl(_g, c, o){
+            return '/api/cameras/' + encodeURIComponent(c.key) + '/picture?size=' + (o && o.size === 'full' ? 'full' : 'thumb') + (o && o.fresh ? '&fresh=1' : '');
+        }
+        async function loadCamerasData(){
+            const r = await fetch('/api/cameras');
+            const j = await r.json().catch(() => ({}));
+            if(!r.ok) throw Object.assign(new Error(j.message || j.error || ('HTTP ' + r.status)), {status: r.status});
+            CAMS.data = j; CAMS.at = Date.now();
+            return j;
+        }
+        function unmountCameras(){
+            if(CAMS.grid){ CAMS.grid.destroy(); CAMS.grid = null; }
+            if(CAMS.one){ CAMS.one.destroy(); CAMS.one = null; }
+            clearInterval(CAMS.timer); CAMS.timer = null;
+        }
+        function openCameraPage(key){
+            const dev = DEV_BY_KEY[key];
+            closeModal();
+            location.hash = (dev && dev.category === 'nvr' ? '#/cameras?nvr=' : '#/cameras?key=') + encodeURIComponent(key);
+        }
+        async function showCamerasPage(key, nvr){
+            const host = document.getElementById('cams-host'), gen = ++CAMS.gen;
+            document.getElementById('cams-head').hidden = !!key;
+            unmountCameras();
+            if(!CAMS.data || Date.now() - CAMS.at > 30000){
+                host.innerHTML = '<p class="nw-help">Loading cameras…</p>';
+                try { await loadCamerasData(); }
+                catch(e){
+                    if(gen !== CAMS.gen) return;
+                    host.innerHTML = e.status === 401
+                        ? '<div class="nw-panel" style="padding:1.25rem"><p class="nw-help">Camera pictures need this Pi\'s password.</p><button class="nw-btn pri" data-nw-act="cams-login">Log in</button></div>'
+                        : `<p class="nw-help">Could not load the cameras: ${esc(e.message)}</p>`;
+                    return;
+                }
+            }
+            if(gen !== CAMS.gen || PAGE !== 'cameras') return;
+            const group = {id: 'site', title: '', data: CAMS.data};
+            const cam = key && (CAMS.data.cameras || []).find(c => c.key === key);
+            if(key && cam){
+                CAMS.one = CamView.camera(host, {group, cam, picUrl: camPicUrl,
+                    onBack: () => { location.hash = '#/cameras'; },
+                    deviceAction: DEV_BY_KEY[cam.key] ? {label: 'Device details', run: () => openModal(cam.key)} : null});
+                return;
+            }
+            if(key) history.replaceState(null, '', '#/cameras');
+            CAMS.grid = CamView.mount(host, {groups: () => [{id: 'site', title: '', data: CAMS.data}], picUrl: camPicUrl, storeKey: 'nw.cams', nvr: nvr || '',
+                onOpen: (_g, c) => { location.hash = '#/cameras?key=' + encodeURIComponent(c.key); }});
+            CAMS.timer = setInterval(async () => {
+                if(PAGE !== 'cameras' || !CAMS.grid) return;
+                try { await loadCamerasData(); if(CAMS.grid) CAMS.grid.update(); } catch(e){ /* keep the last list */ }
+            }, 60000);
+        }
+        NW_ACTS['cams-login'] = () => nwAuth.login().then(ok => { if(ok) showCamerasPage(); });
+
         // --- Switches (Ubiquiti EdgeSwitch / UISP) — the view itself is /static/switchview.js,
         // shared with the hub's Control Center ------------------------------------------
         let SW_CTL = null, SW_KEY = null;
@@ -2962,6 +3044,9 @@
             const hikBtn = document.getElementById('hik-btn');
             const isHik = dev && (['camera','nvr'].includes(dev.category) || /hikvision|hangzhou/i.test(dev.vendor||''));
             hikBtn.classList.toggle('hidden', !isHik);
+            const camBtn = document.getElementById('cam-page-btn');
+            camBtn.classList.toggle('hidden', !(dev && ['camera','nvr'].includes(dev.category)));
+            camBtn.textContent = dev && dev.category === 'nvr' ? '📷 Its cameras' : '📷 Camera page';
             document.getElementById('setip-btn').classList.toggle('hidden', !isHik);
             document.getElementById('setip-panel').classList.add('hidden');
             // airOS Change IP: only for Ubiquiti radios, and only when the
@@ -3499,14 +3584,15 @@
             const [path, query] = h.split('?');
             const [page, sub] = (path || '').split('/');
             let page2 = (page === 'switches' || page === 'neighbors') ? 'units' : page;   // old links still work
-            const next = ['history','settings','map','wifi','units','network'].includes(page2) ? page2 : 'devices';
+            const next = ['history','settings','map','wifi','units','network','cameras'].includes(page2) ? page2 : 'devices';
             if(PAGE === 'settings' && next !== 'settings' && SETTINGS_DIRTY.size && !confirm('Leave settings without saving your changes?')){
                 history.replaceState(null, '', '#/settings'); return;
             }
             const changed = next !== PAGE;
             PAGE = next;
-            ['devices','network','map','wifi','units','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
+            ['devices','cameras','network','map','wifi','units','history','settings'].forEach(p => { document.getElementById('page-'+p).hidden = p !== PAGE; });
             if(PAGE !== 'units') unmountSwitch();
+            if(PAGE !== 'cameras') unmountCameras();
             if(PAGE !== 'map') mapCancelPlace(true);
             document.querySelectorAll('.nw-pages a').forEach(a => {
                 a.classList.toggle('on', a.dataset.page === PAGE);
@@ -3526,6 +3612,10 @@
             }
             if(PAGE === 'units'){
                 loadUnitsPage(new URLSearchParams(query || '').get('key'));
+            }
+            if(PAGE === 'cameras'){
+                const qp = new URLSearchParams(query || '');
+                showCamerasPage(qp.get('key'), qp.get('nvr'));
             }
             if(PAGE === 'devices'){
                 const open = new URLSearchParams(query || '').get('open');
@@ -3593,6 +3683,8 @@
             document.getElementById('setup-mikrotik-manage').checked = !!(c.features && c.features.mikrotik_manage);
             document.getElementById('setup-switch-manage').checked = !!(c.features && c.features.switch_manage);
             document.getElementById('setup-device-restart').checked = !!(c.features && c.features.device_restart);
+            document.getElementById('setup-camera-pictures').checked = !(c.features && c.features.camera_pictures === false);
+            document.getElementById('setup-camera-refresh').value = String(((c.camera || {}).refresh_min ?? 30));
             document.getElementById('setup-wifi-fix').checked = !!(c.features && c.features.wifi_fix);
             document.getElementById('setup-watchdog').checked = !!(c.sysmon && c.sysmon.watchdog);
             document.getElementById('kuma-auto-ip').textContent = PI_IP;
@@ -3616,7 +3708,7 @@
         function updateSaveBar(){
             const bar = document.getElementById('save-bar');
             bar.hidden = !SETTINGS_DIRTY.size;
-            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management','setup-device-restart':'device restart','setup-wifi-fix':'Wi-Fi fixes'};
+            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management','setup-device-restart':'device restart','setup-wifi-fix':'Wi-Fi fixes','setup-camera-pictures':'camera pictures','setup-camera-refresh':'camera pictures'};
             const what = new Set([...SETTINGS_DIRTY].map(id => Object.entries(names).find(([k]) => id.startsWith(k)) ).filter(Boolean).map(x => x[1]));
             document.getElementById('save-bar-what').textContent = [...what].join(', ');
         }
@@ -4493,7 +4585,7 @@
         const clockText = (ts) => new Date(ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
         const siteName = () => ((STATUS && STATUS.site && STATUS.site.name) || '').trim() || 'Netwatch';
         function pageTitle(){
-            return ({devices:'', network:'Network · ', map:'Map · ', wifi:'Wi-Fi · ', units:'Managed units · ', history:'History · ', settings:'Settings · '}[PAGE] || '') + siteName() + ' · Netwatch';
+            return ({devices:'', cameras:'Cameras · ', network:'Network · ', map:'Map · ', wifi:'Wi-Fi · ', units:'Managed units · ', history:'History · ', settings:'Settings · '}[PAGE] || '') + siteName() + ' · Netwatch';
         }
         // state: live | scan | late | lost | wait (older callers pass true = scanning, false = live)
         function setLive(state, text, detail, title){
@@ -4613,6 +4705,8 @@
                 switch_manage: document.getElementById('setup-switch-manage').checked,
                 device_restart: document.getElementById('setup-device-restart').checked,
                 wifi_fix: document.getElementById('setup-wifi-fix').checked,
+                camera_pictures: document.getElementById('setup-camera-pictures').checked,
+                camera_refresh_min: Math.max(0, Math.min(1440, parseInt(document.getElementById('setup-camera-refresh').value, 10) || 0)),
                 watchdog: document.getElementById('setup-watchdog').checked,
                 kuma_base_url: document.getElementById('setup-kuma-url').value,
                 kuma_auto_url: document.getElementById('setup-kuma-auto').checked,

@@ -17,6 +17,8 @@ from flask import Flask, jsonify, redirect, request, send_file, send_from_direct
 
 import airos
 import assets
+import camera_routes
+import campics
 import commands
 import credtest
 import config
@@ -61,6 +63,8 @@ guard = siteauth.required            # a logged-in person or the hub key
 
 # Network page (diagram + map): app/topology.py behind app/topology_routes.py.
 app.register_blueprint(topology_routes.bp)
+# Cameras tab (pictures): app/campics.py behind app/camera_routes.py.
+app.register_blueprint(camera_routes.bp)
 topology_routes.providers.update(
     routers=lambda: {k: {"ts": v["view"].get("read_ts"), "ports": v["view"].get("port_macs") or {}}
                      for k, v in list(_ROUTER_CACHE.items()) if v["view"].get("ok")},
@@ -313,8 +317,16 @@ def api_setup():
         feats["device_restart"] = bool(body["device_restart"])
     if "wifi_fix" in body:
         feats["wifi_fix"] = bool(body["wifi_fix"])
+    if "camera_pictures" in body:
+        feats["camera_pictures"] = bool(body["camera_pictures"])
     if feats:
         patch["features"] = feats
+    if "camera_refresh_min" in body:
+        try:
+            mins = int(body["camera_refresh_min"])
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "camera refresh must be a whole number of minutes"}), 400
+        patch["camera"] = {"refresh_min": min(max(mins, 0), 1440)}
     if "watchdog" in body:
         patch["sysmon"] = {"watchdog": bool(body["watchdog"])}
     # admin password -> obfuscated creds store (only when a non-empty value is sent)
@@ -2623,6 +2635,8 @@ def main():
     switchmon.monitor.on_meta = _switch_meta
     switchmon.monitor.start(scanner.get_devices, lambda: scanner.registry, config.load)
     dhcpguard.monitor.start(config.load, scanner.get_devices, switchmon.monitor.mac_map)
+    campics.engine.start(scanner.get_devices, lambda: scanner.registry, scanner.nvr_lists,
+                         lambda: set(dict(scanner.mac_multi_ip)), config.load)
     port = int(os.environ.get("NETWATCH_PORT", "8090"))
     app.run(host="0.0.0.0", port=port, threaded=True)
 

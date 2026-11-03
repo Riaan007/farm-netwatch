@@ -21,6 +21,7 @@ from flask import (Flask, jsonify, redirect, request, send_file,
 import ai_report
 import auth
 import backups
+import cameras
 import conflicts as conflictutil
 import hubconfig
 import notify
@@ -54,6 +55,7 @@ app.config["PERMANENT_SESSION_LIFETIME"] = 30 * 86400
 app.register_blueprint(switches.bp)       # /api/hub/sites/<id>/switches + …/devices/<key>/switch*
 app.register_blueprint(topology.bp)       # /api/hub/sites/<id>/topology[/…] — the network diagram + map
 app.register_blueprint(timeapi.bp)        # /api/hub/time/… — time keeping per farm (timekeeping.py)
+app.register_blueprint(cameras.bp)        # /api/hub/sites/<id>/cameras[/…/picture] — camera pictures
 
 _OPEN_PATHS = {"/login", "/api/login", "/api/auth-state", "/api/health", "/app.css"}
 
@@ -1669,6 +1671,7 @@ def main():
     vpnfw.start()                          # VPN client isolation (re-asserted every 60 s)
     poller.start()
     timekeeping.start()                    # activity feeds + draft builder (every 30 s)
+    cameras.start(lambda sid: bool(poller.snapshot(sid).get("reachable")))   # saved camera pictures, every 6 h
     port = int(os.environ.get("HUB_PORT", "8091"))
     app.run(host="0.0.0.0", port=port, threaded=True)
 
