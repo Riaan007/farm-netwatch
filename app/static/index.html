@@ -1787,6 +1787,17 @@
                     <span class="font-mono text-[10px] opacity-60">${esc(d.mac||'')}</span></span>
                 </button>`;
             };
+            // Same-MAC card: the device itself, as it answered Ubiquiti / MikroTik discovery.
+            const ownerHtml = p => {
+                const o = p.type === 'same_mac_multi_ip' && p.owner;
+                if(!o) return '';
+                const bits = [o.model, o.hostname && '"' + o.hostname + '"', o.essid && 'Wi-Fi ' + o.essid,
+                              o.firmware && 'fw ' + o.firmware].filter(Boolean).map(esc).join(' · ');
+                return `<div class="mt-2 px-2.5 py-1.5 rounded-lg bg-white/[0.06] border border-current/20 text-xs">
+                    📍 The device itself: <a href="http://${esc(o.ip)}/" target="_blank" rel="noopener" class="font-mono font-bold underline">${esc(o.ip)}</a>
+                    ${bits ? `<span class="opacity-80"> — ${bits}</span>` : ''}
+                    <span class="opacity-50 text-[10px]">(${esc(o.source||'')})</span></div>`;
+            };
             const rowHtml = p => {
                 const meta = PROBLEM_META[p.type] || {label:p.type};
                 const sev = SEV_STYLE[p.severity] || SEV_STYLE.low;
@@ -1813,6 +1824,7 @@
                         <span class="text-xs opacity-80">${esc(p.detail||'')}</span>
                         <span class="ml-auto">${ack}${bridge}${clearBtn}${allowBtn}</span>
                     </div>
+                    ${ownerHtml(p)}
                     <div class="flex flex-wrap gap-2 mt-2">${(p.devices||[]).map(chipFor).join('')}</div>
                     ${p.fix ? `<p class="text-[11px] mt-2 opacity-70">→ ${esc(p.fix)}</p>` : ''}
                 </div>`;

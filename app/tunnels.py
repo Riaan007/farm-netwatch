@@ -127,7 +127,12 @@ def _known_device(ip):
     """Only relay to IPs the scanner has actually seen — the site is the trust
     boundary for its own LAN; this stops the hub being used as an open relay."""
     from scanner import scanner
-    return any(d.get("ip") == ip for d in scanner.get_devices())
+    if any(d.get("ip") == ip for d in scanner.get_devices()):
+        return True
+    # IPs merged under one MAC by a proxy-ARP bridge, and the bridge itself as
+    # it answered discovery — seen by this scan, just not as their own record.
+    return (any(ip in ips for ips in dict(scanner.mac_multi_ip).values())
+            or any(o.get("ip") == ip for o in dict(scanner.mac_owner).values()))
 
 
 def _bind_address():

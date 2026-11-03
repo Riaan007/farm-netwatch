@@ -23,9 +23,11 @@ import history
 import hubvpn
 import identify
 import kuma
+import mikrotik
 import monitoring
 import notify
 import radiomon
+import ubnt
 
 DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
 STATE_PATH = os.path.join(DATA_DIR, "scan_state.json")
@@ -308,6 +310,7 @@ class Scanner:
         self.miss = {}             # key -> consecutive missed scans
         self.seen_keys = set()     # every key ever observed (for "new device")
         self.mac_multi_ip = {}     # mac -> [ips] when one MAC answers on 2+ IPs (last scan)
+        self.mac_owner = {}        # mac -> the device itself, as it answered discovery
         # Proxy-ARP bridge MACs (scan.bridge_macs): sightings carrying one of
         # these MACs are keyed per-IP — see _resolve_key.
         self._bridge_macs = self._load_bridge_macs(config.load())
@@ -635,6 +638,7 @@ class Scanner:
             # Known bridge MACs are expected to do this — not a problem.
             self.mac_multi_ip = {m: sorted(ips) for m, ips in mac_ips.items()
                                  if len(ips) > 1 and m not in self._bridge_macs}
+            self._find_mac_owners()
             # A "replaced" event only when the old occupant didn't show this scan
             # (otherwise it's a live IP conflict, surfaced separately).
             for rec, pk in replaced_cands:
@@ -876,6 +880,42 @@ class Scanner:
             rec["category"] = info["mdns_category"]
             rec["type"] = info["mdns_category"].upper()
         rec["discovery"] = info.get("source", "")
+
+    def _find_mac_owners(self):
+        """Name the device behind each same-MAC problem. A proxy-ARP radio answers
+        ARP for its clients with its own MAC, so the scan can't tell which IP is
+        the radio — but the radio answers Ubiquiti discovery (or MikroTik MNDP)
+        with its real address, hostname and model."""
+        macs = set(self.mac_multi_ip)
+        owners = {}
+        if macs:
+            ips = sorted({ip for v in self.mac_multi_ip.values() for ip in v})
+            try:
+                found = ubnt.discover(timeout=3, unicast=ips)
+            except OSError:
+                found = {}
+            for m in macs & set(found):
+                f = found[m]
+                owners[m] = {"ip": f.get("ip"), "ips": f.get("ips", [])[:8],
+                             "hostname": f.get("hostname", ""),
+                             "model": f.get("model") or f.get("platform", ""),
+                             "firmware": f.get("firmware", ""), "essid": f.get("essid", ""),
+                             "source": "Ubiquiti discovery"}
+            if macs - set(owners):
+                try:
+                    mt = mikrotik.discover(timeout=3).get("neighbors", [])
+                except OSError:
+                    mt = []
+                for n in mt:
+                    m = identify.normalize_mac(n.get("mac", ""))
+                    if m in macs and m not in owners:
+                        owners[m] = {"ip": n.get("ipv4"), "ips": [], "hostname": n.get("identity", ""),
+                                     "model": n.get("board", ""), "firmware": n.get("version", ""),
+                                     "essid": "", "source": "MikroTik neighbour discovery"}
+            for o in owners.values():          # site data is hostile: bound every string
+                for k in ("hostname", "model", "firmware", "essid"):
+                    o[k] = str(o.get(k) or "")[:64]
+        self.mac_owner = owners
 
     def _discovery_pass(self, found, new_devices, superseded, ip_index, jobs, cfg, online_ok):
         """Enrich found records and surface devices that answered only mDNS/SSDP/
@@ -1315,6 +1355,7 @@ class Scanner:
         with self.lock:
             devs = list(self.devices.values())
             mac_multi = dict(self.mac_multi_ip)
+            mac_owner = dict(self.mac_owner)
 
         def _ipkey(ip):
             try:
@@ -1378,11 +1419,27 @@ class Scanner:
         # 3. One MAC on multiple IPs
         for mac, ips in sorted(mac_multi.items()):
             dev = next((d for d in devs if (d.get("mac") or "").lower() == mac.lower()), None)
+            owner = mac_owner.get(mac)
+            detail = f"MAC {mac} answers on {len(ips)} IPs: {', '.join(ips)}"
+            if owner:
+                name = '"%s"' % owner["hostname"] if owner["hostname"] else ""
+                what = " ".join(x for x in (owner["model"], name) if x)
+                detail = (f"The device with this MAC is {owner['ip']}"
+                          + (f" — {what}" if what else "")
+                          + (f", Wi-Fi {owner['essid']}" if owner["essid"] else "")
+                          + f" (found by {owner['source']}). " + detail)
+                fix = (f"Log in to {owner['ip']}. A Wi-Fi station in ARP-NAT / proxy-ARP mode "
+                       "answers for every client behind it — turn on WDS (transparent bridge) "
+                       "on it and its access point so clients keep their own MACs, or mark it "
+                       "as a bridge below.")
+            else:
+                fix = ("Check for a bridge, or a duplicate / spoofed MAC. Nothing answered "
+                       "Ubiquiti or MikroTik discovery with this MAC — look it up in the "
+                       "router's ARP / DHCP lease table to find the device's own IP.")
             out.append({
                 "type": "same_mac_multi_ip", "severity": "medium", "mac": mac,
                 "ip": ", ".join(ips), "devices": [_brief(dev)] if dev else [],
-                "detail": f"MAC {mac} answers on {len(ips)} IPs: {', '.join(ips)}",
-                "fix": "Check for a bridge, or a duplicate / spoofed MAC.",
+                "owner": owner, "detail": detail, "fix": fix,
             })
         # 4. IP drift — current state, not the event log. A device whose live IP
         # differs from its acknowledged "home" IP. Self-clears when you Acknowledge
