@@ -104,6 +104,15 @@ class Poller:
                     return True
         return False
 
+    def drop_devices(self, site_id, keys):
+        """Remove forgotten devices from the cached snapshot so every view drops
+        them before the next device poll."""
+        keys = set(keys)
+        with self._lock:
+            payload = (self._snap.get(site_id) or {}).get("devices") or {}
+            if isinstance(payload.get("devices"), list):
+                payload["devices"] = [d for d in payload["devices"] if d.get("key") not in keys]
+
     def update_site(self, site_id, **fields):
         """Patch the cached /api/status `site` block (e.g. its GPS position set from
         the hub) so the next overview shows it without waiting for a status poll."""

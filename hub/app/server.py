@@ -1148,6 +1148,31 @@ def api_site_pi_password(site_id):
         return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
 
 
+@app.route("/api/hub/sites/<site_id>/devices/prune", methods=["POST"])
+def api_site_prune(site_id):
+    """Forget every offline device at a site that is not Monitored (the site's
+    own "Prune offline devices now"), sent with the hub's key."""
+    site, err = _site_or_404(site_id)
+    if err:
+        return err
+    try:
+        r = requests.post(siteapi.base_url(site) + "/api/devices/prune", json={"days": None},
+                          headers=siteapi.headers(site), timeout=(5, 30))
+    except requests.RequestException:
+        return jsonify({"ok": False, "error": "site unreachable"}), 502
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site refused the hub's key — see the site's Backups tab"}), 502
+    try:
+        out = r.json()
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+    if not (r.ok and out.get("ok")):
+        return jsonify({"ok": False, "error": out.get("error") or f"the site answered {r.status_code}"}), 502
+    poller.drop_devices(site_id, out.get("keys") or [])
+    poller.poll_now(site_id)
+    return jsonify({"ok": True, "removed": out.get("removed", 0), "keys": out.get("keys") or []})
+
+
 def _mikrotik_too_old():
     return jsonify({"ok": False, "error": "this site's Netwatch is too old for MikroTik "
                     "management — update it (docker compose pull)"}), 501

@@ -384,6 +384,11 @@
         .nw-btn.ok { background: rgba(16,185,129,.16); border-color: rgba(52,211,153,.45); color: #a7f3d0; }
         .nw-btn.warn { background: rgba(245,158,11,.14); border-color: rgba(251,191,36,.4); color: #fde68a; }
         .nw-btn.danger { background: rgba(244,63,94,.12); border-color: rgba(251,113,133,.4); color: #fecdd3; }
+        .nw-ask { max-width: 440px; width: calc(100% - 32px); padding: 1.25rem; border-radius: 1rem; border: 1px solid rgba(148,163,184,.22); background: #0b1324; color: #e2e8f0; }
+        .nw-ask::backdrop { background: rgba(2,6,16,.7); }
+        .nw-ask h2 { font-size: 1.1rem; font-weight: 700; margin: 0 0 .5rem; }
+        .nw-ask p { font-size: 13.5px; color: #94a3b8; margin: 0 0 1rem; line-height: 1.5; }
+        .nw-ask .row { display: flex; justify-content: flex-end; gap: .5rem; }
         .nw-btn.sm { min-height: 28px; padding: .15rem .6rem; font-size: 12px; border-radius: .55rem; }
         .nw-inp { width: 100%; min-height: 36px; padding: .45rem .7rem; border-radius: .6rem; border: 1px solid rgba(148,163,184,.25); background: rgba(2,6,23,.6); color: #e2e8f0; font-size: 13.5px; }
         textarea.nw-inp { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
@@ -854,6 +859,7 @@
                         <button data-view="map" title="IP map — every address on the subnet, including free ones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h4v4H3zM10 3h4v4h-4zM17 3h4v4h-4zM3 10h4v4H3zM10 10h4v4h-4zM17 10h4v4h-4zM3 17h4v4H3zM10 17h4v4h-4z"/></svg><span class="lbl">IP map</span></button>
                     </div>
                     <button id="mon-pick-btn" onclick="openMonitorPicker()" class="nw-ib" title="Choose which devices are monitored"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span class="lbl">Choose monitored</span></button>
+                    <button id="prune-btn" onclick="pruneOffline()" class="nw-ib" hidden title="Remove every offline device from the list (monitored devices are kept)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg><span class="lbl">Prune offline devices now</span></button>
                     <button id="select-btn" onclick="toggleSelectMode()" class="nw-ib" title="Select several devices to act on at once"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="lbl" id="select-lbl">Select</span></button>
                 </div>
             </div>
@@ -1647,7 +1653,60 @@
             renderGrid();
             renderProblems();
             if(PAGE === 'map') renderMap();
+            updatePruneBtn();
         }
+
+        // ---- one-click prune: every offline device that is not Monitored ----
+        const pruneable = () => (DATA.devices || []).filter(d => !d.online && !d.watch);
+        function updatePruneBtn(){
+            const b = document.getElementById('prune-btn');
+            if(b) b.hidden = !pruneable().length;
+        }
+        async function pruneOffline(){
+            const n = pruneable().length;
+            if(!n) return;
+            if(!confirm(`Prune offline devices now?\n\nAre you sure? ${n} offline device${n===1?' is':'s are'} removed from this site's list, with ${n===1?'its':'their'} uptime history. Monitored devices are kept. Anything still on the network comes back on its next scan.`)) return;
+            let res = null, j = {};
+            try {
+                res = await fetch('/api/devices/prune',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({days:null})});
+                j = await res.json().catch(() => ({}));
+            } catch(e){}
+            if(res && res.ok && j.ok) nwToast(`Removed ${j.removed} offline device${j.removed===1?'':'s'}`, 'ok');
+            else nwToast(res && res.status === 401 ? 'Not removed — log in with the Pi password first' : 'Not removed: ' + (j.error || 'no answer from the Pi'), 'bad');
+            loadDevices();
+        }
+
+        // ---- a new Pi waits for its first scan until someone starts it ----
+        let FIRST_SCAN_ASKED = false;
+        function askFirstScan(){
+            if(FIRST_SCAN_ASKED) return;
+            FIRST_SCAN_ASKED = true;
+            const nets = ((DATA && DATA.targets) || []).map(t => t.cidr).join(', ');
+            const d = document.createElement('dialog');
+            d.className = 'nw-ask';
+            d.innerHTML = `<h2>Ready to scan ${esc(siteName())}?</h2>
+                <p>Netwatch has not scanned this network yet. Start when this Pi is plugged in at the site${nets ? ` — it scans <b>${esc(nets)}</b>` : ''}. After this first scan it keeps scanning on its schedule.</p>
+                <div class="row"><button class="nw-btn" value="later">Later</button><button class="nw-btn pri" value="scan">Scan the network now</button></div>`;
+            document.body.appendChild(d);
+            d.querySelectorAll('button').forEach(b => b.onclick = async () => {
+                d.close(); d.remove();
+                if(b.value !== 'scan') return;
+                await fetch('/api/trigger',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'quick'})});
+                nwToast('First scan started', 'ok');
+                setTimeout(pollStatus, 1200);
+            });
+            d.showModal();
+        }
+
+        // ---- arriving from the setup wizard on the Pi's new fixed address ----
+        (async () => {
+            const q = new URLSearchParams(location.search), tok = q.get('ipconfirm');
+            if(!tok) return;
+            history.replaceState(null, '', location.pathname + location.hash);
+            let ok = false;
+            try { ok = (await fetch('/api/setup/confirm-ip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:tok})})).ok; } catch(e){}
+            nwToast(ok ? `Fixed IP kept — this Pi is now at ${location.hostname}` : 'Could not confirm the new address — the Pi may go back to its old one', ok ? 'ok' : 'bad');
+        })();
 
         const ipSort = (a,b) => {
             const pa=a.split('.').map(Number), pb=b.split('.').map(Number);
@@ -4498,6 +4557,7 @@
                     el.hidden = false;
                 }
                 applyStatus(data);
+                if(data.first_scan_pending && !data.is_scanning) askFirstScan();
                 if(data.last_scan_ts && data.last_scan_ts !== LAST_SCAN_TS){
                     LAST_SCAN_TS = data.last_scan_ts;
                     loadDevices();               // new scan finished → repaint live

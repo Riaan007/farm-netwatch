@@ -16,6 +16,9 @@ _lock = threading.Lock()
 DEFAULTS = {
     # Set True by the setup wizard once the operator has confirmed site details.
     "configured": False,
+    # Set True by the wizard on a new Pi: no scan runs until someone starts the first
+    # one (the site page asks). Any whole-network scan clears it.
+    "first_scan_pending": False,
     "site": {
         "name": "",
         "location": "",

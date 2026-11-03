@@ -491,6 +491,10 @@ class Scanner:
 
     # ---- scan orchestration -------------------------------------------
     def run_scan(self, mode="quick", only_target=None, only_hosts=None):
+        if not only_hosts and config.load().get("first_scan_pending"):
+            # someone asked for a network scan: the waiting-for-first-scan hold ends
+            # and the regular schedule carries on from here
+            config.update({"first_scan_pending": False})
         with self._scan_lock:                # only one scan runs at a time
             self._run_scan(mode, only_target, only_hosts)
 
@@ -1652,7 +1656,7 @@ class Scanner:
     def loop(self):
         while not self._stop:
             cfg = config.load()
-            if cfg.get("configured"):
+            if cfg.get("configured") and not cfg.get("first_scan_pending"):
                 try:
                     self.run_scan("quick")
                 except Exception as e:

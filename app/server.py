@@ -30,6 +30,7 @@ import identify
 import mikrotik
 import monitoring
 import netcfg
+import setupip
 import radiomon
 import restart
 import siteauth
@@ -126,6 +127,7 @@ def api_status():
         "is_scanning": st["is_scanning"],
         # extended
         "configured": cfg.get("configured", False),
+        "first_scan_pending": cfg.get("first_scan_pending", False),   # set up, never scanned
         "mode": st["mode"],
         "progress": st["progress"],
         "site": cfg["site"],
@@ -2289,18 +2291,56 @@ def api_wizard():
     if not targets:
         return jsonify({"ok": False, "error": "At least one scan target is required"}), 400
 
+    fixed = (body.get("fixed_ip") or "").strip()
+    gw = default_gateway()
+    if fixed:
+        ok, why = setupip.check(fixed, gw)
+        if not ok:
+            return jsonify({"ok": False, "error": why}), 400
+
     cfg = config.load()
+    first_run = not cfg.get("configured")
     cfg.update({
         "configured": True,
         "site": body.get("site", cfg["site"]),
         "targets": targets,
     })
+    if first_run:
+        # A new Pi does NOT scan by itself: it may still be on the bench, on another
+        # network. The site page asks the operator to start the first scan.
+        cfg["first_scan_pending"] = True
     cfg["scan"].update(body.get("scan", {}))
     cfg["alerts"].update(body.get("alerts", {}))
     cfg["vpn"].update(body.get("vpn", {}))
     config.save(cfg)
-    scanner.wake()
-    scanner.trigger("quick")
+    out = {"ok": True}
+    if fixed:
+        out["fixed_ip"] = setupip.apply(fixed, gw)
+    return jsonify(out)
+
+
+@app.route("/api/setup/ip-plan")
+@siteauth.required_if(lambda: config.load().get("configured"))
+def api_setup_ip_plan():
+    """Wizard fixed-IP step: this Pi's address + a quick sweep of who else is there."""
+    return jsonify(setupip.plan(default_gateway()))
+
+
+@app.route("/api/setup/ip-check", methods=["POST"])
+@siteauth.required_if(lambda: config.load().get("configured"))
+def api_setup_ip_check():
+    ip = ((request.get_json(silent=True) or {}).get("ip") or "").strip()
+    ok, why = setupip.check(ip, default_gateway())
+    return jsonify({"ok": ok, "error": why or None})
+
+
+@app.route("/api/setup/confirm-ip", methods=["POST"])
+def api_setup_confirm_ip():
+    """Opened from the Pi's NEW address with the wizard's one-time token: keep the
+    fixed IP. Without it the old address comes back after setupip.REVERT_S."""
+    tok = (request.get_json(silent=True) or {}).get("token")
+    if not setupip.confirm(tok):
+        return jsonify({"ok": False, "error": "unknown or expired token"}), 403
     return jsonify({"ok": True})
 
 

@@ -231,7 +231,8 @@
       const st = { f, sort: p.get("sort") || "state", dir: 1, limit: 150, group: siteId ? "cat" : "site", sel: new Map() };
       el.innerHTML = `
         <div class="listbar"><div class="lists" id="dv-lists" role="group" aria-label="Device lists"></div>
-          <button class="btn" id="dv-pick" hidden title="Tick the devices this site must monitor">${icon("bell")} Choose monitored</button></div>
+          <div class="row" style="margin-left:auto;gap:8px"><button class="btn" id="dv-prune" hidden title="Remove every offline device from this site's list (monitored devices are kept)">Prune offline devices now</button>
+          <button class="btn" id="dv-pick" hidden title="Tick the devices this site must monitor">${icon("bell")} Choose monitored</button></div></div>
         <div class="tbar">
           <label class="search">${icon("search")}<span class="sr">Search devices</span><input class="inp" id="dv-q" type="search" placeholder="Name, IP, MAC, vendor, model…" title="${esc(CC.IP_SEARCH_HELP)}" value="${esc(f.q)}"></label>
           ${siteId ? "" : `<select class="sel" id="dv-site" aria-label="Site"><option value="">All sites</option>${S.sites.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("")}</select>`}
@@ -268,6 +269,7 @@
       $$("th button", el).forEach((b) => (b.onclick = () => { st.dir = st.sort === b.dataset.sort ? -st.dir : 1; st.sort = b.dataset.sort; st.userSorted = true; this.draw(el, st, siteId); }));
       $("#dv-lists", el).onclick = (e) => { const b = e.target.closest("[data-list]"); if (!b) return; f.list = b.dataset.list; st.limit = 150; st.sel.clear(); this.draw(el, st, siteId); };
       $("#dv-pick", el).onclick = () => CC.openMonitorPicker(siteId || f.site);
+      $("#dv-prune", el).onclick = (e) => this.prune(el, st, siteId, e.currentTarget);
       $("#dv-more", el).onclick = () => { st.limit += 300; this.draw(el, st, siteId); };
       $("#dv-csv", el).onclick = () => CC.deviceCsv(this.rows(st, siteId), siteId ? `netwatch-${siteId}-devices` : "netwatch-devices");
       $("#dv-all", el).onchange = (e) => {
@@ -331,6 +333,24 @@
         + tab("all", "All devices", scope.length, "everything the site found");
       const pickSite = siteId || st.f.site;
       $("#dv-pick", el).hidden = !pickSite;
+      $("#dv-prune", el).hidden = !pickSite || !this.pruneable(pickSite).length;
+    },
+    /** What the site's prune removes: offline devices that are not Monitored. */
+    pruneable(sid) { return (S.devices[sid] || []).filter((d) => !d.online && !d.watch); },
+    async prune(el, st, siteId, btn) {
+      const sid = siteId || st.f.site, s = CC.site(sid), n = this.pruneable(sid).length;
+      if (!s || !n) return;
+      if (!(await CC.confirm("Prune offline devices now?", `Are you sure? ${CC.plural(n, "offline device")} ${n === 1 ? "is" : "are"} removed from ${s.name}'s list, with their uptime history. Monitored devices are kept. Anything still on the network comes back on its next scan.`, { ok: "Yes, prune", danger: true }))) return;
+      await CC.busy(btn, async () => {
+        try {
+          const j = await api(`/api/hub/sites/${encodeURIComponent(sid)}/devices/prune`, { method: "POST", timeout: 60000 });
+          const gone = new Set(j.keys || []);
+          S.devices[sid] = (S.devices[sid] || []).filter((d) => !gone.has(d.key));
+          [...st.sel.keys()].forEach((k) => { if (gone.has(k.slice(sid.length + 1)) && k.startsWith(sid + "|")) st.sel.delete(k); });
+          CC.toast(`Removed ${CC.plural(j.removed || 0, "offline device")} from ${s.name}`, "ok");
+        } catch (e) { CC.toast(`${s.name}: ${e.message}`, "bad"); }
+      });
+      this.draw(el, st, siteId);
     },
     /** Ticked rows the current list, filters and search still show. */
     selected(st, siteId) {
