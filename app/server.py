@@ -38,6 +38,7 @@ import setupip
 import radiomon
 import restart
 import siteauth
+import useractivity
 import switchmon
 import sysmon
 import topology
@@ -149,6 +150,31 @@ def api_status():
 @app.route("/api/auth/state")
 def api_auth_state():
     return jsonify(siteauth.state(request, session))
+
+
+# ---- time keeping: minutes of hands-on use (useractivity.py) ----------------
+@app.route("/api/activity/beat", methods=["POST"])
+def api_activity_beat():
+    """The page says a person is using it. Counts only when logged in with this Pi's
+    password and NOT through the hub's proxy (the hub counts those itself)."""
+    if not siteauth.user_ok(session):
+        return jsonify({"ok": True, "counted": False, "why": "not logged in"})
+    if request.headers.get("X-Netwatch-Kuma-Port"):
+        return jsonify({"ok": True, "counted": False, "why": "through the hub"})
+    useractivity.beat()
+    return jsonify({"ok": True, "counted": True})
+
+
+@app.route("/api/activity")
+def api_activity():
+    """Minute stamps for the hub's time keeping — the hub key only."""
+    if not siteauth.hub_ok(request):
+        return jsonify({"ok": False, "error": "hub only"}), 403
+    try:
+        ts = int(request.args.get("since") or 0)
+    except ValueError:
+        ts = 0
+    return jsonify({"ok": True, "minutes": useractivity.since(ts), "now": int(time.time())})
 
 
 @app.route("/api/auth/login", methods=["POST"])

@@ -298,5 +298,93 @@ class Api(unittest.TestCase):
         self.assertEqual(self.c.get("/api/hub/time/month?month=2026-13").status_code, 400)
 
 
+class SiteFeed(unittest.TestCase):
+    """Minutes of the farm Pi's own page opened directly, fetched with the hub key."""
+
+    def setUp(self):
+        wipe()
+
+    def _resp(self, code, body=None):
+        from unittest import mock
+        return mock.Mock(status_code=code, json=mock.Mock(return_value=body or {}))
+
+    def test_fetch_marks_and_builds_remote(self):
+        from unittest import mock
+        cfg = {"sites": [{"id": "bennie", "vpn_ip": "10.8.0.9"}, {"id": "off", "vpn_ip": "10.8.0.8"}]}
+        snap = {"bennie": {"reachable": True}, "off": {"reachable": False}}
+        feed = tk._SiteFeed()
+        mins = [at(9, m) for m in range(0, 40)]
+        import requests
+        with mock.patch.object(requests, "get", return_value=self._resp(200, {"minutes": mins})) as g:
+            got = feed.read(cfg, snap.get, now=NOW)
+        self.assertEqual(g.call_count, 1)                    # the unreachable farm is not asked
+        self.assertEqual(len(got), 40)
+        self.assertEqual(feed.since["bennie"], at(9, 39) - 120)
+        with mock.patch.object(requests, "get") as g:          # not again within 2 minutes
+            feed.read(cfg, snap.get, now=NOW + 60)
+        g.assert_not_called()
+        tk.mark_many("site", got)
+        tk.build_day(DAY, now=NOW)
+        rem = entries(kind="remote", site_id="bennie")
+        self.assertEqual(len(rem), 1)
+        self.assertIn("site", rem[0]["sources"])
+
+    def test_old_farm_image_asked_hourly(self):
+        from unittest import mock
+        import requests
+        cfg = {"sites": [{"id": "bennie", "vpn_ip": "10.8.0.9"}]}
+        feed = tk._SiteFeed()
+        with mock.patch.object(requests, "get", return_value=self._resp(404)):
+            self.assertEqual(feed.read(cfg, lambda s: {"reachable": True}, now=NOW), [])
+        with mock.patch.object(requests, "get") as g:
+            feed.read(cfg, lambda s: {"reachable": True}, now=NOW + 1800)
+        g.assert_not_called()
+
+
+class VpnCounting(unittest.TestCase):
+    """timenet.py: packets to a farm through the hub's VPN namespace."""
+
+    CFG = {"sites": [{"id": "home", "vpn_ip": "192.168.88.250"}, {"id": "bennie", "vpn_ip": "10.8.0.2"},
+                     {"id": "tankwa", "vpn_ip": "10.8.0.7"}],
+           "remote_clients": [{"address": "10.8.0.3"}, {"address": "10.8.0.4"}]}
+
+    def listing(self, chain, counts):
+        rows = "\n".join(f"{n} {n * 60} RETURN 0 -- * * 0.0.0.0/0 10.8.0.2" for n in counts)
+        return f"Chain {chain} (1 references)\n pkts bytes target prot opt in out source destination\n{rows}\n"
+
+    def test_rules_count_only_operators_lan_and_ssh(self):
+        import timenet
+        fwd, out = timenet.desired(self.CFG)
+        self.assertEqual(len(fwd), 6)                                  # 2 farms x (2 operators + LAN)
+        self.assertIn("-A NW-TIME-FWD -s 10.8.0.3/32 -d 10.8.0.2/32 -j RETURN", fwd)
+        self.assertIn("-A NW-TIME-FWD -d 10.8.0.7/32 ! -i wg0 -j RETURN", fwd)
+        self.assertFalse(any("192.168" in r for r in fwd + out))       # home is not over the VPN
+        self.assertTrue(all("RETURN" in r for r in fwd + out))         # count only, never decide
+        self.assertEqual(out[0], "-A NW-TIME-OUT -d 10.8.0.2/32 -p tcp -m tcp --dport 22 -j RETURN")
+
+    def test_deltas_need_a_baseline_and_a_minimum(self):
+        from unittest import mock
+        import timenet
+        state = {"fwd": [0, 0, 0, 0, 0, 0], "out": [0, 0]}
+
+        def run(args, stdin=None):
+            if args[1] == "-L":
+                ch = args[2]
+                return 0, self.listing(ch, state["fwd"] if ch == timenet.FWD else state["out"])
+            return 0, ""
+        timenet._last.clear()
+        with mock.patch.object(timenet, "ensure", return_value="iptables-legacy"), \
+                mock.patch.object(timenet.vpnfw, "_run", side_effect=run):
+            self.assertEqual(timenet.deltas(self.CFG, NOW), [])        # baseline
+            state["fwd"] = [5, 0, 0, 0, 2, 3]                          # bennie +5 (below 8), tankwa +5
+            state["out"] = [0, 40]                                     # SSH to tankwa
+            self.assertEqual(sorted(timenet.deltas(self.CFG, NOW + 30)), [("ssh", "tankwa", NOW + 30)])
+            state["fwd"] = [5, 9, 0, 0, 2, 3]                          # bennie +9 from the laptop
+            self.assertEqual(timenet.deltas(self.CFG, NOW + 60), [("vpn", "bennie", NOW + 60)])
+            state["fwd"] = [9, 0, 0, 0, 0, 0]                          # counters reset by wg-easy
+            self.assertEqual(timenet.deltas(self.CFG, NOW + 90), [("vpn", "bennie", NOW + 90)])
+        timenet._last.clear()
+
+
 if __name__ == "__main__":
     unittest.main()

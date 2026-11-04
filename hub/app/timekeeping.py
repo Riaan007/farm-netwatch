@@ -4,7 +4,11 @@ One owner (the hub has one login). Five kinds of time:
   remote  — working on a farm from afar: its Control Center pages (a heartbeat
             the CC sends while you are actively using it), its own Netwatch page
             through the hub proxy (Caddy access log, background polls skipped), a
-            device/SSH tunnel to it (tunnels.manager activity).
+            device/SSH tunnel to it (tunnels.manager activity), and its own Pi
+            page opened DIRECTLY (on its LAN, over the VPN) while logged in —
+            the farm Pi keeps those minutes and the hub fetches them (_SiteFeed),
+            and any traffic from the operator's devices / the office LAN to the
+            farm over the VPN, or SSH to its Pi from the hub (timenet.py).
   onsite  — at the farm: the Arrive/Leave buttons, or the operator's phone seen
             on the farm's network by the site's own scan.
   travel  — driving to/from a farm: the buttons; km typed, or prefilled from the
@@ -39,7 +43,7 @@ CADDY_LOG = os.path.join(DATA_DIR, "caddy", "logs", "access.log")
 BACKUP_DIR = os.path.join(DATA_DIR, "time", "backups")
 
 KINDS = ("remote", "onsite", "travel", "dev", "general")
-REMOTE_SOURCES = ("cc", "proxy", "tunnel")
+REMOTE_SOURCES = ("cc", "proxy", "tunnel", "site", "vpn", "ssh")
 AUTO_SOURCES = ("auto", "wifi", "claude")          # builder-made; frozen once touched
 ORIGIN = {"auto": "remote", "wifi": "field", "claude": "dev"}   # builder source -> group it came from
 # Frozen entries block the builder within their group: remote work can't be laid
@@ -48,6 +52,8 @@ GROUP = {"remote": "remote", "general": "remote", "onsite": "field", "travel": "
 REBUILD_DAYS = 35                 # drafts are (re)built for this many days back
 ACTIVITY_KEEP_DAYS = 120
 BACKUP_KEEP = 60
+SITE_FEED_EVERY_S = 120           # ask each farm Pi for its hands-on minutes this often
+SITE_FEED_OLD_S = 3600            # ...but only hourly while it runs an image without them
 
 # The site page polls these on a timer whether anyone looks or not, so a request
 # to them is not a sign of work (Caddy skips logging them too — proxycfg.py).
@@ -756,6 +762,48 @@ def _port_site(cfg):
     return m
 
 
+class _SiteFeed:
+    """Minutes of hands-on use of a farm Pi's own page, kept on the Pi
+    (app/useractivity.py) and fetched here with the hub key. A Pi on an older
+    image answers 404; it is asked again only every SITE_FEED_OLD_S."""
+
+    def __init__(self):
+        self.since = {}                 # site id -> next `since`
+        self.next_at = {}               # site id -> earliest next ask
+
+    def read(self, cfg, snapshot, now=None):
+        import requests
+        import siteapi
+        now = now or time.time()
+        out = []
+        for s in cfg.get("sites") or []:
+            sid = s.get("id")
+            if not sid or not s.get("vpn_ip") or now < self.next_at.get(sid, 0):
+                continue
+            if not (snapshot(sid) or {}).get("reachable"):
+                continue
+            since = self.since.get(sid, int(now) - 2 * 86400)
+            self.next_at[sid] = now + SITE_FEED_EVERY_S
+            try:
+                r = requests.get(siteapi.base_url(s) + "/api/activity", params={"since": since},
+                                 headers=siteapi.headers(s), timeout=6)
+            except requests.exceptions.RequestException:
+                continue
+            if r.status_code == 404:
+                self.next_at[sid] = now + SITE_FEED_OLD_S
+                continue
+            try:
+                mins = [int(m) for m in r.json().get("minutes") or []] if r.status_code == 200 else None
+            except (ValueError, TypeError, AttributeError):
+                mins = None
+            if mins is None:
+                continue
+            out.extend((sid, m) for m in mins)
+            # re-read the last 2 minutes next time: a beat can land in a minute already sent
+            self.since[sid] = max([since] + [m - 120 for m in mins])
+        return out
+
+
 def _phone_marks(cfg, snapshot):
     st = settings()
     out = []
@@ -796,9 +844,12 @@ def _backup_daily(now=None):
 
 def _loop():
     import hubconfig
+    import timenet
     import tunnels
     from poller import poller
     proxy = _ProxyLog()
+    sitefeed = _SiteFeed()
+    net_err = 0
     last_build = 0
     while True:
         try:
@@ -811,6 +862,16 @@ def _loop():
                    if now - (t.get("last_active") or 0) < 75]
             if tun:
                 mark_many("tunnel", tun)
+            direct = sitefeed.read(cfg, poller.snapshot, now)
+            if direct:
+                mark_many("site", direct)
+            try:
+                for src, sid, ts in timenet.deltas(cfg, now):
+                    mark(src, sid, ts)
+            except Exception as e:                   # counting must never stop the rest
+                if now - net_err > 3600:
+                    print(f"[time] VPN counting: {e!r}", flush=True)
+                    net_err = now
             ph = _phone_marks(cfg, poller.snapshot)
             if ph:
                 mark_many("wifi", ph)

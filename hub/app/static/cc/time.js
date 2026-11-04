@@ -19,7 +19,7 @@
     dev: { label: "Netwatch dev", cls: "k-dev" },
     general: { label: "General", cls: "k-general" },
   };
-  const SRC = { cc: "Control Center", proxy: "farm page", tunnel: "tunnel / SSH", wifi: "phone on farm Wi-Fi",
+  const SRC = { cc: "Control Center", proxy: "farm page", tunnel: "tunnel / SSH", site: "farm Pi directly", vpn: "VPN to the farm", ssh: "SSH to the farm Pi", wifi: "phone on farm Wi-Fi",
     button: "buttons", manual: "typed in", claude: "Claude sessions", auto: "recorded" };
 
   // ---- helpers ------------------------------------------------------------------------
