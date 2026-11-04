@@ -297,6 +297,44 @@ def site_cameras_refresh(site_id):
         return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
 
 
+def _forward(site_id, path, method, body=None, timeout=(5, 60)):
+    """Pass one camera-settings call to the site Pi (which does all the device work)."""
+    site, err = _site(site_id)
+    if err:
+        return err
+    try:
+        r = requests.request(method, siteapi.base_url(site) + path, headers=siteapi.headers(site),
+                             params=request.args if method == "GET" else None, json=body, timeout=timeout)
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": f"site unreachable: {e.__class__.__name__}"}), 502
+    if r.status_code in (404, 405) and "json" not in r.headers.get("Content-Type", ""):
+        return jsonify({"ok": False, "legacy": True,
+                        "error": "this site's Netwatch is too old for camera settings — update it"}), 501
+    if r.status_code == 401:
+        return jsonify({"ok": False, "error": "the site refused the hub's key — see the site's Backups tab"}), 502
+    try:
+        return jsonify(r.json()), r.status_code
+    except ValueError:
+        return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+
+
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/settings", methods=["GET", "POST"])
+def site_camera_settings(site_id, key):
+    body = (request.get_json(silent=True) or {}) if request.method == "POST" else None
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/settings", request.method, body)
+
+
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/changes")
+def site_camera_changes(site_id, key):
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/changes", "GET")
+
+
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/changes/<cid>/undo", methods=["POST"])
+def site_camera_change_undo(site_id, key, cid):
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/changes/{quote(cid, safe='')}/undo", "POST",
+                    request.get_json(silent=True) or {})
+
+
 # ---- the background top-up of the hub's saved copies -------------------------------
 def _pull_site(site):
     """One site: fetch each camera's picture the hub has no recent copy of. The

@@ -49,6 +49,7 @@
     const dev = (S.devices[siteId] || []).find((x) => x.key === key);
     return CamView.camera(host, {
       group: { id: siteId, title: s ? s.name : siteId }, cam, picUrl, onBack: back,
+      apiBase: (_g, c) => `/api/hub/sites/${enc(siteId)}/cameras/${enc(c.key)}`,
       deviceAction: dev ? { label: "Device details", run: () => CC.openDevice(siteId, key) } : null,
     });
   }

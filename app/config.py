@@ -111,6 +111,10 @@ DEFAULTS = {
         # by default — every picture needs the site login or the hub key; a client
         # who says no turns it off, which also deletes the saved pictures.
         "camera_pictures": True,
+        # Camera settings (hiksettings.py): change picture, text on video, time and video
+        # streams on cameras with their own saved login — each change read back, logged in
+        # History and undoable. Off by default: the first switch that WRITES to a camera.
+        "camera_manage": False,
     },
     # Camera pictures (campics.py): each camera's small picture is read again
     # every refresh_min on the LAN (0 = only when someone looks), and its last

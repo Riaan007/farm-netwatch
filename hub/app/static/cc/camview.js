@@ -382,7 +382,8 @@
           </dl>
         </div>
       </div>
-      <p class="cv-foot">Camera settings (picture, video, detection, PTZ…) come in the next phases. Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.</p>
+      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-set></section>` : ""}
+      <p class="cv-foot">Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.${opts.apiBase && c.kind === "camera" ? " Detection, PTZ and the rest of the settings come in the next phases." : ""}</p>
     </div>`;
     const root = el.querySelector(".cv"), note = root.querySelector(".cv-note");
     const boxOf = (n) => root.querySelector(`.cv-view[data-v="${n}"] .cv-pic`);
@@ -444,13 +445,160 @@
     });
     const ages = setInterval(tick, 1000);
     if (c.route || c.picture) get("thumb", false);
+    const setHost = root.querySelector("[data-set]");
+    const panel = setHost ? settingsPanel(setHost, opts.apiBase(g, c), c, () => { if (!st.dead) setTimeout(() => get("thumb", true), 1000); }) : null;
     return {
       destroy() {
         st.dead = true; clearInterval(ages); clearTimeout(st.timer);
+        if (panel) panel.destroy();
         Object.values(st.pics).forEach((p) => p && p.src && URL.revokeObjectURL(p.src));
         el.innerHTML = "";
       },
     };
+  }
+
+  // ---- camera settings (Phase 3: app/hiksettings.py) ------------------------------------
+  // The camera's own capabilities decide every control; a setting it doesn't describe is
+  // shown, not offered. Safe sections apply at once; careful ones show the change list
+  // and ask to confirm. Every change is read back on the camera and can be undone.
+  async function jcall(url, init) {
+    const r = await fetch(url, Object.assign({ credentials: "same-origin", headers: { "Content-Type": "application/json" } }, init || {}));
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) throw Object.assign(new Error(j.error || j.message || "HTTP " + r.status), { status: r.status, body: j });
+    return j;
+  }
+  const RISK = { safe: "", careful: "Asks you to confirm" };
+
+  function settingsPanel(el, base, cam, onPicture) {
+    const st = { lens: 1, sec: "picture", data: null, dead: false, edits: {}, preview: null, busy: false };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>⚙ Camera settings</h3><span class="cv-dimtx">picture · text on video · time · video</span></summary><div class="cv-setb" data-b></div></details>`;
+    const det = el.querySelector("details"), body = el.querySelector("[data-b]");
+    det.addEventListener("toggle", () => { if (det.open && !st.data) load(); });
+
+    async function load() {
+      body.innerHTML = `<p class="cv-dimtx">Reading the camera's settings…</p>`;
+      try {
+        st.data = await jcall(`${base}/settings?lens=${st.lens}`);
+        if (st.dead) return;
+        if (!st.data.sections.some((x) => x.id === st.sec)) st.sec = (st.data.sections[0] || {}).id;
+        st.edits = {}; st.preview = null; paint();
+        loadChanges();
+      } catch (e) {
+        if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.message)}</p>`;
+      }
+    }
+    const sec = () => (st.data.sections || []).find((x) => x.id === st.sec);
+    const valOf = (f) => (f.id in st.edits ? st.edits[f.id] : f.value);
+    function visible(f, s) {
+      if (!f.show_if) return true;
+      const o = s.fields.find((x) => x.id === f.show_if.field);
+      return !o || f.show_if.values.includes(String(valOf(o)));
+    }
+    function ctl(f) {
+      const v = valOf(f), dis = !st.data.can_change || !f.editable ? " disabled" : "";
+      if (!f.editable) return `<span class="cv-setro">${esc(f.shown ?? "—")}</span>`;
+      if (f.kind === "bool") return `<label class="cv-sw"><input type="checkbox" data-f="${esc(f.id)}"${v === "true" ? " checked" : ""}${dis}><span>${v === "true" ? "On" : "Off"}</span></label>`;
+      if (f.kind === "enum") return `<select class="cv-q cv-setin" data-f="${esc(f.id)}"${dis}>${(f.opts || []).map((o) => `<option value="${esc(o.v)}"${o.v === v ? " selected" : ""}>${esc(o.label)}</option>`).join("")}</select>`;
+      if (f.kind === "int" && f.max - f.min <= 100 && f.min >= 0) return `<span class="cv-rng"><input type="range" min="${f.min}" max="${f.max}" value="${esc(v)}" data-f="${esc(f.id)}"${dis}><output>${esc(v)}</output></span>`;
+      if (f.kind === "int") return `<input class="cv-q cv-setin" type="number" min="${f.min}" max="${f.max}" value="${esc(v)}" data-f="${esc(f.id)}"${dis}>`;
+      return `<input class="cv-q cv-setin" type="text" maxlength="${f.maxlen || 32}" value="${esc(v)}" data-f="${esc(f.id)}"${dis}>`;
+    }
+    function paint() {
+      const d = st.data, s = sec();
+      const lens = d.lenses.length > 1 ? `<div class="cv-seg" role="group" aria-label="Lens">${d.lenses.map((n) => `<button type="button" data-lens="${n}" aria-pressed="${n === st.lens}">Lens ${n}</button>`).join("")}</div>` : "";
+      const tabs = `<div class="cv-seg cv-settabs" role="tablist">${d.sections.map((x) => `<button type="button" role="tab" data-sec="${esc(x.id)}" aria-pressed="${x.id === st.sec}">${esc(x.label)}</button>`).join("")}</div>`;
+      let html = `<div class="cv-setbar">${tabs}${lens}<button type="button" class="cv-btn" data-a="reload">↻ Read again</button></div>`;
+      if (!d.can_change) html += `<p class="cv-setmsg">${esc(d.why_not)} You can look, not change.</p>`;
+      if (s) {
+        if (s.note) html += `<p class="cv-dimtx">${esc(s.note)}</p>`;
+        if (s.error) html += `<p class="cv-setmsg cv-warn">${esc(s.error)}</p>`;
+        if (d.can_change && (s.presets || []).length) html += `<div class="cv-setpre">${s.presets.map((p) => `<button type="button" class="cv-btn" data-pre="${esc(p.id)}">★ ${esc(p.label)}</button>`).join("")}</div>`;
+        html += `<div class="cv-setgrid">${s.fields.filter((f) => visible(f, s)).map((f) => `<div class="cv-setrow${f.id in st.edits ? " cv-chg" : ""}"><div class="cv-setl"><b>${esc(f.label)}</b>${f.help ? `<small>${esc(f.help)}</small>` : ""}</div><div class="cv-setc">${ctl(f)}${f.id === "name.name" && d.can_change && d.netwatch_name && d.netwatch_name !== f.value ? ` <button type="button" class="cv-btn" data-nwname>Use “${esc(d.netwatch_name)}”</button>` : ""}</div></div>`).join("") || `<p class="cv-dimtx">This camera has none of these settings.</p>`}</div>`;
+        const n = Object.keys(st.edits).length;
+        if (d.can_change && s.fields.length) html += `<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-a="apply"${n ? "" : " disabled"}>${s.risk === "careful" ? "Review " : "Apply "}${n ? n + " change" + (n > 1 ? "s" : "") : "changes"}</button><button type="button" class="cv-btn" data-a="reset"${n ? "" : " disabled"}>Cancel</button>${RISK[s.risk] ? `<span class="cv-dimtx">${RISK[s.risk]}</span>` : ""}</div>`;
+        if (st.preview) html += st.preview;
+      }
+      html += `<p class="cv-setmsg" data-msg aria-live="polite"></p><div class="cv-chgs" data-chgs></div>`;
+      body.innerHTML = html;
+      if (st.msg) say(st.msg[0], st.msg[1]);
+      paintChanges();
+    }
+    function say(text, cls) { st.msg = [text, cls]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = text; m.className = "cv-setmsg " + (cls || ""); } }
+    function setEdit(fid, v) {
+      const f = sec().fields.find((x) => x.id === fid);
+      if (!f) return;
+      if (String(v) === String(f.value)) delete st.edits[fid]; else st.edits[fid] = String(v);
+      st.preview = null; st.msg = null; paint();
+    }
+    function rows(list) {
+      return `<ul class="cv-chglist">${list.map((r) => `<li><b>${esc(r.label)}</b> ${esc(r.from)} → ${esc(r.to)}</li>`).join("")}</ul>`;
+    }
+    async function apply(confirm) {
+      const s = sec(); if (st.busy) return;
+      const changes = { ...st.edits }, expect = {};
+      Object.keys(changes).forEach((k) => { const f = s.fields.find((x) => x.id === k); if (f) expect[k] = f.value; });
+      if (s.risk === "careful" && !confirm) {
+        const list = Object.keys(changes).map((k) => { const f = s.fields.find((x) => x.id === k); const o = (f.opts || []).find((x) => x.v === changes[k]);
+          return { label: f.label, from: f.shown ?? f.value, to: o ? o.label : f.kind === "bool" ? (changes[k] === "true" ? "On" : "Off") : changes[k] }; });
+        st.preview = `<div class="cv-setprev"><p><b>Change on the camera:</b></p>${rows(list)}${s.id === "time" ? `<p class="cv-dimtx">The camera's clock is also set from this Pi's clock, so it is right straight away.</p>` : ""}${s.id === "main" || s.id === "sub" ? `<p class="cv-dimtx">The picture may drop for a few seconds while the camera switches.</p>` : ""}<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-a="confirm">Yes, change it</button><button type="button" class="cv-btn" data-a="unpreview">Back</button></div></div>`;
+        paint(); return;
+      }
+      st.busy = true; say("Changing it on the camera…", "");
+      try {
+        const j = await jcall(`${base}/settings`, { method: "POST", body: JSON.stringify({ lens: st.lens, section: s.id, changes, expect, confirm: true }) });
+        st.busy = false;
+        const msg = j.message || "Done.";
+        await load(); say(msg, j.ok ? "cv-okt" : "cv-warn");
+        if (s.id === "picture" || s.id === "osd") onPicture();
+      } catch (e) {
+        st.busy = false;
+        if (e.status === 409 && e.body && e.body.conflict) { await load(); say(e.message + " — it was read again; make the change once more.", "cv-warn"); }
+        else say(e.message, "cv-warn");
+      }
+    }
+    let chg = [];
+    async function loadChanges() {
+      try { chg = (await jcall(`${base}/changes`)).changes || []; } catch (e) { chg = []; }
+      if (!st.dead) paintChanges();
+    }
+    function paintChanges() {
+      const box = body.querySelector("[data-chgs]"); if (!box) return;
+      if (!chg.length) { box.innerHTML = ""; return; }
+      box.innerHTML = `<h4>Changes made from Netwatch</h4><ul class="cv-chglog">${chg.slice(0, 12).map((x) => `<li>
+        <div><b>${esc(x.section_label)}${x.lens > 1 ? " · lens " + x.lens : ""}${x.undo_of ? " (undo)" : ""}</b> <span class="cv-dimtx">${esc(ago(x.ts))}${x.who ? " · " + esc(x.who) : ""}${x.result !== "ok" ? ` · <span class="cv-warn">${x.result === "partial" ? "not every change kept" : "not done"}</span>` : ""}</span></div>
+        <small>${(x.fields || []).map((r) => `${esc(r.label)} ${esc(r.shown_before)} → ${esc(r.shown_after)}${r.kept ? "" : " (not kept)"}`).join(" · ")}</small>
+        ${x.undone_by ? `<span class="cv-dimtx">undone</span>` : !x.undo_of && st.data && st.data.can_change && (x.fields || []).some((r) => r.written) ? `<button type="button" class="cv-btn" data-undo="${esc(x.id)}">↶ Undo</button>` : ""}</li>`).join("")}</ul>`;
+    }
+    async function undo(id, btn) {
+      if (!window.confirm("Put back the values this change replaced? It only goes ahead if the camera still shows this change.")) return;
+      btn.disabled = true; say("Undoing on the camera…", "");
+      try {
+        const j = await jcall(`${base}/changes/${encodeURIComponent(id)}/undo`, { method: "POST", body: JSON.stringify({ confirm: true }) });
+        await load(); say(j.message || "Undone.", j.ok ? "cv-okt" : "cv-warn"); onPicture();
+      } catch (e) { btn.disabled = false; say(e.message, "cv-warn"); }
+    }
+    body.addEventListener("input", (e) => {
+      const t = e.target;
+      if (t.type === "range") { const o = t.parentElement.querySelector("output"); if (o) o.textContent = t.value; }
+    });
+    body.addEventListener("change", (e) => {
+      const t = e.target.closest("[data-f]"); if (!t) return;
+      setEdit(t.dataset.f, t.type === "checkbox" ? String(t.checked) : t.value);
+    });
+    body.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled) return;
+      if (b.dataset.sec) { st.sec = b.dataset.sec; st.edits = {}; st.preview = null; st.msg = null; paint(); }
+      else if (b.dataset.lens) { st.lens = +b.dataset.lens; st.msg = null; load(); }
+      else if (b.dataset.pre) { const p = (sec().presets || []).find((x) => x.id === b.dataset.pre); if (p) { Object.entries(p.changes).forEach(([k, v]) => { const f = sec().fields.find((x) => x.id === k); if (f && f.editable && String(f.value) !== String(v)) st.edits[k] = String(v); }); st.preview = null; st.msg = Object.keys(st.edits).length ? null : ["The camera already has these values.", "cv-okt"]; paint(); } }
+      else if (b.hasAttribute("data-nwname")) setEdit("name.name", st.data.netwatch_name);
+      else if (b.dataset.undo) undo(b.dataset.undo, b);
+      else if (b.dataset.a === "reload") { st.msg = null; load(); }
+      else if (b.dataset.a === "reset") { st.edits = {}; st.preview = null; st.msg = null; paint(); }
+      else if (b.dataset.a === "apply") apply(false);
+      else if (b.dataset.a === "confirm") apply(true);
+      else if (b.dataset.a === "unpreview") { st.preview = null; paint(); }
+    });
+    return { destroy() { st.dead = true; } };
   }
 
   window.CamView = { mount, camera, ago, fetchPic: (lid, url) => queue(lid, () => fetchPic(url)) };

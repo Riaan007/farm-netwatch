@@ -1208,6 +1208,7 @@
                 <header><span class="ico">📷</span><div><h2>Cameras</h2><p>Pictures on the Cameras page, here and on the hub.</p></div></header>
                 <div class="nw-sbody">
                     <label class="nw-tgl"><input id="setup-camera-pictures" type="checkbox" data-track><b>Camera pictures</b><span>Shows a current picture of every camera that has a saved login, or that is on a recorder with a saved login. Pictures are kept in memory; one small picture per camera is saved on this Pi so a camera that is off still shows what it looks at. Every picture needs this Pi's password or the hub. Switching this off also deletes the saved pictures.</span></label>
+                    <label class="nw-tgl"><input id="setup-camera-manage" type="checkbox" data-track><b>Camera settings</b><span>Lets the camera page change picture, text on video, time and video stream settings on cameras with their own saved login. Each change is read back from the camera, logged in the device's History and can be undone. Time and video changes ask you to confirm first.</span></label>
                     <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
                         <span class="text-sm text-slate-300">Read a new picture from each camera every</span>
                         <input id="setup-camera-refresh" type="number" min="0" max="1440" value="30" class="nw-inp" style="width:5rem;text-align:center" data-track>
@@ -2883,6 +2884,7 @@
             const cam = key && (CAMS.data.cameras || []).find(c => c.key === key);
             if(key && cam){
                 CAMS.one = CamView.camera(host, {group, cam, picUrl: camPicUrl,
+                    apiBase: (_g, c) => '/api/cameras/' + encodeURIComponent(c.key),
                     onBack: () => { location.hash = '#/cameras'; },
                     deviceAction: DEV_BY_KEY[cam.key] ? {label: 'Device details', run: () => openModal(cam.key)} : null});
                 return;
@@ -3710,6 +3712,7 @@
             document.getElementById('setup-switch-manage').checked = !!(c.features && c.features.switch_manage);
             document.getElementById('setup-device-restart').checked = !!(c.features && c.features.device_restart);
             document.getElementById('setup-camera-pictures').checked = !(c.features && c.features.camera_pictures === false);
+            document.getElementById('setup-camera-manage').checked = !!(c.features && c.features.camera_manage);
             document.getElementById('setup-camera-refresh').value = String(((c.camera || {}).refresh_min ?? 30));
             document.getElementById('setup-camera-footage').value = String(((c.camera || {}).footage_days ?? 14));
             document.getElementById('setup-wifi-fix').checked = !!(c.features && c.features.wifi_fix);
@@ -3735,7 +3738,7 @@
         function updateSaveBar(){
             const bar = document.getElementById('save-bar');
             bar.hidden = !SETTINGS_DIRTY.size;
-            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management','setup-device-restart':'device restart','setup-wifi-fix':'Wi-Fi fixes','setup-camera-pictures':'camera pictures','setup-camera-refresh':'camera pictures','setup-camera-footage':'camera health'};
+            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management','setup-device-restart':'device restart','setup-wifi-fix':'Wi-Fi fixes','setup-camera-pictures':'camera pictures','setup-camera-manage':'camera settings','setup-camera-refresh':'camera pictures','setup-camera-footage':'camera health'};
             const what = new Set([...SETTINGS_DIRTY].map(id => Object.entries(names).find(([k]) => id.startsWith(k)) ).filter(Boolean).map(x => x[1]));
             document.getElementById('save-bar-what').textContent = [...what].join(', ');
         }
@@ -4256,6 +4259,7 @@
             'monitoring':{icon:'🔔', label:'Monitoring changed', cls:'text-cyan-300 bg-cyan-500/15'},
             'restart':  {icon:'⟳', label:'Restarted',          cls:'text-violet-300 bg-violet-500/15'},
             'wifi_fix': {icon:'📡', label:'Wi-Fi fix',          cls:'text-amber-300 bg-amber-500/15'},
+            'camera_setting': {icon:'📷', label:'Camera setting', cls:'text-amber-300 bg-amber-500/15'},
             'rogue_dhcp':     {icon:'🚨', label:'Rogue DHCP server', cls:'text-rose-300 bg-rose-500/15'},
             'rogue_dhcp_gone':{icon:'✅', label:'Rogue DHCP gone',   cls:'text-emerald-300 bg-emerald-500/15'},
         };
@@ -4312,6 +4316,13 @@
                 bits.push(RESTART_SAID[d.restart] || d.restart || '');
                 if(d.method) bits.push('over '+d.method);
                 if(d.seconds_down) bits.push('offline '+d.seconds_down+'s');
+            }
+            if(e.type==='camera_setting'){
+                bits.push((d.camera_setting || '') + (d.undo_of ? ' (undo)' : ''));
+                if(d.changes) bits.push(d.changes);
+                if(d.who) bits.push('by ' + d.who);
+                if(d.result && d.result !== 'ok') bits.push(d.result === 'partial' ? 'not every change kept' : 'not done');
+                if(d.error) bits.push(d.error);
             }
             if(e.type==='wifi_fix'){
                 bits.push(({applied:'applied and saved', reverted:'undone by the radio — peers did not come back', refused:'not done'})[d.result] || d.result || '');
@@ -4733,6 +4744,7 @@
                 device_restart: document.getElementById('setup-device-restart').checked,
                 wifi_fix: document.getElementById('setup-wifi-fix').checked,
                 camera_pictures: document.getElementById('setup-camera-pictures').checked,
+                camera_manage: document.getElementById('setup-camera-manage').checked,
                 camera_refresh_min: Math.max(0, Math.min(1440, parseInt(document.getElementById('setup-camera-refresh').value, 10) || 0)),
                 camera_footage_days: Math.max(1, Math.min(365, parseInt(document.getElementById('setup-camera-footage').value, 10) || 14)),
                 watchdog: document.getElementById('setup-watchdog').checked,

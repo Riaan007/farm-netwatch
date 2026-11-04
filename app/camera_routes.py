@@ -54,3 +54,64 @@ def api_cameras_refresh():
     """Read every camera's picture again now, in the background, one at a time."""
     engine.refresh_now()
     return jsonify({"ok": True, "started": True})
+
+
+# ---- settings (hiksettings.py, Phase 3) -----------------------------------------------
+import hiksettings  # noqa: E402
+
+settings = hiksettings.settings
+
+
+def _who():
+    """Who made a change: the hub (with the hub user it names, trusted only with the
+    hub key) or someone logged in on the site page."""
+    if siteauth.hub_ok(request):
+        u = (request.headers.get("X-Netwatch-Hub-User") or "").strip()[:60]
+        return "hub" + (f": {u}" if u else "")
+    return "site page"
+
+
+def _err(e):
+    return jsonify({"ok": False, "error": str(e), **e.extra}), e.status
+
+
+@bp.route("/api/cameras/<path:key>/settings", methods=["GET", "POST"])
+@guard
+def api_camera_settings(key):
+    """GET ?lens=1: the camera's picture, text-on-video, time and stream settings,
+    with what each may be set to (from the camera's own capabilities).
+    POST {lens, section, changes: {field: value}, expect: {field: value seen}, confirm}:
+    change them — needs the site's "Camera settings" switch; careful sections need
+    confirm; the camera is read back to prove the change took."""
+    try:
+        if request.method == "GET":
+            return jsonify(settings.read(key, int(request.args.get("lens") or 1)))
+        b = request.get_json(force=True, silent=True) or {}
+        return jsonify(settings.apply(key, int(b.get("lens") or 1), str(b.get("section") or ""),
+                                      b.get("changes") if isinstance(b.get("changes"), dict) else {},
+                                      who=_who(), expect=b.get("expect") if isinstance(b.get("expect"), dict) else {},
+                                      confirm=b.get("confirm") is True))
+    except ValueError:
+        return jsonify({"ok": False, "error": "lens must be a number"}), 400
+    except hiksettings.SettingsError as e:
+        return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/changes")
+@guard
+def api_camera_changes(key):
+    """This camera's settings changes, newest first (before → after, who, Undo state)."""
+    return jsonify({"ok": True, "changes": settings.changes(key)})
+
+
+@bp.route("/api/cameras/<path:key>/changes/<cid>/undo", methods=["POST"])
+@guard
+def api_camera_change_undo(key, cid):
+    """Put back what one change replaced — only if the camera still shows that change."""
+    b = request.get_json(force=True, silent=True) or {}
+    if b.get("confirm") is not True:
+        return jsonify({"ok": False, "error": "confirm the undo first", "needs_confirm": True}), 400
+    try:
+        return jsonify(settings.undo(key, cid, who=_who()))
+    except hiksettings.SettingsError as e:
+        return _err(e)

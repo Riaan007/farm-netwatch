@@ -64,6 +64,11 @@ class Device:
         self.chan_base = 0
         self.channels = channels             # [{id, name, ip, online}] -> an NVR
         self.picture_body = None             # bytes to send instead of a JPEG (tests a bad answer)
+        # settings (hiksettings): {ISAPI path: xml text}, served and replaced by PUT when set
+        self.settings = None
+        self.put_status = {}                 # path -> (http status, statusCode) to answer a PUT with
+        self.not_kept = set()                # paths whose PUT is answered OK but changes nothing
+        self.puts = []                       # (path, body) of every accepted PUT
         self.hits = []                       # (method, path, sent a login?)
         self.nonce = secrets.token_hex(8)
         self.srv = None
@@ -80,6 +85,11 @@ class Device:
                 dev._handle(self)
 
             def do_POST(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                self.body = self.rfile.read(n) if n else b""
+                dev._handle(self)
+
+            def do_PUT(self):
                 n = int(self.headers.get("Content-Length") or 0)
                 self.body = self.rfile.read(n) if n else b""
                 dev._handle(self)
@@ -166,6 +176,40 @@ class Device:
             return self._send(req, 200, f"<CMSearchResult><responseStatusStrg>MORE</responseStatusStrg><numOfMatches>1</numOfMatches><matchList><searchMatchItem><timeSpan><startTime>{st}</startTime><endTime>{st}</endTime></timeSpan></searchMatchItem></matchList></CMSearchResult>")
         return None
 
+    def _setting(self, req, path):
+        import xml.etree.ElementTree as _ET
+        if req.command == "GET":
+            return self._send(req, 200, self.settings[path])
+        if req.command != "PUT":
+            return self._send(req, 405, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
+        body = getattr(req, "body", b"").decode()
+        ok_xml = "ns0:" not in body
+        try:
+            new_root, old_root = _ET.fromstring(body), _ET.fromstring(self.settings[path].encode())
+            ok_xml = ok_xml and new_root.tag == old_root.tag
+        except _ET.ParseError:
+            ok_xml = False
+        if not ok_xml:
+            return self._send(req, 400, "<ResponseStatus><statusCode>6</statusCode><subStatusCode>badXmlFormat</subStatusCode></ResponseStatus>")
+        http, code = self.put_status.get(path, (200, 1))
+        if http != 200 or code not in (1, 7):
+            return self._send(req, http, f"<ResponseStatus><statusCode>{code}</statusCode><subStatusCode>invalidContent</subStatusCode></ResponseStatus>")
+        self.puts.append((path, body))
+        if path not in self.not_kept:
+            self.settings[path] = body
+        return self._send(req, 200, f"<ResponseStatus><statusCode>{code}</statusCode><statusString>OK</statusString></ResponseStatus>")
+
+    def load_settings(self, folder):
+        """Serve the saved real setting documents (tests/fixtures/hik_settings)."""
+        import os as _os
+        self.settings = {}
+        for fn in _os.listdir(folder):
+            path = "/ISAPI/" + fn[:-4].replace("_capabilities", "/capabilities").replace("_", "/")
+            path = path.replace("time/ntpServers", "time/ntpServers")
+            with open(_os.path.join(folder, fn)) as f:
+                self.settings[path] = f.read()
+        return self
+
     def _handle(self, req):
         u = urlparse(req.path)
         self.hits.append((req.command, req.path, bool(req.headers.get("Authorization"))))
@@ -176,6 +220,8 @@ class Device:
                               extra={"WWW-Authenticate": chal})
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         path = u.path
+        if self.settings is not None and path in self.settings:
+            return self._setting(req, path)
         hit = self._health(req, path, q)
         if hit is not None:
             return hit

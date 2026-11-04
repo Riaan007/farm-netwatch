@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NTPServerList version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<NTPServer>
+<id>1</id>
+<addressingFormatType opt="ipaddress,hostname">hostname</addressingFormatType>
+<hostName>time.windows.com</hostName>
+<portNo min="1" max="65535">123</portNo>
+<synchronizeInterval min="1" max="10080">1440</synchronizeInterval>
+</NTPServer>
+</NTPServerList>

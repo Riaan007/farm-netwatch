@@ -321,6 +321,8 @@ def api_setup():
         feats["wifi_fix"] = bool(body["wifi_fix"])
     if "camera_pictures" in body:
         feats["camera_pictures"] = bool(body["camera_pictures"])
+    if "camera_manage" in body:
+        feats["camera_manage"] = bool(body["camera_manage"])
     if feats:
         patch["features"] = feats
     if "camera_refresh_min" in body:
@@ -1187,6 +1189,21 @@ def _restart_target(key):
     if gate and not config.load().get("features", {}).get(gate):
         return dev, method, "gate", f"turn on \u201c{method['gate_label']}\u201d in this site's Settings first"
     return dev, method, "", ""
+
+
+def _camera_setting_audit(dev, entry):
+    """Every camera setting change lands in the device's History (hiksettings.py)."""
+    detail = {"camera_setting": entry.get("section_label"), "who": entry.get("who"),
+              "result": entry.get("result"), "lens": entry.get("lens") if entry.get("lens", 1) > 1 else None,
+              "changes": ", ".join(f"{r['label']} {r['shown_before']}→{r['shown_after']}" + ("" if r.get("kept") else " (not kept)")
+                                   for r in entry.get("fields") or [])[:400],
+              "undo_of": entry.get("undo_of")}
+    if entry.get("error"):
+        detail["error"] = str(entry["error"])[:200]
+    try:
+        history.log_events([history.build_event("camera_setting", dev, detail)])
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _restart_audit(dev, job):
@@ -2657,6 +2674,7 @@ def main():
     campics.engine.start(scanner.get_devices, lambda: scanner.registry, scanner.nvr_lists,
                          lambda: set(dict(scanner.mac_multi_ip)), config.load)
     hikhealth.health.start(campics.engine, config.load)
+    camera_routes.settings.start(campics.engine, config.load, on_change=_camera_setting_audit)
     publicip.start()               # this site's public IP, every 15 min
     port = int(os.environ.get("NETWATCH_PORT", "8090"))
     app.run(host="0.0.0.0", port=port, threaded=True)

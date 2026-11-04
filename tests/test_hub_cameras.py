@@ -74,6 +74,20 @@ class FakeSite(BaseHTTPRequestHandler):
         return self._send(404, b"nope", "text/html")
 
 
+def _post(self):
+    n = int(self.headers.get("Content-Length") or 0)
+    body = json.loads(self.rfile.read(n) or b"{}")
+    FakeSite.calls.append((self.path, self.headers.get(siteapi.HEADER), body))
+    if FakeSite.mode == "legacy":
+        return self._send(405, b"<html>Method Not Allowed</html>", "text/html")
+    if FakeSite.mode == "refuse":
+        return self._send(403, {"ok": False, "error": "Camera settings are turned off for this site"})
+    return self._send(200, {"ok": True, "echo": body})
+
+
+FakeSite.do_POST = _post
+
+
 def _free_port():
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -141,6 +155,28 @@ class HubCameras(unittest.TestCase):
         FakeSite.mode = "legacy"
         self.assertEqual(self.c.get("/api/hub/sites/farm/cameras").status_code, 501)
         self.assertEqual(self.c.get("/api/hub/sites/farm/cameras/aa:01/picture").status_code, 501)
+
+    def test_settings_calls_are_forwarded_with_the_key(self):
+        self.c.get("/api/hub/sites/farm/cameras/aa:01/settings?lens=2")
+        path, key = FakeSite.calls[-1][:2]
+        self.assertTrue(path.startswith("/api/cameras/aa%3A01/settings") and "lens=2" in path, path)
+        self.assertEqual(key, siteapi.headers(hubconfig.get_site("farm"))[siteapi.HEADER])
+        body = {"lens": 1, "section": "picture", "changes": {"img.Color/brightnessLevel": "60"}}
+        r = self.c.post("/api/hub/sites/farm/cameras/aa:01/settings", json=body)
+        self.assertEqual(r.get_json()["echo"], body)
+        r = self.c.post("/api/hub/sites/farm/cameras/aa:01/changes/abc123/undo", json={"confirm": True})
+        self.assertEqual(FakeSite.calls[-1][0], "/api/cameras/aa%3A01/changes/abc123/undo")
+        self.assertEqual(r.get_json()["echo"], {"confirm": True})
+
+    def test_a_site_refusal_passes_through_and_an_old_site_is_told_to_update(self):
+        FakeSite.mode = "refuse"
+        r = self.c.post("/api/hub/sites/farm/cameras/aa:01/settings", json={"section": "picture"})
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("turned off", r.get_json()["error"])
+        FakeSite.mode = "legacy"
+        self.assertEqual(self.c.post("/api/hub/sites/farm/cameras/aa:01/settings", json={}).status_code, 501)
+        anon = server.app.test_client()
+        self.assertEqual(anon.post("/api/hub/sites/farm/cameras/aa:01/settings", json={}).status_code, 401)
 
     def test_an_offline_site_still_shows_its_cameras(self):
         self.c.get("/api/hub/sites/farm/cameras")
