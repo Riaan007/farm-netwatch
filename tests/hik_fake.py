@@ -160,6 +160,8 @@ class Device:
                                 f"</InputProxyChannelStatus>" for c in self.channels)
                 return self._send(req, 200, f"<InputProxyChannelStatusList>{items}</InputProxyChannelStatusList>")
             for c in self.channels:
+                if path == f"/ISAPI/Streaming/channels/{c['id']}02/picture" and c.get("no_sub"):
+                    return self._send(req, 400, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
                 if path == f"/ISAPI/Streaming/channels/{c['id']}02/picture":
                     return self._send(req, 200, jpeg(704, 576, pad=40000), "image/jpeg")
                 if path == f"/ISAPI/Streaming/channels/{c['id']}01/picture":

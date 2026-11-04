@@ -166,6 +166,17 @@ class Pictures(Rig):
         self.assertTrue(any(h[1].startswith("/ISAPI/Streaming/channels/301/picture?") for h in self.nvr.hits))
         self.assertEqual(self.nolog.hits, [], "a camera with no login was contacted directly")
 
+    def test_an_old_nvr_that_refuses_the_small_picture_sends_the_main_one(self):
+        self.nvr.channels[3]["no_sub"] = True              # channel 4 (Pump): 400 on 402/picture
+        p, *_ = self.pic("ch:aa:09:4")
+        self.assertEqual((p.w, p.route), (704, "nvr"))
+        self.assertEqual(self.e._caps["ch:aa:09:4"]["nvr_pic"], "main")
+        time.sleep(campics.FRESH_MIN_S + 0.05)
+        before = len(self.nvr.hits)
+        self.pic("ch:aa:09:4", fresh=True)
+        asked = [h[1] for h in self.nvr.hits[before:] if "/picture" in h[1] and h[2]]
+        self.assertEqual(asked, ["/ISAPI/Streaming/channels/401/picture"], "the remembered main picture was not used directly")
+
     def test_a_refused_camera_login_falls_back_to_the_nvr_and_is_never_tried_again(self):
         creds.set_("aa:01", "admin", "wrong")
         self.e._list = (0, None)

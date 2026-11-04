@@ -578,12 +578,23 @@ class Engine:
         if not ch.isdigit():
             raise BadPicture("the recorder gave this camera no channel number")
         cl = self._client(nvr)
+        main = f"/ISAPI/Streaming/channels/{int(ch)}01/picture"
+        with self._lock:
+            # An old NVR (V4.1.18, Tri-Lectro) answers 400 to the sub-stream picture of
+            # some channels but sends the main one; such a channel is remembered.
+            use_main = self._caps.get(e["key"], {}).get("nvr_pic") == "main"
         with self._nvr_sems[nvr["key"]]:
             if full:     # any size parameter makes an NVR send the main stream
-                r = cl.get(f"/ISAPI/Streaming/channels/{int(ch)}01/picture",
-                           params=_size_params((1920, 1080)), max_bytes=FULL_MAX)
+                r = cl.get(main, params=_size_params((1920, 1080)), max_bytes=FULL_MAX)
+            elif use_main:
+                r = cl.get(main, max_bytes=FULL_MAX)
             else:
                 r = cl.get(f"/ISAPI/Streaming/channels/{int(ch)}02/picture", max_bytes=FULL_MAX)
+                if r.status in (400, 403, 404) or (r.status == 200 and not jpeg_size(r.content)):
+                    r2 = cl.get(main, max_bytes=FULL_MAX)
+                    if r2.status == 200 and jpeg_size(r2.content):
+                        self._set_caps(e["key"], nvr_pic="main")
+                        r = r2
         return self._pic(r, "nvr")
 
     # ---- memory -----------------------------------------------------------------------
