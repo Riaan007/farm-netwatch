@@ -240,9 +240,10 @@ class GenericCam:
 
     def __init__(self, user="Admin", password="pw", auth="digest", qop=True,
                  realm="MegapixelIPCamera", snap_path="/cgi-bin/jpg/image.cgi",
-                 size=(480, 480), onvif=True):
+                 size=(480, 480), onvif=True, snap_broken=False):
         self.user, self.password, self.auth, self.qop = user, password, auth, qop
         self.realm, self.snap_path, self.size, self.onvif = realm, snap_path, size, onvif
+        self.snap_broken = snap_broken       # like the Dynacolor: ONVIF advertises a snapshot URL that 404s
         self.hits = []                       # (method, path, sent a login?)
         self.nonce = secrets.token_hex(8)
         self.srv = None
@@ -352,9 +353,16 @@ class GenericCam:
                     "<trt:GetSnapshotUriResponse><trt:MediaUri>"
                     f"<tt:Uri>http://{self.addr}{self.snap_path}</tt:Uri>"
                     "</trt:MediaUri></trt:GetSnapshotUriResponse>"), "application/soap+xml")
+            if "GetStreamUri" in body:                 # RTSP stream URL (unauth, like the real cam)
+                return self._send(req, 200, self._soap(
+                    "<trt:GetStreamUriResponse><trt:MediaUri>"
+                    f"<tt:Uri>rtsp://{self.addr}/h264</tt:Uri>"
+                    "</trt:MediaUri></trt:GetStreamUriResponse>"), "application/soap+xml")
             return self._send(req, 400, self._soap("<s:Fault/>"), "application/soap+xml")
         if path == self.snap_path and req.command == "GET":
             if not self._authorised(req):
                 return self._send(req, 401, "unauthorized", "text/plain", {"WWW-Authenticate": self._challenge()})
+            if self.snap_broken:               # advertised over ONVIF but the web server 404s it
+                return self._send(req, 404, "<HTML><HEAD><TITLE>Document Error: Not Found</TITLE></HEAD></HTML>", "text/html")
             return self._send(req, 200, jpeg(*self.size, pad=12000), "image/jpeg")
         return self._send(req, 404, "not found", "text/plain")

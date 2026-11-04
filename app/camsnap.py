@@ -81,21 +81,39 @@ def snapshot_uri(ip, username, password, ports=None, registry=None, key=None):
     GetSnapshotUri), or None. Best-effort: any failure means 'use an override or
     give up'. A 401 after we sent the login marks the login refused, so discovery
     never hammers a wrong password (hikisapi's one-try rule)."""
+    return _discover(ip, username, password, ports, registry, key, lambda t:
+                     "<trt:GetSnapshotUri><trt:ProfileToken>%s</trt:ProfileToken>"
+                     "</trt:GetSnapshotUri>" % _xml_escape(t))
+
+
+def stream_uri(ip, username, password, ports=None, registry=None, key=None):
+    """The RTSP URL an ONVIF camera reports (GetProfiles -> GetStreamUri, RTP over
+    RTSP), or None. Same best-effort contract as snapshot_uri — camrtsp uses it
+    when a camera serves no working HTTP snapshot."""
+    return _discover(ip, username, password, ports, registry, key, lambda t:
+                     "<trt:GetStreamUri><trt:StreamSetup><tt:Stream>RTP-Unicast</tt:Stream>"
+                     "<tt:Transport><tt:Protocol>RTSP</tt:Protocol></tt:Transport></trt:StreamSetup>"
+                     "<trt:ProfileToken>%s</trt:ProfileToken></trt:GetStreamUri>" % _xml_escape(t))
+
+
+def _discover(ip, username, password, ports, registry, key, final_inner):
+    """GetCapabilities -> media service, GetProfiles -> first profile token, then
+    final_inner(token) -> the <tt:Uri> it returns, or None. Shared by snapshot_uri
+    and stream_uri; marks the login refused on a 401 seen after we authenticated."""
     username, password = username or "", password or ""
     if key and hikisapi.refused(key, username, password, registry):
         return None
     base = _base(ip, ports)
     session = _session()
-    refused = False
+    refused = [False]
 
     def soap(url, inner):
-        nonlocal refused
         env = _envelope(inner, username, password).encode("utf-8")
         status, content, _h, sent = _request(
             session, "POST", url, username, password, data=env,
             headers={"Content-Type": "application/soap+xml; charset=utf-8"}, max_bytes=1 << 20)
         if status == 401 and sent:
-            refused = True
+            refused[0] = True
         return hikisapi.parse(content) if status == 200 else None
 
     try:
@@ -108,15 +126,12 @@ def snapshot_uri(ip, username, password, ports=None, registry=None, key=None):
         token = _profile_token(profiles)
         if not token:
             return None
-        got = soap(media_url, "<trt:GetSnapshotUri><trt:ProfileToken>"
-                   f"{_xml_escape(token)}</trt:ProfileToken></trt:GetSnapshotUri>")
-        uri = hikisapi.text(got, "Uri")
-        return uri or None
+        return hikisapi.text(soap(media_url, final_inner(token)), "Uri") or None
     except requests.RequestException:
         return None
     finally:
         session.close()
-        if refused and key:
+        if refused[0] and key:
             hikisapi.remember(key, username, password, False)
 
 

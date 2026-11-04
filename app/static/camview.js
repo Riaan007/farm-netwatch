@@ -24,8 +24,8 @@
     nvr_login_refused: "Recorder login refused", nvr_offline: "Recorder offline",
     chan_offline: "Recorder lost it", not_supported: "Not Hikvision", failed: "Last read failed", off: "Pictures off",
   };
-  const ROUTE = { direct: "its own login", "own-generic": "its own login", nvr: "its recorder", saved: "the saved copy", "hub-saved": "the hub's saved copy" };
-  const ownLogin = (r) => r === "direct" || r === "own-generic";   // the camera's own login (ISAPI, or a plain snapshot URL)
+  const ROUTE = { direct: "its own login", "own-generic": "its own login", "own-rtsp": "its RTSP stream", nvr: "its recorder", saved: "the saved copy", "hub-saved": "the hub's saved copy" };
+  const ownLogin = (r) => r === "direct" || r === "own-generic" || r === "own-rtsp";   // the camera's own login (ISAPI, a snapshot URL, or an RTSP frame)
   const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h3l2-3h8l2 3h3v13H3z"/><circle cx="12" cy="13" r="4"/></svg>';
 
   function ago(ts) {

@@ -37,6 +37,7 @@ import os
 import threading
 import time
 
+import camrtsp
 import camsnap
 import config
 import creds
@@ -388,12 +389,17 @@ class Engine:
             caps = dict(self._caps.get(key) or {})
             fail = self._fail.get(key)
         snap = caps.get("snap")
-        override = bool(d and not hik and self._snap_override(d, reg))
+        gen_login = bool(own and not own["refused"] and d and not hik)
+        http_override = bool(gen_login and self._snap_override(d, reg))
+        rtsp_override = bool(gen_login and self._rtsp_override(d, reg))
         own_ok = bool(own and not own["refused"] and hik and d)
-        # A non-Hikvision camera with a login reaches its picture generically: an
-        # ONVIF snapshot URL, or a per-camera override (see _snap_url). snap=="none"
-        # means we asked and the camera offered none.
-        gen_ok = bool(own and not own["refused"] and d and not hik and (override or snap != "none"))
+        # A non-Hikvision camera with a login reaches its picture generically — an
+        # ONVIF snapshot URL (or an override), see _snap_url. snap=="none" means we
+        # asked and the camera offered none; http=="bad" means the URL it gave does
+        # not actually return a picture (the Dynacolor's 404s), so fall to RTSP.
+        gen_ok = bool(gen_login and caps.get("http") != "bad" and (http_override or snap != "none"))
+        # Last resort for such a camera: one frame off its RTSP stream (needs ffmpeg).
+        rtsp_ok = bool(gen_login and camrtsp.available() and (rtsp_override or caps.get("rtsp") != "none"))
         via_ok = bool(nvr and nlg and not nlg["refused"] and nvr.get("online") and chan.get("online") is not False)
         if own_ok and caps.get("thumb") == "none" and via_ok:
             route = "nvr"                     # this firmware can't send small pictures
@@ -401,6 +407,8 @@ class Engine:
             route = "direct"
         elif gen_ok:
             route = "own-generic"             # not Hikvision: fetch its own snapshot URL
+        elif rtsp_ok:
+            route = "own-rtsp"                # no working HTTP snapshot: one RTSP frame
         elif via_ok:
             route = "nvr"
         else:
@@ -439,7 +447,7 @@ class Engine:
              "picture": self._pic_meta(key), "views": views if n_views > 1 else []}
         e["_d"], e["_nvr"], e["_chan"] = d, nvr, chan
         e["_vchans"] = {i: sibs[i - 1] for i in range(1, len(sibs) + 1)}
-        e["_own_ok"], e["_via_ok"] = own_ok, via_ok
+        e["_own_ok"], e["_via_ok"], e["_rtsp_ok"] = own_ok, via_ok, rtsp_ok
         return e
 
     @staticmethod
@@ -541,9 +549,14 @@ class Engine:
             order.append("nvr")
         elif e["route"] == "nvr" and e["_own_ok"]:
             order.append("direct")
-        elif e["route"] == "own-generic" and nvr_ok:
-            order.append("nvr")               # an NVR usually 403s a non-Hik channel, but try
-        if view > 1 and e["route"] in ("nvr", "own-generic") and not nvr_ok:
+        elif e["route"] == "own-generic":
+            if e["_rtsp_ok"]:
+                order.append("own-rtsp")      # the HTTP snapshot failed: try one RTSP frame
+            if nvr_ok:
+                order.append("nvr")           # an NVR usually 403s a non-Hik channel, but try
+        elif e["route"] == "own-rtsp" and nvr_ok:
+            order.append("nvr")
+        if view > 1 and e["route"] in ("nvr", "own-generic", "own-rtsp") and not nvr_ok:
             order = ["direct"] if e["_own_ok"] else []
         if not order:
             raise BadPicture("no way to this view's picture")
@@ -555,6 +568,8 @@ class Engine:
                         return self._fetch_direct(e, full)
                     if route == "own-generic":
                         return self._fetch_generic(e, full)
+                    if route == "own-rtsp":
+                        return self._fetch_rtsp(e, full)
                     return self._fetch_nvr(e, full)
             except (hikisapi.LoginRefused, hikisapi.Unreachable, hikisapi.TooBig, BadPicture) as ex:
                 last = ex
@@ -641,9 +656,58 @@ class Engine:
         url = self._snap_url(d)
         c = creds.get(d["key"])
         r = camsnap.get(d["key"], url, c["username"], c["password"], registry=self.registry())
+        if r.status != 200 or not jpeg_size(r.content):
+            # The snapshot URL does not actually return a picture (the Dynacolor
+            # advertises one over ONVIF that 404s). Remember, so the camera routes
+            # to its RTSP stream next instead of asking the dud URL again.
+            self._set_caps(d["key"], http="bad")
+            raise BadPicture("the snapshot URL returned HTTP %s, not a picture" % r.status)
         pic = self._pic(r, "own-generic")
         self._set_caps(d["key"], main=(pic.w, pic.h))
         return pic
+
+    def _fetch_rtsp(self, e, full):
+        """One frame off the camera's RTSP stream (camrtsp / ffmpeg), for a
+        non-Hikvision camera with no working HTTP snapshot. Its shape is remembered
+        like _fetch_generic so the tile is drawn right."""
+        d = e["_d"]
+        url = self._rtsp_url(d)
+        c = creds.get(d["key"])
+        r = camrtsp.grab(d["key"], url, c["username"], c["password"], registry=self.registry())
+        pic = self._pic(r, "own-rtsp")
+        self._set_caps(d["key"], main=(pic.w, pic.h))
+        return pic
+
+    def _rtsp_override(self, d, reg):
+        """An operator-set RTSP URL for a camera: registry `rtsp_url`, or config
+        camera.rtsp_urls by device key or IP."""
+        key, ip = d["key"], d.get("ip") or ""
+        r = (reg.get(key) or {}).get("rtsp_url") if reg else None
+        if r:
+            return r
+        urls = ((self.cfg() or {}).get("camera") or {}).get("rtsp_urls") or {}
+        return urls.get(key) or (urls.get(ip) if ip else None)
+
+    def _rtsp_url(self, d):
+        """This camera's RTSP URL: an override, else an ONVIF GetStreamUri found
+        once and remembered (caps["rtsp"] = the URL, or "none")."""
+        key, ip = d["key"], d.get("ip") or ""
+        override = self._rtsp_override(d, self.registry() or {})
+        if override:
+            return override
+        with self._lock:
+            rtsp = (self._caps.get(key) or {}).get("rtsp")
+        if rtsp and rtsp != "none":
+            return rtsp
+        if rtsp == "none":
+            raise BadPicture("no RTSP URL for this camera")
+        c = creds.get(key)
+        uri = camsnap.stream_uri(ip, c["username"], c["password"], d.get("ports"), self.registry(), key)
+        if uri:
+            self._set_caps(key, rtsp=uri)
+            return uri
+        self._set_caps(key, rtsp="none")
+        raise BadPicture("ONVIF offered no RTSP URL for this camera")
 
     @staticmethod
     def _small(r, caps):

@@ -129,6 +129,11 @@ DEFAULTS = {
         # key or IP, e.g. {"192.168.88.16": "/cgi-bin/jpg/image.cgi"}. A path or a
         # full URL. Most ONVIF cameras need no entry here.
         "snapshot_urls": {},
+        # RTSP URL override for the own-rtsp fallback (app/camrtsp.py), for a camera
+        # with no working HTTP snapshot and an RTSP stream ONVIF can't resolve, keyed
+        # by device key or IP, e.g. {"192.168.88.16": "rtsp://192.168.88.16/h264"}.
+        # Needs ffmpeg in the image (Dockerfile INSTALL_FFMPEG=1). Usually empty.
+        "rtsp_urls": {},
     },
     # Switch telemetry (switchmon.py): every EdgeSwitch/UISP switch with a saved
     # login is read over its own API on the LAN — its own thread and cadence,
