@@ -101,18 +101,18 @@ class Client:
     def get(self, path, params=None, max_bytes=8 << 20):
         return self.request("GET", path, params=params, max_bytes=max_bytes)
 
-    def request(self, method, path, params=None, data=None, headers=None, max_bytes=8 << 20):
+    def request(self, method, path, params=None, data=None, headers=None, max_bytes=8 << 20, timeout=None):
         if refused(self.key, self.username, self.password, self.registry):
             raise LoginRefused("this device refused the saved login before; fix the login first")
         try:
-            r = self._send(method, path, params, data, headers)
+            r = self._send(method, path, params, data, headers, timeout)
             if (r.status_code == 401 and not self._basic and not r.request.headers.get("Authorization")
                     and "basic" in r.headers.get("WWW-Authenticate", "").lower()):
                 # The device asked for Basic, so Digest sent no password yet: this is still the first try.
                 r.close()
                 self._basic = True
                 self.session.auth = HTTPBasicAuth(self.username, self.password)
-                r = self._send(method, path, params, data, headers)
+                r = self._send(method, path, params, data, headers, timeout)
             if r.status_code == 401:
                 r.close()
                 if r.request.headers.get("Authorization"):
@@ -126,9 +126,9 @@ class Client:
             raise Unreachable(e.__class__.__name__) from None
         return Reply(r.status_code, body, r.headers)
 
-    def _send(self, method, path, params, data, headers):
+    def _send(self, method, path, params, data, headers, timeout=None):
         return self.session.request(method, self.base + path, params=params, data=data,
-                                    headers=headers, timeout=self.timeout, stream=True)
+                                    headers=headers, timeout=timeout or self.timeout, stream=True)
 
     @staticmethod
     def _read(r, max_bytes):

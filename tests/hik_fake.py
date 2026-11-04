@@ -59,6 +59,8 @@ class Device:
         self.tz, self.clock_offset, self.local_offset = "CST-2:00:00", 0, "+02:00"
         self.pw_default = self.pw_risky = False
         self.oldest = {}
+        self.search_delay = 0                # seconds a footage search takes (old NVRs: long)
+        self.searches = 0
         self.chan_base = 0
         self.channels = channels             # [{id, name, ip, online}] -> an NVR
         self.picture_body = None             # bytes to send instead of a JPEG (tests a bad answer)
@@ -154,6 +156,9 @@ class Device:
             if "isapi.org" not in body or not _re.search(r"<searchID>[0-9A-F-]{36}</searchID>", body):
                 return self._send(req, 400, "<ResponseStatus><subStatusCode>badXmlContent</subStatusCode></ResponseStatus>")
             ch = _re.search(r"<trackID>(\d+)01</trackID>", body).group(1)
+            self.searches += 1
+            if self.search_delay:
+                _time.sleep(self.search_delay)
             t = self.oldest.get(ch, 0)
             if not t:
                 return self._send(req, 200, "<CMSearchResult><responseStatusStrg>NO MATCHES</responseStatusStrg><numOfMatches>0</numOfMatches></CMSearchResult>")

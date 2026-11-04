@@ -113,6 +113,41 @@ class Health(Rig):
         self.assertIn("tz", ids)
         self.assertNotIn("clock", ids)
 
+    def test_wrong_time_zone_plus_a_few_minutes_names_only_the_minutes(self):
+        # Tri-Lectro: China time AND 6 min slow read as "clock 6.1 h slow" + tz.
+        self.cam.tz, self.cam.local_offset, self.cam.clock_offset = "CST-8:00:00", "+08:00", -6 * 3600 - 360
+        self.h.run_once(force=True)
+        hs = {h["id"]: h["text"] for h in self.camh("aa:01")["health"]}
+        self.assertIn("tz", hs)
+        self.assertIn("6 min slow", hs["clock"])
+
+    def test_a_not_recording_channel_is_named_on_the_recorder(self):
+        self.nvr.channels[1]["record"] = False
+        self.h.run_once(force=True)
+        rec = [h["text"] for h in self.rec()["health"] if h["id"] == "rec"]
+        self.assertIn("D2 Shed", rec[0])
+
+    def test_a_slow_footage_search_gives_up_and_keeps_the_other_readings(self):
+        # Old NVRs (V4.x) time out on a whole-disk search: the disks, clock and channel
+        # readings must survive, the search stops after SEARCH_GIVE_UP and waits a day.
+        self.nvr.search_delay = 1.0
+        with mock.patch.object(hikhealth, "SEARCH_TIMEOUT", (2, 0.3)):
+            self.h.run_once(force=True)
+        r = self.rec()
+        self.assertEqual(r["disks"][0]["status"], "ok")
+        self.assertIsNotNone(self.camh("aa:01")["recording"])
+        self.assertEqual(self.nvr.searches, hikhealth.SEARCH_GIVE_UP)
+        self.assertIn("aa:09", self.h.footage, "a partial search is saved so it is not retried every 15 min")
+        self.assertTrue(any(h["id"] == "read" and "footage" in h["text"] for h in r["health"]))
+
+    def test_one_reading_timing_out_does_not_lose_the_rest(self):
+        with mock.patch.object(hikhealth, "read_password", side_effect=hikisapi.Unreachable("ReadTimeout")):
+            self.h.run_once(force=True)
+        r = self.rec()
+        self.assertEqual(r["disks"][0]["status"], "ok")
+        self.assertAlmostEqual(self.camh("aa:01")["footage_days"], 20, delta=0.2)
+        self.assertTrue(any(h["id"] == "read" and "pw: ReadTimeout" in h["text"] for h in r["health"]))
+
     def test_a_clock_off_by_minutes_is_flagged(self):
         self.cam.clock_offset = 600
         self.h.run_once(force=True)

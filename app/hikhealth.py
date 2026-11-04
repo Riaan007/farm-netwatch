@@ -38,6 +38,10 @@ FOOTAGE_EVERY = 24 * 3600
 START_DELAY_S = 90
 REALERT_S = 6 * 3600
 CLOCK_WARN_S = 120
+# A footage search over a whole disk can take an old NVR well past the normal 12 s;
+# after this many timeouts in a row the rest of that day's search is left for tomorrow.
+SEARCH_TIMEOUT = (4, 45)
+SEARCH_GIVE_UP = 2
 DISK_OK = {"ok", "idle", "sleep", "sleeping", "standby", "normal"}
 SEARCH_NS = "http://www.isapi.org/ver20/XMLSchema"
 
@@ -154,7 +158,7 @@ def read_oldest(cl, chan):
             "<metadataList><metadataDescriptor>//recordType.meta.std-cgi.com</metadataDescriptor></metadataList>"
             "</CMSearchDescription>")
     r = cl.request("POST", "/ISAPI/ContentMgmt/search", data=body.encode(),
-                   headers={"Content-Type": "application/xml"}, max_bytes=256 << 10)
+                   headers={"Content-Type": "application/xml"}, max_bytes=256 << 10, timeout=SEARCH_TIMEOUT)
     root = hikisapi.parse(r.content) if r.ok else None
     if root is None:
         return None
@@ -208,25 +212,49 @@ class Health:
                 "tz": str(cam.get("time_zone") or "CST-2:00:00")}
 
     # ---- reading -------------------------------------------------------------------
-    def poll_recorder(self, d, chan_ids, footage=False):
+    def poll_recorder(self, d, chan_ids, footage=False, names=None):
+        """Each reading on its own: an old NVR that times out on one question still
+        answers the others. A refused login stops the lot (one-try rule)."""
         cl = self.engine._client(d)
-        st = {"ts": time.time(), "err": ""}
-        try:
-            st["chans"] = read_recording(cl, chan_ids)
-            st["disks"] = read_disks(cl)
-            st["time"] = read_time(cl)
-            st["pw"] = read_password(cl)
-            if footage:
-                old = {}
-                for ch in chan_ids:
-                    if str(ch).isdigit():
-                        old[str(ch)] = read_oldest(cl, ch)
-                        time.sleep(0.2)
-                with self._lock:
-                    self.footage[d["key"]] = {"ts": time.time(), "chans": old}
-                    self._save(FOOTAGE_PATH, self.footage)
-        except (hikisapi.LoginRefused, hikisapi.Unreachable, hikisapi.TooBig) as e:
-            st["err"] = str(e) or e.__class__.__name__
+        st = {"ts": time.time(), "err": "", "names": dict(names or {})}
+        errs = []
+        for k, fn in (("chans", lambda: read_recording(cl, chan_ids)), ("disks", lambda: read_disks(cl)),
+                      ("time", lambda: read_time(cl)), ("pw", lambda: read_password(cl))):
+            try:
+                st[k] = fn()
+            except hikisapi.LoginRefused as e:
+                errs.append(str(e) or "LoginRefused")
+                footage = False
+                break
+            except (hikisapi.Unreachable, hikisapi.TooBig) as e:
+                errs.append(f"{k}: {str(e) or e.__class__.__name__}")
+        if footage:
+            old, fails, missed = {}, 0, 0
+            for ch in chan_ids:
+                if not str(ch).isdigit():
+                    continue
+                if fails >= SEARCH_GIVE_UP:
+                    missed += 1
+                    continue
+                try:
+                    old[str(ch)] = read_oldest(cl, ch)
+                    fails = 0
+                except hikisapi.LoginRefused as e:
+                    errs.append(str(e) or "LoginRefused")
+                    break
+                except (hikisapi.Unreachable, hikisapi.TooBig) as e:
+                    fails += 1
+                    missed += 1
+                    if fails == 1:
+                        errs.append(f"footage search: {str(e) or e.__class__.__name__}")
+                time.sleep(0.2)
+            if missed:
+                errs.append(f"footage not read for {missed} channel{'s' if missed != 1 else ''}")
+            with self._lock:
+                # Saved even when partial: the next try is tomorrow, not every 15 minutes.
+                self.footage[d["key"]] = {"ts": time.time(), "chans": old}
+                self._save(FOOTAGE_PATH, self.footage)
+        st["err"] = "; ".join(errs)
         with self._lock:
             prev = self.rec.get(d["key"]) or {}
             self.rec[d["key"]] = {**prev, **{k: v for k, v in st.items() if v is not None or k == "err"}}
@@ -258,11 +286,13 @@ class Health:
             if not force and now < self._due.get(("rec", r["key"]), 0):
                 continue
             self._due[("rec", r["key"])] = now + REC_EVERY
-            chans = [c.get("id") for c in ((lists.get(r["key"]) or (0, "", []))[2] or [])]
+            rows = (lists.get(r["key"]) or (0, "", []))[2] or []
+            chans = [c.get("id") for c in rows]
+            names = {str(c.get("id")): c.get("name") or "" for c in rows if c.get("id") is not None}
             fp = (self.footage.get(r["key"]) or {}).get("ts", 0)
             try:
                 with self.engine._sem:
-                    self.poll_recorder(d, chans, footage=force or now - fp >= FOOTAGE_EVERY)
+                    self.poll_recorder(d, chans, footage=force or now - fp >= FOOTAGE_EVERY, names=names)
             except Exception as e:  # noqa: BLE001 - one recorder's trouble must not stop the rest
                 print(f"[camera health] {r['key']}: {e}", flush=True)
         for e in inv["cameras"]:
@@ -294,12 +324,15 @@ class Health:
         out = []
         t = (st or {}).get("time") or {}
         tz_wrong = bool(t.get("tz") and tz and t["tz"].replace(" ", "") != tz.replace(" ", ""))
-        whole_hours = t.get("drift") is not None and min(abs(t["drift"]) % 3600, 3600 - abs(t["drift"]) % 3600) <= CLOCK_WARN_S
-        # A clock that shows the right local time under the wrong time zone is off by whole
-        # hours in real time: that is the time-zone finding, not a second one.
-        if t.get("drift") is not None and abs(t["drift"]) > CLOCK_WARN_S and not (tz_wrong and whole_hours):
+        drift = t.get("drift")
+        if drift is not None and tz_wrong:
+            # Under a wrong time zone a clock that shows the right local time is off by
+            # whole hours in real time — that part IS the time-zone finding. Only what is
+            # left over is the clock's own error.
+            drift -= round(drift / 3600) * 3600
+        if drift is not None and abs(drift) > CLOCK_WARN_S:
             out.append({"id": "clock", "sev": "warn", "short": "Clock wrong",
-                        "text": f"{who} clock is {_mins(t['drift'])} {'fast' if t['drift'] > 0 else 'slow'}",
+                        "text": f"{who} clock is {_mins(drift)} {'fast' if drift > 0 else 'slow'}",
                         "fix": "Set its time server (Phase 3 will do this from Netwatch)."})
         if tz_wrong:
             out.append({"id": "tz", "sev": "warn", "short": "Wrong time zone",
@@ -340,8 +373,11 @@ class Health:
             off = [c for c, v in chans.items() if v["online"] and not v["record"]]
             r["recording_off"] = len(off)
             if off:
+                nm = st.get("names") or {}
+                which = ", ".join(f"D{c}" + (f" {nm[c]}" if nm.get(c) else "") for c in sorted(off, key=lambda x: int(x) if x.isdigit() else 0)[:6])
+                more = f" +{len(off) - 6}" if len(off) > 6 else ""
                 hs.append({"id": "rec", "sev": "crit", "short": "Not recording",
-                           "text": f"{len(off)} connected camera{'s' if len(off) != 1 else ''} not recording",
+                           "text": f"{len(off)} connected camera{'s' if len(off) != 1 else ''} not recording ({which}{more})",
                            "fix": "Check the recording schedule and the disks."})
             fo = (foot.get(r["key"]) or {}).get("chans") or {}
             days = {c: round((now - t) / 86400, 1) for c, t in fo.items() if t}
