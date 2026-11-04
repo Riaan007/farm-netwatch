@@ -539,12 +539,16 @@
         <div class="actions"><button class="btn pri" id="rm-add">${icon("plus")} Add phone or laptop</button></div></div>
         <div class="cols"><div>
           <section class="panel"><div class="phd"><h2>Your devices <small>operator access</small></h2></div><div id="rm-list"></div>
-            <div class="pbd note" style="border-top:1px solid var(--line)">On the router, forward <b>UDP 51820</b> to this hub (${esc(location.hostname)}). These devices can reach every site, the hub and the office LAN.</div></section>
-          <section class="panel"><div class="phd"><h2>Site tunnels</h2></div><div class="twrap"><table class="t"><thead><tr><th>Site</th><th>VPN address</th><th>State</th><th class="num">Latency</th><th class="hide-m">Pi login</th></tr></thead><tbody id="vpn-sites"></tbody></table></div></section>
+            <div class="pbd note" style="border-top:1px solid var(--line)">On the router, forward <b>UDP 51820</b> to this hub (${esc(location.hostname)}).<span id="hub-pub"></span> These devices can reach every site, the hub and the office LAN.</div></section>
+          <section class="panel"><div class="phd"><h2>Site tunnels</h2></div><div class="twrap"><table class="t"><thead><tr><th>Site</th><th>VPN address</th><th>Public IP</th><th>State</th><th class="num">Latency</th><th class="hide-m">Pi login</th></tr></thead><tbody id="vpn-sites"></tbody></table></div></section>
         </div><div>
           <section class="panel"><div class="phd"><h2>${icon("shield")} Client isolation</h2></div><div class="pbd" id="vpn-iso"><div class="skel" style="height:90px"></div></div></section>
         </div></div>`;
       $("#rm-add").onclick = () => this.add();
+      $("#vpn-sites").onclick = (e) => {
+        const b = e.target.closest("[data-pubip]"); if (!b) return;
+        const s = CC.site(b.dataset.pubip); if (s) CC.publicIpInfo(s.name, s.public_ip);
+      };
       $("#rm-list").onclick = async (e) => {
         const b = e.target.closest("button[data-del]"); if (!b) return;
         if (!(await CC.confirm("Remove this device?", `${b.dataset.name} loses VPN access immediately.`, { ok: "Remove", danger: true }))) return;
@@ -561,7 +565,15 @@
       const rm = S.remote;
       $("#rm-list").innerHTML = !rm ? `<div class="pbd"><div class="skel" style="height:60px"></div></div>` : !rm.clients.length ? `<div class="empty"><b>No devices yet</b>Add your phone or laptop to reach the hub from anywhere.</div>` :
         `<ul class="alist">${rm.clients.map((c) => `<li><span class="sev info">${icon("phone", "")}</span><div><div class="t">${esc(c.name)}</div><div class="d mono">${esc(c.address)} · added ${CC.when(c.created)}</div></div><button class="btn sm danger" data-del="${esc(c.id)}" data-name="${esc(c.name)}">Remove</button></li>`).join("")}</ul>`;
-      $("#vpn-sites").innerHTML = S.sites.map((s) => `<tr style="cursor:default"><td class="nm">${esc(s.name)}</td><td class="mono">${esc(s.vpn_ip)}${/^10\.8\./.test(s.vpn_ip) ? "" : ` <span class="note">(LAN)</span>`}</td><td>${s.reachable ? `<span class="b ok">Connected</span>` : `<span class="b bad">Unreachable</span>`}</td><td class="num mono">${s.latency_ms != null ? Math.round(s.latency_ms) + " ms" : "—"}</td>
+      const hp = S.hubPublicIp;
+      $("#hub-pub").innerHTML = hp && hp.ip ? ` Its public IP is <b class="mono">${esc(hp.ip)}</b>${hp.live ? "" : ` (last checked ${CC.ago(hp.seen)})`}.` : "";
+      // A site's public IP: its tunnel's source address (the hub's own for the LAN site).
+      const pubCell = (s) => {
+        const p = s.public_ip;
+        if (!p || !p.ip) return `<span class="note">—</span>`;
+        return `<button class="pubip${p.live ? "" : " old"}" data-pubip="${esc(s.id)}" title="Details and Copy"><span class="mono">${esc(p.ip)}</span></button><div class="note">${esc(CC.pubIpNote(p))}${p.source === "hub" ? " · hub's line" : ""}</div>`;
+      };
+      $("#vpn-sites").innerHTML = S.sites.map((s) => `<tr style="cursor:default"><td class="nm">${esc(s.name)}</td><td class="mono">${esc(s.vpn_ip)}${/^10\.8\./.test(s.vpn_ip) ? "" : ` <span class="note">(LAN)</span>`}</td><td>${pubCell(s)}</td><td>${s.reachable ? `<span class="b ok">Connected</span>` : `<span class="b bad">Unreachable</span>`}</td><td class="num mono">${s.latency_ms != null ? Math.round(s.latency_ms) + " ms" : "—"}</td>
         <td class="hide-m">${{ ok: `<span class="b ok">Protected</span>`, claimed: `<span class="b ok">Protected</span>`, mismatch: `<span class="b bad">Key mismatch</span>`, refused: `<span class="b warn">Not claimed</span>`, legacy: `<span class="b warn">Old image</span>` }[s.api_auth] || `<span class="note">—</span>`}</td></tr>`).join("");
       const iso = S.vpn;
       if (iso) {

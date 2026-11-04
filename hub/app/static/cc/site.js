@@ -147,7 +147,7 @@
       const c = CC.siteCounts(s);
       $("#st-head").innerHTML = `<div class="ph"><div style="min-width:0"><div class="eyebrow">Site</div>
           <h1 style="display:flex;align-items:center;gap:10px"><i class="dot ${CC.STATE[CC.siteState(s)].dot}"></i>${esc(s.name)}</h1>
-          <p class="row" style="gap:8px">${CC.stateBadge(s)} ${netB} <span class="muted">${esc(s.location || "")}</span> <span class="mono dim">${esc(s.vpn_ip)}</span>${s.latency_ms != null ? `<span class="mono dim">${Math.round(s.latency_ms)} ms</span>` : ""}<span class="dim">· ${c.total != null ? `${c.online}/${c.total} online · ` : ""}scan ${CC.ago(s.last_scan_ts)}${s.is_scanning ? " · scanning…" : ""}</span></p></div>
+          <p class="row" style="gap:8px">${CC.stateBadge(s)} ${netB} <span class="muted">${esc(s.location || "")}</span> <span class="mono dim" title="VPN address">${esc(s.vpn_ip)}</span>${s.public_ip && s.public_ip.ip ? `<button class="pubip${s.public_ip.live ? "" : " old"}" data-h="pubip" title="Public IP: ${s.public_ip.live ? "in use now" : "last seen " + CC.ago(s.public_ip.seen)}. Click for details and Copy.">${icon("globe")}<span class="mono">${esc(s.public_ip.ip)}</span></button>` : ""}${s.latency_ms != null ? `<span class="mono dim">${Math.round(s.latency_ms)} ms</span>` : ""}<span class="dim">· ${c.total != null ? `${c.online}/${c.total} online · ` : ""}scan ${CC.ago(s.last_scan_ts)}${s.is_scanning ? " · scanning…" : ""}</span></p></div>
         <div class="actions">
           <button class="btn" data-h="poll" title="Ask the site for fresh data now">${icon("refresh")} Refresh</button>
           <button class="btn" data-h="ssh" title="SSH to the site's Pi over the VPN">${icon("term")} SSH Pi</button>
@@ -165,6 +165,7 @@
         if (h === "report") aiReport(s, b);
         if (h === "wifi") wifiDoctor(s);
         if (h === "pw") piPassword(s);
+        if (h === "pubip") CC.publicIpInfo(s.name, s.public_ip);
       }));
     },
     tabs() {

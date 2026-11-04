@@ -53,6 +53,12 @@ a { color: var(--cyan2); text-underline-offset: 3px; }
 .tnum { font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
 .dim { color: var(--dim); }
+/* A site's public IP (site header, VPN page): reads as an address, opens details + Copy. */
+.pubip { display: inline-flex; align-items: center; gap: 5px; margin: 0; padding: 1px 8px; border: 1px solid var(--line2); border-radius: 99px; background: none; color: var(--ink2); cursor: pointer; white-space: nowrap; }
+.pubip:hover, .pubip:focus-visible { border-color: var(--cyan); color: var(--ink); }
+.pubip .ic { width: 14px; height: 14px; vertical-align: 0; color: var(--cyan); }
+.pubip.old { color: var(--dim); border-style: dashed; }
+.pubip.old .ic { color: var(--dim); }
 .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); } .cyan { color: var(--cyan2); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .skip { position: absolute; left: -999px; top: 8px; z-index: 100; background: var(--cyan); color: #04121a; padding: 8px 12px; border-radius: 8px; }

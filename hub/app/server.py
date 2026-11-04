@@ -26,6 +26,7 @@ import conflicts as conflictutil
 import hubconfig
 import notify
 import proxycfg
+import publicip
 import sitehistory
 import siteapi
 import switches
@@ -204,6 +205,9 @@ def _site_card(site):
                        ("ok" if kuma.get("ok") else "off")),
         "links": dict(zip(("netwatch", "kuma"), proxycfg.links(site, _lan_host()))),
         "vpn_ip": site["vpn_ip"],
+        # The site's internet address as the hub sees it (its tunnel's source address;
+        # the hub's own address for the home site) — see publicip.py.
+        "public_ip": publicip.card(site["id"]),
         "spark": sitehistory.series(site["id"], 86400, 48),
         "reach_24h": sitehistory.reachability_pct(site["id"], 86400),
         "pi_health": _pi_health_level(snap),
@@ -318,6 +322,7 @@ def api_overview():
     cfg = hubconfig.load()
     return jsonify({
         "hub_name": cfg["hub"]["name"],
+        "hub_public_ip": publicip.hub_card(),
         "sites": [_site_card(s) for s in cfg["sites"]],
     })
 
@@ -1670,6 +1675,7 @@ def main():
     tunnels.manager.start()                # device-tunnel relay manager
     vpnfw.start()                          # VPN client isolation (re-asserted every 60 s)
     poller.start()
+    publicip.start()                       # each site's public IP, from the tunnels (every 60 s)
     timekeeping.start()                    # activity feeds + draft builder (every 30 s)
     cameras.start(lambda sid: bool(poller.snapshot(sid).get("reachable")))   # saved camera pictures, every 6 h
     port = int(os.environ.get("HUB_PORT", "8091"))

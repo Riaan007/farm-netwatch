@@ -105,6 +105,7 @@
     list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
     pin: "M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21zm0-9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
     print: "M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z",
+    globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z",
   };
   CC.icon = (n, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${P[n] || ""}"/></svg>`;
 
@@ -150,6 +151,25 @@
     }
     if (btn) { const o = btn.textContent; btn.textContent = "Copied"; setTimeout(() => (btn.textContent = o), 1400); }
     else CC.toast("Copied");
+  };
+  /** A site's public IP as the hub sees it: {ip, source: "vpn"|"hub", since, first, seen, live, prev}
+   *  (hub publicip.py). Short state for a table cell, and a details dialog with Copy. */
+  CC.pubIpNote = (p) => !p ? "" : !p.live ? `last seen ${CC.ago(p.seen)}` : p.since ? `since ${CC.ago(p.since).replace(" ago", "")}` : "in use";
+  CC.publicIpInfo = (title, p) => {
+    if (!p || !p.ip) return;
+    const esc = CC.esc;
+    const how = p.source === "hub"
+      ? "This site uses the hub's own internet connection, so it has the hub's public IP (checked every 15 minutes)."
+      : "The address this site's internet connection uses, as the hub sees it on the site's VPN tunnel. It is the router's WAN address, unless the ISP shares one address between customers (carrier NAT); then port forwards on the site's router can't work.";
+    const d = CC.dialog(`<div class="dhd"><div><h2>Public IP</h2><p>${esc(title)}</p></div><button class="btn icon ghost" data-close aria-label="Close">${CC.icon("x")}</button></div>
+      <div class="dbd">
+        <div class="row"><span class="mono" style="font-size:22px;font-weight:650">${esc(p.ip)}</span><button class="btn sm" data-copy>Copy</button></div>
+        <div class="row">${p.live ? `<span class="b ok">In use now</span>` : `<span class="b warn">Last seen ${CC.ago(p.seen)}</span>`}<span class="note">${p.since ? `Changed to this ${CC.ago(p.since)} (${esc(CC.when(p.since))})` : `Unchanged since the hub started watching (${esc(CC.when(p.first))})`}</span></div>
+        <p class="note" style="margin:0">${how}</p>
+        ${(p.prev || []).length ? `<div><div class="note" style="margin-bottom:6px">Earlier addresses</div><dl class="kv">${p.prev.map((x) => `<dt class="mono">${esc(x.ip)}</dt><dd>${x.from_known ? `${esc(CC.when(x.from))} – ` : "until "}${esc(CC.when(x.to))}</dd>`).join("")}</dl></div>` : ""}
+        <div class="row" style="justify-content:flex-end"><button class="btn pri" data-close>Done</button></div>
+      </div>`);
+    d.querySelector("[data-copy]").onclick = (e) => CC.copy(p.ip, e.currentTarget);
   };
   CC.busy = async (btn, fn) => {
     if (btn) { btn.disabled = true; btn.classList.add("busy"); }
@@ -448,6 +468,7 @@
       const ov = await CC.api("/api/hub/overview");
       S.hubName = ov.hub_name || "Netwatch Hub";
       S.sites = ov.sites || [];
+      S.hubPublicIp = ov.hub_public_ip || null;
       S.error = ""; S.updated = CC.now(); S.loaded = true;
       emit();
       const due = (map, id, ttl) => deep || !map[id] || CC.now() - (map[id].__at || 0) > ttl;
