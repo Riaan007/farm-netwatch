@@ -374,6 +374,37 @@ class Generic(Rig):
         self.pic("cam:gen")
         self.assertNotIn("'pw'", repr(self.e.listing()))
 
+    def test_falls_back_to_an_rtsp_frame_when_the_http_snapshot_is_broken(self):
+        import camrtsp
+        self.gcam.snap_broken = True                 # ONVIF advertises a snapshot URL that 404s
+        av, grab = camrtsp.available, camrtsp.grab
+        frame = __import__("hik_fake").jpeg(2048, 2048, pad=4000)
+        camrtsp.available = lambda: True             # pretend the image was built with ffmpeg
+        camrtsp.grab = lambda key, url, u, p, **k: hikisapi.Reply(200, frame, {})
+        try:
+            self._override()                         # the (dud) HTTP snapshot override
+            p, flags, err, st = self.pic("cam:gen")
+            self.assertEqual(st, 200)
+            self.assertEqual((p.w, p.h, p.route), (2048, 2048, "own-rtsp"))
+            self.assertEqual(self.e._caps["cam:gen"]["http"], "bad")      # HTTP snapshot ruled out
+            self.assertEqual(self.cams()["cam:gen"]["route"], "own-rtsp")  # now routed to RTSP
+            self.assertEqual(self.cams()["cam:gen"]["aspect"], 1.0)        # square fisheye
+        finally:
+            camrtsp.available, camrtsp.grab = av, grab
+
+    def test_no_rtsp_fallback_without_ffmpeg(self):
+        import camrtsp
+        self.gcam.snap_broken = True
+        av = camrtsp.available
+        camrtsp.available = lambda: False            # image without ffmpeg
+        try:
+            self._override()
+            p, flags, err, st = self.pic("cam:gen")
+            self.assertIsNone(p)                      # HTTP 404s, no RTSP route -> no picture
+            self.assertEqual(self.cams()["cam:gen"]["route"], None)
+        finally:
+            camrtsp.available = av
+
 
 class Jpeg(unittest.TestCase):
     def test_size_from_the_frame_header(self):

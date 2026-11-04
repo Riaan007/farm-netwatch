@@ -90,9 +90,14 @@ class Onvif(unittest.TestCase):
         uri = camsnap.snapshot_uri(self.cam.addr, "Admin", "pw", key="c1")
         self.assertEqual(camsnap.get("c1", uri, "Admin", "pw").status, 200)
 
+    def test_discovers_the_rtsp_stream_uri(self):
+        uri = camsnap.stream_uri(self.cam.addr, "Admin", "pw", key="c1")
+        self.assertEqual(uri, f"rtsp://{self.cam.addr}/h264")
+
     def test_a_camera_without_onvif_gives_none(self):
         self.cam.onvif = False
         self.assertIsNone(camsnap.snapshot_uri(self.cam.addr, "Admin", "pw", key="c1"))
+        self.assertIsNone(camsnap.stream_uri(self.cam.addr, "Admin", "pw", key="c1"))
 
     def test_a_wrong_login_during_discovery_is_remembered(self):
         self.assertIsNone(camsnap.snapshot_uri(self.cam.addr, "Admin", "nope", key="c1"))

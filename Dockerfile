@@ -69,6 +69,18 @@ RUN if [ "$INSTALL_NM" = "1" ]; then \
       apt-get update && apt-get install -y --no-install-recommends network-manager \
       && rm -rf /var/lib/apt/lists/*; \
     fi
+
+# OPT-IN: ffmpeg, for the RTSP one-frame snapshot of a non-Hikvision camera whose
+# HTTP snapshot is broken (app/camrtsp.py — e.g. the Dynacolor fisheye, which
+# advertises an ONVIF snapshot URL that 404s). OFF by default so the pulled GHCR
+# images (the farm sites) stay lean; build --build-arg INSTALL_FFMPEG=1 on a site
+# that has such a camera (the home site builds locally). The engine feature-detects
+# ffmpeg (camrtsp.available) and only offers the own-rtsp route when it is present.
+ARG INSTALL_FFMPEG=0
+RUN if [ "$INSTALL_FFMPEG" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
