@@ -20,7 +20,7 @@ sys.path.insert(0, os.environ.get("NETWATCH_APP", "/app"))
 import campics      # noqa: E402
 import creds        # noqa: E402
 import hikisapi     # noqa: E402
-from hik_fake import Device   # noqa: E402
+from hik_fake import Device, GenericCam   # noqa: E402
 
 HIK = "Hangzhou Hikvision Digital Technology"
 
@@ -300,6 +300,79 @@ class Routes(Rig):
         r = self.c.get("/api/cameras/zz:99/picture", headers=self.key)
         self.assertEqual(r.status_code, 404)
         self.assertEqual(r.get_json()["why"], "unknown")
+
+
+class Generic(Rig):
+    """A non-Hikvision camera (a Dynacolor fisheye): no ISAPI, a plain snapshot
+    URL reached with its own login — found by ONVIF or set per camera."""
+
+    def setUp(self):
+        super().setUp()
+        self.gcam = GenericCam(user="Admin", password="pw", size=(480, 480)).start()
+        self.devs.append({"key": "cam:gen", "ip": self.gcam.addr, "category": "camera",
+                          "vendor": "Dynacolor, Inc.", "model": "Z4SF-D", "online": True,
+                          "ports": [80, 554], "name": "Living Area 360"})
+        creds.set_("cam:gen", "Admin", "pw")
+        self.e._list = (0, None)
+
+    def tearDown(self):
+        self.gcam.stop()
+        super().tearDown()
+
+    def _override(self):
+        self.cfg["camera"]["snapshot_urls"] = {self.gcam.addr: "/cgi-bin/jpg/image.cgi"}
+        self.e._list = (0, None)
+
+    def test_a_non_hik_camera_gets_its_own_generic_route(self):
+        self._override()
+        self.assertEqual(self.cams()["cam:gen"]["route"], "own-generic")
+        p, flags, err, st = self.pic("cam:gen")
+        self.assertEqual(st, 200)
+        self.assertEqual((p.w, p.h, p.route), (480, 480, "own-generic"))
+        self.assertEqual(self.gcam.logins(), 1)
+        # a square fisheye is drawn in its own shape, not squeezed into 16:9
+        self.assertEqual(self.cams()["cam:gen"]["aspect"], 1.0)
+
+    def test_the_url_is_discovered_over_onvif_without_an_override(self):
+        p, flags, err, st = self.pic("cam:gen")
+        self.assertEqual((st, p.route), (200, "own-generic"))
+        self.assertEqual(self.e._caps["cam:gen"]["snap"], self.gcam.snapshot_url())
+        self.assertTrue(any(h[1] == "/onvif/device_service" for h in self.gcam.hits))
+
+    def test_it_prefers_its_own_snapshot_over_an_nvr_channel(self):
+        self.nvr.channels.append({"id": "7", "name": "360 on NVR", "ip": self.gcam.addr, "online": True})
+        self.e._read_nvrs()
+        self._override()
+        self.assertEqual(self.cams()["cam:gen"]["route"], "own-generic")   # not "nvr"
+        p, *_ = self.pic("cam:gen")
+        self.assertEqual(p.route, "own-generic")
+
+    def test_no_snapshot_url_and_no_onvif_says_not_supported(self):
+        self.gcam.onvif = False
+        p, flags, err, st = self.pic("cam:gen")       # asks ONVIF once, finds none
+        self.assertIsNone(p)
+        c = self.cams()["cam:gen"]
+        self.assertIsNone(c["route"])
+        self.assertEqual(c["why"], "not_supported")
+        self.assertTrue(c["why_text"])
+
+    def test_a_refused_generic_login_is_sent_once(self):
+        creds.set_("cam:gen", "Admin", "wrong")
+        self._override()
+        p, flags, err, st = self.pic("cam:gen")
+        self.assertIsNone(p)
+        self.assertEqual(self.gcam.logins(), 1)
+        for _ in range(3):
+            self.pic("cam:gen", fresh=True)
+            time.sleep(campics.FRESH_MIN_S + 0.05)
+        self.assertEqual(self.gcam.logins(), 1, "a refused generic login reached the camera again")
+        self.e._list = (0, None)
+        self.assertEqual(self.cams()["cam:gen"]["why"], "login_refused")
+
+    def test_the_listing_keeps_no_secret_for_a_generic_camera(self):
+        self._override()
+        self.pic("cam:gen")
+        self.assertNotIn("'pw'", repr(self.e.listing()))
 
 
 class Jpeg(unittest.TestCase):

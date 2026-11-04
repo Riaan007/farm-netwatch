@@ -37,6 +37,7 @@ import os
 import threading
 import time
 
+import camsnap
 import config
 import creds
 import hikisapi
@@ -73,7 +74,7 @@ WHY = {
     "nvr_login_refused": "Its recorder refused the saved login — test or fix the recorder's login",
     "nvr_offline": "Its recorder is offline",
     "chan_offline": "Its recorder says this camera is not connected",
-    "not_supported": "Netwatch reads pictures from Hikvision cameras and recorders only",
+    "not_supported": "Netwatch found no Hikvision ISAPI or ONVIF snapshot for this camera",
     "failed": "The last try to read a picture failed",
     "unknown": "Unknown camera",
 }
@@ -386,12 +387,20 @@ class Engine:
         with self._lock:
             caps = dict(self._caps.get(key) or {})
             fail = self._fail.get(key)
+        snap = caps.get("snap")
+        override = bool(d and not hik and self._snap_override(d, reg))
         own_ok = bool(own and not own["refused"] and hik and d)
+        # A non-Hikvision camera with a login reaches its picture generically: an
+        # ONVIF snapshot URL, or a per-camera override (see _snap_url). snap=="none"
+        # means we asked and the camera offered none.
+        gen_ok = bool(own and not own["refused"] and d and not hik and (override or snap != "none"))
         via_ok = bool(nvr and nlg and not nlg["refused"] and nvr.get("online") and chan.get("online") is not False)
         if own_ok and caps.get("thumb") == "none" and via_ok:
             route = "nvr"                     # this firmware can't send small pictures
         elif own_ok:
             route = "direct"
+        elif gen_ok:
+            route = "own-generic"             # not Hikvision: fetch its own snapshot URL
         elif via_ok:
             route = "nvr"
         else:
@@ -532,7 +541,9 @@ class Engine:
             order.append("nvr")
         elif e["route"] == "nvr" and e["_own_ok"]:
             order.append("direct")
-        if view > 1 and e["route"] == "nvr" and not nvr_ok:
+        elif e["route"] == "own-generic" and nvr_ok:
+            order.append("nvr")               # an NVR usually 403s a non-Hik channel, but try
+        if view > 1 and e["route"] in ("nvr", "own-generic") and not nvr_ok:
             order = ["direct"] if e["_own_ok"] else []
         if not order:
             raise BadPicture("no way to this view's picture")
@@ -540,7 +551,11 @@ class Engine:
         for route in order:
             try:
                 with self._sem:
-                    return self._fetch_direct(e, full) if route == "direct" else self._fetch_nvr(e, full)
+                    if route == "direct":
+                        return self._fetch_direct(e, full)
+                    if route == "own-generic":
+                        return self._fetch_generic(e, full)
+                    return self._fetch_nvr(e, full)
             except (hikisapi.LoginRefused, hikisapi.Unreachable, hikisapi.TooBig, BadPicture) as ex:
                 last = ex
         raise last
@@ -548,6 +563,38 @@ class Engine:
     def _client(self, d):
         c = creds.get(d["key"])
         return hikisapi.Client(d["key"], d.get("ip"), c["username"], c["password"], d.get("ports"), self.registry())
+
+    def _snap_override(self, d, reg):
+        """An operator-set snapshot URL for a non-Hikvision camera: a registry
+        `snapshot_url` on the device, or config camera.snapshot_urls keyed by the
+        device key or its IP. A path ("/cgi-bin/jpg/image.cgi") or a full URL."""
+        key, ip = d["key"], d.get("ip") or ""
+        r = (reg.get(key) or {}).get("snapshot_url") if reg else None
+        if r:
+            return r
+        urls = ((self.cfg() or {}).get("camera") or {}).get("snapshot_urls") or {}
+        return urls.get(key) or (urls.get(ip) if ip else None)
+
+    def _snap_url(self, d):
+        """This camera's snapshot URL: an override, else an ONVIF GetSnapshotUri
+        found once and remembered (caps["snap"] = the URL, or "none")."""
+        key, ip = d["key"], d.get("ip") or ""
+        override = self._snap_override(d, self.registry() or {})
+        if override:
+            return override if "://" in override else f"http://{ip}/{override.lstrip('/')}"
+        with self._lock:
+            snap = (self._caps.get(key) or {}).get("snap")
+        if snap and snap != "none":
+            return snap
+        if snap == "none":
+            raise BadPicture("no snapshot URL for this camera")
+        c = creds.get(key)
+        uri = camsnap.snapshot_uri(ip, c["username"], c["password"], d.get("ports"), self.registry(), key)
+        if uri:
+            self._set_caps(key, snap=uri)
+            return uri
+        self._set_caps(key, snap="none")
+        raise BadPicture("ONVIF offered no snapshot URL for this camera")
 
     @staticmethod
     def _pic(r, route):
@@ -585,6 +632,18 @@ class Engine:
             if r.status == 200 and jpeg_size(r.content) == tuple(want) and len(r.content) <= THUMB_MAX:
                 return self._pic(r, "direct")
         return self._negotiate(cl, d["key"], caps)
+
+    def _fetch_generic(self, e, full):
+        """A non-Hikvision camera's own snapshot URL (camsnap). One size — the
+        camera's own frame — so thumb and full are the same picture; its shape is
+        remembered so the tile is drawn right (an NVR can't give this picture)."""
+        d = e["_d"]
+        url = self._snap_url(d)
+        c = creds.get(d["key"])
+        r = camsnap.get(d["key"], url, c["username"], c["password"], registry=self.registry())
+        pic = self._pic(r, "own-generic")
+        self._set_caps(d["key"], main=(pic.w, pic.h))
+        return pic
 
     @staticmethod
     def _small(r, caps):

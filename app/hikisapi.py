@@ -60,6 +60,13 @@ def _note(key, fp, ok):
         _seen[key] = {"fp": fp, "ok": ok, "ts": time.time()}
 
 
+def remember(key, username, password, ok):
+    """Record the device's latest word on this login — the generic snapshot path
+    (camsnap.py) calls this after its own 401 / success, so a refused login is
+    never sent to the device again, exactly as Client does."""
+    _note(key, creds.fingerprint(username or "", password or ""), bool(ok))
+
+
 def forget(key):
     with _lock:
         _seen.pop(key, None)
