@@ -84,7 +84,8 @@
   function mount(el, opts) {
     const pre = opts.storeKey || "cv";
     const st = {
-      q: "", filt: mem.get(pre + ".filt", "all"), size: mem.get(pre + ".size", "m"),
+      // The filter always starts at All: a remembered one hid cameras without saying so.
+      q: "", filt: "all", size: mem.get(pre + ".size", "m"),
       pics: new Map(), learned: new Map(), keepUntil: 0, dead: false, obs: null, timers: [], nvr: opts.nvr || "",
     };
     el.innerHTML = `<div class="cv">
@@ -115,7 +116,7 @@
     function chips() {
       const all = groups().flatMap((g) => camsOf(g).filter((c) => !st.nvr || (c.nvr && c.nvr.key === st.nvr)));
       const n = { all: all.length, look: all.filter(needsLook).length, nvr: all.filter((c) => c.route === "nvr").length, own: all.filter((c) => c.route === "direct").length };
-      const lbl = { all: "All", look: "Need a look", own: "Own login", nvr: "Through a recorder" };
+      const lbl = { all: "All", look: "Need a look", own: "Picture via own login", nvr: "Picture via recorder" };
       root.querySelector(".cv-chips").innerHTML = Object.keys(lbl).map((k) =>
         `<button type="button" class="cv-chip ${st.filt === k ? "cv-on" : ""}" data-filt="${k}" aria-pressed="${st.filt === k}">${lbl[k]} <span>${n[k]}</span></button>`).join("")
         + (st.nvr ? `<button type="button" class="cv-chip cv-on" data-clear-nvr title="Show every recorder">Recorder only ✕</button>` : "");
@@ -149,8 +150,14 @@
       if (d.enabled === false) return `<section class="cv-group">${head}<p class="cv-msg">Camera pictures are turned off on this site (its Settings → Cameras).</p></section>`;
       const cams = camsOf(g).filter((c) => visible(g, c));
       const recs = (d.recorders || []);
+      // Say when a filter hides cameras, and how many (e.g. a recorder's 19, of which 12 come via it).
+      const scope = camsOf(g).filter((c) => !st.nvr || (c.nvr && c.nvr.key === st.nvr));
+      const rec = st.nvr && recs.find((r) => r.key === st.nvr);
+      const on = [rec ? `recorder ${rec.name}` : "", st.filt !== "all" ? { look: "Need a look", own: "Picture via own login", nvr: "Picture via recorder" }[st.filt] : "", st.q ? `search "${st.q}"` : ""].filter(Boolean);
+      const note = on.length ? `<p class="cv-shown">Showing ${cams.length} of ${st.filt !== "all" || st.q ? scope.length : camsOf(g).length} cameras — ${esc(on.join(" · "))} <button type="button" class="cv-linkb" data-show-all>Show all</button></p>` : "";
       return `<section class="cv-group">${head}
         ${recs.length ? `<div class="cv-recs">${recs.map((r) => recHtml(g, r)).join("")}</div>` : ""}
+        ${note}
         ${cams.length ? `<div class="cv-grid cv-${esc(st.size)}">${cams.map((c) => tileHtml(g, c)).join("")}</div>`
           : `<p class="cv-msg">${camsOf(g).length ? "No camera matches." : "Netwatch has not found any cameras here yet."}</p>`}
       </section>`;
@@ -236,7 +243,8 @@
 
     root.addEventListener("click", (e) => {
       const f = e.target.closest("[data-filt]");
-      if (f) { st.filt = f.dataset.filt; mem.set(pre + ".filt", st.filt); render(); return; }
+      if (f) { st.filt = f.dataset.filt; render(); return; }
+      if (e.target.closest("[data-show-all]")) { st.filt = "all"; st.nvr = ""; st.q = ""; qIn.value = ""; render(); return; }
       if (e.target.closest("[data-clear-nvr]")) { st.nvr = ""; render(); return; }
       const sz = e.target.closest("[data-size]");
       if (sz) { st.size = sz.dataset.size; mem.set(pre + ".size", st.size); render(); return; }
