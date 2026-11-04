@@ -24,7 +24,8 @@
     nvr_login_refused: "Recorder login refused", nvr_offline: "Recorder offline",
     chan_offline: "Recorder lost it", not_supported: "Not Hikvision", failed: "Last read failed", off: "Pictures off",
   };
-  const ROUTE = { direct: "its own login", nvr: "its recorder", saved: "the saved copy", "hub-saved": "the hub's saved copy" };
+  const ROUTE = { direct: "its own login", "own-generic": "its own login", nvr: "its recorder", saved: "the saved copy", "hub-saved": "the hub's saved copy" };
+  const ownLogin = (r) => r === "direct" || r === "own-generic";   // the camera's own login (ISAPI, or a plain snapshot URL)
   const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h3l2-3h8l2 3h3v13H3z"/><circle cx="12" cy="13" r="4"/></svg>';
 
   function ago(ts) {
@@ -73,7 +74,7 @@
     };
   }
 
-  const aspectOf = (c, p, learned) => c.aspect || learned || (p && p.route === "direct" && p.w && p.h ? p.w / p.h : 0) || 16 / 9;
+  const aspectOf = (c, p, learned) => c.aspect || learned || (p && ownLogin(p.route) && p.w && p.h ? p.w / p.h : 0) || 16 / 9;
   // Every tile has the same 16:9 frame; the picture sits inside it in the camera's own shape.
   const TILE = 16 / 9;
   const fitStyle = (a, box = TILE) => (a >= box ? `width:100%;height:${(100 * box / a).toFixed(2)}%` : `height:100%;width:${(100 * a / box).toFixed(2)}%`);
@@ -115,7 +116,7 @@
       if (st.nvr && !(c.nvr && c.nvr.key === st.nvr)) return false;
       if (st.filt === "look" && !needsLook(c)) return false;
       if (st.filt === "nvr" && c.route !== "nvr") return false;
-      if (st.filt === "own" && c.route !== "direct") return false;
+      if (st.filt === "own" && !ownLogin(c.route)) return false;
       if (!st.q) return true;
       const hay = [c.name, c.ip, c.model, c.mac, c.nvr && c.nvr.name, g.title].join(" ").toLowerCase();
       return st.q.split(/\s+/).every((w) => hay.includes(w));
@@ -123,7 +124,7 @@
 
     function chips() {
       const all = groups().flatMap((g) => camsOf(g).filter((c) => !st.nvr || (c.nvr && c.nvr.key === st.nvr)));
-      const n = { all: all.length, look: all.filter(needsLook).length, nvr: all.filter((c) => c.route === "nvr").length, own: all.filter((c) => c.route === "direct").length };
+      const n = { all: all.length, look: all.filter(needsLook).length, nvr: all.filter((c) => c.route === "nvr").length, own: all.filter((c) => ownLogin(c.route)).length };
       const lbl = { all: "All", look: "Need a look", own: "Picture via own login", nvr: "Picture via recorder" };
       root.querySelector(".cv-chips").innerHTML = Object.keys(lbl).map((k) =>
         `<button type="button" class="cv-chip ${st.filt === k ? "cv-on" : ""}" data-filt="${k}" aria-pressed="${st.filt === k}">${lbl[k]} <span>${n[k]}</span></button>`).join("")
@@ -254,7 +255,7 @@
           const t = body.querySelector(`.cv-tile[data-k="${CSS.escape(tk)}"]`);
           if (t) {
             const fit = t.querySelector(`.cv-fit[data-v="${n}"]`), box = TILE / viewsOf(c).length;
-            if (fit && p.w && p.h && (n > 1 || (!c.aspect && p.route === "direct"))) fit.setAttribute("style", fitStyle(p.w / p.h, box));
+            if (fit && p.w && p.h && (n > 1 || (!c.aspect && ownLogin(p.route)))) fit.setAttribute("style", fitStyle(p.w / p.h, box));
             paint(t);
           }
         })
@@ -391,7 +392,7 @@
       st.pics[n] = p;
       const box = boxOf(n), img = box.querySelector("img");
       img.src = p.src; img.hidden = false; box.querySelector(".cv-ph").hidden = true;
-      if (p.w && p.h && (n > 1 || (!c.aspect && (p.route === "direct" || st.full)))) box.style.aspectRatio = (p.w / p.h).toFixed(4);
+      if (p.w && p.h && (n > 1 || (!c.aspect && (ownLogin(p.route) || st.full)))) box.style.aspectRatio = (p.w / p.h).toFixed(4);
       tick();
     }
     function tick() {

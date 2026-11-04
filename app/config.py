@@ -124,6 +124,11 @@ DEFAULTS = {
         # Hikvision writes it the POSIX way round).
         "footage_days": 14,
         "time_zone": "CST-2:00:00",
+        # Non-Hikvision cameras (campics own-generic route, app/camsnap.py): a
+        # snapshot URL for a camera ONVIF discovery can't resolve, keyed by device
+        # key or IP, e.g. {"192.168.88.16": "/cgi-bin/jpg/image.cgi"}. A path or a
+        # full URL. Most ONVIF cameras need no entry here.
+        "snapshot_urls": {},
     },
     # Switch telemetry (switchmon.py): every EdgeSwitch/UISP switch with a saved
     # login is read over its own API on the LAN — its own thread and cadence,
