@@ -69,8 +69,8 @@ class Rig(unittest.TestCase):
     def cams(self):
         return {c["key"]: c for c in self.e.listing()["cameras"]}
 
-    def pic(self, key, size="thumb", fresh=False):
-        p, flags, err, status = self.e.picture(key, size, fresh)
+    def pic(self, key, size="thumb", fresh=False, view=1):
+        p, flags, err, status = self.e.picture(key, size, fresh, view=view)
         return p, flags, err, status
 
 
@@ -92,13 +92,32 @@ class Inventory(Rig):
         self.assertFalse(silo["online"])
         self.assertEqual(silo["why"], "offline")
 
-    def test_a_camera_with_two_views_gets_a_tile_for_each(self):
+    def test_a_2_lens_camera_on_an_nvr_is_one_tile_with_both_views(self):
         c = self.cams()
-        self.assertEqual(c["aa:03"]["nvr"]["channel"], "3")                # the camera itself: its first channel
-        self.assertEqual((c["ch:aa:09:6"]["name"], c["ch:aa:09:6"]["route"]), ("Dam thermal", "nvr"))
-        p, *_ = self.pic("ch:aa:09:6")
+        self.assertNotIn("ch:aa:09:6", c)                                   # no second tile any more
+        self.assertEqual(c["aa:03"]["nvr"]["channel"], "3")
+        self.assertEqual([(v["n"], v["name"]) for v in c["aa:03"]["views"]], [(1, "Dam"), (2, "Dam thermal")])
+        p, *_ = self.pic("aa:03", view=2)
         self.assertEqual(p.route, "nvr")
         self.assertTrue(any(h[1] == "/ISAPI/Streaming/channels/602/picture" for h in self.nvr.hits))
+        self.assertTrue(os.path.exists(campics.Engine._path("aa:03#v2")))     # each lens keeps its own saved picture
+        p, flags, err, st = self.pic("aa:03", view=3)
+        self.assertEqual(st, 404)
+
+    def test_a_2_lens_camera_with_its_own_login_shows_both_inputs(self):
+        cam = Device(inputs=2, main=(2688, 1520), sub=(640, 360), sizes=[(640, 360)]).start()
+        try:
+            self.devs.append({"key": "aa:06", "ip": cam.addr, "category": "camera", "vendor": HIK, "online": True, "ports": [80, 554, 8000]})
+            creds.set_("aa:06", "admin", "pw")
+            self.e._list = (0, None)
+            self.pic("aa:06")                                                # learns its 2 video inputs
+            self.e._list = (0, None)
+            self.assertEqual([v["n"] for v in self.cams()["aa:06"]["views"]], [1, 2])
+            p, *_ = self.pic("aa:06", view=2)
+            self.assertEqual((p.w, p.h, p.route), (384, 288, "direct"))
+            self.assertTrue(any(h[1] == "/ISAPI/Streaming/channels/202/picture" for h in cam.hits))
+        finally:
+            cam.stop()
 
     def test_recorder_summary(self):
         r = self.e.listing()["recorders"][0]

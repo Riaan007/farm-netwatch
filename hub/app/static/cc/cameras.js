@@ -10,7 +10,7 @@
   const enc = encodeURIComponent;
   const view = () => $("#view");
   const D = (CC.camData = {});        // site id -> { data, at, error }
-  const picUrl = (g, c, o) => `/api/hub/sites/${enc(g.id)}/cameras/${enc(c.key)}/picture?size=${o && o.size === "full" ? "full" : "thumb"}${o && o.fresh ? "&fresh=1" : ""}`;
+  const picUrl = (g, c, o) => `/api/hub/sites/${enc(g.id)}/cameras/${enc(c.key)}/picture?size=${o && o.size === "full" ? "full" : "thumb"}${o && o.fresh ? "&fresh=1" : ""}${o && o.view > 1 ? "&view=" + o.view : ""}`;
 
   async function load(siteId, force) {
     const cur = D[siteId];

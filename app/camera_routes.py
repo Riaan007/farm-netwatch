@@ -27,9 +27,14 @@ def api_cameras():
 def api_camera_picture(key):
     """One camera's picture. ?size=full for the large one (on demand only);
     ?fresh=1 reads a new one now. A camera that is offline (or fails) answers
-    with its last good picture, flagged by X-Picture-Stale."""
+    with its last good picture, flagged by X-Picture-Stale. ?view=2 is a 2-lens
+    camera's second lens."""
     size = "full" if request.args.get("size") == "full" else "thumb"
-    pic, flags, err, status = engine.picture(key, size, request.args.get("fresh") == "1")
+    try:
+        view = int(request.args.get("view") or 1)
+    except ValueError:
+        return jsonify({"ok": False, "error": "view must be a number"}), 400
+    pic, flags, err, status = engine.picture(key, size, request.args.get("fresh") == "1", view=view)
     if pic is None:
         return jsonify({"ok": False, **err}), status
     resp = Response(pic.data, mimetype="image/jpeg")

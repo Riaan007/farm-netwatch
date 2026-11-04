@@ -174,7 +174,8 @@
       const wl = CC.wifiOf(s.id);
       const wn = wl.state === "ok" ? wl.attn + wl.radioIssues.length : 0;
       const swp = CC.switchProblems(s.id).filter((p) => p.level !== "info");
-      const counts = { switches: swp.length ? [swp.length, swp.some((p) => p.level === "crit")] : null, overview: issues.length ? [issues.length, issues.some((i) => i.sev === "bad")] : null, problems: probs ? [probs, !!s.conflicts] : null, devices: S.devices[s.id] ? [S.devices[s.id].length, false] : null, wifi: wn ? [wn, wl.crit.length > 0] : null };
+      const camp = CC.cameraProblems ? CC.cameraProblems(s.id) : [];
+      const counts = { cameras: camp.length ? [camp.length, camp.some((p) => p.sev === "crit")] : null, switches: swp.length ? [swp.length, swp.some((p) => p.level === "crit")] : null, overview: issues.length ? [issues.length, issues.some((i) => i.sev === "bad")] : null, problems: probs ? [probs, !!s.conflicts] : null, devices: S.devices[s.id] ? [S.devices[s.id].length, false] : null, wifi: wn ? [wn, wl.crit.length > 0] : null };
       $("#st-tabs").innerHTML = TABS.map(([k, l]) => {
         const c = counts[k];
         return `<a href="#/site/${enc(s.id)}${k === "overview" ? "" : "/" + k}" class="${this.tab === k ? "on" : ""}">${l}${c ? ` <span class="count ${c[1] ? "" : "quiet"}">${c[0]}</span>` : ""}</a>`;

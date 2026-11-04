@@ -212,19 +212,23 @@ def site_camera_picture(site_id, key):
         return err
     size = "full" if request.args.get("size") == "full" else "thumb"
     fresh = request.args.get("fresh") == "1"
-    mk = (site_id, key, size)
+    view = request.args.get("view", "1")
+    if not view.isdigit() or not 1 <= int(view) <= 9:
+        return jsonify({"ok": False, "error": "view must be 1-9"}), 400
+    vkey = key if view == "1" else f"{key}#v{view}"      # one cache entry / saved copy per lens
+    mk = (site_id, vkey, size)
     with _lock:
         hit = _pics.get(mk)
         if hit:
             _pics.move_to_end(mk)
     if hit and time.time() - hit[0] < (2 if fresh else PIC_TTL[size]):
         return _send(hit[1], hit[2])
-    params = {"size": size, **({"fresh": "1"} if fresh else {})}
+    params = {"size": size, **({"fresh": "1"} if fresh else {}), **({"view": view} if view != "1" else {})}
     try:
         r = requests.get(f"{siteapi.base_url(site)}/api/cameras/{quote(key, safe='')}/picture",
                          params=params, headers=siteapi.headers(site), timeout=(5, 45), stream=True)
     except requests.RequestException as e:
-        return _offline(site_id, key, size, hit, f"the site can't be reached ({e.__class__.__name__})")
+        return _offline(site_id, vkey, size, hit, f"the site can't be reached ({e.__class__.__name__})")
     try:
         ctype = r.headers.get("Content-Type", "")
         if r.status_code == 404 and "json" not in ctype:
@@ -237,7 +241,7 @@ def site_camera_picture(site_id, key):
             except ValueError:
                 body = {"ok": False, "error": f"site answered HTTP {r.status_code}"}
             if r.status_code >= 500 or body.get("why") == "failed":
-                return _offline(site_id, key, size, hit, body.get("error") or "the site could not read the picture",
+                return _offline(site_id, vkey, size, hit, body.get("error") or "the site could not read the picture",
                                 status=r.status_code, body=body)
             return jsonify(body), r.status_code
         data, total = [], 0
@@ -247,7 +251,7 @@ def site_camera_picture(site_id, key):
                 return jsonify({"ok": False, "error": "the picture is too large"}), 502
             data.append(chunk)
     except requests.RequestException as e:
-        return _offline(site_id, key, size, hit, f"the site stopped answering ({e.__class__.__name__})")
+        return _offline(site_id, vkey, size, hit, f"the site stopped answering ({e.__class__.__name__})")
     finally:
         r.close()
     data = b"".join(data)
@@ -258,7 +262,7 @@ def site_camera_picture(site_id, key):
         data, headers = _shrink(data, headers)
     _mem_put(mk, data, headers)
     if size == "thumb":
-        _maybe_save(site_id, key, data, headers)
+        _maybe_save(site_id, vkey, data, headers)
     return _send(data, headers)
 
 
@@ -306,12 +310,16 @@ def _pull_site(site):
     if not (isinstance(listing, dict) and listing.get("enabled") and isinstance(listing.get("cameras"), list)):
         return
     _remember_list(site["id"], listing)
+    jobs = []
     for cam in listing["cameras"]:
-        pic = cam.get("picture") or {}
-        key = cam.get("key")
+        views = cam.get("views") or [{"n": 1, "picture": cam.get("picture")}]
+        for v in views:
+            jobs.append((cam.get("key"), int(v.get("n") or 1), v.get("picture") or {}))
+    for key, view, pic in jobs:
         if not key or not pic.get("ts") or pic.get("route") == "saved":
             continue
-        p = _pic_path(site["id"], key)
+        vkey = key if view == 1 else f"{key}#v{view}"
+        p = _pic_path(site["id"], vkey)
         try:
             if time.time() - os.path.getmtime(p) < PULL_EVERY * 0.9:
                 continue
@@ -319,7 +327,8 @@ def _pull_site(site):
             pass
         try:
             rr = requests.get(f"{siteapi.base_url(site)}/api/cameras/{quote(key, safe='')}/picture",
-                              params={"size": "thumb"}, headers=siteapi.headers(site), timeout=(5, 45))
+                              params={"size": "thumb", **({"view": view} if view > 1 else {})},
+                              headers=siteapi.headers(site), timeout=(5, 45))
         except requests.RequestException:
             return                                     # the site went away: try again next round
         if rr.ok and _is_jpeg(rr.content) and len(rr.content) <= MAX_BYTES and rr.headers.get("X-Picture-Stale") != "1":
@@ -327,7 +336,7 @@ def _pull_site(site):
             try:
                 _write(p, data)
                 with _lock:
-                    _saved_at[(site["id"], key)] = time.time()
+                    _saved_at[(site["id"], vkey)] = time.time()
             except OSError:
                 return
         time.sleep(1.0)

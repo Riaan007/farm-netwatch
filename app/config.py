@@ -116,6 +116,11 @@ DEFAULTS = {
     "camera": {
         "refresh_min": 30,
         "save_hours": 6,
+        # Health (hikhealth.py): fewer days of footage than this is a warning, and a
+        # camera or recorder on another time zone is flagged (South Africa = CST-2:00:00;
+        # Hikvision writes it the POSIX way round).
+        "footage_days": 14,
+        "time_zone": "CST-2:00:00",
     },
     # Switch telemetry (switchmon.py): every EdgeSwitch/UISP switch with a saved
     # login is read over its own API on the LAN — its own thread and cadence,

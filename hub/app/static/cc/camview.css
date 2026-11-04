@@ -105,3 +105,29 @@
 }
 .cv-shown { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(34, 211, 238, .35); background: rgba(34, 211, 238, .07); color: var(--cv-ink2); font-size: 13px; }
 .cv-linkb { margin-left: 6px; border: 0; background: none; padding: 0; color: var(--cv-cyan); font-weight: 650; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+/* 2-lens cameras: the tile's frame split per lens; the camera page shows each lens */
+.cv-duo { position: absolute; inset: 0; display: flex; gap: 2px; }
+.cv-half { position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
+.cv-views { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 700px) { .cv-views.cv-n2, .cv-views.cv-n3, .cv-views.cv-n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cv-view { margin: 0; min-width: 0; }
+.cv-view figcaption { margin-top: 5px; font-size: 12.5px; color: var(--cv-muted); }
+.cv-view figcaption a { color: var(--cv-cyan); }
+/* health (phase 2) */
+.cv-side { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.cv-health { padding: 12px 14px; border: 1px solid var(--cv-line); border-radius: 12px; background: var(--cv-card); }
+.cv-health h3 { margin: 0 0 8px; font-size: 13px; color: var(--cv-muted); font-weight: 650; }
+.cv-health ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.cv-h { display: grid; gap: 2px; padding-left: 10px; border-left: 3px solid var(--cv-dim); font-size: 13px; }
+.cv-h.cv-bad { border-color: var(--cv-bad); } .cv-h.cv-warn { border-color: var(--cv-warn); }
+.cv-h b { color: var(--cv-ink); font-weight: 650; } .cv-h small { color: var(--cv-muted); }
+.cv-badge.cv-dim { color: var(--cv-ink2); background: rgba(148, 163, 184, .12); border-color: rgba(148, 163, 184, .3); }
+.cv-recpanel { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); margin: 0 0 12px; padding: 14px 16px; border: 1px solid rgba(34, 211, 238, .35); border-radius: 12px; background: var(--cv-card); }
+@media (min-width: 900px) { .cv-recpanel { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); } }
+.cv-recpanel h3 { margin: 0 0 10px; font-size: 15px; }
+.cv-hlist { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.cv-recpanel .cv-facts { padding: 0; border: 0; background: none; }
+.cv-disks { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 12.5px; }
+.cv-disks th, .cv-disks td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--cv-line); }
+.cv-disks th { color: var(--cv-muted); font-weight: 600; }
+.cv-rtx small + small { margin-top: 1px; }

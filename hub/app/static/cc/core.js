@@ -238,7 +238,7 @@
     loaded: false, error: "", updated: 0,
     hubName: "", sites: [],            // overview cards
     devices: {}, devicesAt: {},        // site id -> devices[]
-    internet: {}, wifi: {}, wifiLinks: {}, switches: {}, routers: {}, kuma: {}, backups: {}, sysinfo: {},
+    internet: {}, wifi: {}, wifiLinks: {}, switches: {}, routers: {}, kuma: {}, backups: {}, sysinfo: {}, cameras: {},
     vpn: null, remote: null,
     listeners: new Set(),
   });
@@ -290,6 +290,11 @@
     const age = CC.backupAge(s.id);
     if (age === null) add("warn", "No config backup yet", "Take one from the Backups tab", link("backups"));
     else if (age !== undefined && age > 26) add("warn", "Config backup overdue", `Newest backup is ${Math.round(age)} h old`, link("backups"));
+    // Cameras and recorders: the site's camera health (disks, recording, footage, clocks, passwords)
+    const camp = CC.cameraProblems(s.id);
+    if (camp.length)
+      add(camp.some((p) => p.sev === "crit") ? "bad" : "warn", CC.plural(camp.length, "camera issue"),
+        camp.slice(0, 2).map((p) => `${p.name}: ${p.text}`).join(" · "), link("cameras"));
     // Switch ports: faults the site's switch monitor found (port down, PoE lost, speed drop, errors, login…)
     const swp = CC.switchProblems(s.id).filter((p) => p.level !== "info");
     if (swp.length)
@@ -315,6 +320,15 @@
   CC.switchesOf = (id) => (S.switches[id] && S.switches[id].switches) || [];
   /** The site's MikroTik routers — the other half of its managed units. */
   CC.routersOf = (id) => (S.routers[id] && S.routers[id].routers) || [];
+  /** Camera/recorder health findings (crit + warn), recorders first; a camera's recording/footage
+   *  findings are counted once on its recorder. [] until loaded or on an older site. */
+  CC.cameraProblems = (id) => {
+    const d = S.cameras[id];
+    if (!d || !Array.isArray(d.cameras)) return [];
+    const rows = (d.recorders || []).flatMap((r) => (r.health || []).map((h) => ({ ...h, name: r.name })));
+    (d.cameras || []).forEach((c) => (c.health || []).forEach((h) => { if (h.id !== "rec" && h.id !== "footage") rows.push({ ...h, name: c.name }); }));
+    return rows.filter((h) => h.sev === "crit" || h.sev === "warn");
+  };
   CC.switchProblems = (id) => CC.switchesOf(id).flatMap((sw) => (sw.problems || []).map((p) => ({ ...p, sw })));
   CC.siteState = (s) => {
     if (!s.enabled) return "paused";
@@ -452,6 +466,10 @@
         if (s.reachable && due(S.switches, s.id, 120))
           jobs.push(CC.api(`/api/hub/sites/${s.id}/switches`, { timeout: 30000 }).then((j) => { S.switches[s.id] = { ...j, __at: CC.now() }; })
             .catch((e) => { S.switches[s.id] = { ...(S.switches[s.id] || {}), error: e.message, legacy: e.status === 501, __at: CC.now() }; }));
+        // Camera health: the site reads its cameras every 15 min; the hub caches the list.
+        if (s.reachable && due(S.cameras, s.id, 300))
+          jobs.push(CC.api(`/api/hub/sites/${s.id}/cameras`, { timeout: 40000 }).then((j) => { S.cameras[s.id] = { ...j, __at: CC.now() }; })
+            .catch((e) => { S.cameras[s.id] = { ...(S.cameras[s.id] || {}), error: e.message, __at: CC.now() }; }));
         if (s.reachable && due(S.routers, s.id, 120))
           jobs.push(CC.api(`/api/hub/sites/${s.id}/routers`, { timeout: 45000 }).then((j) => { S.routers[s.id] = { ...j, __at: CC.now() }; })
             .catch((e) => { S.routers[s.id] = { ...(S.routers[s.id] || {}), error: e.message, legacy: e.status === 501, __at: CC.now() }; }));

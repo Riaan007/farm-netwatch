@@ -1210,6 +1210,11 @@
                         <span class="text-sm text-slate-300">minutes</span>
                     </div>
                     <p class="nw-help">This happens on the farm network only, one camera at a time. 0 = only when someone opens the Cameras page.</p>
+                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+                        <span class="text-sm text-slate-300">Warn when a recorder keeps fewer than</span>
+                        <input id="setup-camera-footage" type="number" min="1" max="365" value="14" class="nw-inp" style="width:5rem;text-align:center" data-track>
+                        <span class="text-sm text-slate-300">days of footage</span>
+                    </div>
                 </div>
             </section>
 
@@ -1619,6 +1624,7 @@
             wifi_degraded:     {label:'Wi-Fi link',           sev:'high'},
             switch:            {label:'Switch',               sev:'high'},
             rogue_dhcp:        {label:'Rogue DHCP server',    sev:'high'},
+            camera:            {label:'Camera',               sev:'high'},
         };
         const SEV_STYLE = {high:'border-red-500/40 bg-red-500/10 text-red-200',
             medium:'border-amber-400/40 bg-amber-500/10 text-amber-200',
@@ -2819,7 +2825,7 @@
         // the hub's Control Center. Every picture needs the Pi login (auth.js asks once). ----
         const CAMS = { data: null, at: 0, grid: null, one: null, timer: null, gen: 0 };
         function camPicUrl(_g, c, o){
-            return '/api/cameras/' + encodeURIComponent(c.key) + '/picture?size=' + (o && o.size === 'full' ? 'full' : 'thumb') + (o && o.fresh ? '&fresh=1' : '');
+            return '/api/cameras/' + encodeURIComponent(c.key) + '/picture?size=' + (o && o.size === 'full' ? 'full' : 'thumb') + (o && o.fresh ? '&fresh=1' : '') + (o && o.view > 1 ? '&view=' + o.view : '');
         }
         async function loadCamerasData(){
             const r = await fetch('/api/cameras');
@@ -3685,6 +3691,7 @@
             document.getElementById('setup-device-restart').checked = !!(c.features && c.features.device_restart);
             document.getElementById('setup-camera-pictures').checked = !(c.features && c.features.camera_pictures === false);
             document.getElementById('setup-camera-refresh').value = String(((c.camera || {}).refresh_min ?? 30));
+            document.getElementById('setup-camera-footage').value = String(((c.camera || {}).footage_days ?? 14));
             document.getElementById('setup-wifi-fix').checked = !!(c.features && c.features.wifi_fix);
             document.getElementById('setup-watchdog').checked = !!(c.sysmon && c.sysmon.watchdog);
             document.getElementById('kuma-auto-ip').textContent = PI_IP;
@@ -3708,7 +3715,7 @@
         function updateSaveBar(){
             const bar = document.getElementById('save-bar');
             bar.hidden = !SETTINGS_DIRTY.size;
-            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management','setup-device-restart':'device restart','setup-wifi-fix':'Wi-Fi fixes','setup-camera-pictures':'camera pictures','setup-camera-refresh':'camera pictures'};
+            const names = {'set-site':'site','setup-interval':'scanning','setup-network':'main network','setup-discovery':'scanning','setup-deep-on-new':'scanning','setup-ntfy':'alerts','setup-notify-hub':'alerts','setup-allow-commands':'remote commands','setup-kuma':'Kuma','setup-watchdog':'watchdog','setup-airos-setip':'airOS Change IP','setup-mikrotik-manage':'MikroTik management','setup-switch-manage':'switch management','setup-device-restart':'device restart','setup-wifi-fix':'Wi-Fi fixes','setup-camera-pictures':'camera pictures','setup-camera-refresh':'camera pictures','setup-camera-footage':'camera health'};
             const what = new Set([...SETTINGS_DIRTY].map(id => Object.entries(names).find(([k]) => id.startsWith(k)) ).filter(Boolean).map(x => x[1]));
             document.getElementById('save-bar-what').textContent = [...what].join(', ');
         }
@@ -4707,6 +4714,7 @@
                 wifi_fix: document.getElementById('setup-wifi-fix').checked,
                 camera_pictures: document.getElementById('setup-camera-pictures').checked,
                 camera_refresh_min: Math.max(0, Math.min(1440, parseInt(document.getElementById('setup-camera-refresh').value, 10) || 0)),
+                camera_footage_days: Math.max(1, Math.min(365, parseInt(document.getElementById('setup-camera-footage').value, 10) || 14)),
                 watchdog: document.getElementById('setup-watchdog').checked,
                 kuma_base_url: document.getElementById('setup-kuma-url').value,
                 kuma_auto_url: document.getElementById('setup-kuma-auto').checked,

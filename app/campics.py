@@ -61,6 +61,7 @@ START_DELAY_S = 60
 GAP_S = 0.3                    # pause between two cameras in a background round
 SAVED_UNKNOWN_KEEP_S = 30 * 86400
 PARALLEL = 3                   # device requests at once on this Pi
+MAX_VIEWS = 4                  # lenses / video inputs shown per camera
 PER_NVR = 2
 
 WHY = {
@@ -207,6 +208,7 @@ class Engine:
         self._purged = False
         self._started = False
         self._stop = False
+        self.health = None        # hikhealth.Health, set by its start()
         self.devices = lambda: []
         self.registry = lambda: {}
         self.nvr_lists = lambda: {}
@@ -282,8 +284,8 @@ class Engine:
 
         # camera IP -> the best channel for it over every NVR's list. A camera with two
         # views on one address (a thermal + normal camera, a dual-lens one) has two
-        # channels on the same NVR: the first is the camera, the others get tiles of
-        # their own (`extra`). The same camera on a second NVR is not repeated.
+        # channels on the same NVR: they become the VIEWS of one camera (one tile,
+        # both pictures), in channel order. The same camera on a second NVR is not repeated.
         chans, seen = {}, {}
         for nk, (read_at, nvr_ip, cl) in lists.items():
             nd = by_key.get(nk) or {"key": nk, "ip": nvr_ip, "online": True}
@@ -296,11 +298,12 @@ class Engine:
                         _ipnum(nvr_ip), _ipnum(c.get("id")))
                 if c["ip"] not in chans or rank < chans[c["ip"]][0]:
                     chans[c["ip"]] = (rank, nd, c, lg, read_at)
-        extra = []
-        for ip, (rank, nd, best, _lg, _ts) in chans.items():
-            for (nd2, c, lg, read_at) in seen.get((nd["key"], ip), []):
-                if c is not best:
-                    extra.append((None, nd2, c, lg, read_at))
+        sibs = {}                 # camera IP -> its channels on the chosen NVR, first channel first
+        for ip, (rank, nd, best, lg, read_at) in list(chans.items()):
+            mine = sorted((c for (_n, c, _l, _t) in seen.get((nd["key"], ip), [])), key=lambda c: _ipnum(c.get("id")))
+            sibs[ip] = mine
+            if mine and mine[0] is not best:      # view 1 is the camera's first channel
+                chans[ip] = (rank, nd, mine[0], lg, read_at)
 
         cams, covered = [], set()
         for d in devices:
@@ -316,12 +319,10 @@ class Engine:
             hit = chans.get(ip) if ip and not in_multi else None
             if hit:
                 covered.add(ip)
-            cams.append(self._entry(d, hit, login(d["key"]), reg))
+            cams.append(self._entry(d, hit, login(d["key"]), reg, sibs.get(ip) if hit else None))
         for ip, hit in chans.items():
             if ip not in covered:
-                cams.append(self._entry(None, hit, None, reg))
-        for hit in extra:
-            cams.append(self._entry(None, hit, None, reg))
+                cams.append(self._entry(None, hit, None, reg, sibs.get(ip)))
         cams.sort(key=lambda e: (str(e["nvr"]["name"] or "") if e["nvr"] else "~",
                                  _ipnum(e["nvr"]["channel"]) if e["nvr"] else (0,), _ipnum(e["ip"])))
 
@@ -339,9 +340,10 @@ class Engine:
         recs.sort(key=lambda r: _ipnum(r["ip"]))
         return {"cameras": cams, "recorders": recs}
 
-    def _entry(self, d, hit, own, reg):
+    def _entry(self, d, hit, own, reg, sibs=None):
         """One camera: what it is, which way Netwatch reaches its picture, and why
-        not when it can't. `hit` = (rank, nvr device, channel, nvr login, read at)."""
+        not when it can't. `hit` = (rank, nvr device, channel, nvr login, read at);
+        `sibs` = all its channels on that NVR (a 2-lens camera has two)."""
         nvr, chan, nlg = (hit[1], hit[2], hit[3]) if hit else (None, None, None)
         if d:
             key, ip = d["key"], d.get("ip") or ""
@@ -384,6 +386,12 @@ class Engine:
         else:
             why = "no_login"
         main = caps.get("main")
+        # Views: the NVR's channels at this address, or the camera's own video inputs
+        # (read with its own login) — whichever says more. View 1 is the camera itself.
+        sibs = list(sibs or ([chan] if chan else []))
+        n_views = min(MAX_VIEWS, max(len(sibs), int(caps.get("inputs") or 1), 1))
+        views = [{"n": i, "name": (sibs[i - 1].get("name") if i <= len(sibs) else "") or f"Lens {i}",
+                  "picture": self._pic_meta(self.view_key(key, i))} for i in range(1, n_views + 1)]
         e = {"key": key, "kind": "channel" if d is None else "camera", "ip": ip,
              "mac": (d or {}).get("mac") or "", "name": str(name or key)[:80], "model": model, "firmware": firmware,
              "online": online, "last_seen": (d or {}).get("last_seen"), "has_login": own is not None,
@@ -392,10 +400,16 @@ class Engine:
              "aspect": round(main[0] / main[1], 4) if main else None,
              "nvr": {"key": nvr["key"], "name": nvr.get("name") or nvr.get("device_name") or nvr.get("model") or nvr.get("ip"),
                      "ip": nvr.get("ip"), "channel": str(chan.get("id")), "chan_online": chan.get("online")} if nvr else None,
-             "picture": self._pic_meta(key)}
+             "picture": self._pic_meta(key), "views": views if n_views > 1 else []}
         e["_d"], e["_nvr"], e["_chan"] = d, nvr, chan
+        e["_vchans"] = {i: sibs[i - 1] for i in range(1, len(sibs) + 1)}
         e["_own_ok"], e["_via_ok"] = own_ok, via_ok
         return e
+
+    @staticmethod
+    def view_key(key, view):
+        """Cache / saved-picture key of one view: view 1 is the camera's own key."""
+        return key if int(view or 1) <= 1 else f"{key}#v{int(view)}"
 
     def _pic_meta(self, key):
         with self._lock:
@@ -410,9 +424,15 @@ class Engine:
         st = self._settings()
         inv = self.inventory() if st["enabled"] else {"cameras": [], "recorders": []}
         cams = [{k: v for k, v in e.items() if not k.startswith("_")} for e in inv["cameras"]]
+        recs = [dict(r) for r in inv["recorders"]]
+        if self.health is not None and st["enabled"]:
+            try:
+                self.health.annotate(cams, recs)         # phase 2: hikhealth.py
+            except Exception as ex:  # noqa: BLE001 - pictures must not depend on health
+                print(f"[cameras] health annotate failed: {ex}", flush=True)
         return {"ok": True, "enabled": st["enabled"], "refresh_min": st["refresh_min"],
                 "save_hours": st["save_hours"], "ts": int(time.time()),
-                "cameras": cams, "recorders": inv["recorders"],
+                "cameras": cams, "recorders": recs,
                 "counts": {"cameras": len(cams), "reachable": sum(1 for e in cams if e["route"]),
                            "with_picture": sum(1 for e in cams if e["picture"])}}
 
@@ -426,14 +446,23 @@ class Engine:
         return None
 
     # ---- pictures -----------------------------------------------------------------------
-    def picture(self, key, size="thumb", fresh=False):
-        """(Pic, flags, None, 200) or (None, None, {error, why}, status)."""
+    def picture(self, key, size="thumb", fresh=False, view=1):
+        """(Pic, flags, None, 200) or (None, None, {error, why}, status). `view` picks
+        the lens of a camera with several (1 = the camera's main view)."""
         st = self._settings()
         if not st["enabled"]:
             return None, None, {"error": WHY["off"], "why": "off"}, 403
         e = self._find(key)
         if e is None:
             return None, None, {"error": WHY["unknown"], "why": "unknown"}, 404
+        view = int(view or 1)
+        if view != 1 and not 1 <= view <= len(e["views"]):
+            return None, None, {"error": "this camera has no such view", "why": "unknown"}, 404
+        if view != 1:
+            e = dict(e, _view=view)
+        return self._picture(e, self.view_key(key, view), size, fresh, st)
+
+    def _picture(self, e, key, size, fresh, st):
         full = size == "full"
         store, cap = (self._fulls, MEM_FULLS) if full else (self._thumbs, MEM_THUMBS)
         live = bool(e["route"]) and e["online"]
@@ -469,11 +498,17 @@ class Engine:
         return pic, {"stale": False, "why": ""}, None, 200
 
     def _fetch(self, e, full):
+        view = e.get("_view", 1)
+        nvr_ok = e["_via_ok"] and view in e["_vchans"]       # the NVR has a channel for this view
         order = [e["route"]]
-        if e["route"] == "direct" and e["_via_ok"]:
+        if e["route"] == "direct" and nvr_ok:
             order.append("nvr")
         elif e["route"] == "nvr" and e["_own_ok"]:
             order.append("direct")
+        if view > 1 and e["route"] == "nvr" and not nvr_ok:
+            order = ["direct"] if e["_own_ok"] else []
+        if not order:
+            raise BadPicture("no way to this view's picture")
         last = None
         for route in order:
             try:
@@ -500,6 +535,15 @@ class Engine:
         d = e["_d"]
         cl = self._client(d)
         caps = self._caps_for(cl, d["key"])
+        view = e.get("_view", 1)
+        if view > 1:
+            # Another lens (video input n): its sub-stream picture when that is small,
+            # else its main one. A thermal lens is small to begin with.
+            if not full:
+                r = cl.get(f"/ISAPI/Streaming/channels/{view}02/picture", max_bytes=FULL_MAX)
+                if r.status == 200 and jpeg_size(r.content) and len(r.content) <= THUMB_MAX:
+                    return self._pic(r, "direct")
+            return self._pic(cl.get(f"/ISAPI/Streaming/channels/{view}01/picture", max_bytes=FULL_MAX), "direct")
         if full:
             return self._pic(cl.get(PIC_PATH, max_bytes=FULL_MAX), "direct")
         want = caps.get("thumb")
@@ -550,7 +594,15 @@ class Engine:
             c = self._caps.get(key)
         if c and time.time() - c["ts"] < CAPS_TTL:
             return dict(c)
-        new = {"ts": time.time(), "main": None, "sub": None, "thumb": (c or {}).get("thumb")}
+        new = {"ts": time.time(), "main": None, "sub": None, "thumb": (c or {}).get("thumb"),
+               "inputs": (c or {}).get("inputs")}
+        try:                       # how many video inputs (lenses) the camera has
+            r = cl.get("/ISAPI/System/Video/inputs/channels", max_bytes=256 << 10)
+            root = hikisapi.parse(r.content) if r.ok else None
+            if root is not None:
+                new["inputs"] = sum(1 for el in root.iter() if hikisapi.tag(el) == "VideoInputChannel") or 1
+        except (hikisapi.Unreachable, hikisapi.TooBig):
+            pass
         for sid, name in (("101", "main"), ("102", "sub")):
             try:
                 r = cl.get(f"/ISAPI/Streaming/channels/{sid}", max_bytes=128 << 10)
@@ -561,8 +613,8 @@ class Engine:
             if w.isdigit() and h.isdigit() and int(w) and int(h):
                 new[name] = (int(w), int(h))
         with self._lock:
-            if (c or {}).get("main") != new["main"]:
-                self._list = (0, None)           # the listing carries the camera's shape
+            if (c or {}).get("main") != new["main"] or (c or {}).get("inputs") != new["inputs"]:
+                self._list = (0, None)           # the listing carries the camera's shape and views
             self._caps[key] = new
         return dict(new)
 
@@ -574,15 +626,18 @@ class Engine:
             c.update(kv)
 
     def _fetch_nvr(self, e, full):
-        nvr, ch = e["_nvr"], str(e["_chan"].get("id") or "")
+        view = e.get("_view", 1)
+        chan = e["_vchans"].get(view) or e["_chan"]
+        nvr, ch = e["_nvr"], str(chan.get("id") or "")
         if not ch.isdigit():
             raise BadPicture("the recorder gave this camera no channel number")
+        ck = self.view_key(e["key"], view)
         cl = self._client(nvr)
         main = f"/ISAPI/Streaming/channels/{int(ch)}01/picture"
         with self._lock:
             # An old NVR (V4.1.18, Tri-Lectro) answers 400 to the sub-stream picture of
             # some channels but sends the main one; such a channel is remembered.
-            use_main = self._caps.get(e["key"], {}).get("nvr_pic") == "main"
+            use_main = self._caps.get(ck, {}).get("nvr_pic") == "main"
         with self._nvr_sems[nvr["key"]]:
             if full:     # any size parameter makes an NVR send the main stream
                 r = cl.get(main, params=_size_params((1920, 1080)), max_bytes=FULL_MAX)
@@ -593,7 +648,7 @@ class Engine:
                 if r.status in (400, 403, 404) or (r.status == 200 and not jpeg_size(r.content)):
                     r2 = cl.get(main, max_bytes=FULL_MAX)
                     if r2.status == 200 and jpeg_size(r2.content):
-                        self._set_caps(e["key"], nvr_pic="main")
+                        self._set_caps(ck, nvr_pic="main")
                         r = r2
         return self._pic(r, "nvr")
 
@@ -745,9 +800,10 @@ class Engine:
                 p = self._mem_get(self._thumbs, e["key"])
                 if p and time.time() - p.ts < due:
                     continue
-                self.picture(e["key"], "thumb", fresh=True)
-                time.sleep(GAP_S)
-        self._tidy_saved([e["key"] for e in inv["cameras"]])
+                for v in range(1, max(1, len(e["views"])) + 1):     # every lens of a 2-lens camera
+                    self.picture(e["key"], "thumb", fresh=True, view=v)
+                    time.sleep(GAP_S)
+        self._tidy_saved([self.view_key(e["key"], v) for e in inv["cameras"] for v in range(1, max(1, len(e["views"])) + 1)])
 
     def _loop(self):
         self._wake.wait(START_DELAY_S)

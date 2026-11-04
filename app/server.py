@@ -20,6 +20,7 @@ import assets
 import camera_routes
 import campics
 import commands
+import hikhealth
 import credtest
 import config
 import creds
@@ -327,6 +328,12 @@ def api_setup():
         except (TypeError, ValueError):
             return jsonify({"ok": False, "error": "camera refresh must be a whole number of minutes"}), 400
         patch["camera"] = {"refresh_min": min(max(mins, 0), 1440)}
+    if "camera_footage_days" in body:
+        try:
+            days = int(body["camera_footage_days"])
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "footage target must be a whole number of days"}), 400
+        patch.setdefault("camera", {})["footage_days"] = min(max(days, 1), 365)
     if "watchdog" in body:
         patch["sysmon"] = {"watchdog": bool(body["watchdog"])}
     # admin password -> obfuscated creds store (only when a non-empty value is sent)
@@ -1860,7 +1867,16 @@ def api_problems():
     """All detected problems (IP conflict, risky ports, duplicate MAC, IP drift,
     degrading wireless links) for the dashboard's Problems panel."""
     return jsonify({"problems": scanner.problems() + _radio_problems() + _switch_problems()
-                    + dhcpguard.monitor.problems()})
+                    + dhcpguard.monitor.problems() + _camera_problems()})
+
+
+def _camera_problems():
+    """Camera and recorder health (hikhealth.py): disks, recording, footage, clocks, passwords."""
+    try:
+        return hikhealth.health.problems(campics.engine.listing())
+    except Exception as e:  # noqa: BLE001 - the Problems panel must still load
+        print(f"[cameras] problems failed: {e}", flush=True)
+        return []
 
 
 @app.route("/api/dhcp-guard")
@@ -2637,6 +2653,7 @@ def main():
     dhcpguard.monitor.start(config.load, scanner.get_devices, switchmon.monitor.mac_map)
     campics.engine.start(scanner.get_devices, lambda: scanner.registry, scanner.nvr_lists,
                          lambda: set(dict(scanner.mac_multi_ip)), config.load)
+    hikhealth.health.start(campics.engine, config.load)
     port = int(os.environ.get("NETWATCH_PORT", "8090"))
     app.run(host="0.0.0.0", port=port, threaded=True)
 

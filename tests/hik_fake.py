@@ -48,10 +48,18 @@ def _digest_params(h):
 
 class Device:
     def __init__(self, user="admin", password="pw", auth="digest", main=(2688, 1520), sub=(640, 360),
-                 sizes=((640, 360),), size_mode="list", channels=None, sub_picture=False):
+                 sizes=((640, 360),), size_mode="list", channels=None, sub_picture=False, inputs=1):
         self.user, self.password, self.auth = user, password, auth
         self.main, self.sub, self.sizes, self.size_mode = main, sub, set(sizes), size_mode
         self.sub_picture = sub_picture
+        self.inputs = inputs                 # video inputs (lenses); lens 2+ sends a 384x288 (thermal-sized) picture
+        # health (hikhealth): disks [(status, capacity MB)], clock, password flags,
+        # oldest recording per channel (epoch; 0 = none), channel numbers + offset (old NVRs: 33..)
+        self.disks = [("ok", 5723166)]
+        self.tz, self.clock_offset, self.local_offset = "CST-2:00:00", 0, "+02:00"
+        self.pw_default = self.pw_risky = False
+        self.oldest = {}
+        self.chan_base = 0
         self.channels = channels             # [{id, name, ip, online}] -> an NVR
         self.picture_body = None             # bytes to send instead of a JPEG (tests a bad answer)
         self.hits = []                       # (method, path, sent a login?)
@@ -67,6 +75,11 @@ class Device:
                 pass
 
             def do_GET(self):
+                dev._handle(self)
+
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                self.body = self.rfile.read(n) if n else b""
                 dev._handle(self)
 
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
@@ -117,6 +130,37 @@ class Device:
         req.end_headers()
         req.wfile.write(data)
 
+    def _health(self, req, path, q):
+        import json as _json
+        import re as _re
+        import time as _time
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        if path == "/ISAPI/System/time":
+            off = int(self.local_offset[:3]) * 3600
+            local = _dt.now(_tz.utc) + _td(seconds=off + self.clock_offset)
+            return self._send(req, 200, f"<Time><timeMode>NTP</timeMode><localTime>{local.strftime('%Y-%m-%dT%H:%M:%S')}{self.local_offset}</localTime><timeZone>{self.tz}</timeZone></Time>")
+        if path == "/ISAPI/Security/userCheck":
+            return self._send(req, 200, f"<userCheck><statusValue>200</statusValue><isDefaultPassword>{str(self.pw_default).lower()}</isDefaultPassword><isRiskPassword>{str(self.pw_risky).lower()}</isRiskPassword></userCheck>")
+        if path == "/ISAPI/ContentMgmt/Storage":
+            items = "".join(f"<hdd><id>{i}</id><hddName>hdd{i}</hddName><status>{st}</status><capacity>{cap}</capacity><freeSpace>0</freeSpace></hdd>"
+                            for i, (st, cap) in enumerate(self.disks, 1))
+            return self._send(req, 200, f'<storage xmlns="http://www.hikvision.com/ver20/XMLSchema"><hddList>{items}</hddList></storage>')
+        if path == "/ISAPI/System/workingstatus" and self.channels is not None:
+            rows = [{"chanNo": int(c["id"]) + self.chan_base, "online": 1 if c.get("online", True) else 0,
+                     "record": 1 if c.get("record", True) and c.get("online", True) else 0, "bitRate": 4194304} for c in self.channels]
+            return self._send(req, 200, _json.dumps({"WorkingStatus": {"devStatus": 0, "ChanStatus": rows}}), "application/json")
+        if path == "/ISAPI/ContentMgmt/search" and req.command == "POST":
+            body = getattr(req, "body", b"").decode()
+            if "isapi.org" not in body or not _re.search(r"<searchID>[0-9A-F-]{36}</searchID>", body):
+                return self._send(req, 400, "<ResponseStatus><subStatusCode>badXmlContent</subStatusCode></ResponseStatus>")
+            ch = _re.search(r"<trackID>(\d+)01</trackID>", body).group(1)
+            t = self.oldest.get(ch, 0)
+            if not t:
+                return self._send(req, 200, "<CMSearchResult><responseStatusStrg>NO MATCHES</responseStatusStrg><numOfMatches>0</numOfMatches></CMSearchResult>")
+            st = _dt.fromtimestamp(t, _tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return self._send(req, 200, f"<CMSearchResult><responseStatusStrg>MORE</responseStatusStrg><numOfMatches>1</numOfMatches><matchList><searchMatchItem><timeSpan><startTime>{st}</startTime><endTime>{st}</endTime></timeSpan></searchMatchItem></matchList></CMSearchResult>")
+        return None
+
     def _handle(self, req):
         u = urlparse(req.path)
         self.hits.append((req.command, req.path, bool(req.headers.get("Authorization"))))
@@ -127,11 +171,20 @@ class Device:
                               extra={"WWW-Authenticate": chal})
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         path = u.path
+        hit = self._health(req, path, q)
+        if hit is not None:
+            return hit
         if path in ("/ISAPI/Streaming/channels/101", "/ISAPI/Streaming/channels/102") and not self.channels:
             w, h = self.main if path.endswith("101") else self.sub
             return self._send(req, 200, f'<StreamingChannel xmlns="http://www.hikvision.com/ver20/XMLSchema"><Video>'
                                         f'<videoResolutionWidth>{w}</videoResolutionWidth>'
                                         f'<videoResolutionHeight>{h}</videoResolutionHeight></Video></StreamingChannel>')
+        if path == "/ISAPI/System/Video/inputs/channels" and not self.channels:
+            items = "".join(f"<VideoInputChannel><id>{i}</id></VideoInputChannel>" for i in range(1, self.inputs + 1))
+            return self._send(req, 200, f'<VideoInputChannelList xmlns="http://www.hikvision.com/ver20/XMLSchema">{items}</VideoInputChannelList>')
+        for n in range(2, self.inputs + 1):
+            if path in (f"/ISAPI/Streaming/channels/{n}02/picture", f"/ISAPI/Streaming/channels/{n}01/picture") and not self.channels:
+                return self._send(req, 200, jpeg(384, 288, pad=15000), "image/jpeg")
         if path == "/ISAPI/Streaming/channels/101/picture" and not self.channels:
             if self.picture_body is not None:
                 return self._send(req, 200, self.picture_body, "text/html")

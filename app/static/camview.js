@@ -76,9 +76,17 @@
   const aspectOf = (c, p, learned) => c.aspect || learned || (p && p.route === "direct" && p.w && p.h ? p.w / p.h : 0) || 16 / 9;
   // Every tile has the same 16:9 frame; the picture sits inside it in the camera's own shape.
   const TILE = 16 / 9;
-  const fitStyle = (a) => (a >= TILE ? `width:100%;height:${(100 * TILE / a).toFixed(2)}%` : `height:100%;width:${(100 * a / TILE).toFixed(2)}%`);
+  const fitStyle = (a, box = TILE) => (a >= box ? `width:100%;height:${(100 * box / a).toFixed(2)}%` : `height:100%;width:${(100 * a / box).toFixed(2)}%`);
+  // A 2-lens camera (thermal + normal, dual-lens) has views: one tile, the pictures side by side.
+  const viewsOf = (c) => (c.views && c.views.length > 1 ? c.views.map((v) => v.n) : [1]);
+  const vk = (k, n) => (n === 1 ? k : `${k}#v${n}`);
+  // Another lens's shape is only known from its picture (a thermal one is often 4:3).
+  const viewAspect = (c, n, p, learned) => (n === 1 ? aspectOf(c, p, learned) : (p && p.w && p.h ? p.w / p.h : 4 / 3));
+  // Health (phase 2): the worst finding shown as a badge on the tile.
+  const SEV = { crit: "cv-bad", warn: "cv-warn", info: "cv-dim" };
+  const worst = (hs) => (hs || []).slice().sort((a, b) => ["crit", "warn", "info"].indexOf(a.sev) - ["crit", "warn", "info"].indexOf(b.sev))[0];
 
-  function needsLook(c) { return !c.route || !c.online || c.why === "failed"; }
+  function needsLook(c) { return !c.route || !c.online || c.why === "failed" || (c.health || []).some((h) => h.sev !== "info"); }
 
   // ---- the grid --------------------------------------------------------------------------
   function mount(el, opts) {
@@ -125,21 +133,48 @@
 
     function tileHtml(g, c) {
       const k = g.id + "|" + c.key, p = st.pics.get(k);
-      const asp = aspectOf(c, p, st.learned.get(k));
+      const vs = viewsOf(c), box = TILE / vs.length;
+      const fits = vs.map((n) => {
+        const pv = st.pics.get(vk(k, n));
+        return `<div class="cv-fit" data-v="${n}" style="${fitStyle(viewAspect(c, n, pv, n === 1 ? st.learned.get(k) : 0), box)}"><img alt="" hidden></div>`;
+      });
+      const inner = vs.length > 1 ? `<div class="cv-duo">${fits.map((f) => `<div class="cv-half">${f}</div>`).join("")}</div>` : fits[0];
+      const h = worst(c.health);
       const badges = (c.why && WHY[c.why] ? `<span class="cv-badge ${c.why === "offline" ? "cv-bad" : "cv-warn"}">${esc(WHY[c.why])}</span>` : "")
+        + (h && h.sev !== "info" ? `<span class="cv-badge ${SEV[h.sev]}" title="${esc(h.text)}">${esc(h.short || h.text)}</span>` : "")
+        + (vs.length > 1 ? `<span class="cv-badge cv-dim" title="${esc(c.views.map((v) => v.name).join(" + "))}">${vs.length} lenses</span>` : "")
         + (c.route === "nvr" ? `<span class="cv-badge cv-via" title="${esc("Through " + ((c.nvr && c.nvr.name) || "its recorder") + (c.nvr ? ", channel " + c.nvr.channel : ""))}">NVR</span>` : "");
       const ph = c.route || c.picture ? "Loading…" : esc(c.why_text || "No picture");
       return `<article class="cv-tile ${c.online ? "" : "cv-off"}" data-k="${esc(k)}" tabindex="0" role="button" aria-label="${esc(c.name)}">
-        <div class="cv-pic cv-frame"><div class="cv-fit" style="${fitStyle(asp)}"><img alt="" hidden></div><div class="cv-ph">${ICON}<span>${ph}</span></div><span class="cv-age" hidden></span></div>
+        <div class="cv-pic cv-frame">${inner}<div class="cv-ph">${ICON}<span>${ph}</span></div><span class="cv-age" hidden></span></div>
         <div class="cv-cap"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc([c.ip, c.model].filter(Boolean).join(" · ") || "—")}</small>${badges ? `<span class="cv-badges">${badges}</span>` : ""}</div>
       </article>`;
     }
 
     function recHtml(g, r) {
+      const bad = (r.health || []).some((h) => h.sev === "crit");
       const s = !r.online ? ["cv-bad", "Offline"] : r.login_refused ? ["cv-warn", "Login refused"] : !r.has_login ? ["cv-warn", "No login saved"]
-        : r.channels ? [r.channels_offline ? "cv-warn" : "cv-ok", `${r.channels_online} of ${r.channels} cameras connected`] : ["cv-dim", "Reading its cameras…"];
-      return `<button type="button" class="cv-rec ${st.nvr === r.key ? "cv-on" : ""}" data-nvr="${esc(r.key)}" title="Show only this recorder's cameras">
-        <span class="cv-dot ${s[0]}"></span><span class="cv-rtx"><b>${esc(r.name)}</b><small>${esc([r.model, r.ip].filter(Boolean).join(" · "))}</small><span class="cv-rst ${s[0]}">${esc(s[1])}</span></span></button>`;
+        : r.channels ? [bad ? "cv-bad" : r.channels_offline ? "cv-warn" : "cv-ok", `${r.channels_online} of ${r.channels} cameras connected`] : ["cv-dim", "Reading its cameras…"];
+      const disks = r.disks ? (r.disks.length ? `${r.disks.length} disk${r.disks.length > 1 ? "s" : ""}${r.disk_gb ? " · " + (r.disk_gb >= 1000 ? (r.disk_gb / 1000).toFixed(1) + " TB" : r.disk_gb + " GB") : ""}` : "no disk") : "";
+      const foot = r.footage_min_days != null ? `≈${Math.floor(r.footage_min_days)} days footage` : "";
+      const h = worst(r.health);
+      const line = [foot, disks].filter(Boolean).join(" · ");
+      return `<button type="button" class="cv-rec ${st.nvr === r.key ? "cv-on" : ""}" data-nvr="${esc(r.key)}" title="Show this recorder's health and only its cameras">
+        <span class="cv-dot ${s[0]}"></span><span class="cv-rtx"><b>${esc(r.name)}</b><small>${esc([r.model, r.ip].filter(Boolean).join(" · "))}</small><span class="cv-rst ${s[0]}">${esc(s[1])}</span>${line ? `<small>${esc(line)}</small>` : ""}${h && h.sev !== "info" ? `<span class="cv-rst ${SEV[h.sev]}">${esc(h.short || h.text)}${(r.health || []).filter((x) => x.sev !== "info").length > 1 ? " +" + ((r.health || []).filter((x) => x.sev !== "info").length - 1) : ""}</span>` : ""}</span></button>`;
+    }
+
+    function recPanel(r) {
+      const hs = (r.health || []).map((h) => `<li class="cv-h ${SEV[h.sev] || ""}"><b>${esc(h.text)}</b>${h.fix ? `<small>${esc(h.fix)}</small>` : ""}</li>`).join("");
+      const disks = (r.disks || []).map((d) => `<tr><td>${esc(d.name || "Disk " + d.id)}</td><td class="${["ok", "idle", "sleep", "sleeping", "standby", "normal"].includes(d.status) ? "" : "cv-warn"}">${esc(d.status || "—")}</td><td>${d.capacity_gb != null ? esc(d.capacity_gb) + " GB" : "—"}</td></tr>`).join("");
+      return `<section class="cv-recpanel">
+        <div><h3>${esc(r.name)} <span class="cv-dimtx">${esc([r.model, r.firmware].filter(Boolean).join(" · "))}</span></h3>
+          ${hs ? `<ul class="cv-hlist">${hs}</ul>` : `<p class="cv-dimtx">${r.health_ts ? "No problems found." : "Health not read yet — it is read every 15 minutes."}</p>`}</div>
+        <div><dl class="cv-facts">
+          <dt>Cameras</dt><dd>${r.channels_online} of ${r.channels} connected${r.recording_off ? ` · <span class="cv-warn">${r.recording_off} not recording</span>` : ""}</dd>
+          <dt>Footage</dt><dd>${r.footage_min_days != null ? `shortest ≈${Math.floor(r.footage_min_days)} days` : "not read yet (daily)"}${r.footage_ts ? ` <span class="cv-dimtx">(${esc(ago(r.footage_ts))})</span>` : ""}</dd>
+          ${r.health_ts ? `<dt>Checked</dt><dd>${esc(ago(r.health_ts))}</dd>` : ""}
+        </dl>${disks ? `<table class="cv-disks"><thead><tr><th>Disk</th><th>Status</th><th>Size</th></tr></thead><tbody>${disks}</tbody></table>` : ""}</div>
+      </section>`;
     }
 
     function groupHtml(g) {
@@ -157,23 +192,31 @@
       const note = on.length ? `<p class="cv-shown">Showing ${cams.length} of ${st.filt !== "all" || st.q ? scope.length : camsOf(g).length} cameras — ${esc(on.join(" · "))} <button type="button" class="cv-linkb" data-show-all>Show all</button></p>` : "";
       return `<section class="cv-group">${head}
         ${recs.length ? `<div class="cv-recs">${recs.map((r) => recHtml(g, r)).join("")}</div>` : ""}
+        ${rec ? recPanel(rec) : ""}
         ${note}
         ${cams.length ? `<div class="cv-grid cv-${esc(st.size)}">${cams.map((c) => tileHtml(g, c)).join("")}</div>`
           : `<p class="cv-msg">${camsOf(g).length ? "No camera matches." : "Netwatch has not found any cameras here yet."}</p>`}
       </section>`;
     }
 
-    function paint(tile, p) {
-      const img = tile.querySelector("img"), age = tile.querySelector(".cv-age"), ph = tile.querySelector(".cv-ph");
-      if (p && p.src) {
-        if (img.getAttribute("src") !== p.src) img.src = p.src;
-        img.hidden = false; ph.hidden = true;
-        age.hidden = false;
-        age.textContent = (p.stale ? "Saved · " : "") + ago(p.ts);
-        tile.classList.toggle("cv-stale", !!p.stale);
-      } else if (p && p.err) {
-        ph.hidden = false; img.hidden = true; age.hidden = true;
-        ph.querySelector("span").textContent = p.err;
+    function paint(tile) {
+      const k = tile.dataset.k, age = tile.querySelector(".cv-age"), ph = tile.querySelector(".cv-ph");
+      let any = null, err = "";
+      tile.querySelectorAll(".cv-fit").forEach((fit) => {
+        const p = st.pics.get(vk(k, Number(fit.dataset.v))), img = fit.querySelector("img");
+        if (p && p.src) {
+          if (img.getAttribute("src") !== p.src) img.src = p.src;
+          img.hidden = false;
+          if (!any || fit.dataset.v === "1") any = p;
+        } else if (p && p.err && !err) err = p.err;
+      });
+      if (any) {
+        ph.hidden = true; age.hidden = false;
+        age.textContent = (any.stale ? "Saved · " : "") + ago(any.ts);
+        tile.classList.toggle("cv-stale", !!any.stale);
+      } else if (err) {
+        ph.hidden = false; age.hidden = true;
+        ph.querySelector("span").textContent = err;
       }
     }
 
@@ -181,11 +224,7 @@
       if (st.dead) return;
       chips();
       body.innerHTML = groups().map(groupHtml).join("");
-      body.querySelectorAll(".cv-tile").forEach((t) => {
-        const p = st.pics.get(t.dataset.k);
-        if (p) paint(t, p);
-        st.obs.observe(t);
-      });
+      body.querySelectorAll(".cv-tile").forEach((t) => { paint(t); st.obs.observe(t); });
     }
 
     function find(k) {
@@ -198,27 +237,32 @@
     function load(k, fresh) {
       const hit = find(k);
       if (!hit || st.dead) return;
-      const { g, c } = hit, cur = st.pics.get(k);
+      viewsOf(hit.c).forEach((n) => loadView(hit, k, n, fresh));
+    }
+
+    function loadView({ g, c }, tk, n, fresh) {
+      const k = vk(tk, n), cur = st.pics.get(k);
       if (cur && cur.loading) return;
       if (!c.route && !c.picture && !(cur && cur.src)) return;
       st.pics.set(k, { ...(cur || {}), loading: true });
-      queue(g.id, () => fetchPic(opts.picUrl(g, c, { size: "thumb", fresh })))
+      queue(g.id, () => fetchPic(opts.picUrl(g, c, { size: "thumb", fresh, view: n })))
         .then((p) => {
           if (st.dead) { URL.revokeObjectURL(p.src); return; }
           const old = st.pics.get(k);
           if (old && old.src) setTimeout(() => URL.revokeObjectURL(old.src), 1000);
           st.pics.set(k, { ...p, loading: false, at: Date.now() });
-          const t = body.querySelector(`.cv-tile[data-k="${CSS.escape(k)}"]`);
+          const t = body.querySelector(`.cv-tile[data-k="${CSS.escape(tk)}"]`);
           if (t) {
-            if (!c.aspect && p.route === "direct" && p.w && p.h) t.querySelector(".cv-fit").setAttribute("style", fitStyle(p.w / p.h));
-            paint(t, st.pics.get(k));
+            const fit = t.querySelector(`.cv-fit[data-v="${n}"]`), box = TILE / viewsOf(c).length;
+            if (fit && p.w && p.h && (n > 1 || (!c.aspect && p.route === "direct"))) fit.setAttribute("style", fitStyle(p.w / p.h, box));
+            paint(t);
           }
         })
         .catch((e) => {
           const old = st.pics.get(k) || {};
           st.pics.set(k, { ...old, loading: false, at: Date.now(), err: old.src ? "" : (WHY[e.why] || e.message || "No picture") });
-          const t = body.querySelector(`.cv-tile[data-k="${CSS.escape(k)}"]`);
-          if (t && !old.src) paint(t, st.pics.get(k));
+          const t = body.querySelector(`.cv-tile[data-k="${CSS.escape(tk)}"]`);
+          if (t && !old.src) paint(t);
         });
     }
 
@@ -268,7 +312,7 @@
     qIn.addEventListener("input", () => { clearTimeout(qt); qt = setTimeout(() => { st.q = qIn.value.trim().toLowerCase(); render(); }, 150); });
 
     st.timers.push(setInterval(() => {            // ages, and the 5-minute refresh
-      body.querySelectorAll(".cv-tile").forEach((t) => { const p = st.pics.get(t.dataset.k); if (p && p.src) paint(t, p); });
+      body.querySelectorAll(".cv-tile").forEach((t) => paint(t));
       if (st.keepUntil && Date.now() > st.keepUntil) st.keepUntil = 0;
       keepBtn();
     }, 15000));
@@ -291,72 +335,92 @@
   // ---- one camera ---------------------------------------------------------------------------
   function camera(el, opts) {
     const g = opts.group, c = opts.cam;
-    const st = { pic: null, full: false, until: 0, timer: null, dead: false, aspect: aspectOf(c, null, 0) };
-    const rec = c.nvr ? `${esc(c.nvr.name || c.nvr.ip)} · channel ${esc(c.nvr.channel)}${c.nvr.chan_online === false ? " · <span class='cv-warn'>not connected</span>" : ""}` : "—";
+    const vs = viewsOf(c), names = Object.fromEntries((c.views || []).map((v) => [v.n, v.name]));
+    const st = { pics: {}, full: false, until: 0, timer: null, dead: false };
+    const rec = c.nvr ? `${esc(c.nvr.name || c.nvr.ip)} · channel ${esc(c.nvr.channel)}${vs.length > 1 && c.views ? "" : ""}${c.nvr.chan_online === false ? " · <span class='cv-warn'>not connected</span>" : ""}` : "—";
     const status = c.online ? `<span class="cv-badge cv-ok">Online</span>` : `<span class="cv-badge cv-bad">Offline</span>`;
+    const health = (c.health || []).map((h) => `<li class="cv-h ${SEV[h.sev] || ""}"><b>${esc(h.text)}</b>${h.fix ? `<small>${esc(h.fix)}</small>` : ""}</li>`).join("");
+    const facts = [
+      c.recording === true ? ["Recording", "Yes"] : c.recording === false ? ["Recording", "<span class='cv-warn'>No</span>"] : null,
+      c.footage_days != null ? ["Footage kept", `${esc(c.footage_days)} days`] : null,
+    ].filter(Boolean).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
     el.innerHTML = `<div class="cv cv-one">
       <div class="cv-ohead">
         <button type="button" class="cv-btn" data-act="back">← All cameras</button>
-        <div class="cv-otitle"><h2>${esc(c.name)}</h2><p>${status}${c.why && c.why !== "offline" && WHY[c.why] ? ` <span class="cv-badge cv-warn">${esc(WHY[c.why])}</span>` : ""}${c.route === "nvr" ? ` <span class="cv-badge cv-via">NVR</span>` : ""}${g.title ? ` <span class="cv-dimtx">${esc(g.title)}</span>` : ""}</p></div>
+        <div class="cv-otitle"><h2>${esc(c.name)}</h2><p>${status}${c.why && c.why !== "offline" && WHY[c.why] ? ` <span class="cv-badge cv-warn">${esc(WHY[c.why])}</span>` : ""}${c.route === "nvr" ? ` <span class="cv-badge cv-via">NVR</span>` : ""}${vs.length > 1 ? ` <span class="cv-badge cv-dim">${vs.length} lenses</span>` : ""}${g.title ? ` <span class="cv-dimtx">${esc(g.title)}</span>` : ""}</p></div>
       </div>
       <div class="cv-ogrid">
         <div class="cv-stage">
-          <div class="cv-pic cv-big" style="aspect-ratio:${st.aspect.toFixed(4)}"><img alt="${esc(c.name)}" hidden><div class="cv-ph">${ICON}<span>${c.route || c.picture ? "Loading…" : esc(c.why_text || "No picture")}</span></div><span class="cv-age" hidden></span></div>
+          <div class="cv-views cv-n${vs.length}">${vs.map((n) => `<figure class="cv-view" data-v="${n}">
+            <div class="cv-pic cv-big" style="aspect-ratio:${viewAspect(c, n, null, 0).toFixed(4)}"><img alt="${esc(c.name)}" hidden><div class="cv-ph">${ICON}<span>${c.route || c.picture ? "Loading…" : esc(c.why_text || "No picture")}</span></div><span class="cv-age" hidden></span></div>
+            ${vs.length > 1 ? `<figcaption>${esc(names[n] || "Lens " + n)} · <a href="${esc(opts.picUrl(g, c, { size: "full", view: n }))}" target="_blank" rel="noopener">full size ↗</a></figcaption>` : ""}
+          </figure>`).join("")}</div>
           <div class="cv-acts">
             <button type="button" class="cv-btn" data-act="fresh">↻ New picture</button>
             <button type="button" class="cv-btn" data-act="live">▶ Keep refreshing (2 min)</button>
             <button type="button" class="cv-btn" data-act="full">🔍 Sharper picture</button>
-            <a class="cv-btn" data-act="open" href="${esc(opts.picUrl(g, c, { size: "full" }))}" target="_blank" rel="noopener">Full size ↗</a>
+            ${vs.length > 1 ? "" : `<a class="cv-btn" data-act="open" href="${esc(opts.picUrl(g, c, { size: "full" }))}" target="_blank" rel="noopener">Full size ↗</a>`}
             ${opts.deviceAction ? `<button type="button" class="cv-btn" data-act="device">${esc(opts.deviceAction.label)}</button>` : ""}
           </div>
           <p class="cv-note" aria-live="polite"></p>
         </div>
-        <dl class="cv-facts">
-          <dt>IP address</dt><dd class="cv-mono">${esc(c.ip || "—")}</dd>
-          ${c.mac ? `<dt>MAC</dt><dd class="cv-mono">${esc(c.mac)}</dd>` : ""}
-          <dt>Model</dt><dd>${esc(c.model || "—")}</dd>
-          ${c.firmware ? `<dt>Firmware</dt><dd class="cv-mono">${esc(c.firmware)}</dd>` : ""}
-          <dt>Recorder</dt><dd>${rec}</dd>
-          <dt>Picture from</dt><dd data-f="route">${c.route ? esc(ROUTE[c.route] || c.route) : esc(c.why_text || "—")}</dd>
-          <dt>Picture</dt><dd data-f="pic">—</dd>
-          ${c.last_seen && !c.online ? `<dt>Last seen</dt><dd>${esc(ago(c.last_seen))}</dd>` : ""}
-          ${c.why_text && c.why !== "offline" ? `<dt>Note</dt><dd>${esc(c.why_text)}${c.fail ? ` <span class="cv-dimtx">(${esc(c.fail)})</span>` : ""}</dd>` : ""}
-        </dl>
+        <div class="cv-side">
+          ${health ? `<section class="cv-health"><h3>Health</h3><ul>${health}</ul></section>` : ""}
+          <dl class="cv-facts">
+            <dt>IP address</dt><dd class="cv-mono">${esc(c.ip || "—")}</dd>
+            ${c.mac ? `<dt>MAC</dt><dd class="cv-mono">${esc(c.mac)}</dd>` : ""}
+            <dt>Model</dt><dd>${esc(c.model || "—")}</dd>
+            ${c.firmware ? `<dt>Firmware</dt><dd class="cv-mono">${esc(c.firmware)}</dd>` : ""}
+            <dt>Recorder</dt><dd>${rec}</dd>
+            ${facts}
+            <dt>Picture from</dt><dd data-f="route">${c.route ? esc(ROUTE[c.route] || c.route) : esc(c.why_text || "—")}</dd>
+            <dt>Picture</dt><dd data-f="pic">—</dd>
+            ${c.last_seen && !c.online ? `<dt>Last seen</dt><dd>${esc(ago(c.last_seen))}</dd>` : ""}
+            ${c.why_text && c.why !== "offline" ? `<dt>Note</dt><dd>${esc(c.why_text)}${c.fail ? ` <span class="cv-dimtx">(${esc(c.fail)})</span>` : ""}</dd>` : ""}
+          </dl>
+        </div>
       </div>
       <p class="cv-foot">Camera settings (picture, video, detection, PTZ…) come in the next phases. Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.</p>
     </div>`;
-    const root = el.querySelector(".cv"), box = root.querySelector(".cv-pic"), img = box.querySelector("img");
-    const note = root.querySelector(".cv-note");
+    const root = el.querySelector(".cv"), note = root.querySelector(".cv-note");
+    const boxOf = (n) => root.querySelector(`.cv-view[data-v="${n}"] .cv-pic`);
 
-    function show(p) {
-      if (st.pic && st.pic.src && st.pic.src !== p.src) { const old = st.pic.src; setTimeout(() => URL.revokeObjectURL(old), 1000); }
-      st.pic = p;
+    function show(n, p) {
+      const old = st.pics[n];
+      if (old && old.src && old.src !== p.src) setTimeout(() => URL.revokeObjectURL(old.src), 1000);
+      st.pics[n] = p;
+      const box = boxOf(n), img = box.querySelector("img");
       img.src = p.src; img.hidden = false; box.querySelector(".cv-ph").hidden = true;
-      if (!c.aspect && p.w && p.h && (p.route === "direct" || st.full)) { st.aspect = p.w / p.h; box.style.aspectRatio = st.aspect.toFixed(4); }
+      if (p.w && p.h && (n > 1 || (!c.aspect && (p.route === "direct" || st.full)))) box.style.aspectRatio = (p.w / p.h).toFixed(4);
       tick();
     }
     function tick() {
-      const p = st.pic; if (!p) return;
-      const age = box.querySelector(".cv-age");
-      age.hidden = false; age.textContent = (p.stale ? "Saved · " : "") + ago(p.ts);
-      root.querySelector('[data-f="pic"]').textContent = [p.w && p.h ? `${p.w}×${p.h}` : "", p.bytes ? Math.round(p.bytes / 1024) + " KB" : "",
+      vs.forEach((n) => {
+        const p = st.pics[n]; if (!p) return;
+        const age = boxOf(n).querySelector(".cv-age");
+        age.hidden = false; age.textContent = (p.stale ? "Saved · " : "") + ago(p.ts);
+      });
+      const p = st.pics[1];
+      if (p) root.querySelector('[data-f="pic"]').textContent = [p.w && p.h ? `${p.w}×${p.h}` : "", p.bytes ? Math.round(p.bytes / 1024) + " KB" : "",
         ago(p.ts), p.stale ? "saved copy" : "", ROUTE[p.route] ? "from " + ROUTE[p.route] : ""].filter(Boolean).join(" · ");
       const lv = root.querySelector('[data-act="live"]'), left = st.until - Date.now();
       lv.classList.toggle("cv-on", left > 0);
       lv.textContent = left > 0 ? `■ Stop (${Math.ceil(left / 1000)} s)` : "▶ Keep refreshing (2 min)";
     }
-    async function get(size, fresh) {
+    async function getView(n, size, fresh) {
       try {
-        const p = await queue(g.id, () => fetchPic(opts.picUrl(g, c, { size, fresh })));
+        const p = await queue(g.id, () => fetchPic(opts.picUrl(g, c, { size, fresh, view: n })));
         if (st.dead) { URL.revokeObjectURL(p.src); return; }
-        note.textContent = p.stale ? (c.online ? "The camera did not answer — this is its last saved picture." : "The camera is offline — this is its last saved picture.") : "";
-        show(p);
+        if (n === 1) note.textContent = p.stale ? (c.online ? "The camera did not answer — this is its last saved picture." : "The camera is offline — this is its last saved picture.") : "";
+        show(n, p);
       } catch (e) {
         if (st.dead) return;
-        note.textContent = WHY[e.why] ? WHY[e.why] + (e.message ? " — " + e.message : "") : e.message || "No picture";
-        if (!st.pic) box.querySelector(".cv-ph span").textContent = note.textContent;
+        const msg = WHY[e.why] ? WHY[e.why] + (e.message ? " — " + e.message : "") : e.message || "No picture";
+        if (n === 1) note.textContent = msg;
+        if (!st.pics[n]) boxOf(n).querySelector(".cv-ph span").textContent = msg;
       }
     }
+    const get = (size, fresh) => Promise.all(vs.map((n) => getView(n, size, fresh)));
     function stopLive() { clearTimeout(st.timer); st.timer = null; st.until = 0; tick(); }
     function loop() {
       if (st.dead || Date.now() > st.until) return stopLive();
@@ -381,7 +445,7 @@
     return {
       destroy() {
         st.dead = true; clearInterval(ages); clearTimeout(st.timer);
-        if (st.pic && st.pic.src) URL.revokeObjectURL(st.pic.src);
+        Object.values(st.pics).forEach((p) => p && p.src && URL.revokeObjectURL(p.src));
         el.innerHTML = "";
       },
     };
