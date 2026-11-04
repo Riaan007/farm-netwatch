@@ -148,6 +148,9 @@
         .nw-pages a.on svg { color: #22d3ee; }
         .nw-pages a.on::after { content: ""; position: absolute; left: .55rem; right: .55rem; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: linear-gradient(90deg, #22d3ee, #34d399); }
         .nw-pages a:focus-visible, .nw-mini:focus-visible { outline: 2px solid #22d3ee; outline-offset: -3px; border-radius: .4rem; }
+        #public-ip { cursor: pointer; }
+        #public-ip:hover, #public-ip:focus-visible { color: #e2e8f0; border-color: rgba(34,211,238,.5); }
+        #public-ip.stale { border-style: dashed; color: #64748b; }
         @media (max-width: 1200px) { #pi-ip { display: none !important; } }
         @media (max-width: 1000px) { .nw-top .nw-ib .lbl { display: none; } }
         .nw-scan { display: flex; align-items: stretch; border: 1px solid rgba(103,232,249,.4); border-radius: .7rem; overflow: visible; position: relative; background: rgba(8,145,178,.12); }
@@ -800,6 +803,7 @@
               <div class="nw-status" aria-label="Site status">
                 <span id="system-status" class="nw-pill nw-live wait"><i></i><span class="t">Connecting…</span></span>
                 <span id="internet-badge" class="nw-pill" hidden></span>
+                <button id="public-ip" type="button" class="nw-pill mono" hidden></button>
                 <span id="hub-badge" class="nw-pill" hidden></span>
                 <span id="pi-ip" class="nw-pill mono" hidden title="This Pi's own LAN IP — the address of the server running Netwatch"></span>
               </div>
@@ -5462,6 +5466,7 @@
         async function loadInternet(){
             const b = document.getElementById('internet-badge');
             let s; try { s = await (await fetch('/api/internet')).json(); } catch(e){ return; }
+            showPublicIp(s && s.public_ip);
             if (!s || s.checked_ts == null) { b.hidden = true; return; }
             let txt, cls;
             if (s.ok)                              { txt = 'Internet OK';  cls = 'ok'; }
@@ -5476,6 +5481,31 @@
             b.hidden = false;
         }
         setInterval(() => { if(!document.hidden) loadInternet(); }, 60000);
+        // This site's public (internet) IP: the Pi asks Cloudflare every 15 min (app/publicip.py).
+        // Click copies it; the tooltip says since when and what it was before.
+        function showPublicIp(p){
+            const b = document.getElementById('public-ip');
+            if(!p || !p.ip){ b.hidden = true; return; }
+            const when = (ts) => new Date(ts * 1000).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'});
+            b.dataset.ip = p.ip;
+            b.classList.toggle('stale', !p.fresh);
+            b.innerHTML = HDR_ICON.globe + '<span>' + esc(p.ip) + '</span>';
+            b.title = 'Public IP: the address this site\'s internet connection uses'
+                + (p.fresh ? '' : ' (last known: no answer since ' + agoText(p.checked) + ')')
+                + '\n' + (p.since ? 'Changed to this ' + agoText(p.since) + ' (' + when(p.since) + ')' : 'Unchanged since ' + when(p.first))
+                + ((p.prev || []).length ? '\nBefore: ' + p.prev.map(x => x.ip + ' until ' + when(x.to)).join(', ') : '')
+                + '\nClick to copy.';
+            b.hidden = false;
+        }
+        document.getElementById('public-ip').addEventListener('click', async (e) => {
+            const b = e.currentTarget, t = b.querySelector('span');
+            if(!t) return;
+            try { await navigator.clipboard.writeText(b.dataset.ip); } catch(err){
+                const ta = document.createElement('textarea'); ta.value = b.dataset.ip; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+            }
+            t.textContent = 'Copied'; setTimeout(() => { t.textContent = b.dataset.ip; }, 1400);
+        });
         // preload ntfy settings + Kuma link (host the browser used, port from base_url)
         fetch('/api/config').then(r=>r.json()).then(c=>{
             if(c.alerts && !c.redacted){ document.getElementById('setup-ntfy').value = c.alerts.ntfy_topic||''; document.getElementById('setup-allow-commands').checked = c.alerts.allow_commands===true; document.getElementById('setup-notify-hub').checked = c.alerts.notify_hub_offline!==false; }

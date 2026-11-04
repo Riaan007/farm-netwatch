@@ -33,6 +33,7 @@ import identify
 import mikrotik
 import monitoring
 import netcfg
+import publicip
 import setupip
 import radiomon
 import restart
@@ -2259,6 +2260,8 @@ def api_internet():
         "dns": up(dns),
         "ok": any(up(b) for b in ext) and up(dns),
         "checked_ts": max(checked) if checked else None,
+        # this site's internet address (Cloudflare trace every 15 min, publicip.py)
+        "public_ip": publicip.current(),
     })
 
 
@@ -2654,6 +2657,7 @@ def main():
     campics.engine.start(scanner.get_devices, lambda: scanner.registry, scanner.nvr_lists,
                          lambda: set(dict(scanner.mac_multi_ip)), config.load)
     hikhealth.health.start(campics.engine, config.load)
+    publicip.start()               # this site's public IP, every 15 min
     port = int(os.environ.get("NETWATCH_PORT", "8090"))
     app.run(host="0.0.0.0", port=port, threaded=True)
 
