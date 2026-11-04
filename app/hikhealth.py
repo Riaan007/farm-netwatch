@@ -262,12 +262,18 @@ class Health:
     def poll_camera(self, d):
         cl = self.engine._client(d)
         st = {"ts": time.time(), "err": ""}
-        try:
-            st["time"] = read_time(cl)
-            st["pw"] = read_password(cl)
-            st["disks"] = read_disks(cl)
-        except (hikisapi.LoginRefused, hikisapi.Unreachable, hikisapi.TooBig) as e:
-            st["err"] = str(e) or e.__class__.__name__
+        errs = []
+        for k, fn in (("time", lambda: read_time(cl)), ("pw", lambda: read_password(cl)), ("disks", lambda: read_disks(cl))):
+            try:
+                st[k] = fn()
+            except hikisapi.LoginRefused as e:
+                errs.append(str(e) or "LoginRefused")
+                break
+            except (hikisapi.Unreachable, hikisapi.TooBig) as e:
+                errs.append(f"{k}: {str(e) or e.__class__.__name__}")
+        if st.get("time") is None and not errs:
+            errs.append("it gave no clock reading (the login may lack rights)")
+        st["err"] = "; ".join(errs)
         with self._lock:
             self.cam[d["key"]] = st
 
@@ -416,8 +422,12 @@ class Health:
                                "text": f"Its recorder keeps {dd:.0f} days of its footage (target {s['target']})",
                                "fix": "A bigger disk or a lower bitrate keeps more days."})
             st = cam.get(c["key"])
+            c["health_ts"] = int((st or {}).get("ts") or 0) or None
             if st:
                 hs += self._common(st, s["tz"], "Its")
+                if st.get("err"):
+                    # Without this a camera that could not be read looks exactly like a healthy one.
+                    hs.append({"id": "read", "sev": "info", "short": "Not read", "text": f"Could not read its health: {st['err']}"})
                 for x in st.get("disks") or []:
                     if x["status"] and x["status"] not in DISK_OK:
                         hs.append({"id": "sd", "sev": "warn", "short": "SD card fault", "text": f"Its SD card is '{x['status']}'",

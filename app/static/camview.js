@@ -367,6 +367,7 @@
         <div class="cv-side">
           ${health ? `<section class="cv-health"><h3>Health</h3><ul>${health}</ul></section>` : ""}
           <dl class="cv-facts">
+            ${c.health_ts ? `<dt>Health checked</dt><dd>${esc(ago(c.health_ts))}</dd>` : ""}
             <dt>IP address</dt><dd class="cv-mono">${esc(c.ip || "—")}</dd>
             ${c.mac ? `<dt>MAC</dt><dd class="cv-mono">${esc(c.mac)}</dd>` : ""}
             <dt>Model</dt><dd>${esc(c.model || "—")}</dd>

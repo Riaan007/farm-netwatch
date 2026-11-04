@@ -148,6 +148,26 @@ class Health(Rig):
         self.assertAlmostEqual(self.camh("aa:01")["footage_days"], 20, delta=0.2)
         self.assertTrue(any(h["id"] == "read" and "pw: ReadTimeout" in h["text"] for h in r["health"]))
 
+    def test_a_camera_that_cannot_be_read_says_so(self):
+        # A camera whose reading fails must not look like a healthy one.
+        with mock.patch.object(hikhealth, "read_time", side_effect=hikisapi.Unreachable("ReadTimeout")):
+            self.h.run_once(force=True)
+        c = self.camh("aa:01")
+        self.assertTrue(any(h["id"] == "read" and "time: ReadTimeout" in h["text"] for h in c["health"]))
+        self.assertIsNotNone(c["health_ts"])
+        self.assertFalse(any(p["detail"].endswith("ReadTimeout") for p in self.h.problems(self.listing())), "info stays off the Problems panel")
+
+    def test_a_camera_that_answers_no_clock_says_so(self):
+        with mock.patch.object(hikhealth, "read_time", return_value=None):
+            self.h.run_once(force=True)
+        self.assertIn("read", [h["id"] for h in self.camh("aa:01")["health"]])
+
+    def test_a_healthy_camera_has_a_check_time_and_no_read_finding(self):
+        self.h.run_once(force=True)
+        c = self.camh("aa:01")
+        self.assertIsNotNone(c["health_ts"])
+        self.assertNotIn("read", [h["id"] for h in c["health"]])
+
     def test_a_clock_off_by_minutes_is_flagged(self):
         self.cam.clock_offset = 600
         self.h.run_once(force=True)
