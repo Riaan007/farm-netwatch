@@ -41,6 +41,7 @@ BACKUP_DIR = os.path.join(DATA_DIR, "time", "backups")
 KINDS = ("remote", "onsite", "travel", "dev", "general")
 REMOTE_SOURCES = ("cc", "proxy", "tunnel")
 AUTO_SOURCES = ("auto", "wifi", "claude")          # builder-made; frozen once touched
+ORIGIN = {"auto": "remote", "wifi": "field", "claude": "dev"}   # builder source -> group it came from
 # Frozen entries block the builder within their group: remote work can't be laid
 # over approved remote/general time, field time over field time, dev over dev.
 GROUP = {"remote": "remote", "general": "remote", "onsite": "field", "travel": "field", "dev": "dev"}
@@ -364,7 +365,12 @@ def build_day(day, now=None):
             if e["status"] != "dismissed" and e["kind"] == "onsite":
                 onsite_at.setdefault(e["site_id"], []).append((e["start_ts"], end))
         for e in frozen:
-            holes[GROUP.get(e["kind"], "remote")].append((e["start_ts"], e["end_ts"] or now))
+            iv = (e["start_ts"], e["end_ts"] or now)
+            holes[GROUP.get(e["kind"], "remote")].append(iv)
+            # An entry re-kinded in review (Claude dev time billed to a farm as
+            # remote, say) still covers the activity it was built from.
+            if e["source"] in ORIGIN:
+                holes[ORIGIN[e["source"]]].append(iv)
 
         want = []                           # (kind, site, start, end, source, sources)
         # on site: the operator's phone seen on the farm network

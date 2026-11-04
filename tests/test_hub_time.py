@@ -134,6 +134,13 @@ class Builder(unittest.TestCase):
         self.assertEqual([(x["start_ts"], x["end_ts"], x["source"]) for x in v],
                          [(at(8), at(8, 46), "wifi"), (at(14), at(14, 1), "wifi")])
 
+    def test_dev_billed_to_farm_does_not_come_back(self):
+        tk.import_dev({"minutes": [at(15, m) for m in range(0, 30, 3)]})
+        d = entries(kind="dev")[0]
+        tk.update_entry(d["id"], {"kind": "remote", "site_id": "tankwa", "status": "approved"})
+        tk.build_day(DAY, NOW)
+        self.assertEqual([(x["kind"], x["site_id"]) for x in entries()], [("remote", "tankwa")])
+
     def test_dev_from_claude(self):
         out = tk.import_dev({"minutes": [at(15, m) for m in (0, 3, 8, 30, 31)]})
         self.assertEqual(out["imported"], 5)
