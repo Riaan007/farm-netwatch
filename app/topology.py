@@ -94,10 +94,11 @@ CAMERA_KINDS = {k for k, *_ in KINDS if k.startswith("camera")}
 # is about. Phones, laptops and TVs only appear once someone adds them.
 INFRA_KINDS = {"internet", "ptp", "radio", "router", "wifi-router", "switch", "unmanaged-switch",
                "media-converter", "poe", "nvr", "alarm", "solar", "ups", "intercom"} | CAMERA_KINDS
+# Access terminals share the door-entry icon with intercoms: both are the gear at a door.
 CATEGORY_KIND = {
     "camera": "camera", "nvr": "nvr", "router": "router", "printer": "printer", "nas": "nas",
     "voip": "phone", "alarm": "alarm", "solar": "solar", "media": "media", "iot": "iot",
-    "pc": "pc", "server": "server", "unknown": "unknown",
+    "pc": "pc", "server": "server", "access": "intercom", "intercom": "intercom", "unknown": "unknown",
 }
 
 # Diagram grid (px at zoom 1). The browser draws every node inside one cell, so
@@ -132,7 +133,7 @@ _CAM_SHAPE = [
     ("camera-dome", re.compile(r"\bdome\b", re.I)),
     ("intercom", re.compile(r"(intercom|doorbell|deurbel|door.?station|door.?phone)", re.I)),
 ]
-_SWITCH_MODEL = re.compile(r"(switch|\bes-\d|\bep-s|uisp-s|\busw|\bcrs\d|\bcss\d|\bgs\d{3}|tl-sg|\bsg\d{3}|rg-es|rg-nbs)", re.I)
+_SWITCH_MODEL = re.compile(r"(switch|\bes-\d|\bep-s|uisp-s|\busw|\bcrs\d|\bcss\d|\bgs\d{3}|tl-sg|\bsg\d{3}|rg-es|rg-nbs|\bds-3e)", re.I)
 _WIRELESS_IFACE = re.compile(r"^(wlan|wifi|cap|wl|ath)", re.I)
 # "b:<name>" = a picture the renderer draws itself (topoview.js BUILTIN). The
 # server does not keep that list: an unknown name falls back to the type icon.

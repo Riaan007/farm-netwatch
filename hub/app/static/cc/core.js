@@ -199,6 +199,8 @@
     camera: { label: "Camera", group: "cctv", icon: "📷" },
     nvr: { label: "Recorder (NVR)", group: "cctv", icon: "📼" },
     alarm: { label: "Alarm", group: "power", icon: "🚨" },
+    access: { label: "Access control", group: "power", icon: "🔐" },
+    intercom: { label: "Intercom", group: "power", icon: "🚪" },
     router: { label: "Router", group: "net", icon: "🧭" },
     network: { label: "Switch / AP", group: "net", icon: "🔀" },
     "internet-ap": { label: "Wireless link", group: "net", icon: "📡" },
@@ -215,7 +217,7 @@
   CC.GROUPS = [
     ["cctv", "Cameras & recorders"],
     ["net", "Network & wireless"],
-    ["power", "Alarm & power"],
+    ["power", "Alarm, access & power"],
     ["other", "Other devices"],
     ["unknown", "Unidentified"],
   ];

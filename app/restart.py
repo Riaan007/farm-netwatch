@@ -29,6 +29,7 @@ import airos
 import credtest
 import edgeswitch
 import hikvision
+import identify
 import mikrotik
 import swos
 
@@ -74,7 +75,8 @@ def method_for(dev):
         return EDGESWITCH
     if "mikrotik" in blob or "routerboard" in blob or "routeros" in blob:
         return MIKROTIK
-    if "hikvision" in blob or "hangzhou" in blob or "hikvision" in title or (cat in ("camera", "nvr") and web):
+    if ("hikvision" in blob or "hangzhou" in blob or "hikvision" in title or (cat in ("camera", "nvr") and web)
+            or dev.get("sadp") or identify.hik_kind_of(dev)):     # behind a bridge the vendor is the bridge's
         return HIKVISION
     if ("ubiquiti" in blob or "ubnt" in blob) and 22 in ports:
         return AIROS

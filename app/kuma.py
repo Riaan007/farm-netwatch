@@ -97,7 +97,7 @@ _TAG = {
     "network": ("Network", "#6366f1"), "internet-ap": ("Internet AP", "#a855f7"),
     "router": ("Router", "#6366f1"), "printer": ("Printer", "#06b6d4"),
     "nas": ("NAS", "#3b82f6"), "voip": ("VoIP", "#22c55e"),
-    "alarm": ("Alarm", "#ef4444"),
+    "alarm": ("Alarm", "#ef4444"), "access": ("Access", "#0ea5e9"), "intercom": ("Intercom", "#84cc16"),
     "solar": ("Solar", "#eab308"), "media": ("Media", "#f97316"),
     "iot": ("IoT", "#14b8a6"), "pc": ("PC", "#64748b"),
     "server": ("Server", "#10b981"), "unknown": ("Unknown", "#f59e0b"),

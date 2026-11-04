@@ -337,7 +337,7 @@
         let card = null;
 
         const catIcon = { camera:"📷", nvr:"🎥", network:"📶", "internet-ap":"🌎", router:"🧭",
-            printer:"🖨️", nas:"💾", voip:"☎️", alarm:"🚨", solar:"☀️", media:"📺", iot:"💡", pc:"💻",
+            printer:"🖨️", nas:"💾", voip:"☎️", alarm:"🚨", access:"🔐", intercom:"🚪", solar:"☀️", media:"📺", iot:"💡", pc:"💻",
             server:"🖥️", unknown:"❓" };
         const catChip = {
             camera: "bg-rose-500/15 text-rose-300", nvr: "bg-rose-400/20 text-rose-200",
@@ -345,6 +345,7 @@
             router: "bg-indigo-400/20 text-indigo-200", printer: "bg-amber-500/15 text-amber-300",
             nas: "bg-cyan-500/15 text-cyan-300", voip: "bg-teal-500/15 text-teal-300",
             alarm: "bg-red-500/15 text-red-300",
+            access: "bg-sky-500/15 text-sky-300", intercom: "bg-lime-500/15 text-lime-300",
             solar: "bg-yellow-500/15 text-yellow-300", media: "bg-blue-500/15 text-blue-300",
             iot: "bg-emerald-500/15 text-emerald-300", pc: "bg-slate-500/20 text-slate-300",
             server: "bg-slate-400/20 text-slate-200", unknown: "bg-slate-500/10 text-slate-400",
@@ -398,7 +399,7 @@
         }
 
         // ---- device table: search / sort / group --------------------------
-        const CAT_ORDER = ['camera','nvr','alarm','network','internet-ap','router','printer',
+        const CAT_ORDER = ['camera','nvr','alarm','access','intercom','network','internet-ap','router','printer',
                            'nas','voip','solar','media','iot','pc','server','unknown'];
         const devState = { q: '', group: 'category', sort: 'status', dir: 1 };
         let lastDevices = [], lastFetched = null;

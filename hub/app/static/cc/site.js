@@ -543,7 +543,18 @@
   // Where the site filled in a model/serial/firmware nobody read with the device's own login.
   const metaNote = (d, f) => {
     const src = (d.meta_src || {})[f];
-    return src === "nvr" ? ` <span class="note">(from the NVR)</span>` : src === "hostname" ? ` <span class="note">(from its network name)</span>` : "";
+    return src === "sadp" ? ` <span class="note">(from Hikvision discovery)</span>` : src === "nvr" ? ` <span class="note">(from the NVR)</span>` : src === "hostname" ? ` <span class="note">(from its network name)</span>` : "";
+  };
+  // What Hikvision discovery heard the device say (site `sadp`): behind a wireless bridge the
+  // scan only sees the bridge's MAC, the answer has the real one.
+  const sadpRows = (d) => {
+    const sp = d.sadp;
+    if (!sp || typeof sp !== "object") return "";
+    const real = sp.mac && String(sp.mac).toLowerCase() !== String(d.mac || "").toLowerCase()
+      ? `<dt>Real MAC</dt><dd class="mono">${esc(sp.mac)} <span class="note">(from Hikvision discovery)</span></dd>` : "";
+    const bits = [sp.dhcp === true ? "address from DHCP" : sp.dhcp === false ? "fixed address" : "",
+      sp.activated === false ? "NOT activated — no admin password yet" : ""].filter(Boolean);
+    return real + (bits.length ? `<dt>Discovery</dt><dd>${esc(bits.join(" · "))}</dd>` : "");
   };
 
   CC.openDevice = (siteId, key) => {
@@ -556,7 +567,7 @@
         <label class="monsw ${d.watch ? "on" : ""}" id="dd-mon-row"><input type="checkbox" id="dd-mon" ${d.watch ? "checked" : ""}><span class="sw" aria-hidden="true"></span>
           <span><b>🔔 Monitored</b><small id="dd-mon-sub"></small></span></label>
         <div class="sect"><h3>Identity</h3><dl class="kv">
-          <dt>IP</dt><dd class="mono">${esc(d.ip || "—")}</dd><dt>MAC</dt><dd class="mono">${esc(d.mac || "—")}</dd>
+          <dt>IP</dt><dd class="mono">${esc(d.ip || "—")}</dd><dt>MAC</dt><dd class="mono">${esc(d.mac || "—")}</dd>${sadpRows(d)}
           ${d.device_name ? `<dt>Own name</dt><dd>${esc(d.device_name)} <span class="note">(${d.device_name_src === "nvr" ? "from the NVR" : "set on the device"})</span></dd>` : ""}<dt>Vendor</dt><dd>${esc(d.vendor || "—")}</dd>${d.model ? `<dt>Model</dt><dd>${esc(d.model)}${metaNote(d, "model")}</dd>` : ""}${d.firmware ? `<dt>Firmware</dt><dd><span class="mono">${esc(d.firmware)}</span>${metaNote(d, "firmware")}</dd>` : ""}${d.serial ? `<dt>Serial</dt><dd><span class="mono">${esc(d.serial)}</span>${metaNote(d, "serial")}</dd>` : ""}
           ${d.hostname ? `<dt>Hostname</dt><dd class="mono">${esc(d.hostname)}</dd>` : ""}${d.type ? `<dt>Detected as</dt><dd>${esc(d.type)} <span class="note">(${esc(d.confidence || "")} confidence)</span></dd>` : ""}
           <dt>Last seen</dt><dd>${d.online ? "now" : CC.ago(d.last_seen)} <span class="note">${esc(CC.when(d.last_seen))}</span></dd><dt>First seen</dt><dd>${esc(CC.when(d.first_seen))}</dd>

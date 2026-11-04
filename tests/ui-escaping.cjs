@@ -73,6 +73,8 @@ function siteApi(state) {
   });
   const devices = [
     dev(KEY, "10.0.0.2", { geo: { lat: -33.9, lon: 18.4, note: X, ts: NOW }, ip_conflict: true,
+      // what Hikvision discovery heard (scanner `sadp`) — a hostile answer would carry text like this
+      sadp: { mac: X, model: X, dhcp: true, activated: false }, meta_src: { model: "sadp", serial: X },
       ip_conflict_with: [{ key: KEY2, name: X, vendor: X, category: X, mac: X, online: true }] }),
     dev(KEY2, "10.0.0.3", { name: X + " two", watch: true }),
   ];
@@ -143,6 +145,7 @@ async function sitePage(browser) {
   await page.waitForSelector("#modal:not(.hidden)");
   check((await page.evaluate(() => CURRENT_KEY)) === KEY, "site: a problem's device chip opens that device");
   check((await page.textContent("#modal-conflict")).includes(X), "site: the conflict note shows the other device's name as text");
+  check((await page.textContent("#modal-extended")).includes(`real MAC ${X}`), "site: what Hikvision discovery heard shows as text");
   check((await page.$$eval("#edit-link option", (os) => os.map((o) => o.textContent).join("|"))).includes(X + " two"), "site: the link list shows names as text");
   check((await page.inputValue("#edit-category")) === "unknown", "site: an unknown category shows as Unknown in the editor");
   // Save needs the login: cancel the prompt, the window stays open with a message

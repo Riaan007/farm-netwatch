@@ -40,6 +40,7 @@ import time
 import config
 import creds
 import hikisapi
+import identify
 
 DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
 PIC_DIR = os.path.join(DATA_DIR, "camera_pics")
@@ -125,6 +126,25 @@ def _hikish(d):
     # "Hangzhou Ezviz Software" is Hikvision's own consumer brand.
     return ("hikvision" in v or "hangzhou" in v or m.startswith(("DS-", "IDS-", "HIKVISION"))
             or 8000 in (d.get("ports") or ()))
+
+
+def _model_kind(d):
+    """What the device's Hikvision model says it is ("camera", "nvr", "access",
+    "intercom", "network"), or None — identify.hik_kind_of: the model discovery
+    heard it give, else the one on its record. It overrides the category both
+    ways: the category may be the scan's guess from open ports (a PoE switch
+    with only port 8000 open "is" a recorder), or an old choice saved with it."""
+    kind = identify.hik_kind_of(d)
+    return kind[0] if kind else None
+
+
+def _is_recorder(d, lists):
+    """A recorder by its model; with no model that says, by its category or an
+    NVR channel list read from it."""
+    kind = _model_kind(d)
+    if kind:
+        return kind == "nvr"
+    return d.get("category") == "nvr" or d.get("key") in lists
 
 
 def _ipnum(ip):
@@ -278,7 +298,7 @@ class Engine:
 
         recorders = {}
         for d in devices:
-            if d.get("category") == "nvr" or d["key"] in lists:
+            if _is_recorder(d, lists):
                 recorders[d["key"]] = d
         rec_login = {k: login(k) for k in recorders}
 
@@ -311,8 +331,15 @@ class Engine:
                 continue
             ip = d.get("ip")
             in_multi = (d.get("mac") or "").lower() in multi
-            if not (d.get("category") == "camera" or (ip and ip in chans and not in_multi)
-                    or (_hikish(d) and 554 in (d.get("ports") or []))):
+            on_nvr = bool(ip and ip in chans and not in_multi)
+            kind = _model_kind(d)
+            if kind == "network":
+                continue           # a switch, whatever an old guess or an NVR channel says
+            if kind in ("access", "intercom"):
+                if not on_nvr:
+                    continue       # a terminal / door station only counts once an NVR records it
+            elif not (kind == "camera" or d.get("category") == "camera" or on_nvr
+                      or (_hikish(d) and 554 in (d.get("ports") or []))):
                 continue
             if in_multi and ip in chans:
                 continue           # a bridge's merged record: its channel stands for it below
@@ -765,7 +792,7 @@ class Engine:
         for d in self.devices() or []:
             k = d.get("key")
             if not (k in have and d.get("online") and d.get("ip")
-                    and (d.get("category") == "nvr" or k in (self.nvr_lists() or {}))):
+                    and _is_recorder(d, self.nvr_lists() or {})):
                 continue
             if time.time() - self._nvr_read_at.get(k, 0) < NVR_READ_S:
                 continue

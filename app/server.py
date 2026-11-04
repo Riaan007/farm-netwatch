@@ -380,7 +380,7 @@ def api_devices():
         # what Kuma really has for it: "on", or e.g. "setup" = switched on, Kuma not set up yet
         d["kuma_state"], d["kuma_why"] = monitoring.kuma_state(d.get("key"), _kreg, kuma_st)
         d["geo"] = _kreg.get("geo") or None         # {lat, lon, note, ts} — set by hand
-        ms = _kreg.get("meta_src")                  # model/serial/firmware filled in: {field: "nvr"|"hostname"}
+        ms = _kreg.get("meta_src")                  # model/serial/firmware filled in: {field: "sadp"|"nvr"|"hostname"}
         d["meta_src"] = dict(ms) if isinstance(ms, dict) else {}
         ct = _kreg.get("cred_test")
         d["cred_test"] = {k: v for k, v in ct.items() if k != "fp"} if ct else None
@@ -1350,7 +1350,7 @@ def _is_mikrotik_dev(d):
     # Port 8291 on its own is NOT proof — HP printers expose it too (the same trap
     # identify.classify() calls out), and a printer in the managed-unit list is noise.
     return (8291 in (d.get("ports") or [])
-            and (d.get("category") or "") not in ("printer", "camera", "nvr", "nas", "voip"))
+            and (d.get("category") or "") not in ("printer", "camera", "nvr", "nas", "voip", "access", "intercom"))
 
 
 # MNDP costs no login at all, so a router we cannot log into still shows its real

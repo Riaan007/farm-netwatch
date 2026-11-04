@@ -1501,6 +1501,8 @@
                                 <option value="nas">💾 NAS / Storage</option>
                                 <option value="voip">☎️ VoIP / Phone</option>
                                 <option value="alarm">🚨 Alarm system</option>
+                                <option value="access">🔐 Access control</option>
+                                <option value="intercom">🚪 Intercom</option>
                                 <option value="solar">☀️ Solar / Inverter</option>
                                 <option value="media">📺 Media / TV</option>
                                 <option value="iot">💡 IoT / Smart device</option>
@@ -1643,6 +1645,8 @@
             nas:         "bg-blue-500/15 border-blue-400/40 text-blue-200 border-2",
             voip:        "bg-green-500/15 border-green-400/40 text-green-200 border-2",
             alarm:       "bg-red-500/15 border-red-400/40 text-red-200 border-2",
+            access:      "bg-sky-500/15 border-sky-400/40 text-sky-200 border-2",
+            intercom:    "bg-lime-500/15 border-lime-400/40 text-lime-200 border-2",
             solar:       "bg-yellow-500/15 border-yellow-400/40 text-yellow-200 border-2",
             media:       "bg-orange-500/15 border-orange-400/40 text-orange-200 border-2",
             iot:         "bg-teal-500/15 border-teal-400/40 text-teal-200 border-2",
@@ -1651,11 +1655,11 @@
             unknown:     "bg-amber-500/10 border-amber-400/40 text-amber-200 border-2"
         };
         const catIcon = { camera:"📷", nvr:"🎥", network:"📶", "internet-ap":"🌎", router:"🧭",
-            printer:"🖨️", nas:"💾", voip:"☎️", alarm:"🚨", solar:"☀️", media:"📺", iot:"💡", pc:"💻",
+            printer:"🖨️", nas:"💾", voip:"☎️", alarm:"🚨", access:"🔐", intercom:"🚪", solar:"☀️", media:"📺", iot:"💡", pc:"💻",
             server:"🖥️", unknown:"❓" };
         const catLabel = { camera:"Camera", nvr:"NVR", network:"Network", "internet-ap":"Internet AP",
-            router:"Router", printer:"Printer", nas:"NAS", voip:"VoIP", alarm:"Alarm", solar:"Solar", media:"Media",
-            iot:"IoT", pc:"PC", server:"Server", unknown:"Unknown" };
+            router:"Router", printer:"Printer", nas:"NAS", voip:"VoIP", alarm:"Alarm", access:"Access control", intercom:"Intercom",
+            solar:"Solar", media:"Media", iot:"IoT", pc:"PC", server:"Server", unknown:"Unknown" };
         // The two groups the user watches most closely (shown with online/offline counts).
         const GROUPS = {
             camera:  { label:"Cameras", icon:"📷", cats:["camera","nvr"] },
@@ -1923,7 +1927,8 @@
         const NET_CATS = ['network','internet-ap','router'];
         const CAM_CATS = ['camera','nvr'];
         const catAccent = { camera:'#fb7185', nvr:'#fda4af', network:'#818cf8', 'internet-ap':'#c084fc', router:'#818cf8',
-            printer:'#22d3ee', nas:'#60a5fa', voip:'#4ade80', alarm:'#f87171', solar:'#facc15', media:'#fb923c',
+            printer:'#22d3ee', nas:'#60a5fa', voip:'#4ade80', alarm:'#f87171', access:'#38bdf8', intercom:'#a3e635',
+            solar:'#facc15', media:'#fb923c',
             iot:'#2dd4bf', pc:'#94a3b8', server:'#34d399', unknown:'#fbbf24' };
         let VIEW = 'cards', SORT = 'ip', QUERY = '', STATUS = null, WIFI = null, QUIET_OPEN = false;
         // Which list the devices panel shows: the operator's Monitored devices (online/offline
@@ -1981,16 +1986,26 @@
         }
         function downFor(d){ return d.last_seen ? 'down ' + spanText(nowS() - d.last_seen) : 'down'; }
         const BELL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg>';
-        const MON_GROUPS = [['cctv','Cameras & recorders'], ['net','Network & wireless'], ['power','Alarm & power'], ['other','Other devices'], ['unknown','Unidentified']];
+        const MON_GROUPS = [['cctv','Cameras & recorders'], ['net','Network & wireless'], ['power','Alarm, access & power'], ['other','Other devices'], ['unknown','Unidentified']];
         function monGroup(d){
             const c = d.category;
             if(CAM_CATS.includes(c)) return 'cctv';
             if(NET_CATS.includes(c) || /mikrotik|routerboard|routeros/i.test([d.vendor, d.model, d.hostname].join(' '))) return 'net';
-            if(c === 'alarm' || c === 'solar') return 'power';
+            if(['alarm','access','intercom','solar'].includes(c)) return 'power';
             return !c || c === 'unknown' ? (d.name ? 'other' : 'unknown') : 'other';
         }
         // Where the scanner filled in a model/serial/firmware nobody read with the device's own login.
-        function metaNote(d, f){ const src = (d.meta_src||{})[f]; return src==='nvr' ? ' (from the NVR)' : src==='hostname' ? ' (from its network name)' : ''; }
+        function metaNote(d, f){ const src = (d.meta_src||{})[f]; return src==='sadp' ? ' (from Hikvision discovery)' : src==='nvr' ? ' (from the NVR)' : src==='hostname' ? ' (from its network name)' : ''; }
+        // What Hikvision discovery heard the device say about itself (scanner `sadp`): its real MAC
+        // (behind a wireless bridge the scan only sees the bridge's), DHCP, and whether it is activated.
+        function sadpNote(d){
+            const sp = d && d.sadp; if(!sp) return '';
+            const bits = [];
+            if(sp.mac && String(sp.mac).toLowerCase() !== String(d.mac||'').toLowerCase()) bits.push(`real MAC ${sp.mac}`);
+            if(sp.dhcp === true) bits.push('address from DHCP'); else if(sp.dhcp === false) bits.push('fixed address');
+            if(sp.activated === false) bits.push('NOT ACTIVATED (no admin password yet)');
+            return bits.length ? `\nHikvision discovery: ${bits.join(' · ')}` : '';
+        }
         function devTitle(d){ return d.name || d.device_name || d.model || (d.type && !/^unknown/i.test(d.type) ? d.type : '') || d.hostname || (d.vendor ? d.vendor.replace(/,?\s*(Co\.|Ltd|Inc|Corp|Technology|Digital).*$/i,'') : '') || 'Unknown device'; }
         function vendorShort(v){ return (v||'').replace(/,?\s*(Co\.,?\s*Ltd\.?|Ltd\.?|Inc\.?|Corp\.?|Corporation)\s*$/i,'').replace(/\s+(Digital\s+)?Technolog(y|ies)(\s+Co.*)?$/i,'').replace(/^Hangzhou\s+/i,'').trim(); }
         /* IP search, same rules as the hub Control Center:
@@ -3026,7 +3041,7 @@
             const extra = document.getElementById('modal-extra-info');
             if(dev){
                 extra.classList.remove('hidden');
-                let txt = (dev.device_name ? `Own name: ${dev.device_name}${dev.device_name_src==='nvr' ? ' (from the NVR)' : ''}\n` : '') + `MAC:      ${dev.mac||'n/a (routed host)'}\nHostname: ${dev.hostname||'—'}\nVendor:   ${dev.vendor||'—'}\nModel:    ${dev.model||'—'}${metaNote(dev,'model')}\nSerial:   ${dev.serial||'—'}${metaNote(dev,'serial')}${dev.firmware ? `\nFirmware: ${dev.firmware}${metaNote(dev,'firmware')}` : ''}\nPorts:    ${(dev.ports||[]).join(', ')||'none'}\nOS guess: ${dev.os||'—'}\nNetwork:  ${dev.target}${dev.local===false?' (remote)':''}`;
+                let txt = (dev.device_name ? `Own name: ${dev.device_name}${dev.device_name_src==='nvr' ? ' (from the NVR)' : ''}\n` : '') + `MAC:      ${dev.mac||'n/a (routed host)'}\nHostname: ${dev.hostname||'—'}\nVendor:   ${dev.vendor||'—'}\nModel:    ${dev.model||'—'}${metaNote(dev,'model')}\nSerial:   ${dev.serial||'—'}${metaNote(dev,'serial')}${dev.firmware ? `\nFirmware: ${dev.firmware}${metaNote(dev,'firmware')}` : ''}\nPorts:    ${(dev.ports||[]).join(', ')||'none'}\nOS guess: ${dev.os||'—'}\nNetwork:  ${dev.target}${dev.local===false?' (remote)':''}${sadpNote(dev)}`;
                 if(dev.banner&&dev.banner.title) txt += `\nWeb title: ${dev.banner.title}`;
                 const linked = DATA.devices.filter(o => o.key!==dev.key && (o.link===dev.key || (dev.link && (o.link===dev.link || o.key===dev.link))));
                 if(dev.link || linked.length) txt += `\nLinked:   ` + ([dev.link, ...linked.map(o=>o.ip)].filter(Boolean).join(', '));
@@ -3048,7 +3063,8 @@
             loadAsset(key);
             renderModalLocation(dev);
             const hikBtn = document.getElementById('hik-btn');
-            const isHik = dev && (['camera','nvr'].includes(dev.category) || /hikvision|hangzhou/i.test(dev.vendor||''));
+            // behind a wireless bridge the vendor is the bridge's: discovery or a Hikvision model says it too
+            const isHik = dev && (['camera','nvr'].includes(dev.category) || /hikvision|hangzhou/i.test(dev.vendor||'') || !!dev.sadp || /^i?ds-/i.test(dev.model||''));
             hikBtn.classList.toggle('hidden', !isHik);
             const camBtn = document.getElementById('cam-page-btn');
             camBtn.classList.toggle('hidden', !(dev && ['camera','nvr'].includes(dev.category)));
@@ -3067,7 +3083,7 @@
             document.getElementById('airos-wifi-panel').classList.add('hidden');
             // MikroTik: router info is read-only (always shown); Manage/Terminal
             // is gated on the mikrotik_manage flag, like airOS Change IP.
-            const isMikrotik = dev && (/mikrotik|routerboard|routeros/i.test((dev.vendor||'')+' '+(dev.model||'')) || ((dev.ports||[]).includes(8291) && !['printer','camera','nvr','nas','voip'].includes(dev.category))) && !isHik;
+            const isMikrotik = dev && (/mikrotik|routerboard|routeros/i.test((dev.vendor||'')+' '+(dev.model||'')) || ((dev.ports||[]).includes(8291) && !['printer','camera','nvr','nas','voip','access','intercom'].includes(dev.category))) && !isHik;
             document.getElementById('mikrotik-status-btn').classList.toggle('hidden', !isMikrotik);
 
             drawSpark([]); document.getElementById('up-24h').innerText='--'; document.getElementById('up-7d').innerText='--'; document.getElementById('up-30d').innerText='--';

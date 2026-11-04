@@ -33,6 +33,9 @@ DEFAULTS = {
         "online_lookup": True,     # allow api.macvendors.com + HTTP banner fetch
         "deep_on_new": False,      # auto deep-scan a host the first time it is seen
         "discovery": True,         # mDNS / SSDP / NetBIOS / ARP local enrichment
+        # Hikvision discovery (SADP, UDP 37020) after each scan: model, serial,
+        # firmware and real MAC of every Hikvision device, no login (sadp.py).
+        "sadp": True,
         "history_days": 90,        # uptime retention before pruning
         # "Online" requires real reachability — an open port OR an ICMP reply.
         # A host that only answers ARP (e.g. a Wi-Fi NIC answering while the host

@@ -129,19 +129,59 @@ def http_banner(ip, open_ports, online_ok=True):
     return {}
 
 
-# Every category a device record may carry: what classify() and the mDNS hints
-# produce, plus "router", which only an operator picks. The site page's
-# catLabel/catIcon key on these, and the device API accepts nothing else
-# (tests/test_device_meta.py keeps the lists in step).
+# Every category a device record may carry: what classify(), hik_kind() and the
+# mDNS hints produce, plus "router", which only an operator picks. The site
+# page's catLabel/catIcon key on these, the hub knows them all (cc/core.js,
+# site.html), and the device API accepts nothing else (tests/test_device_meta.py
+# keeps the lists in step).
 CATEGORIES = frozenset({
     "camera", "nvr", "network", "internet-ap", "router", "printer", "nas", "voip",
-    "alarm", "solar", "media", "iot", "pc", "server", "unknown",
+    "alarm", "solar", "media", "iot", "pc", "server", "access", "intercom", "unknown",
 })
 
 
 def is_category(value):
     # a stored record may hold anything (a dict is unhashable, so check the type)
     return isinstance(value, str) and value in CATEGORIES
+
+
+# What a Hikvision device IS, from its model number. The model is the device's
+# own word (Hikvision discovery, its login) or its NVR's, so it beats the guess
+# classify() makes from a MAC vendor and open ports — a PoE switch with only the
+# SDK port 8000 open looks like a recorder, a face terminal with RTSP like a
+# camera. Only families whose prefix says it plainly; any other model leaves the
+# guess alone. Prefixes are Hikvision's own ("i" = its DeepinView / DeepinMind /
+# AcuSense lines).
+_HIK_FAMILIES = [
+    (re.compile(r"^DS-K1T", re.I), "access", "Access terminal"),
+    (re.compile(r"^DS-K1A", re.I), "access", "Time attendance terminal"),
+    (re.compile(r"^DS-KH", re.I), "intercom", "Intercom indoor station"),
+    (re.compile(r"^DS-K[DVB]", re.I), "intercom", "Intercom door station"),
+    (re.compile(r"^DS-3E", re.I), "network", "Network switch"),
+    (re.compile(r"^I?DS-[789]\d{3}", re.I), "nvr", "NVR / Recorder"),
+    (re.compile(r"^I?DS-2(CD|DE|SE|TD|PT)", re.I), "camera", "IP Camera"),
+]
+
+
+def hik_kind(model):
+    """(category, type label) for a Hikvision model number, or None when the
+    model isn't one of the families above (or isn't text at all)."""
+    if not isinstance(model, str):
+        return None
+    m = model.strip()
+    for rx, category, label in _HIK_FAMILIES:
+        if rx.match(m):
+            return category, label
+    return None
+
+
+def hik_kind_of(dev):
+    """hik_kind() of a device record: the model Hikvision discovery last heard
+    it give (its `sadp` answer), else the model on its record."""
+    if not isinstance(dev, dict):
+        return None
+    sp = dev.get("sadp")
+    return hik_kind(sp.get("model") if isinstance(sp, dict) else None) or hik_kind(dev.get("model"))
 
 
 def features_for_ports(open_ports, deep=False):

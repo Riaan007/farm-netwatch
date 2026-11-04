@@ -27,6 +27,7 @@ from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 import airos
 import edgeswitch
+import identify
 import swos
 import hikvision
 
@@ -213,7 +214,9 @@ def plan(dev, ports):
     v = " ".join(str(dev.get(k) or "") for k in ("vendor", "model", "hostname", "banner", "os")).lower()
     cat = dev.get("category") or ""
     web = any(p in ports for p in (80, 443, 8080, 8443))
-    hik = "hikvision" in v or "hangzhou" in v or (cat in ("camera", "nvr") and web)
+    # behind a proxy-ARP bridge the vendor is the bridge's: discovery or the model says Hikvision
+    hik = ("hikvision" in v or "hangzhou" in v or (cat in ("camera", "nvr") and web)
+           or bool(dev.get("sadp")) or bool(identify.hik_kind_of(dev)))
     mikrotik = "mikrotik" in v or "routerboard" in v or "routeros" in v
     steps = []
     if hik and web:

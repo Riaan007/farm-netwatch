@@ -114,6 +114,18 @@ device drops offline.
   spelt like one the site already knows where exactly one fits. The device window
   says where such a value came from. A value the operator typed or the camera's
   own login read is never replaced; the NVR's replaces the host name's.
+- **Hikvision discovery (SADP)** — after each scan the Pi asks the LAN what Hikvision's
+  own SADP tool asks (UDP 37020, read-only: it never activates, re-addresses or resets
+  anything). Every Hikvision device answers with its model, serial, firmware and real
+  MAC — access terminals, intercom stations and PoE switches too, with no login. That
+  fills model / serial / firmware (below a value the device's own login read, above
+  the NVR's and the host name's) and files each device by its model: DS-K1T/DS-K1A =
+  Access control, DS-KH/KD/KV/KB = Intercom, DS-3E = Network switch, DS-7/8/9xxx =
+  NVR, DS-2CD/2DE/2SE/2TD/2PT = Camera. A category the operator chose is never
+  changed; the Cameras tab lists recorders and cameras by the model either way.
+  Behind a proxy-ARP wireless bridge the device keeps its per-IP record and the
+  device window shows its real MAC. To turn it off, set `"sadp": false` under `scan`
+  in `/data/config.json`.
 - **Change a device's IP** — for **Hikvision** cameras, a "Change IP" button writes
   a new static IP via ISAPI and reboots the camera to apply it (saved login
   required). For **Ubiquiti airOS** radios there's an *experimental, off-by-default*

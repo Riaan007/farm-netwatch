@@ -27,6 +27,7 @@ import mikrotik
 import monitoring
 import notify
 import radiomon
+import sadp
 import ubnt
 
 DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
@@ -53,13 +54,29 @@ _GENERIC_NAMES = {"ipcamera", "ipdome", "camera", "networkcamera", "ipc", "embed
                   "localhost", "unknown", "airmax", "unifi", "acusense", "mikrotik", "routeros"}
 _NUMBERED_DEFAULT = re.compile(r"^(camera|channel|ipcamera|ipc|cam|ch|d)\d+$")   # "Camera 01", "D1"
 # Model, serial and firmware the scanner fills in by itself (fill_device_meta),
-# and how far each source is trusted: the device's own login, then the NVR
-# connected to it, then the host name it advertises. What an NVR or a host name
-# gave is marked in the registry (`meta_src`, field -> source) so a better source
-# can replace it; an unmarked value — the operator's, or one read with the
-# device's own login — is never filled over.
+# and how far each source is trusted: the device's own login, then Hikvision
+# discovery (SADP), then the NVR connected to it, then the host name it
+# advertises. What discovery, an NVR or a host name gave is marked in the
+# registry (`meta_src`, field -> source) so a better source can replace it; an
+# unmarked value — the operator's, or one read with the device's own login — is
+# never filled over.
+# Discovery sits above the NVR: it is the unit's own word, said now, where an
+# NVR relays what it read from the camera when it connected (the unit that used
+# to be at that address, perhaps). It sits below the login: the answer is an
+# unauthenticated multicast that anyone on the LAN could send, matched to the
+# device only by the address it claims and speaks from.
 _META_FIELDS = ("model", "serial", "firmware")
-_META_RANK = {"hostname": 1, "nvr": 2, "device": 3}
+_META_RANK = {"hostname": 1, "nvr": 2, "sadp": 3, "device": 4}
+_FILLED_BY = tuple(k for k in _META_RANK if k != "device")   # sources that leave a mark
+# One Hikvision discovery round at most this often (a targeted scan right after
+# a full one reuses the last round); a device's answer counts this long.
+SADP_EVERY_S = 5 * 60
+SADP_KEEP_S = 45 * 60
+# What a discovery answer adds to the device record (`sadp`) beyond model/serial/
+# firmware: the real MAC (behind a proxy-ARP bridge the scan only sees the
+# bridge's) and the device's own network settings.
+_SADP_INFO = ("mac", "model", "serial", "firmware", "dhcp", "gateway", "http_port",
+              "command_port", "activated")
 # A Hikvision camera's host name is its serial number: model, build date, unit
 # code ("DS-2CD2T46G2P-ISU-SL20240617AAWRFG0192309"), with every character a host
 # name can't carry ("/", "(", ")") shown as "-".
@@ -197,8 +214,11 @@ def hik_own_name(info):
 
 
 def _is_hik(dev):
+    # Behind a proxy-ARP bridge the vendor is the bridge's: a Hikvision discovery
+    # answer or a Hikvision model says it as well.
     v = (dev.get("vendor") or "").lower()
-    return any(x in v for x in ("hikvision", "hangzhou")) or dev.get("category") in ("camera", "nvr")
+    return (any(x in v for x in ("hikvision", "hangzhou")) or dev.get("category") in ("camera", "nvr")
+            or bool(dev.get("sadp")) or bool(identify.hik_kind_of(dev)))
 
 # Plaintext / remote-admin ports worth flagging as a security problem.
 RISKY_PORTS = {21: "FTP", 23: "Telnet", 2323: "Telnet (alt)",
@@ -318,6 +338,8 @@ class Scanner:
         self.registry = self._load_registry()
         self._name_checked = {}    # key -> last time its own display name was read
         self._nvr_lists = {}       # NVR key -> (read at, NVR ip, channel list) — see _names_pass
+        self._sadp_round = None    # the last Hikvision discovery round (sadp.discover)
+        self._sadp_by_key = {}     # device key -> (answered at, its answer) — see _sadp_pass
         # The radio monitor already SSHes into every radio with a login; it hands
         # back the host name it reads so radios get a display name for free.
         radiomon.monitor.on_identity = self.set_device_name
@@ -709,6 +731,13 @@ class Scanner:
         if reg is None and key == h["ip"]:
             reg = self.registry.get(h["ip"])
         reg = reg or {}
+        # A Hikvision model says what the device is better than its MAC vendor and
+        # open ports do (identify.hik_kind): the one discovery last heard it give,
+        # else the one on its record. A category the operator saved still wins.
+        heard = self._sadp_heard(key)
+        kind = identify.hik_kind_of({"sadp": heard, "model": reg.get("model")})
+        if kind:
+            category, type_label, conf = kind[0], kind[1], "high"
         ts = int(time.time())
         rec = {
             "key": key, "ip": h["ip"], "mac": mac_disp,
@@ -732,6 +761,8 @@ class Scanner:
             "online": True, "status": "online",
             "last_seen": ts, "rtt": h["rtt"], "deep": deep,
         }
+        if heard:
+            rec["sadp"] = heard
         if deep:
             self._enrich_hik(rec)
         return rec
@@ -822,7 +853,8 @@ class Scanner:
                                  model=info.get("model") or d.get("model"))
             self.fill_device_meta(d["key"], {"model": info.get("model"), "serial": info.get("serialNumber"),
                                              "firmware": info.get("firmwareVersion")}, "device")
-            if d.get("category") == "nvr" or re.search(r"NVR|DVR", info.get("deviceType", ""), re.I):
+            if d.get("category") == "nvr" or (identify.hik_kind_of(d) or ("",))[0] == "nvr" \
+                    or re.search(r"NVR|DVR", info.get("deviceType", ""), re.I):
                 chans = hikvision.nvr_channels(d["ip"], c["username"], c["password"])
                 if chans:
                     self._nvr_lists[d["key"]] = (now, d["ip"], chans)
@@ -836,6 +868,7 @@ class Scanner:
                 for d in devices.values():
                     if d.get("ip") in by_nvr and _is_hik(d) and not radiomon.is_radio(d):
                         self.set_device_name(d["key"], by_nvr[d["ip"]], model=d.get("model"), src="nvr")
+            self._sadp_pass(devices)       # first: what it fills, the NVR and host name can't replace
             self._fill_meta(devices, lists)
         except Exception as e:  # noqa: BLE001 - names are cosmetic; never break scanning
             print("names pass error:", e, flush=True)
@@ -877,6 +910,92 @@ class Scanner:
                 self.fill_device_meta(d["key"], det, "nvr")
             if host:
                 self.fill_device_meta(d["key"], host, "hostname")
+
+    # ---- Hikvision discovery (SADP) ---------------------------------------------
+    def _sadp_pass(self, devices):
+        """Hikvision discovery after each scan (sadp.py): what every Hikvision
+        device on the Pi's own LAN says it is — access terminals, intercoms and
+        switches too, which no login or NVR here reads. Model, serial and firmware
+        are filled in as source "sadp" (_META_RANK); the real MAC and the
+        device's network settings go on its record (`sadp`); its category follows
+        the model unless the operator chose one. One round per SADP_EVERY_S at
+        most. Never raises: discovery is extra."""
+        try:
+            cfg = config.load()
+            if not (cfg.get("scan") or {}).get("sadp", True):
+                self._sadp_by_key = {}
+                return
+            rnd = self._sadp_round
+            if not rnd or time.time() - rnd["ts"] >= SADP_EVERY_S:
+                local = [t["cidr"] for t in cfg.get("targets") or []
+                         if t.get("cidr") and self._is_local(t["cidr"], t.get("local", "auto"))]
+                rnd = sadp.discover(sadp.lan_addresses(local))
+                if rnd["note"] and rnd["note"] != (self._sadp_round or {}).get("note"):
+                    print("sadp:", rnd["note"], flush=True)
+                self._sadp_round = rnd
+            self._sadp_apply(devices, rnd)
+        except Exception as e:  # noqa: BLE001 - discovery must never break scanning
+            print("sadp pass error:", e, flush=True)
+
+    def _sadp_heard(self, key):
+        """What discovery last heard the device at `key` say, while it still
+        counts (SADP_KEEP_S): the record's `sadp`. None when nothing did."""
+        hit = self._sadp_by_key.get(key)
+        if not hit or time.time() - hit[0] > SADP_KEEP_S:
+            return None
+        return dict(hit[1])
+
+    @staticmethod
+    def _sadp_matches(devices, answers):
+        """{device key: answer}. An answer goes to the one online device at the
+        address it claims (and spoke from — sadp.discover checks that); none
+        when two devices share that address. A device tracked by its MAC must
+        have the MAC the answer gives, else the answer is another unit's. A
+        device tracked by its address — behind a marked proxy-ARP bridge it
+        carries the bridge's MAC, or no MAC was seen — takes the answer as it
+        is: it keeps its key, and its real MAC is in the answer."""
+        at_ip = {}
+        for d in devices.values():
+            if d.get("online") and d.get("ip") and d.get("key"):
+                at_ip.setdefault(d["ip"], []).append(d)
+        out = {}
+        for ip, a in answers.items():
+            ds = at_ip.get(ip) or []
+            if len(ds) != 1:
+                continue
+            d = ds[0]
+            if ":" in d["key"] and identify.normalize_mac(d.get("mac")) != identify.normalize_mac(a.get("mac")):
+                continue
+            out[d["key"]] = a
+        return out
+
+    def _sadp_apply(self, devices, rnd):
+        """Match one discovery round to `devices` and put what each answer says
+        where it belongs. Returns {device key: answer} for the devices matched."""
+        matched = self._sadp_matches(devices, (rnd or {}).get("answers") or {})
+        now, heard_at = time.time(), (rnd or {}).get("ts") or time.time()
+        if (rnd or {}).get("bound") and (rnd or {}).get("addrs"):
+            by_key = {}        # a whole round: a device it didn't hear says nothing any more
+        else:                  # a partial one: what earlier rounds heard stands until too old
+            by_key = {k: v for k, v in self._sadp_by_key.items() if now - v[0] <= SADP_KEEP_S}
+        for key, a in matched.items():
+            by_key[key] = (heard_at, dict({f: a.get(f) for f in _SADP_INFO}, ts=int(heard_at)))
+        self._sadp_by_key = by_key
+        for key in matched:
+            heard = by_key[key][1]
+            self.fill_device_meta(key, heard, "sadp")
+            reg = self.registry.get(key) or {}
+            kind = identify.hik_kind_of({"sadp": heard, "model": reg.get("model")})
+            with self.lock:
+                d = self.devices.get(key)
+                if d is None:
+                    continue
+                d["sadp"] = dict(heard)
+                if kind:               # as _build_record has it on the next scan
+                    d.update(type=reg.get("type") or kind[1], confidence="high")
+                    if not identify.is_category(reg.get("category")):
+                        d["category"] = kind[0]
+        return matched
 
     # ---- local L2 discovery (mDNS / SSDP / NetBIOS / ARP) --------------
     def _apply_disc(self, rec, info):
@@ -1524,7 +1643,7 @@ class Scanner:
 
     def fill_device_meta(self, key, values, src):
         """Fill in model/serial/firmware (`values`) from `src`: "device" (the
-        device's own login), "nvr" or "hostname" (see _META_RANK). A field is
+        device's own login), "sadp", "nvr" or "hostname" (see _META_RANK). A field is
         only written where the registry has nothing better — empty, or filled
         earlier from the same or a weaker source — so a value the operator typed
         or the device's own login read is never overwritten. Nothing is written
@@ -1548,8 +1667,8 @@ class Scanner:
                         kuma_monitor_id=None, kuma_ip=None, src=None):
         """Operator/device metadata. The Monitored switch (`watch`) is NOT set
         here — monitoring.set_many() owns it, so Uptime Kuma always follows.
-        `src` says where serial/model/firmware come from: "nvr"/"hostname" marks
-        them as filled in by the scanner (registry `meta_src`), "device" (the
+        `src` says where serial/model/firmware come from: "sadp"/"nvr"/"hostname"
+        marks them as filled in by the scanner (registry `meta_src`), "device" (the
         device's own login) clears that mark, and anyone else (the operator's
         form, which sends every field back) clears it only for a value that
         changes."""
@@ -1558,7 +1677,7 @@ class Scanner:
         for field, val in (("serial", serial), ("model", model), ("firmware", firmware)):
             if val is None:
                 continue
-            if src in ("nvr", "hostname"):
+            if src in _FILLED_BY:
                 marks[field] = src
             elif src == "device" or val != reg.get(field, ""):
                 marks.pop(field, None)

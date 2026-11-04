@@ -21,6 +21,16 @@ import scanner     # noqa: E402
 CAM = "aa:bb:cc:00:00:01"
 
 
+def setUpModule():
+    # The names pass also runs Hikvision discovery (tested in test_sadp.py). Here it
+    # hears nothing — and never asks a real LAN, whatever network the test runs on.
+    for name, value in (("lan_addresses", []), ("discover", {"ts": time.time(), "bound": False, "addrs": [],
+                                                             "note": "", "answers": {}, "clashes": {}})):
+        p = mock.patch.object(scanner.sadp, name, return_value=value)
+        p.start()
+        unittest.addModuleCleanup(p.stop)
+
+
 class FilterTest(unittest.TestCase):
     def test_factory_defaults_are_not_names(self):
         for raw, model in [("IP CAMERA", "DS-2CD2143G2-I"), ("IPCamera", None),

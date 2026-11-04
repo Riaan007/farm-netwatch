@@ -51,7 +51,7 @@ LIMITS = {
     "errors_hour": {"warn": 100.0, "crit": 1000.0},  # errors + drops per hour on one port
     "flaps_6h":    {"warn": 4, "crit": 10},          # link down/up changes in 6 h
 }
-INFRA_CATEGORIES = {"camera", "nvr", "network", "internet-ap", "router", "solar", "alarm"}
+INFRA_CATEGORIES = {"camera", "nvr", "network", "internet-ap", "router", "solar", "alarm", "access", "intercom"}
 
 
 def driver(dev):
