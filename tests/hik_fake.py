@@ -69,6 +69,9 @@ class Device:
         self.put_status = {}                 # path -> (http status, statusCode) to answer a PUT with
         self.not_kept = set()                # paths whose PUT is answered OK but changes nothing
         self.puts = []                       # (path, body) of every accepted PUT
+        # PTZ: None = no PTZ at all (403); else {"caps": bool, "presets": [(id, name)], "momentary": bool}
+        self.ptz = None
+        self.ptz_calls = []                  # (method, path, body) of every PTZ call
         self.hits = []                       # (method, path, sent a login?)
         self.nonce = secrets.token_hex(8)
         self.srv = None
@@ -183,6 +186,22 @@ class Device:
         if req.command != "PUT":
             return self._send(req, 405, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
         body = getattr(req, "body", b"").decode()
+        if self.settings[path].lstrip().startswith("{"):
+            # a JSON document (strobe, siren): same single top key, valid JSON, JSON status back
+            import json as _json
+            try:
+                ok = list(_json.loads(body)) == list(_json.loads(self.settings[path]))
+            except ValueError:
+                ok = False
+            if not ok:
+                return self._send(req, 400, '{"statusCode": 6, "subStatusCode": "badJsonFormat"}')
+            http, code = self.put_status.get(path, (200, 1))
+            if http != 200 or code not in (1, 7):
+                return self._send(req, http, f'{{"statusCode": {code}, "subStatusCode": "invalidContent"}}')
+            self.puts.append((path, body))
+            if path not in self.not_kept:
+                self.settings[path] = body
+            return self._send(req, 200, f'{{"statusCode": {code}, "statusString": "OK", "subStatusCode": "ok"}}')
         ok_xml = "ns0:" not in body
         try:
             new_root, old_root = _ET.fromstring(body), _ET.fromstring(self.settings[path].encode())
@@ -199,12 +218,40 @@ class Device:
             self.settings[path] = body
         return self._send(req, 200, f"<ResponseStatus><statusCode>{code}</statusCode><statusString>OK</statusString></ResponseStatus>")
 
+    def _ptz(self, req, path):
+        ok = '<ResponseStatus xmlns="http://www.hikvision.com/ver20/XMLSchema"><statusCode>1</statusCode><statusString>OK</statusString></ResponseStatus>'
+        body = getattr(req, "body", b"").decode()
+        self.ptz_calls.append((req.command, path, body))
+        if self.ptz is None:
+            return self._send(req, 403, "<ResponseStatus><statusCode>4</statusCode><subStatusCode>notSupport</subStatusCode></ResponseStatus>")
+        if path.endswith("/capabilities"):
+            if not self.ptz.get("caps"):
+                return self._send(req, 403, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
+            return self._send(req, 200, '<PTZChanelCap xmlns="http://www.hikvision.com/ver20/XMLSchema"><ContinuousPanTiltSpace>'
+                                        '<XRange><Min>-100</Min><Max>100</Max></XRange><YRange><Min>-100</Min><Max>100</Max></YRange>'
+                                        '</ContinuousPanTiltSpace><ContinuousZoomSpace><ZRange><Min>-100</Min><Max>100</Max></ZRange>'
+                                        '</ContinuousZoomSpace><maxPresetNum>255</maxPresetNum></PTZChanelCap>')
+        if path.endswith("/presets") and req.command == "GET":
+            items = "".join(f"<PTZPreset><enabled>true</enabled><id>{i}</id><presetName>{n}</presetName></PTZPreset>"
+                            for i, n in self.ptz.get("presets", []))
+            return self._send(req, 200, f'<PTZPresetList xmlns="http://www.hikvision.com/ver20/XMLSchema">{items}</PTZPresetList>')
+        if req.command == "PUT" and (path.endswith("/goto") or path.endswith("/continuous")):
+            return self._send(req, 200, ok)
+        if req.command == "PUT" and path.endswith("/momentary"):
+            if not self.ptz.get("momentary", True):
+                return self._send(req, 404, "<ResponseStatus><statusCode>4</statusCode><subStatusCode>notSupport</subStatusCode></ResponseStatus>")
+            return self._send(req, 200, ok)
+        return self._send(req, 404, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
+
     def load_settings(self, folder):
         """Serve the saved real setting documents (tests/fixtures/hik_settings)."""
         import os as _os
-        self.settings = {}
+        if self.settings is None:
+            self.settings = {}
         for fn in _os.listdir(folder):
-            path = "/ISAPI/" + fn[:-4].replace("_capabilities", "/capabilities").replace("_", "/")
+            # names are the ISAPI path with "/" as "_"; a .json file is served for its
+            # ?format=json path (the query string is not part of the key)
+            path = "/ISAPI/" + _os.path.splitext(fn)[0].replace("_capabilities", "/capabilities").replace("_", "/")
             path = path.replace("time/ntpServers", "time/ntpServers")
             with open(_os.path.join(folder, fn)) as f:
                 self.settings[path] = f.read()
@@ -220,6 +267,8 @@ class Device:
                               extra={"WWW-Authenticate": chal})
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         path = u.path
+        if "/PTZCtrl/" in path or "/PTZCtrlProxy/" in path:
+            return self._ptz(req, path)
         if self.settings is not None and path in self.settings:
             return self._setting(req, path)
         hit = self._health(req, path, q)

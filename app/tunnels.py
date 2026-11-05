@@ -21,7 +21,21 @@ import time
 PORT_LO, PORT_HI = 10000, 10063
 IDLE_TTL = 600            # close after 10 min with no live connections
 MAX_TTL = 8 * 3600        # hard lifetime cap
+CONNECT_TIMEOUT = 10      # reaching the device only, NOT a limit on a quiet session
 BUF = 65536
+
+
+def _relay_socket(sk):
+    """Ready a relay socket for a long session: no timeout (a quiet spell is not a
+    dead link) and TCP keepalive instead, which notices a vanished peer in ~2 min."""
+    sk.settimeout(None)
+    try:
+        sk.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for name, val in (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 15), ("TCP_KEEPCNT", 4)):
+            if hasattr(socket, name):
+                sk.setsockopt(socket.IPPROTO_TCP, getattr(socket, name), val)
+    except OSError:
+        pass
 
 
 class TunnelError(Exception):
@@ -67,10 +81,18 @@ class Tunnel:
 
     def _handle(self, client):
         try:
-            upstream = socket.create_connection((self.dst_ip, self.dst_port), timeout=10)
+            upstream = socket.create_connection((self.dst_ip, self.dst_port),
+                                                timeout=CONNECT_TIMEOUT)
         except OSError:
             client.close()
             return
+        # The timeout above is for the connect only; left on the socket it was a read
+        # timeout too (a device quiet for 10 s was cut). The accepted socket also
+        # carried the process-wide socket.setdefaulttimeout(3) that the scanner's
+        # DNS check sets, so an operator quiet for 3 s half-closed the device side.
+        # Either one dropped WinBox, SSH and idle web pages.
+        for sk in (client, upstream):
+            _relay_socket(sk)
         with self._lock:
             self._socks.update((client, upstream))
         self.last_active = time.time()
@@ -117,6 +139,10 @@ class Tunnel:
             socks = list(self._socks)
             self._socks.clear()
         for sk in socks:
+            try:
+                sk.shutdown(socket.SHUT_RDWR)   # wakes a pump blocked in recv();
+            except OSError:                     # close() alone does not on Linux
+                pass
             try:
                 sk.close()
             except OSError:

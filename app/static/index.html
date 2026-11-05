@@ -2892,6 +2892,7 @@
             }
             if(key) history.replaceState(null, '', '#/cameras');
             CAMS.grid = CamView.mount(host, {groups: () => [{id: 'site', title: '', data: CAMS.data}], picUrl: camPicUrl, storeKey: 'nw.cams', nvr: nvr || '',
+                apiBase: (_g, c) => '/api/cameras/' + encodeURIComponent(c.key),
                 onOpen: (_g, c) => { location.hash = '#/cameras?key=' + encodeURIComponent(c.key); }});
             CAMS.timer = setInterval(async () => {
                 if(PAGE !== 'cameras' || !CAMS.grid) return;

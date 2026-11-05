@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<StreamingChannel version="2.0" xmlns="http://www.isapi.org/ver20/XMLSchema">
+<id>101</id>
+<channelName name="any string less than 31 words">101</channelName>
+<enabled opt="true,false" def="true">true</enabled>
+<Transport>
+<ControlProtocolList>
+<ControlProtocol>
+<streamingTransport opt="RTSP">RTSP</streamingTransport>
+</ControlProtocol>
+</ControlProtocolList>
+</Transport>
+<Video>
+<enabled opt="true">true</enabled>
+<videoInputChannelID opt="1">1</videoInputChannelID>
+<videoCodecType opt="H.264">H.264</videoCodecType>
+<videoScanType opt="progressive">progressive</videoScanType>
+<videoResolutionWidth opt="1280,1280,1920">1280</videoResolutionWidth>
+<videoResolutionHeight opt="720,960,1080">720</videoResolutionHeight>
+<videoQualityControlType opt="CBR,VBR">VBR</videoQualityControlType>
+<fixedQuality opt="20,30,45,60,75,90">20</fixedQuality>
+<vbrUpperCap min="32" max="16384">4096</vbrUpperCap>
+<vbrLowerCap opt="32">32</vbrLowerCap>
+<maxFrameRate opt="2500,2200,2000,1800,1600,1500,1200,1000,800,600,400,200,100,50,25,12,6">1500</maxFrameRate>
+<snapShotImageType opt="JPEG">JPEG</snapShotImageType>
+<GovLength min="1" max="250">50</GovLength>
+<BPFrameInterval opt="BBP,BP,P">P</BPFrameInterval>
+</Video>
+<isSupportPictureByUrl>true</isSupportPictureByUrl>
+</StreamingChannel>

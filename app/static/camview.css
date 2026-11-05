@@ -162,6 +162,33 @@
 .cv-setprev { margin-top: 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(251, 191, 36, .45); background: rgba(251, 191, 36, .07); }
 .cv-setprev p { margin: 0 0 6px; font-size: 13px; }
 .cv-chglist { margin: 0 0 6px; padding-left: 18px; font-size: 13px; }
+.cv-setrow.cv-wide { grid-column: 1 / -1; flex-direction: column; align-items: stretch; }
+.cv-setrow.cv-wide .cv-setc { max-width: 100%; flex-direction: column; align-items: stretch; }
+.cv-chks { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: flex-end; }
+.cv-draw { position: relative; width: 100%; max-width: 720px; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden;
+  background: #0b1220; border: 1px solid var(--cv-line); }
+.cv-draw img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; opacity: .85; }
+.cv-draw svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.cv-draw.cv-dcan svg { cursor: crosshair; touch-action: none; }
+.cv-drawbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.cv-drawbar small { flex: 1 1 220px; }
+.cv-dpoly { fill: rgba(34, 211, 238, .22); stroke: #22d3ee; stroke-width: 2; }
+.cv-dline { stroke: #fbbf24; stroke-width: 3; }
+.cv-dpt { fill: #0b1220; stroke: #22d3ee; stroke-width: 2.5; cursor: grab; }
+.cv-dlab { fill: #fbbf24; font: 700 14px system-ui, sans-serif; paint-order: stroke; stroke: #0b1220; stroke-width: 3px; }
+.cv-dmask { fill: rgba(0, 0, 0, .78); stroke: #f87171; stroke-width: 2; cursor: pointer; }
+.cv-dcell { fill: rgba(248, 113, 113, .30); }
+.cv-dgrid { stroke: rgba(255, 255, 255, .14); stroke-width: 1; }
+.cv-route { margin: 0 0 10px; font-size: 13px; color: var(--cv-ink2); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cv-ptz { padding: 12px 14px; }
+.cv-ptzhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.cv-ptzhead h3 { margin: 0; font-size: 14.5px; font-weight: 700; }
+.cv-ptzrow { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
+.cv-ptzpad { display: grid; grid-template-columns: repeat(3, 44px); grid-auto-rows: 44px; gap: 4px; }
+.cv-ptzb { width: 44px; height: 44px; padding: 0; font-size: 18px; touch-action: none; user-select: none; }
+.cv-ptzc { display: grid; place-items: center; color: var(--cv-muted); font-size: 12px; }
+.cv-ptzz { display: flex; flex-direction: column; gap: 4px; }
+.cv-ptzpre { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
 .cv-setmsg { margin: 10px 0 0; font-size: 13px; color: var(--cv-ink2); }
 .cv-setmsg:empty { display: none; }
 .cv-setmsg.cv-warn { color: var(--cv-warn); }
@@ -176,3 +203,26 @@
   .cv-setc { max-width: 100%; }
   .cv-rng input { flex: 1; width: auto; }
 }
+
+/* ---- recording week (Phase 4c) ---- */
+.cv-week { display: grid; gap: 8px; min-width: 0; }
+.cv-wbr { display: flex; flex-wrap: wrap; gap: 6px; }
+.cv-wbr .cv-btn { display: inline-flex; align-items: center; gap: 6px; }
+.cv-wbr .cv-btn[aria-pressed="true"] { border-color: var(--cv-cyan); box-shadow: 0 0 0 1px var(--cv-cyan) inset; }
+.cv-wbr i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--cv-line2); }
+.cv-wkwrap { overflow-x: auto; max-width: 100%; }
+.cv-wk { border-collapse: separate; border-spacing: 2px; width: 100%; min-width: 520px; table-layout: fixed; touch-action: none; user-select: none; }
+.cv-wk th { font-size: 10px; font-weight: 500; opacity: .7; text-align: left; padding: 0; white-space: nowrap; }
+.cv-wk tbody th { width: 34px; font-size: 11px; }
+.cv-wk td { height: 20px; border-radius: 3px; padding: 0; }
+.cv-week.cv-dcan .cv-wk td { cursor: crosshair; }
+.cv-wm-x { background: rgba(148, 163, 184, .14); }
+.cv-wm-C { background: #22d3ee; }
+.cv-wm-M { background: #fbbf24; }
+.cv-wm-A { background: #fb7185; }
+.cv-wm-B { background: #f97316; }
+.cv-wm-O { background: #c084fc; }
+.cv-wm-E { background: #34d399; }
+.cv-wm-D { background: #60a5fa; }
+.cv-wm-P { background: #a3e635; }
+.cv-recset { margin: 0 0 12px; }

@@ -168,6 +168,18 @@ class HubCameras(unittest.TestCase):
         self.assertEqual(FakeSite.calls[-1][0], "/api/cameras/aa%3A01/changes/abc123/undo")
         self.assertEqual(r.get_json()["echo"], {"confirm": True})
 
+    def test_ptz_and_detection_calls_are_forwarded(self):
+        self.c.get("/api/hub/sites/farm/cameras/aa:01/settings?lens=1&group=detect&route=nvr")
+        path = FakeSite.calls[-1][0]
+        self.assertTrue("group=detect" in path and "route=nvr" in path, path)
+        self.c.get("/api/hub/sites/farm/cameras/aa:01/ptz?lens=1")
+        self.assertTrue(FakeSite.calls[-1][0].startswith("/api/cameras/aa%3A01/ptz"))
+        body = {"lens": 1, "action": "move", "pan": 30, "ms": 400}
+        r = self.c.post("/api/hub/sites/farm/cameras/aa:01/ptz", json=body)
+        self.assertEqual((FakeSite.calls[-1][0], r.get_json()["echo"]), ("/api/cameras/aa%3A01/ptz", body))
+        anon = server.app.test_client()
+        self.assertEqual(anon.post("/api/hub/sites/farm/cameras/aa:01/ptz", json=body).status_code, 401)
+
     def test_a_site_refusal_passes_through_and_an_old_site_is_told_to_update(self):
         FakeSite.mode = "refuse"
         r = self.c.post("/api/hub/sites/farm/cameras/aa:01/settings", json={"section": "picture"})

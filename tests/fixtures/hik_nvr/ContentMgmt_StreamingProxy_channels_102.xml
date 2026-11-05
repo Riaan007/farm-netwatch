@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<StreamingChannel >
+<id>102</id>
+<channelName>102</channelName>
+<enabled>true</enabled>
+<Transport>
+<ControlProtocolList>
+<ControlProtocol>
+<streamingTransport>RTSP</streamingTransport>
+</ControlProtocol>
+</ControlProtocolList>
+</Transport>
+<Video>
+<enabled>true</enabled>
+<dynVideoInputChannelID>1</dynVideoInputChannelID>
+<videoCodecType>H.264</videoCodecType>
+<videoResolutionWidth>640</videoResolutionWidth>
+<videoResolutionHeight>360</videoResolutionHeight>
+<videoQualityControlType>VBR</videoQualityControlType>
+<fixedQuality>60</fixedQuality>
+<vbrUpperCap>128</vbrUpperCap>
+<vbrLowerCap>32</vbrLowerCap>
+<maxFrameRate>1000</maxFrameRate>
+<GovLength>25</GovLength>
+<snapShotImageType>JPEG</snapShotImageType>
+</Video>
+</StreamingChannel>

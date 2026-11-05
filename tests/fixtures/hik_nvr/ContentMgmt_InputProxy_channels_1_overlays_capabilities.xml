@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VideoOverlay version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<transparent opt="true,false">false</transparent>
+<flashing opt="true,false">false</flashing>
+<fontSize opt="16*16,32*32,48*48,64*64,adaptive">adaptive</fontSize>
+<TextOverlayList size="1">
+</TextOverlayList>
+<DateTimeOverlay>
+<id>1</id>
+<enabled opt="true,false">true</enabled>
+<positionX>288</positionX>
+<positionY>576</positionY>
+<dateStyle opt="YYYY-MM-DD,MM-DD-YYYY,DD-MM-YYYY,CHR-YYYY/MM/DD,CHR-MM/DD/YYYY,CHR-DD/MM/YYYY">MM-DD-YYYY</dateStyle>
+<timeStyle opt="12hour,24hour">24hour</timeStyle>
+<displayWeek opt="true,false">true</displayWeek>
+</DateTimeOverlay>
+<channelNameOverlay>
+<enabled>true</enabled>
+<positionX>384</positionX>
+<positionY>544</positionY>
+</channelNameOverlay>
+<frontColorMode opt="auto,customize">auto</frontColorMode>
+<frontColor>000000</frontColor>
+<alignment opt="customize,alignRight,alignLeft">customize</alignment>
+<TextOverlaySize min="0" max="44">0</TextOverlaySize>
+</VideoOverlay>
