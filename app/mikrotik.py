@@ -1198,12 +1198,19 @@ def _backfill_from_api(r, ip, user, password):
 # RouterOS accepts a menu path written with spaces ("/system reboot") OR slashes
 # ("/system/reboot" — the usual one-liner form), so every separator below is
 # [\s/]+, matching both. Otherwise the slash form would slip straight past.
+# "Turns it off" is the `disable` verb OR `set … disabled=` anything but no/false:
+# `set ether2 disabled=yes` used to slip past, and `set api disabled=no` (which
+# turns a service ON — the "API turned off" fix) used to ask. Not `print where
+# disabled=yes` (a read). The firewall rule still asks for any `disable…`: there,
+# turning a drop rule ON can lock you out.
+_OFF = r'(?:\bdisable\b|\bset\b[^;]*\bdisabled=(?!"?(?:no|false)\b))'
 _DANGER = [
     (r"reset-configuration|/system[\s/]+reset\b", "resets the router to defaults — wipes the whole config"),
     (r"/system[\s/]+(shutdown|routerboard[\s/]+(upgrade|downgrade))", "powers off or reflashes the router"),
-    (r"/interface\b.*\b(disable|remove)\b", "disables or removes an interface — you may lose access"),
-    (r"/ip[\s/]+address\b.*\bremove\b", "removes an IP address — could drop the management IP"),
-    (r"/ip[\s/]+(service|firewall)\b.*\b(disable|remove|add\b.*\bdrop)", "changes services/firewall — could lock you out"),
+    (r"/interface\b.*(" + _OFF + r"|\bremove\b)", "disables or removes an interface — you may lose access"),
+    (r"/ip[\s/]+address\b.*(" + _OFF + r"|\bremove\b)", "disables or removes an IP address — could drop the management IP"),
+    (r"/ip[\s/]+service\b.*(" + _OFF + r"|\bremove\b)", "turns off a router service — could lock you out"),
+    (r"/ip[\s/]+firewall\b.*\b(disable|remove|add\b.*\bdrop)", "changes the firewall — could lock you out"),
     (r"/user\b.*\b(remove|set|add|disable)\b", "changes router logins — could lock you out"),
     (r"/system[\s/]+(reboot|package)\b", "reboots the router / changes packages"),
     (r"/file\b.*\bremove\b", "deletes files on the router"),

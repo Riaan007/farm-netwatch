@@ -104,6 +104,25 @@ class TestDangerGuard(unittest.TestCase):
                   "/system routerboard print"]:
             self.assertEqual(mikrotik.dangerous_command(c), "", "should pass: %r" % c)
 
+    def test_turning_a_service_on_does_not_ask(self):
+        # the "API turned off" fix runs without a confirm — "disable" inside
+        # "disabled=no" used to trip the service rule (seen on 6.49.8, 2026-11-05)
+        for c in mikrotik.api_allow_commands("192.0.2.10") + [
+                "/ip service set ssh disabled=no", "/ip/service/set api disabled=no",
+                '/ip service set api disabled="no"', "/ip service set [find name=api] disabled=false",
+                "/ip service print where disabled=yes", "/interface print where disabled=yes",
+                "/ip address print where disabled=yes"]:
+            self.assertEqual(mikrotik.dangerous_command(c), "", "should pass: %r" % c)
+
+    def test_turning_things_off_by_set_still_asks(self):
+        for c in ["/ip service set winbox disabled=yes", "/ip service disable ssh",
+                  "/ip/service/disable winbox", "/ip service set api disabled=no; /ip service set winbox disabled=yes",
+                  "/interface set ether2 disabled=yes", "/interface/ethernet/set ether2 disabled=yes",
+                  "/interface ethernet set [find default-name=ether2] disabled=yes",
+                  "/ip address set 0 disabled=yes", "/ip address disable 0",
+                  "/ip firewall filter set 3 disabled=no"]:      # a drop rule turned on can lock you out
+            self.assertTrue(mikrotik.dangerous_command(c), "should flag: %r" % c)
+
 
 class TestMtStatusParse(unittest.TestCase):
     CANNED = "\n".join([
