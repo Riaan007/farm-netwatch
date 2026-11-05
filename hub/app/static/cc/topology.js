@@ -23,6 +23,8 @@
         load: (o) => api(base + (o && o.scope === "all" ? "?scope=all" : ""), { timeout: 45000 }),
         call: (method, path, body) => api(base + path, { method, body, timeout: 60000 }),
         iconUrl: (id) => `${base}/icons/${enc(id)}`,
+        cameraPicture: (key) => `/api/hub/sites/${enc(s.id)}/cameras/${enc(key)}/picture`,
+        cameras: () => api(`/api/hub/sites/${enc(s.id)}/cameras`, { timeout: 30000 }),
         openDevice: (key) => {
           if ((CC.state.devices[s.id] || []).some((d) => d.key === key)) CC.openDevice(s.id, key);
           else CC.toast("That device is not in the hub's device list yet — refresh the site first");

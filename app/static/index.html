@@ -3985,6 +3985,10 @@
                 fitHeight: true,
                 load: topoLoad, call: topoCall,
                 iconUrl: (id) => '/api/topology/icons/' + encodeURIComponent(id),
+                cameraPicture: (key) => '/api/cameras/' + encodeURIComponent(key) + '/picture',
+                // ask the login state first: a 401 through fetch() would pop the login prompt on a mere hover
+                cameras: async () => (window.nwAuth && !(await window.nwAuth.state()).logged_in) ? { locked: true }
+                    : fetch('/api/cameras', { credentials: 'same-origin' }).then((r) => r.json()),
                 openDevice: (key) => openModal(key),
                 placeDevicesHref: '#/map',
                 login: async () => !!(window.nwAuth && await window.nwAuth.login()),

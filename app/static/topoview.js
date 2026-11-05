@@ -9,6 +9,10 @@
  *     load(opts)               -> Promise<graph>  GET  …/topology[?scope=all]
  *     call(method, path, body) -> Promise<json>   POST|DELETE …/topology<path> (throws Error(message))
  *     iconUrl(id)              -> url of an uploaded icon
+ *     cameraPicture(key)       -> url of a camera's small picture (optional: hover card on cameras)
+ *     cameras()                -> Promise<{cameras:[{key, ip, why_text}]}>  the Cameras listing, to
+ *                                 find a camera seen through its recorder (key ch:…) by its IP;
+ *                                 {locked:true} = not logged in: say so, never fetch (no login prompt)
  *     openDevice(id)                              the app's own device window
  *     placeDevicesHref                            where devices get a GPS pin (optional)
  *     mapTiles(map, L)                            base layers for the map (optional)
@@ -234,6 +238,15 @@
 .tv-pin.off{border-color:#fb7185} .tv-pin.quiet{border-color:#64748b} .tv-pin.is-sel{box-shadow:0 0 0 3px #22d3ee}
 .leaflet-tooltip.tv-tip{background:rgba(6,10,19,.92);color:#f1f5f9;border:1px solid rgba(148,163,184,.35);border-radius:6px;font-size:11.5px;font-weight:600;padding:2px 7px;box-shadow:none}
 .leaflet-tooltip.tv-tip::before{display:none}
+/* hover card on a camera: its details + what it is looking at */
+.tv .tv-hc{position:absolute;z-index:50;width:252px;pointer-events:none;background:rgba(6,10,19,.95);border:1px solid rgba(148,163,184,.35);border-radius:10px;padding:8px;box-shadow:0 10px 30px rgba(0,0,0,.45);font-size:12px;line-height:1.4;color:#e2e8f0}
+.tv .tv-hc .pic{position:relative;aspect-ratio:16/9;border-radius:6px;overflow:hidden;background:#0b1220;display:grid;place-items:center;color:#64748b;font-size:11.5px;text-align:center;padding:0;margin-bottom:6px}
+.tv .tv-hc .pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.tv .tv-hc .age{position:absolute;right:4px;bottom:4px;background:rgba(0,0,0,.65);border-radius:4px;padding:0 5px;font-size:10.5px;color:#cbd5e1}
+.tv .tv-hc .age.stale{color:#fbbf24}
+.tv .tv-hc b{display:block;font-size:12.5px;color:#f1f5f9}
+.tv .tv-hc .sub{color:#cbd5e1;font-size:11.5px}
+.tv .tv-hc .l{color:#94a3b8;white-space:pre-line;word-break:break-word}
 /* dialogs (an overlay, not <dialog>: the site's login prompt must stay on top) */
 .tv-dlg{position:fixed;inset:0;z-index:80;background:rgba(2,6,23,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:14px}
 .tv-dlg .card{width:min(560px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#0b1324;border:1px solid rgba(148,163,184,.3);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.7);color:#e2e8f0;font:14px/1.45 system-ui,sans-serif}
@@ -762,6 +775,7 @@
 
   // =============================================================================================
   function mount(root, opts) {
+    let camList = null;   // the Cameras listing: {at, byKey:Map, byIp:Map} — see camKey()
     injectCss();
     ensureSymbols();
     const PK = opts.storageKey || "nw.topo";
@@ -831,6 +845,7 @@
             <g data-world><rect x="-60000" y="-60000" width="120000" height="120000" fill="url(#tv-dots)" data-bg/><g data-lg></g><g data-le></g><g data-ln></g><g data-lo></g></g>
           </svg>
           <div class="tv-map" hidden></div>
+          <div class="tv-hc" data-hc hidden></div>
           <div class="tv-banner" hidden><span data-bt></span><button type="button" data-bc>Cancel</button></div>
           <div class="tv-zoom" data-zoombar><button type="button" data-z="-" aria-label="Zoom out">−</button><span data-zl>100%</span><button type="button" data-z="+" aria-label="Zoom in">+</button><button type="button" data-z="fit" title="Fit to screen" aria-label="Fit to screen">${ico("fit")}</button>
             <button type="button" data-z="hand" title="Drag to move the diagram instead of selecting (or hold the space bar)" aria-label="Move the diagram" aria-pressed="false">${ico("hand")}</button></div>
@@ -1266,6 +1281,18 @@
       return r.href ? `<img class="tv-ic" src="${esc(r.href)}" alt="" width="${w}" height="${h}" style="object-fit:contain">`
         : `<svg class="tv-ic" viewBox="0 0 64 56" width="${w}" height="${h}" aria-hidden="true"><use href="#tvk-${esc(r.builtin)}"/></svg>`;
     };
+    function camOf(n) {
+      if (!camList || !n || n.virtual || !String(n.kind || "").startsWith("camera")) return null;
+      return camList.byKey.get(n.id) || (n.ip && camList.byIp.get(n.ip)) || null;
+    }
+    // A camera's own name (what the recorder / its picture calls it) when the diagram only
+    // has a model, IP or host name for it. A name someone typed in Netwatch always wins.
+    function camName(n) {
+      const c = camOf(n), nm = c && String(c.name || "").trim();
+      if (!nm || nm === n.name) return "";
+      const plain = !n.name || [n.model, n.ip, n.mac, n.hostname].includes(n.name);
+      return plain ? nm : "";
+    }
     function nodeSvg(n, a, hits, related, dragging) {
       const st = STATE[n.state] || STATE.online;
       const f = (v) => Math.round(v);
@@ -1287,7 +1314,7 @@
       const title = [n.name, kindOf(n.kind).label + (n.model ? " · " + n.model : ""), n.ip, n.mac, st.label + (n.state === "offline" ? " · last seen " + ago(n.last_seen) : ""),
         ...(n.problems || []).map((p) => "⚠ " + p.detail), n.locked ? "Position locked" : ""].filter(Boolean).join("\n");
       return `<g class="tv-n ${st.cls} ${sel ? "is-sel" : ""} ${dim ? "dim" : ""} ${hit ? "hit" : ""}" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(label)}">
-        <title>${esc(title)}</title>
+        ${hasPic(n) ? "" : `<title>${esc(title)}</title>`}
         <rect class="plate" x="${f(x + 4)}" y="${f(y + 2)}" width="${CW() - 8}" height="${CH() - 6}" rx="12"/>
         ${n.state === "offline" ? `<circle class="ring" cx="${f(x + 75)}" cy="${f(y + 36)}" r="31" fill="none" stroke="#fb7185" stroke-width="1.6" stroke-dasharray="4 3"/>` : ""}
         ${n.state === "unmonitored" ? `<ellipse cx="${f(x + 75)}" cy="${f(y + 38)}" rx="34" ry="27" fill="none" stroke="rgba(203,213,225,.35)" stroke-dasharray="3 4"/>` : ""}
@@ -1295,7 +1322,7 @@
         <g transform="translate(${f(x + 107)},${f(y + 13)})">${badge}</g>
         ${probs ? `<g transform="translate(${f(x + 43)},${f(y + 13)})"><path d="M0,-8 L8,6 L-8,6 Z" fill="#f59e0b" stroke="#fde68a" stroke-width="1"/><text y="4.5" text-anchor="middle" font-size="9.5" font-weight="900" fill="#1c1917">!</text></g>` : ""}
         ${n.locked ? `<g transform="translate(${f(x + 18)},${f(y + 13)})" aria-hidden="true"><rect x="-9" y="-9" width="18" height="18" rx="5" fill="#1f2937" stroke="#fbbf24" stroke-width="1"/><svg x="-6.5" y="-6.5" width="13" height="13" viewBox="0 0 24 24" style="color:#fbbf24">${I.lock}</svg></g>` : ""}
-        <text class="tv-n-name" x="${f(x + 75)}" y="${f(y + 80)}" text-anchor="middle">${esc(trunc(n.name, 21))}</text>
+        <text class="tv-n-name" x="${f(x + 75)}" y="${f(y + 80)}" text-anchor="middle">${esc(trunc(camName(n) || n.name, 21))}</text>
         <text class="tv-n-sub" x="${f(x + 75)}" y="${f(y + 95)}" text-anchor="middle">${esc(trunc(sub, 24))}</text>
         <text class="tv-n-tag" x="${f(x + 75)}" y="${f(y + 109)}" text-anchor="middle" fill="${suspect ? "#fbbf24" : ""}">${esc(trunc(nodeTag(n), 26))}</text>
         ${dragging ? "" : `<g class="tv-handle" data-handle="${esc(n.id)}" transform="translate(${f(x + CW() - 16)},${f(y + 36)})" aria-hidden="true"><circle r="8"/><path d="M-4,0 H4 M0,-4 V4"/></g>`}
@@ -1550,6 +1577,114 @@
       const n = el && el.closest && el.closest("[data-node]");
       return n && root.contains(n) ? n.dataset.node : null;
     }
+
+    // ---- hover card: a camera's details + a small picture of what it sees ----------------
+    // The picture is the Cameras tab's cached one (the site reads cameras on its own timer),
+    // so hovering costs the camera nothing. Kept 60 s here; needs the site login like that tab.
+    const hc = $("[data-hc]"), picMemo = new Map();
+    // The Cameras listing, refreshed every 5 min: the key of a camera seen through its
+    // recorder (ch:…, found by IP) and the camera's own name (recorder channel / on-video).
+    async function loadCams() {
+      if (!opts.cameras) return false;
+      if (camList && Date.now() - camList.at < 300000) return true;
+      try {
+        const d = await opts.cameras();
+        if (d && d.locked) return "locked";                                // not cached: a login shows them at once
+        if (!d || !Array.isArray(d.cameras)) return false;
+        const before = camList ? JSON.stringify([...camList.byKey.values()].map((c) => c.name)) : "";
+        camList = { at: Date.now(), byKey: new Map(d.cameras.map((c) => [c.key, c])), byIp: new Map(d.cameras.filter((c) => c.ip).map((c) => [c.ip, c])) };
+        if (JSON.stringify(d.cameras.map((c) => c.name)) !== before && !S.destroyed && S.g) render();
+        return true;
+      } catch (e) { return false; }
+    }
+    async function camKey(n) {
+      if (!opts.cameras) return n.id;
+      const ok = await loadCams();
+      if (ok === "locked") return null;
+      if (!ok) return n.id;
+      const c = camOf(n);
+      return c ? c.key : n.id;
+    }
+    if (opts.cameras) setTimeout(loadCams, 1500);
+    let hcId = null, hcTimer = 0;
+    function nodeAt(el) {
+      const g = el && el.closest && el.closest("[data-node]");
+      return g && root.contains(g) ? g.dataset.node : null;
+    }
+    function hasPic(n) { return !!(opts.cameraPicture && n && !n.virtual && String(n.kind || "").startsWith("camera")); }
+    function hcHide() { clearTimeout(hcTimer); hcId = null; hc.hidden = true; }
+    async function hcPic(id) {
+      const m = picMemo.get(id);
+      if (m && Date.now() - m.at < 60000) return m;
+      const out = { at: Date.now() };
+      try {
+        const n = S.idx && S.idx.nodes[id];
+        const key = n ? await camKey(n) : id;
+        if (key === null) return { at: 0, err: "Log in to see the picture" };
+        const r = await fetch(opts.cameraPicture(key), { credentials: "same-origin", cache: "no-store" });
+        if (r.ok && /^image\//.test(r.headers.get("Content-Type") || "")) {
+          if (m && m.src) URL.revokeObjectURL(m.src);
+          out.src = URL.createObjectURL(await r.blob());
+          out.ts = Number(r.headers.get("X-Picture-Ts")) || 0;
+          out.stale = r.headers.get("X-Picture-Stale") === "1";
+        } else {
+          let j = {};
+          try { j = await r.json(); } catch (e) { /* not json */ }
+          out.err = r.status === 401 || (r.status === 403 && j.why !== "off") ? "Log in to see the picture"
+            : j.why === "off" ? "Camera pictures are off on this site"
+            : j.why === "unknown" ? "Netwatch has no picture route to this camera"
+            : "No picture — " + (j.error || "the camera did not answer");
+        }
+      } catch (e) { out.err = "The picture could not be loaded"; }
+      picMemo.set(id, out);
+      return out;
+    }
+    function hcPlace(cx, cy) {
+      const r = stage.getBoundingClientRect(), w = hc.offsetWidth, h = hc.offsetHeight;
+      // the details panel docked under the diagram covers its bottom: keep the card above it
+      const sr = side.offsetParent ? side.getBoundingClientRect() : null;
+      const bottom = sr && sr.top > r.top && sr.top < r.bottom && sr.left < cx && sr.right > cx ? sr.top - r.top : r.height;
+      let x = cx - r.left + 16, y = cy - r.top + 16;
+      if (x + w > r.width - 6) x = cx - r.left - w - 16;
+      if (y + h > bottom - 6) y = Math.max(6, cy - r.top - h - 16);
+      hc.style.left = Math.max(6, x) + "px"; hc.style.top = y + "px";
+    }
+    function hcDraw(n, p) {
+      const st = STATE[n.state] || STATE.online;
+      const age = p && p.src && p.ts ? `<span class="age ${p.stale ? "stale" : ""}">${p.stale ? "old · " : ""}${esc(ago(p.ts))}</span>` : "";
+      const pic = !p ? "Loading picture…" : p.src ? `<img alt="" src="${p.src}">${age}` : esc(p.err);
+      const lines = [kindOf(n.kind).label + (n.model ? " · " + n.model : ""), n.ip, n.mac, st.label + (n.state === "offline" ? " · last seen " + ago(n.last_seen) : ""),
+        ...(n.problems || []).map((x) => "⚠ " + x.detail)].filter(Boolean).join("\n");
+      const c = camOf(n), views = c && Array.isArray(c.views) && c.views.length > 1 ? c.views.filter(Boolean) : [];
+      const head = views.length ? views.join(" + ") : (camName(n) || (c && c.name) || n.name);
+      hc.innerHTML = `<div class="pic">${pic}</div><b>${esc(head)}</b>${head !== n.name ? `<div class="sub">${esc(n.name)}</div>` : ""}<div class="l">${esc(lines)}</div>`;
+    }
+    svg.addEventListener("pointerover", (ev) => {
+      if (ev.pointerType !== "mouse" || S.drag) return;
+      const id = nodeAt(ev.target), n = id && S.idx && S.idx.nodes[id];
+      if (!hasPic(n)) { if (hcId) hcHide(); return; }
+      if (hcId === id) return;
+      hcHide(); hcId = id;
+      const cx = ev.clientX, cy = ev.clientY;
+      hcTimer = setTimeout(async () => {
+        if (hcId !== id) return;
+        const m = picMemo.get(id);
+        hcDraw(n, m && Date.now() - m.at < 60000 ? m : null);
+        hc.hidden = false; hcPlace(cx, cy);
+        const p = await hcPic(id);
+        if (hcId !== id || S.destroyed) return;
+        hcDraw(S.idx.nodes[id] || n, p); hcPlace(cx, cy);
+      }, 250);
+    });
+    svg.addEventListener("pointerout", (ev) => {
+      if (!hcId) return;
+      // a redraw (the poll) swaps the node under a still pointer: that is no "leaving"
+      const to = ev.relatedTarget ? nodeAt(ev.relatedTarget) : nodeAt(document.elementFromPoint(ev.clientX, ev.clientY));
+      if (to !== hcId) hcHide();
+    });
+    svg.addEventListener("pointerleave", () => hcId && hcHide());
+    svg.addEventListener("pointerdown", hcHide, true);
+    svg.addEventListener("wheel", hcHide, { passive: true });
 
     svg.addEventListener("pointerdown", (ev) => {
       if (!S.g || (ev.pointerType === "mouse" && ev.button !== 0)) return;
@@ -2912,6 +3047,7 @@
         document.removeEventListener("keydown", onMaxKey);
         S.destroyed = true;
         clearInterval(S.timer);
+        hcHide(); picMemo.forEach((m) => m.src && URL.revokeObjectURL(m.src));
         if (sizeObs) sizeObs.disconnect();
         window.removeEventListener("resize", onResize);
         document.removeEventListener("visibilitychange", onVis);
