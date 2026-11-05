@@ -775,6 +775,56 @@ def api_poe_cycle(ip, user, password, port, duration=5):
         return {"ok": False, "error": str(e)}
 
 
+# --- turning the API on: for this Pi only --------------------------------------
+# `/ip service enable api` opens 8728 to EVERY address — on a client router with
+# its firewall off that is the whole LAN, and the internet if the WAN has no
+# filter. Netwatch needs it for this Pi alone, so the advice is always the
+# address-locked form, plus a static DHCP lease so the Pi keeps that address.
+def _is_ipv4(ip):
+    try:
+        return ipaddress.ip_address(ip).version == 4
+    except (ValueError, TypeError):
+        return False
+
+
+def own_ip_towards(ip):
+    """This host's IPv4 address as `ip` sees it: the source address of the route
+    to it (a UDP connect sends nothing). '' when there is no route."""
+    if not _is_ipv4(ip):
+        return ""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect((ip, API_PORT))
+            src = s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        return ""
+    return src if _is_ipv4(src) and not src.startswith(("127.", "0.")) else ""
+
+
+def api_allow_commands(pi_ip=""):
+    """The console lines that open the API to this Pi only and keep the Pi on
+    that address (the lease line is a no-op where this router isn't the Pi's
+    DHCP server)."""
+    pi = pi_ip if _is_ipv4(pi_ip) else "<this Pi's IP>"
+    return ["/ip service set api disabled=no address=%s/32" % pi,
+            "/ip dhcp-server lease make-static [find address=%s]" % pi]
+
+
+def api_off_hint(pi_ip="", has_login=True):
+    """What to tell the operator when the router refuses the API on 8728."""
+    allow, lease = api_allow_commands(pi_ip)
+    return ("The RouterOS API (port 8728) is turned off on this router, or closed to this Pi. "
+            + ("" if has_login else "Save the router's login first — the Terminal logs in with it. ")
+            + "Open it to this Pi%s only: in the Terminal (it reaches the router by MAC, no API "
+            "needed) run  %s  and, if this router hands out the Pi's address, make that lease "
+            "static so it can't change:  %s  Then read the router again. Don't use  "
+            "/ip service enable api  — that opens port 8728 to every address."
+            % (" (%s)" % pi_ip if _is_ipv4(pi_ip) else "", allow, lease))
+
+
 # ---------------------------------------------------------------------------
 # MAC-Telnet — WinBox-style login by MAC (works with no reachable IP)
 # ---------------------------------------------------------------------------
@@ -787,6 +837,10 @@ _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[=>NO]|\x1b\][^\x07]*\x07")
 _PROMPT = re.compile(r"\[[^\]@]*@[^\]]*\][^>\n]*>\s*$")   # [admin@Identity] > or [..] /iface>
 _PAGER = re.compile(r"\[Q quit\b|-- \[?Q ", re.I)
 _LOGIN_FAIL = re.compile(r"login failed|incorrect (?:username|password)|bad username", re.I)
+# The console prompt at the start of a line: "[admin@Identity] > " or, inside a
+# menu, "[admin@Identity] /ip address> ".
+_PROMPT_HEAD = r"^\s*\[[^\]@\n]*@[^\]\n]*\][^>\n]*>"
+_PROMPT_ONLY = re.compile(_PROMPT_HEAD + r"\s*$")
 
 
 def mactelnet_available():
@@ -798,6 +852,39 @@ def _clean(text):
     text = _ANSI.sub("", text)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return re.sub(r"\n{3,}", "\n\n", text)     # RouterOS dumb mode double-spaces
+
+
+def _command_answer(text, cmd):
+    """The router's answer to one typed console command, out of the cleaned text
+    that came back after it was typed: the echo and the prompts taken off.
+
+    RouterOS 6.49 (a hEX lite on 6.49.8, 2026-11-05) redraws the whole input line
+    for EVERY typed character, +cte login or not: the first character bare on its
+    own line, then per keystroke the old line padded to the window width and the
+    new one (`[admin@Router] > /sy`) — 5–15 KB before a short command's answer.
+    The answer starts after the LAST line that shows the prompt and the whole
+    command. 6.45 echoes the command once, after the prompt that was already on
+    screen, so its text has no such line and is trimmed as before: leading
+    blank/echo lines and trailing prompts. A prompt-only line is never part of
+    an answer, nor is a bare piece of the typed command at either end (the
+    lone "/" a write on 6.49.8 came back with)."""
+    lines = text.split("\n")
+    cc = (cmd or "").strip()
+    if cc:
+        full = re.compile(_PROMPT_HEAD + r"[ \t]*" + re.escape(cc) + r"\s*$")
+        last = max((i for i, line in enumerate(lines) if full.match(line)), default=-1)
+        lines = lines[last + 1:]
+    lines = [line for line in lines if not _PROMPT_ONLY.match(line)]
+
+    def echo(line, lead):
+        s = line.strip()
+        return (not s or "] >" in line
+                or bool(cc) and (cc.startswith(s) or (lead and cc in s)))
+    while lines and echo(lines[0], True):
+        lines.pop(0)
+    while lines and echo(lines[-1], False):
+        lines.pop()
+    return "\n".join(lines)
 
 
 def _set_winsize(fd, rows=1000, cols=200):
@@ -889,14 +976,8 @@ def mt_run(mac, user, password, commands, timeout=30, connect_timeout=12):
                     continue
             # logged in: finish the previous command's capture, then send next
             if cur_cmd is not None and ready and idle >= 0.35:
-                lines = _clean(buf[cur_start:]).split("\n")
-                cc = cur_cmd.strip()
-                # drop leading blank/echo lines and any trailing prompt/blank lines
-                while lines and (not lines[0].strip() or (cc and cc in lines[0]) or "] >" in lines[0]):
-                    lines.pop(0)
-                while lines and (not lines[-1].strip() or "] >" in lines[-1]):
-                    lines.pop()
-                per.append({"cmd": cur_cmd, "out": "\n".join(lines)})
+                # the answer alone: no echo of the command, no prompts
+                per.append({"cmd": cur_cmd, "out": _command_answer(_clean(buf[cur_start:]), cur_cmd)})
                 cur_cmd = None
             if cur_cmd is None and ready and idle >= 0.3:
                 if sent < len(cmds):
@@ -1155,7 +1236,10 @@ def run_console(mac="", ip="", user="admin", password="", command="", prefer="ma
         r = mt_run(mac, user, password, [command], timeout=30)
         if not r.get("ok"):
             return None
-        out = r["per"][0]["out"] if r.get("per") else r.get("output", "")
+        # No per-command answer when the session was cut off mid-command (a
+        # streaming command at the deadline): take the answer out of the whole
+        # session text rather than hand the terminal the raw echo.
+        out = r["per"][0]["out"] if r.get("per") else _command_answer(r.get("output", ""), command)
         return {"ok": True, "source": "mactelnet", "output": out}
 
     def by_ip():

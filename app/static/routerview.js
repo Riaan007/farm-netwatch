@@ -105,19 +105,21 @@
     return { led: "g", label: p.speed ? p.speed + " Mbit/s" : "Up", cls: "ok" };
   }
 
-  // Why a router won't read, and what to do about it.
+  // Why a router won't read, and what to do about it ({pi} = this Pi's IP, which
+  // the site fills in as `pi_ip`). Shown as the state badge's tooltip.
   const KIND = {
     no_login: ["warn", "Login needed", "No admin login is saved for this router. Save its username and password, then it can be managed here (RouterOS ships admin with a blank password)."],
     auth_failed: ["bad", "Login rejected", "The router refused the saved login. Save the correct admin username and password."],
-    api_off: ["warn", "API turned off", "The RouterOS API service (port 8728) is off on this router. Open the Terminal below and run  /ip service enable api  — that works over MAC-Telnet without the API."],
+    api_off: ["warn", "API turned off", "The RouterOS API service (port 8728) is off on this router. Open the router and, in its Terminal (by MAC, no API needed), run  /ip service set api disabled=no address={pi}/32  so only this Pi can reach it, then make the Pi's DHCP lease static. Not  /ip service enable api  — that opens 8728 to every address."],
     unreachable: ["bad", "Can't reach it", "The router didn't answer. Check it's powered and reachable from the site Pi."],
     no_ip: ["warn", "No IP yet", "Netwatch hasn't learned this router's IP. Its MAC is discovered — run a scan, or adopt it from the managed-units page."],
     pending: ["", "Not read yet", "Open it to read the router."],
   };
+  const kindHelp = (r) => String((KIND[r.kind] || [])[2] || "").replace(/\{pi\}/g, r.pi_ip || "<this Pi's IP>");
 
   function stateBadge(r) {
     if (r.online === false && !r.ok) return `<span class="swv-b bad">Offline</span>`;
-    if (!r.ok) { const k = KIND[r.kind] || ["warn", "Can't read"]; return `<span class="swv-b ${k[0]}">${esc(k[1])}</span>`; }
+    if (!r.ok) { const k = KIND[r.kind] || ["warn", "Can't read"]; return `<span class="swv-b ${k[0]}" title="${esc(kindHelp(r))}">${esc(k[1])}</span>`; }
     const crit = (r.problems || []).filter((p) => p.level === "crit").length;
     const warn = (r.problems || []).filter((p) => p.level === "warn").length;
     if (crit) return `<span class="swv-b bad">${plural(crit, "fault")}</span>`;
@@ -152,7 +154,7 @@
       confirm: (t, x) => Promise.resolve(window.confirm(t + (x ? "\n\n" + x : ""))),
       toast: () => {},
     }, opts);
-    const st = { data: null, sel: null, tab: "devices", dead: false, err: "", hist: [], timer: null, q: "" };
+    const st = { data: null, sel: null, tab: "devices", dead: false, err: "", errBody: null, hist: [], timer: null, q: "" };
     root.classList.add("swv");
     root.innerHTML = `<div class="swv-skel"></div><div class="swv-skel" style="height:150px"></div>`;
 
@@ -160,12 +162,19 @@
       try {
         const d = await o.load();
         if (st.dead) return;
-        st.data = d; st.err = "";
+        // The site answers a failed read with 200 + {ok:false, hint}: treat it like
+        // the hub's thrown error, so both show the hint instead of an empty console.
+        if (d && d.ok === false) throw Object.assign(new Error(d.error || "Couldn't read this router."), { body: d });
+        st.data = d; st.err = ""; st.errBody = null;
         if (st.sel && !(d.ports || []).some((p) => p.name === st.sel)) st.sel = null;
         draw();
       } catch (e) {
         if (st.dead) return;
-        st.err = (e.body && (e.body.hint || e.body.error)) || e.message || String(e);
+        const err = (e.body && (e.body.hint || e.body.error)) || e.message || String(e);
+        // Still failing the same way on the auto re-read: leave the page alone (it
+        // may hold a half-typed terminal command).
+        if (quiet && !st.data && err === st.err) return;
+        st.err = err; st.errBody = e.body || null;
         st.data = st.data && quiet ? st.data : null;
         draw();
       }
@@ -200,8 +209,15 @@
     function draw() {
       const d = st.data;
       if (!d) {
+        // A router that won't read can still be reached by MAC, so the Terminal
+        // stays: it's where the hint's fix (opening the API to this Pi) is typed.
+        const fix = ((st.errBody && st.errBody.fix) || []).filter((q) => typeof q === "string");
         root.innerHTML = `<div class="swv-banner bad">${esc(st.err || "Couldn't read this router.")}</div>
-          ${o.onLogin ? `<div class="swv-row"><button class="swv-btn pri" data-x="login">Save the router's login</button></div>` : ""}`;
+          <div class="swv-row"><button class="swv-btn sm" data-x="refresh">↻ Read now</button>
+            ${o.onLogin ? `<button class="swv-btn pri" data-x="login">Save the router's login</button>` : ""}</div>
+          ${o.runCmd ? `<div class="swv-box"><h3>Terminal</h3>
+            ${fix.length ? `<div class="swv-row" style="margin-bottom:8px"><span class="swv-note">Put in the terminal:</span>${fix.map((q) => `<button class="swv-btn sm swv-mono" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>` : ""}
+            ${termHtml(false)}</div>` : ""}`;
         bind();
         return;
       }
@@ -324,14 +340,18 @@
       } else if (st.tab === "logs") {
         host.innerHTML = `<pre class="swv-mono" style="margin:0;max-height:52vh;overflow:auto;white-space:pre-wrap;font-size:12px">${(d.logs || []).map((l) => esc(l.time) + "  " + esc(l.topics) + "  " + esc(l.message)).join("\n") || "no log entries"}</pre>`;
       } else {
-        const locked = d.manage_enabled === false;
-        host.innerHTML = `<pre id="rv-term" class="swv-mono" style="margin:0 0 8px;height:44vh;overflow:auto;white-space:pre-wrap;background:#050b16;border:1px solid rgba(148,163,184,.18);border-radius:10px;padding:10px;font-size:12px;color:#a7f3d0">${st.hist.map(esc).join("")}</pre>
+        host.innerHTML = termHtml(d.manage_enabled === false);
+      }
+    }
+
+    // The terminal: the Terminal tab, and under a router that won't read.
+    function termHtml(locked) {
+      return `<pre id="rv-term" class="swv-mono" style="margin:0 0 8px;height:44vh;overflow:auto;white-space:pre-wrap;background:#050b16;border:1px solid rgba(148,163,184,.18);border-radius:10px;padding:10px;font-size:12px;color:#a7f3d0">${st.hist.map(esc).join("")}</pre>
           <div class="swv-row" style="flex-wrap:nowrap"><span class="swv-mono" style="color:#a5b4fc">&gt;</span>
             <input class="swv-in swv-mono" id="rv-cmd" style="flex:1" placeholder="RouterOS command…" ${locked ? "disabled" : ""}>
             <button class="swv-btn pri" data-x="run" ${locked ? "disabled" : ""}>Run</button></div>
           <div class="swv-row" style="margin-top:6px">${["/system resource print", "/ip dhcp-server lease print", "/interface print stats", "/ip service print", "/log print"].map((q) => `<button class="swv-btn sm" data-q="${esc(q)}" ${locked ? "disabled" : ""}>${esc(q.replace(/^\//, "").split(" ").slice(0, 2).join(" "))}</button>`).join("")}</div>
           <p class="swv-note" style="margin:6px 0 0">Runs as <b>admin</b> on the live router by MAC (MAC-Telnet) and is written to this device's history. Commands that could strand the router ask first.</p>`;
-      }
     }
 
     async function runCmd(cmd, confirmDanger) {
@@ -344,6 +364,8 @@
           if (await o.confirm("Run this anyway?", r.warning, { danger: true })) return runCmd(cmd, true);
           return;
         }
+        // The site answers a command that didn't run with 200 + {ok:false, error}.
+        if (r && r.ok === false) throw Object.assign(new Error(r.error || "the command did not run"), { body: r });
         st.hist.push((r && r.output ? r.output : "(no output)") + "\n\n");
       } catch (e) {
         const b = e.body || {};

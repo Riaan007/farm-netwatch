@@ -1304,6 +1304,14 @@ def _mtk_target(key):
     return dev, mac, ip, (c["username"] or "admin"), c["password"]
 
 
+def _pi_ip(router_ip):
+    """This Pi's own IP as the router sees it (the source address of the route to
+    it), else the LAN IP the page header shows — the one address to open the
+    router's API to."""
+    ip = mikrotik.own_ip_towards(router_ip) or kuma.lan_ip()
+    return "" if not ip or ip.startswith("127.") else ip
+
+
 def _mtk_audit(dev, action, result, extra=None):
     """Write a management action to the device's history (audit trail — this is
     config power over a client's router)."""
@@ -1487,6 +1495,8 @@ def _router_view(dev, force=False):
         if kind != "unreachable" and not (c["username"] or c["password"]):
             kind = "no_login"
         view.update({"ok": False, "kind": kind, "error": err})
+        if kind == "api_off":
+            view["pi_ip"] = _pi_ip(dev.get("ip"))      # the card's advice names it
         _from_mndp()
     _ROUTER_CACHE[key] = {"view": view, "ts": now}
     return view
@@ -1544,9 +1554,12 @@ def api_mikrotik_report(key):
         has_login = bool(creds.get(key).get("password") or creds.get(key).get("username"))
         err = str(res.get("error", ""))
         if "refused" in err.lower():
-            res["hint"] = ("The RouterOS API service (port 8728) looks turned off on this router. "
-                           "Open the Terminal tab and run  /ip service enable api  (needs the router's "
-                           "login saved), then reopen the console.")
+            # Never `/ip service enable api` (8728 open to every address): open it
+            # to this Pi alone, with the Pi's real IP filled in.
+            pi = _pi_ip(ip)
+            res.update({"kind": "api_off", "pi_ip": pi, "hint": mikrotik.api_off_hint(pi, has_login)})
+            if pi:
+                res["fix"] = mikrotik.api_allow_commands(pi)   # the Terminal offers these
         elif not has_login:
             res["hint"] = ("No admin login is saved for this router. Save its username/password on the "
                            "device's Access tab (RouterOS ships admin with a blank password).")
