@@ -160,6 +160,14 @@ def _size_params(wh):
     return {"videoResolutionWidth": wh[0], "videoResolutionHeight": wh[1]}
 
 
+PANORAMA_RATIO = 2.5    # main stream wider than this = a 180° panorama (32:9 = 3.56)
+
+
+def _panorama(caps):
+    main = caps.get("main")
+    return bool(main) and main[1] > 0 and main[0] / main[1] > PANORAMA_RATIO
+
+
 def _candidates(caps):
     """Small sizes worth asking a camera for, best first: its own sub-stream size
     (always one it supports, in its own shape) when that is small, then the usual
@@ -556,6 +564,8 @@ class Engine:
                 order.append("nvr")           # an NVR usually 403s a non-Hik channel, but try
         elif e["route"] == "own-rtsp" and nvr_ok:
             order.append("nvr")
+        if full and view == 1 and e["route"] == "nvr" and e["_own_ok"] and (e.get("aspect") or 0) > PANORAMA_RATIO:
+            order = ["direct", "nvr"]         # a panorama's own full picture is the sharp whole view
         if view > 1 and e["route"] in ("nvr", "own-generic", "own-rtsp") and not nvr_ok:
             order = ["direct"] if e["_own_ok"] else []
         if not order:
@@ -634,6 +644,17 @@ class Engine:
                     return self._pic(r, "direct")
             return self._pic(cl.get(f"/ISAPI/Streaming/channels/{view}01/picture", max_bytes=FULL_MAX), "direct")
         if full:
+            return self._pic(cl.get(PIC_PATH, max_bytes=FULL_MAX), "direct")
+        if _panorama(caps):
+            # A panorama's own small sizes are CROPS, not the whole view (home .7
+            # DS-2CD2T87G2P-LSU/SL V5.7.20, 5120x1440: 640x360, 960x272 and even
+            # its sub-stream size 1920x536 each cut a window out of the picture).
+            # So no small picture from the camera: its NVR's (the whole view,
+            # squeezed — the page draws it in the camera's shape), else full size.
+            if caps.get("thumb") != "none":
+                self._set_caps(d["key"], thumb="none")
+            if e.get("_via_ok") and 1 in (e.get("_vchans") or {}):
+                raise BadPicture("a panorama's small pictures are crops — using its recorder")
             return self._pic(cl.get(PIC_PATH, max_bytes=FULL_MAX), "direct")
         want = caps.get("thumb")
         if want == "none":

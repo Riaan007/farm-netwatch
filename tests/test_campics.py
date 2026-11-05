@@ -35,7 +35,7 @@ class Rig(unittest.TestCase):
         shutil.rmtree(campics.PIC_DIR, ignore_errors=True)
         for k in list(creds.keys_with_creds()):
             creds.set_(k)
-        self.wide = Device(main=(5120, 1440), sub=(1920, 536), sizes=[(640, 360), (1920, 536)]).start()
+        self.wide = Device(main=(3840, 2160), sub=(1920, 1080), sizes=[(640, 360), (1920, 1080)]).start()
         self.old = Device(main=(2048, 1536), sub=(704, 576), size_mode="503").start()
         self.nolog = Device().start()
         self.nvr = Device(channels=[]).start()
@@ -104,6 +104,35 @@ class Inventory(Rig):
         p, flags, err, st = self.pic("aa:03", view=3)
         self.assertEqual(st, 404)
 
+    def test_a_panorama_never_uses_its_own_small_sizes_they_are_crops(self):
+        # Home .7 DS-2CD2T87G2P-LSU/SL (5120x1440): every small size it agrees to
+        # is a window cut out of the view. On a recorder: its picture; else full size.
+        cam = Device(main=(5120, 1440), sub=(1920, 536), sizes=[(640, 360), (1920, 536)]).start()
+        try:
+            self.nvr.channels.append({"id": "7", "name": "Side 180", "ip": cam.addr, "online": True})
+            self.e._nvr_read_at.clear()
+            self.e._read_nvrs()
+            self.devs.append({"key": "aa:07", "ip": cam.addr, "category": "camera", "vendor": HIK, "online": True, "ports": [80, 554, 8000]})
+            creds.set_("aa:07", "admin", "pw")
+            self.e._list = (0, None)
+            p, *_ = self.pic("aa:07")
+            self.assertEqual(p.route, "nvr")
+            self.assertEqual(self.cams()["aa:07"]["route"], "nvr")              # remembered
+            self.assertEqual(self.cams()["aa:07"]["aspect"], round(5120 / 1440, 4))
+            self.assertFalse([h for h in cam.hits if "videoResolutionWidth" in h[1]])
+            p, *_ = self.pic("aa:07", size="full")                            # full size: its own, the whole view
+            self.assertEqual((p.w, p.h, p.route), (5120, 1440, "direct"))
+            self.nvr.channels.pop()                                           # no recorder: the full picture
+            self.e._nvr_read_at.clear()
+            self.e._read_nvrs()
+            self.e._list = (0, None)
+            time.sleep(campics.FRESH_MIN_S + 0.05)
+            p, *_ = self.pic("aa:07", fresh=True)
+            self.assertEqual((p.w, p.h, p.route), (5120, 1440, "direct"))
+            self.assertFalse([h for h in cam.hits if "videoResolutionWidth" in h[1]])
+        finally:
+            cam.stop()
+
     def test_a_2_lens_camera_with_its_own_login_shows_both_inputs(self):
         cam = Device(inputs=2, main=(2688, 1520), sub=(640, 360), sizes=[(640, 360)]).start()
         try:
@@ -142,7 +171,7 @@ class Pictures(Rig):
         p, flags, err, st = self.pic("aa:01")
         self.assertEqual(st, 200)
         self.assertEqual((p.w, p.h, p.route), (640, 360, "direct"))
-        self.assertEqual(self.cams()["aa:01"]["aspect"], round(5120 / 1440, 4))   # drawn in its own shape
+        self.assertEqual(self.cams()["aa:01"]["aspect"], round(3840 / 2160, 4))   # drawn in its own shape
         before = len(self.wide.hits)
         time.sleep(campics.FRESH_MIN_S + 0.05)
         p, *_ = self.pic("aa:01", fresh=True)
