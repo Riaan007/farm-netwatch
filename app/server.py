@@ -349,6 +349,8 @@ def api_setup():
         feats["camera_pictures"] = bool(body["camera_pictures"])
     if "camera_manage" in body:
         feats["camera_manage"] = bool(body["camera_manage"])
+    if "camera_risky" in body:
+        feats["camera_risky"] = bool(body["camera_risky"])
     if feats:
         patch["features"] = feats
     if "camera_refresh_min" in body:

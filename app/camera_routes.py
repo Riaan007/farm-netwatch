@@ -81,11 +81,13 @@ def api_camera_settings(key):
     """GET ?lens=1&group=basic|detect|record|recorder: the camera's settings — basic =
     picture, text on video, time and streams; detect = motion, intrusion, line crossing,
     tampering, privacy masks, strobe and siren; record = its recording on its recorder;
-    recorder (a recorder's own key) = the recorder's disk settings — with what each may
-    be set to (from the device's own capabilities).
+    recorder (a recorder's own key) = the recorder's disk settings; security = the
+    device's users, ports and Hik-Connect (shown) and its login lock, SSH and UPnP —
+    with what each may be set to (from the device's own capabilities).
     POST {lens, section, changes: {field: value}, expect: {field: value seen}, confirm}:
     change them — needs the site's "Camera settings" switch; careful sections need
-    confirm; the camera is read back to prove the change took."""
+    confirm; security changes also need the "Risky camera work" switch and confirm_text
+    (the word the page shows); the camera is read back to prove the change took."""
     try:
         if request.method == "GET":
             return jsonify(settings.read(key, int(request.args.get("lens") or 1),
@@ -95,7 +97,8 @@ def api_camera_settings(key):
         return jsonify(settings.apply(key, int(b.get("lens") or 1), str(b.get("section") or ""),
                                       b.get("changes") if isinstance(b.get("changes"), dict) else {},
                                       who=_who(), expect=b.get("expect") if isinstance(b.get("expect"), dict) else {},
-                                      confirm=b.get("confirm") is True, route=str(b.get("route") or "") or None))
+                                      confirm=b.get("confirm") is True, route=str(b.get("route") or "") or None,
+                                      confirm_text=str(b.get("confirm_text") or "")[:20]))
     except ValueError:
         return jsonify({"ok": False, "error": "lens must be a number"}), 400
     except hiksettings.SettingsError as e:
@@ -139,5 +142,20 @@ def api_camera_ptz(key):
                                        route=str(b.get("route") or "") or None))
     except ValueError:
         return jsonify({"ok": False, "error": "lens must be a number"}), 400
+    except hiksettings.SettingsError as e:
+        return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/account", methods=["POST"])
+@guard
+def api_camera_account(key):
+    """POST {action: "create"|"remove", confirm_text}: the guided Netwatch account job
+    (hiksecurity.py) — create an Operator user `netwatch` with a random password nobody
+    sees, prove it logs in and switch Netwatch to it (the admin login is kept aside for
+    risky jobs), or remove it and go back to admin. Needs both camera switches."""
+    b = request.get_json(force=True, silent=True) or {}
+    try:
+        return jsonify(settings.account(key, str(b.get("action") or ""), who=_who(),
+                                        confirm_text=str(b.get("confirm_text") or "")[:20]))
     except hiksettings.SettingsError as e:
         return _err(e)

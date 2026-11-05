@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Ehome xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+<enabled>false</enabled>
+<addressingFormatType>ipaddress</addressingFormatType>
+<ipAddress>0.0.0.0</ipAddress>
+<portNo>7660</portNo>
+<deviceID>E79346593</deviceID>
+<registerStatus>false</registerStatus>
+<version>v5.0</version>
+<protocolVersion>v5.0</protocolVersion>
+<key />
+</Ehome>

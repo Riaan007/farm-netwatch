@@ -180,6 +180,13 @@ class HubCameras(unittest.TestCase):
         anon = server.app.test_client()
         self.assertEqual(anon.post("/api/hub/sites/farm/cameras/aa:01/ptz", json=body).status_code, 401)
 
+    def test_the_account_job_is_forwarded(self):
+        body = {"action": "create", "confirm_text": "CHANGE"}
+        r = self.c.post("/api/hub/sites/farm/cameras/aa:01/account", json=body)
+        self.assertEqual((FakeSite.calls[-1][0], r.get_json()["echo"]), ("/api/cameras/aa%3A01/account", body))
+        anon = server.app.test_client()
+        self.assertEqual(anon.post("/api/hub/sites/farm/cameras/aa:01/account", json=body).status_code, 401)
+
     def test_a_site_refusal_passes_through_and_an_old_site_is_told_to_update(self):
         FakeSite.mode = "refuse"
         r = self.c.post("/api/hub/sites/farm/cameras/aa:01/settings", json={"section": "picture"})

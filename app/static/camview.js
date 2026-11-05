@@ -232,9 +232,14 @@
         let p = st.recSet.get(id);
         if (!p) {
           const g = groups().find((x) => String(x.id) === ph.dataset.g); if (!g) return;
-          const host = document.createElement("section"); host.className = "cv-set cv-recset";
-          p = { host, ctl: settingsPanel(host, opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), { key: ph.dataset.recset }, () => {},
-            { group: "recorder", title: "⚙ Recorder settings", sub: "what it does when its disks are full" }) };
+          const host = document.createElement("div"); host.className = "cv-recset";
+          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section>`;
+          const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2] = host.children;
+          const a = settingsPanel(h1, base, { key: ph.dataset.recset }, () => {},
+            { group: "recorder", title: "⚙ Recorder settings", sub: "what it does when its disks are full" });
+          const b = settingsPanel(h2, base, { key: ph.dataset.recset }, () => {},
+            { group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" });
+          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); } } };
           st.recSet.set(id, p);
         }
         ph.replaceWith(p.host);
@@ -396,7 +401,7 @@
           </dl>
         </div>
       </div>
-      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}` : ""}
+      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section>` : ""}` : ""}
       <p class="cv-foot">Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.</p>
     </div>`;
     const root = el.querySelector(".cv"), note = root.querySelector(".cv-note");
@@ -469,6 +474,9 @@
     const recHost = root.querySelector("[data-rec]");
     const rpanel = recHost ? settingsPanel(recHost, opts.apiBase(g, c), c, () => {}, {
       group: "record", title: "⏺ Recording", sub: "when the recorder records it · before and after an event · stream · days kept" }) : null;
+    const secHost = root.querySelector("[data-secu]");
+    const spanel = secHost ? settingsPanel(secHost, opts.apiBase(g, c), c, () => {}, {
+      group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" }) : null;
     const ptzHost = root.querySelector("[data-ptz]");
     const ppanel = ptzHost ? ptzPanel(ptzHost, opts.apiBase(g, c), vs, names, () => { if (!st.dead) setTimeout(() => get("thumb", true), 700); }) : null;
     return {
@@ -477,6 +485,7 @@
         if (panel) panel.destroy();
         if (dpanel) dpanel.destroy();
         if (rpanel) rpanel.destroy();
+        if (spanel) spanel.destroy();
         if (ppanel) ppanel.destroy();
         Object.values(st.pics).forEach((p) => p && p.src && URL.revokeObjectURL(p.src));
         el.innerHTML = "";
@@ -494,7 +503,7 @@
     if (!r.ok || j.ok === false) throw Object.assign(new Error(j.error || j.message || "HTTP " + r.status), { status: r.status, body: j });
     return j;
   }
-  const RISK = { safe: "", careful: "Asks you to confirm" };
+  const RISK = { safe: "", careful: "Asks you to confirm", dangerous: "Risky: asks you to type a word to confirm" };
 
   // Areas, lines, mask boxes and the motion grid are drawn over the camera's picture.
   // The page works in 0..1000 both ways with the origin top-left; the Pi converts to
@@ -549,6 +558,7 @@
     const group = o.group || "basic";
     const st = { lens: 1, sec: group === "basic" ? "picture" : "", data: null, dead: false, edits: {}, preview: null, busy: false, draft: {}, route: "", brush: {} };
     const onCam = (group === "basic" || group === "detect");
+    const devWord = () => (st.data && st.data.recorder) || !(onCam || group === "security") || (onCam && st.data.route === "nvr") ? "recorder" : "camera";
     el.innerHTML = `<details class="cv-setd"><summary><h3>${esc(o.title || "⚙ Camera settings")}</h3><span class="cv-dimtx">${esc(o.sub || "picture · text on video · time · video")}</span></summary><div class="cv-setb" data-b></div></details>`;
     const det = el.querySelector("details"), body = el.querySelector("[data-b]");
     det.addEventListener("toggle", () => { if (det.open && !st.data) load(); });
@@ -559,7 +569,9 @@
         st.data = await jcall(`${base}/settings?lens=${st.lens}${group === "basic" ? "" : "&group=" + group}${st.route ? "&route=" + st.route : ""}`);
         if (st.dead) return;
         if ((st.data.group || "basic") !== group) { body.innerHTML = `<p class="cv-setmsg cv-warn">This site's Netwatch is too old for these settings — update it.</p>`; st.data = null; return; }
-        if (!st.data.sections.length) { body.innerHTML = `<p class="cv-dimtx">${group === "record" ? "The recorder has no recording settings for this camera." : group === "recorder" ? "This recorder has none of these settings." : "This camera has none of these settings."}</p>`; return; }
+        if (group === "security" && st.data.can_change && !st.data.risky) {
+          st.data.can_change = false; st.data.why_not = "Risky camera work is turned off for this site (Settings → Cameras)."; }
+        if (!st.data.sections.length && !st.data.info) { body.innerHTML = `<p class="cv-dimtx">${group === "record" ? "The recorder has no recording settings for this camera." : group === "recorder" ? "This recorder has none of these settings." : "This camera has none of these settings."}</p>`; return; }
         if (!st.data.sections.some((x) => x.id === st.sec)) st.sec = (st.data.sections[0] || {}).id;
         st.edits = {}; st.draft = {}; st.preview = null; paint();
         loadChanges();
@@ -732,6 +744,7 @@
           ? ` <span class="cv-seg" role="group" aria-label="Change it through"><button type="button" data-route="direct" aria-pressed="${d.route === "direct"}">The camera</button><button type="button" data-route="nvr" aria-pressed="${d.route === "nvr"}">The recorder</button></span>` : ""}</p>`;
       }
       if (!d.can_change) html += `<p class="cv-setmsg">${esc(d.why_not)} You can look, not change.</p>`;
+      if (d.info) html += secInfo(d);
       if (s) {
         if (s.note) html += `<p class="cv-dimtx">${esc(s.note)}</p>`;
         if (s.error) html += `<p class="cv-setmsg cv-warn">${esc(s.error)}</p>`;
@@ -748,6 +761,39 @@
       if (st.msg) say(st.msg[0], st.msg[1]);
       paintChanges();
     }
+    function secInfo(d) {
+      const i = d.info, dev = d.recorder ? "recorder" : "camera";
+      const on = (x) => (x ? "On" : "Off");
+      let h = `<div class="cv-secinfo">`;
+      if ((i.warnings || []).length) h += `<ul class="cv-secwarn">${i.warnings.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+      h += `<dl class="cv-secdl"><dt>Users</dt><dd>${(i.users || []).map((u) => `${esc(u.name)} <span class="cv-dimtx">(${esc(u.level)})</span>`).join(", ") || "—"}</dd>`;
+      h += `<dt>Ports</dt><dd>${(i.ports || []).map((p) => `<span class="${p.on ? "" : "cv-dimtx"}">${esc(p.protocol)} ${esc(p.port)}${p.on ? "" : " (off)"}</span>`).join(" · ") || "—"}</dd>`;
+      if (i.hik_connect) h += `<dt>Hik-Connect</dt><dd>${on(i.hik_connect.on)}${i.hik_connect.on ? (i.hik_connect.registered ? ", connected to the cloud" : ", not connected") : ""}</dd>`;
+      if (i.isup) h += `<dt>Platform access (ISUP)</dt><dd>${on(i.isup.on)}</dd>`;
+      h += `<dt>Netwatch logs in as</dt><dd><b>${esc(i.login.uses || "—")}</b>${i.login.netwatch ? ` <span class="cv-dimtx">(its own Operator account${i.login.admin_kept ? "; the admin login is kept for risky jobs only" : ""})</span>` : ""}</dd></dl>`;
+      if (d.can_change) {
+        h += i.login.netwatch
+          ? `<div class="cv-setact"><button type="button" class="cv-btn" data-acct="remove">Remove the Netwatch account</button><span class="cv-dimtx">Netwatch goes back to the admin login.</span></div>`
+          : `<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-acct="create">Set up the Netwatch account</button><span class="cv-dimtx">A user called netwatch with a long random password nobody sees. Netwatch then logs in with it instead of admin, so it can never lock admin out.</span></div>`;
+      }
+      if (st.acct) h += `<div class="cv-setprev"><p><b>${st.acct === "create" ? `Set up the Netwatch account on this ${dev}?` : `Remove the Netwatch account from this ${dev}?`}</b></p>${st.acct === "create"
+        ? `<ul class="cv-chglist"><li>Adds an Operator user <b>netwatch</b> with rights for pictures, health, settings, restart and PTZ — not firmware.</li><li>Tests that it logs in, then Netwatch uses it from now on.</li><li>The admin login stays saved, for risky jobs only. If anything fails, the new user is removed again.</li></ul>`
+        : `<p>The netwatch user is deleted and Netwatch logs in as admin again.</p>`}${wordBox("acct-go")}</div>`;
+      return h + `</div>`;
+    }
+    function wordBox(go) {
+      const w = st.data.confirm_word || "CHANGE";
+      return `<p class="cv-dimtx">Type <b>${esc(w)}</b> to go ahead.</p><div class="cv-setact"><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type ${esc(w)}"><button type="button" class="cv-btn cv-on" data-a="${go}">Go ahead</button><button type="button" class="cv-btn" data-a="unpreview">Back</button></div>`;
+    }
+    const word = () => ((body.querySelector("[data-word]") || {}).value || "").trim().toUpperCase();
+    async function account(action) {
+      if (st.busy) return;
+      st.busy = true; say(action === "create" ? "Setting up the Netwatch account — this takes a few seconds…" : "Removing the Netwatch account…", "");
+      try {
+        const j = await jcall(`${base}/account`, { method: "POST", body: JSON.stringify({ action, confirm_text: word() }) });
+        st.busy = false; st.acct = null; await load(); say(j.message || "Done.", "cv-okt");
+      } catch (e) { st.busy = false; say(e.message, "cv-warn"); }
+    }
     function say(text, cls) { st.msg = [text, cls]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = text; m.className = "cv-setmsg " + (cls || ""); } }
     function setEdit(fid, v) {
       const f = sec().fields.find((x) => x.id === fid);
@@ -762,17 +808,17 @@
       const s = sec(); if (st.busy) return;
       const changes = { ...st.edits }, expect = {};
       Object.keys(changes).forEach((k) => { const f = s.fields.find((x) => x.id === k); if (f) expect[k] = f.value; });
-      if (s.risk === "careful" && !confirm) {
+      if ((s.risk === "careful" || s.risk === "dangerous") && !confirm) {
         const list = Object.keys(changes).map((k) => { const f = s.fields.find((x) => x.id === k);
           return { label: f.label, from: f.shown ?? f.value, to: shownOf(f, changes[k]) }; });
         const loses = (changes["t.Duration"] && changes["t.Duration"] !== "0") || changes["x.LoopEnable"] === "false" || changes["t.CustomExtensionList/CustomExtension/enableSchedule"] === "false";
-        st.preview = `<div class="cv-setprev"><p><b>Change on the ${onCam && st.data.route !== "nvr" ? "camera" : "recorder"}:</b></p>${rows(list)}${loses ? `<p class="cv-warn">${changes["t.Duration"] && changes["t.Duration"] !== "0" ? "The recorder deletes this camera's footage older than that straight away — Undo can't bring it back." : changes["x.LoopEnable"] === "false" ? "When the disks are full the recorder will stop recording every camera." : "The recorder stops recording this camera."}</p>` : ""}${s.id === "time" ? `<p class="cv-dimtx">The camera's clock is also set from this Pi's clock, so it is right straight away.</p>` : ""}${s.id === "main" || s.id === "sub" ? `<p class="cv-dimtx">The picture may drop for a few seconds while the camera switches.</p>` : ""}<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-a="confirm">Yes, change it</button><button type="button" class="cv-btn" data-a="unpreview">Back</button></div></div>`;
+        st.preview = `<div class="cv-setprev"><p><b>Change on the ${devWord()}:</b></p>${rows(list)}${loses ? `<p class="cv-warn">${changes["t.Duration"] && changes["t.Duration"] !== "0" ? "The recorder deletes this camera's footage older than that straight away — Undo can't bring it back." : changes["x.LoopEnable"] === "false" ? "When the disks are full the recorder will stop recording every camera." : "The recorder stops recording this camera."}</p>` : ""}${s.id === "time" ? `<p class="cv-dimtx">The camera's clock is also set from this Pi's clock, so it is right straight away.</p>` : ""}${s.id === "main" || s.id === "sub" ? `<p class="cv-dimtx">The picture may drop for a few seconds while the camera switches.</p>` : ""}${s.risk === "dangerous" ? `${changes["ll.enabled"] === "false" ? `<p class="cv-warn">Without the lock anyone on the network can keep guessing passwords.</p>` : ""}${changes["ssh.enabled"] === "true" || changes["upnp.enabled"] === "true" ? `<p class="cv-warn">This opens a door into the device. Turn it off again when you are done.</p>` : ""}${wordBox("confirm")}` : `<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-a="confirm">Yes, change it</button><button type="button" class="cv-btn" data-a="unpreview">Back</button></div>`}</div>`;
         paint(); return;
       }
       if (Object.keys(st.draft).length) return say("Finish the drawing first (or press Start again).", "cv-warn");
-      st.busy = true; say(`Changing it on the ${onCam && st.data.route !== "nvr" ? "camera" : "recorder"}…`, "");
+      st.busy = true; say(`Changing it on the ${devWord()}…`, "");
       try {
-        const j = await jcall(`${base}/settings`, { method: "POST", body: JSON.stringify({ lens: st.lens, section: s.id, changes, expect, confirm: true, route: st.data.route }) });
+        const j = await jcall(`${base}/settings`, { method: "POST", body: JSON.stringify({ lens: st.lens, section: s.id, changes, expect, confirm: true, route: st.data.route, confirm_text: s.risk === "dangerous" ? word() : "" }) });
         st.busy = false;
         const msg = j.message || "Done.";
         await load(); say(msg, j.ok ? "cv-okt" : "cv-warn");
@@ -794,7 +840,7 @@
       box.innerHTML = `<h4>Changes made from Netwatch</h4><ul class="cv-chglog">${chg.slice(0, 12).map((x) => `<li>
         <div><b>${esc(x.section_label)}${x.lens > 1 ? " · lens " + x.lens : ""}${x.undo_of ? " (undo)" : ""}</b> <span class="cv-dimtx">${esc(ago(x.ts))}${x.who ? " · " + esc(x.who) : ""}${x.result !== "ok" ? ` · <span class="cv-warn">${x.result === "partial" ? "not every change kept" : "not done"}</span>` : ""}</span></div>
         <small>${(x.fields || []).map((r) => `${esc(r.label)} ${esc(r.shown_before)} → ${esc(r.shown_after)}${r.kept ? "" : " (not kept)"}`).join(" · ")}</small>
-        ${x.undone_by ? `<span class="cv-dimtx">undone</span>` : !x.undo_of && st.data && st.data.can_change && (x.fields || []).some((r) => r.written) ? `<button type="button" class="cv-btn" data-undo="${esc(x.id)}">↶ Undo</button>` : ""}</li>`).join("")}</ul>`;
+        ${x.undone_by ? `<span class="cv-dimtx">undone</span>` : !x.undo_of && !x.no_undo && st.data && st.data.can_change && (x.fields || []).some((r) => r.written) ? `<button type="button" class="cv-btn" data-undo="${esc(x.id)}">↶ Undo</button>` : ""}</li>`).join("")}</ul>`;
     }
     async function undo(id, btn) {
       if (!window.confirm("Put back the values this change replaced? It only goes ahead if the camera still shows this change.")) return;
@@ -837,11 +883,13 @@
       else if (b.dataset.pre) { const p = (sec().presets || []).find((x) => x.id === b.dataset.pre); if (p) { Object.entries(p.changes).forEach(([k, v]) => { const f = sec().fields.find((x) => x.id === k); if (f && f.editable && String(f.value) !== String(v)) st.edits[k] = String(v); }); st.preview = null; st.msg = Object.keys(st.edits).length ? null : ["The camera already has these values.", "cv-okt"]; paint(); } }
       else if (b.hasAttribute("data-nwname")) setEdit("name.name", st.data.netwatch_name);
       else if (b.dataset.undo) undo(b.dataset.undo, b);
+      else if (b.dataset.acct) { st.acct = b.dataset.acct; st.preview = null; st.msg = null; paint(); }
+      else if (b.dataset.a === "acct-go") account(st.acct);
       else if (b.dataset.a === "reload") { st.msg = null; load(); }
       else if (b.dataset.a === "reset") { st.edits = {}; st.draft = {}; st.preview = null; st.msg = null; paint(); }
       else if (b.dataset.a === "apply") apply(false);
       else if (b.dataset.a === "confirm") apply(true);
-      else if (b.dataset.a === "unpreview") { st.preview = null; paint(); }
+      else if (b.dataset.a === "unpreview") { st.preview = null; st.acct = null; paint(); }
     });
     return { destroy() { st.dead = true; } };
   }

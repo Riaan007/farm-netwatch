@@ -25,9 +25,11 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
 import campics
+import creds
 import hikdetect
 import hikrecord
 import hikisapi
+import hiksecurity
 
 DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
 LOG_PATH = os.path.join(DATA_DIR, "camera_changes.json")
@@ -130,8 +132,9 @@ SHOW_IF = {
 SCALE = {"s.Video/maxFrameRate": 100}      # frames per second are sent in hundredths
 
 
-GROUPS = ("basic", "detect", "record", "recorder")
-CAMERA_GROUPS = ("basic", "detect", "record")
+GROUPS = ("basic", "detect", "record", "recorder", "security")
+CAMERA_GROUPS = ("basic", "detect", "record", "security")
+RECORDER_GROUPS = ("recorder", "security")
 RECORDER_SECTIONS = ("record", "storage")
 
 
@@ -145,6 +148,8 @@ def sections(lens, group="basic", via=None):
         return hikrecord.camera_sections(via) if via is not None else []
     if group == "recorder":
         return hikrecord.recorder_sections()
+    if group == "security":
+        return hiksecurity.sections() if via is None else []     # the device's own login only
     if via is not None:
         return nvr_sections(int(via), group)
     if group == "detect":
@@ -1149,6 +1154,7 @@ class Settings:
         self._locks = {}
         self._lk = threading.Lock()
         self._ptz_logged = {}
+        self._risky_lock = threading.Lock()    # one risky job at a time on the whole site
 
     def start(self, engine, cfg, on_change=None, log_path=None):
         self.engine, self.cfg, self.on_change = engine, cfg, on_change
@@ -1158,6 +1164,25 @@ class Settings:
 
     def enabled(self):
         return bool((self.cfg().get("features") or {}).get("camera_manage"))
+
+    def risky(self):
+        return bool((self.cfg().get("features") or {}).get("camera_risky"))
+
+    def _admin_client(self, d):
+        """The client risky work uses: the admin login kept aside (hiksecurity), else the
+        saved login. Its own one-try slot (`<key>#admin`), so a refusal of one login is
+        never wiped out by the other one working."""
+        a = creds.get_admin(d["key"])
+        if not a["username"]:
+            return self.engine._client(d)
+        return hikisapi.Client(d["key"] + "#admin", d.get("ip"), a["username"], a["password"], d.get("ports"))
+
+    def _risky_gate(self, confirm_text, undo=False):
+        if not self.risky():
+            raise SettingsError("Risky camera work is turned off for this site (Settings → Cameras).", 403)
+        if not undo and str(confirm_text or "").strip() != hiksecurity.CONFIRM_WORD:
+            raise SettingsError(f"type {hiksecurity.CONFIRM_WORD} to confirm this change", 400,
+                                {"needs_word": hiksecurity.CONFIRM_WORD})
 
     def _lock_for(self, key):
         with self._lk:
@@ -1223,7 +1248,7 @@ class Settings:
         return e, "direct", None, self.engine._client(d), self.engine._nvr_sems[rec["key"]], d
 
     def _groups(self, e):
-        return ("recorder",) if e.get("_recorder") else CAMERA_GROUPS
+        return RECORDER_GROUPS if e.get("_recorder") else CAMERA_GROUPS
 
     def _lenses(self, e):
         return list(range(1, len(e.get("views") or []) + 1)) or [1]
@@ -1301,14 +1326,24 @@ class Settings:
             raise SettingsError("unknown settings group")
         if group == "record" and not route:
             route = "nvr"            # recording is the recorder's: always through it
+        if group == "security":
+            route = "direct"         # a device's own users and ports: its own login only
         e, use, ch, cl, sem, _hd = self._target(key, lens, route)
+        if group == "security":
+            cl = self._admin_client(e["_d"])
         if group not in self._groups(e):
             raise SettingsError("these settings are a camera's" if e.get("_recorder") else "these settings are a recorder's")
         lenses = self._lenses(e)
         if int(lens) not in lenses:
             raise SettingsError("no such lens", 404)
-        out, memo = [], {}
+        out, memo, extra = [], {}, {}
         with sem:
+            if group == "security":
+                try:
+                    extra["info"] = hiksecurity.info(cl, key)
+                except hikisapi.LoginRefused as ex:
+                    raise SettingsError(str(ex) or "the device refused the saved login", 403) from None
+                extra.update(risky=self.risky(), confirm_word=hiksecurity.CONFIRM_WORD)
             for sec in sections(lens, group, ch):
                 if sec.get("device") and int(lens) != 1:
                     continue
@@ -1333,9 +1368,10 @@ class Settings:
                 "recorder": bool(e.get("_recorder")),
                 "netwatch_name": (d.get("name") or e.get("name") or "")[:32], "can_change": self.enabled(),
                 "why_not": "" if self.enabled() else "Camera settings are turned off for this site (Settings → Cameras).",
-                "sections": out, "ts": int(time.time())}
+                "sections": out, "ts": int(time.time()), **extra}
 
-    def apply(self, key, lens, section, changes, who="", expect=None, undo_of=None, confirm=False, route=None):
+    def apply(self, key, lens, section, changes, who="", expect=None, undo_of=None, confirm=False, route=None,
+              confirm_text=""):
         """Change some settings of one section. `expect` = the values the person saw
         ({field: value}); a camera that shows something else now is a conflict (409)."""
         if not self.enabled():
@@ -1344,7 +1380,13 @@ class Settings:
             raise SettingsError("nothing to change")
         if section == "record" and not route:
             route = "nvr"
+        risky = section in hiksecurity.SECTION_IDS
+        if risky:
+            self._risky_gate(confirm_text, undo=bool(undo_of))
+            route = "direct"
         e, use, ch, cl, sem, hist_dev = self._target(key, lens, route)
+        if risky:
+            cl = self._admin_client(e["_d"])
         sec = next((s for g in self._groups(e) for s in sections(lens, g, ch) if s["id"] == section), None)
         if sec is None:
             raise SettingsError("unknown settings section" + (" (not available through the recorder)" if ch else ""))
@@ -1355,6 +1397,9 @@ class Settings:
         lock = self._lock_for(key)
         if not lock.acquire(blocking=False):
             raise SettingsError("another change on this camera is still running", 409)
+        if risky and not self._risky_lock.acquire(blocking=False):
+            lock.release()
+            raise SettingsError("another risky job is running on this site; one at a time", 409)
         try:
             with sem:
                 return self._apply(e, cl, sec, int(lens), changes, who, expect or {}, undo_of,
@@ -1364,6 +1409,8 @@ class Settings:
         except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
             raise SettingsError(f"the camera did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
         finally:
+            if risky:
+                self._risky_lock.release()
             lock.release()
 
     def _apply(self, e, cl, sec, lens, changes, who, expect, undo_of, route="direct", ch=None, hist_dev=None):
@@ -1564,6 +1611,70 @@ class Settings:
             except Exception:  # noqa: BLE001
                 pass
 
+    # ---- the Netwatch account (hiksecurity.py) -----------------------------------------
+    def account(self, key, action, who="", confirm_text="", undo_of=None):
+        """action "create": make the `netwatch` Operator account and log in with it from
+        now on (the admin login is kept aside for risky jobs); "remove": delete it and go
+        back to admin. Needs both camera switches and the typed word (not for Undo)."""
+        if action not in ("create", "remove"):
+            raise SettingsError("unknown account action")
+        if not self.enabled():
+            raise SettingsError("Camera settings are turned off for this site (Settings → Cameras).", 403)
+        self._risky_gate(confirm_text, undo=bool(undo_of))
+        e, _use, _ch, _cl, sem, d = self._target(key, 1, "direct")
+        lock = self._lock_for(key)
+        if not lock.acquire(blocking=False):
+            raise SettingsError("another change on this device is still running", 409)
+        if not self._risky_lock.acquire(blocking=False):
+            lock.release()
+            raise SettingsError("another risky job is running on this site; one at a time", 409)
+        dev = "recorder" if e.get("_recorder") else "camera"
+        try:
+            with sem:
+                cl = self._admin_client(d)
+                if action == "create":
+                    ports = d.get("ports")
+
+                    def client_for(u, pw):
+                        return hikisapi.Client(d["key"] + "#new", d.get("ip"), u, pw, ports)
+                    res = hiksecurity.create(cl, d, _HELP, client_for)
+                else:
+                    res = hiksecurity.remove(cl, d, _HELP)
+        except hiksecurity.AccountError as ex:
+            raise SettingsError(str(ex), ex.status) from None
+        except hikisapi.LoginRefused as ex:
+            raise SettingsError(str(ex) or f"the {dev} refused the admin login", 403) from None
+        except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
+            raise SettingsError(f"the {dev} did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+        finally:
+            self._risky_lock.release()
+            lock.release()
+        made = action == "create"
+        rows = [{"id": "account", "label": "Netwatch account", "before": "" if made else "netwatch",
+                 "after": "netwatch" if made else "", "shown_before": "none" if made else "netwatch (Operator)",
+                 "shown_after": "netwatch (Operator)" if made else "removed", "written": True, "kept": True},
+                {"id": "login", "label": "Netwatch logs in as", "before": res["admin"] if made else "netwatch",
+                 "after": "netwatch" if made else res["admin"], "shown_before": res["admin"] if made else "netwatch",
+                 "shown_after": "netwatch" if made else res["admin"], "written": True, "kept": True}]
+        entry = {"id": uuid.uuid4().hex[:12], "ts": int(time.time()), "who": who or "", "key": key,
+                 "ip": e.get("ip"), "mac": e.get("mac"), "name": e.get("name"), "lens": 1, "route": "direct",
+                 "channel": None, "section": "account", "risk": "dangerous", "fields": rows,
+                 "section_label": "Netwatch account " + ("set up" if made else "removed"),
+                 "result": "ok", "error": "", "reboot": False, "undo_of": undo_of, "undone_by": None,
+                 "no_undo": not made, "steps": res["steps"]}
+        self.log.add(entry)
+        if undo_of:
+            self.log.mark(undo_of, undone_by=entry["id"])
+        if self.on_change:
+            try:
+                self.on_change(d, entry)
+            except Exception:  # noqa: BLE001 - history must never fail a change
+                pass
+        msg = (f"Done — Netwatch now logs in to this {dev} as 'netwatch' (Operator). The admin login is kept "
+               "for risky jobs only." if made else
+               f"Done — the netwatch account is gone and Netwatch logs in as {res['admin']} again.")
+        return {"ok": True, "change": entry, "message": msg}
+
     def changes(self, key, limit=50):
         return self.log.for_key(key, limit)
 
@@ -1573,6 +1684,10 @@ class Settings:
             raise SettingsError("unknown change", 404)
         if c.get("undone_by"):
             raise SettingsError("this change was already undone", 409)
+        if c.get("section") == "account":
+            if c.get("no_undo"):
+                raise SettingsError("a removal can't be undone — set the account up again", 409)
+            return self.account(key, "remove", who=who, undo_of=cid)
         rows = [r for r in c.get("fields") or [] if r.get("written")]
         if not rows:
             raise SettingsError("nothing of this change reached the camera", 409)
@@ -1601,6 +1716,8 @@ class _Helpers:
     walk = staticmethod(_walk)
     val = staticmethod(_val)
     child = staticmethod(_child)
+    serialize = staticmethod(serialize)
+    status = staticmethod(_status)
 
 
 _HELP = _Helpers()

@@ -73,6 +73,17 @@ class Device:
         self.ptz = None
         self.ptz_calls = []                  # (method, path, body) of every PTZ call
         self.hits = []                       # (method, path, sent a login?)
+        # users (hiksecurity): None = only the one login above; else {name: {"pw", "level", "id"}}
+        # served at /ISAPI/Security/users (+ /UserPermission), changed by POST/PUT/DELETE
+        self.accounts = None
+        self.need_login_pw = False           # double verification: user changes need <loginPassword>
+        self.bond_lists = False              # recorders list each user's bound IP/MAC
+        self.rights = {}                     # name -> {right: "true"/"false"}
+        self.user_calls = []                 # (method, path, body)
+        self.refuse_rights = False           # answer the rights PUT with an error
+        self.deletes = []                    # did each user DELETE carry ?loginPassword=
+        self.rights_pad = 0                  # bytes of padding in the rights list (a big recorder)
+        self.hide_new_rights = False         # leave new users out of the rights list
         self.nonce = secrets.token_hex(8)
         self.srv = None
 
@@ -93,6 +104,11 @@ class Device:
                 dev._handle(self)
 
             def do_PUT(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                self.body = self.rfile.read(n) if n else b""
+                dev._handle(self)
+
+            def do_DELETE(self):
                 n = int(self.headers.get("Content-Length") or 0)
                 self.body = self.rfile.read(n) if n else b""
                 dev._handle(self)
@@ -128,9 +144,17 @@ class Device:
         if not h.startswith("Digest "):
             return False
         p = _digest_params(h)
-        if p.get("username") != self.user or p.get("nonce") != self.nonce:
-            return False
-        ha1 = _md5(f"{self.user}:{REALM}:{self.password}")
+        if self.accounts is not None:
+            acc = self.accounts.get(p.get("username"))
+            if acc is None or p.get("nonce") != self.nonce:
+                return False
+            user, pw = p.get("username"), acc["pw"]
+        else:
+            if p.get("username") != self.user or p.get("nonce") != self.nonce:
+                return False
+            user, pw = self.user, self.password
+        req.nw_user = user
+        ha1 = _md5(f"{user}:{REALM}:{pw}")
         ha2 = _md5(f"{req.command}:{p.get('uri', '')}")
         want = _md5(f"{ha1}:{self.nonce}:{p.get('nc', '')}:{p.get('cnonce', '')}:{p.get('qop', '')}:{ha2}")
         return p.get("response") == want
@@ -243,6 +267,95 @@ class Device:
             return self._send(req, 200, ok)
         return self._send(req, 404, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
 
+    # ---- users (hiksecurity) ----
+    OK = '<ResponseStatus xmlns="http://www.hikvision.com/ver20/XMLSchema"><statusCode>1</statusCode><statusString>OK</statusString></ResponseStatus>'
+    RIGHTS = ("playBack", "preview", "record", "logOrStateCheck", "ptzControl", "upgrade", "parameterConfig",
+              "restartOrShutdown", "voiceTalk", "transParentChannel", "contorlLocalOut", "alarmOutOrUpload")
+
+    def _bad(self, req, code, sub):
+        return self._send(req, code, f'<ResponseStatus xmlns="http://www.hikvision.com/ver20/XMLSchema"><statusCode>4</statusCode><subStatusCode>{sub}</subStatusCode></ResponseStatus>')
+
+    def _users(self, req, path):
+        import re as _re
+        body = getattr(req, "body", b"").decode()
+        if req.command != "GET":
+            self.user_calls.append((req.command, path, body))
+        me = self.accounts.get(getattr(req, "nw_user", ""), {})
+        if me.get("level") != "Administrator":
+            return self._bad(req, 403, "noPermission")
+        ns = 'xmlns="http://www.hikvision.com/ver20/XMLSchema"'
+
+        def tag(t):
+            m = _re.search(rf"<{t}>([^<]*)</{t}>", body)
+            return m.group(1) if m else None
+        admin_pw = next(a["pw"] for a in self.accounts.values() if a["level"] == "Administrator")
+        if path == "/ISAPI/Security/users" and req.command == "GET":
+            bond = ("<bondIpAddressList><bondIpAddress><id>1</id><ipAddress>0.0.0.0</ipAddress></bondIpAddress></bondIpAddressList>"
+                    "<bondMacAddressList><bondMacAddress><id>1</id><macAddress>00:00:00:00:00:00</macAddress></bondMacAddress></bondMacAddressList>"
+                    if self.bond_lists else "")
+            items = "".join(f'<User version="2.0"><id>{a["id"]}</id><userName>{n}</userName>{bond}<userLevel>{a["level"]}</userLevel></User>'
+                            for n, a in sorted(self.accounts.items(), key=lambda x: x[1]["id"]))
+            return self._send(req, 200, f'<UserList {ns} version="2.0">{items}</UserList>')
+        if path == "/ISAPI/Security/users" and req.command == "POST":
+            if self.need_login_pw and tag("loginPassword") != admin_pw:
+                return self._bad(req, 401, "loginPasswordError")
+            name, pw, lvl, uid = tag("userName"), tag("password"), tag("userLevel"), tag("id")
+            if not name or not pw or name in self.accounts or not (uid or "").isdigit():
+                return self._bad(req, 400, "badParameters")
+            if self.bond_lists and "<bondIpAddressList>" not in body:
+                return self._bad(req, 400, "badXmlContent")
+            self.accounts[name] = {"pw": pw.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">"), "level": lvl, "id": int(uid)}
+            self.rights[name] = {r: ("true" if r in ("playBack", "preview", "record", "logOrStateCheck") else "false") for r in self.RIGHTS}
+            return self._send(req, 200, self.OK)
+        m = _re.fullmatch(r"/ISAPI/Security/users/(\d+)", path)
+        if m and req.command == "DELETE":
+            # like a DS-2CD2046G2 V5.5.8: the admin password comes as ?loginPassword=,
+            # a DELETE without it is "Invalid XML Content"
+            # the raw query value, NOT %-decoded (a home recorder doesn't decode it either)
+            raw = dict(x.split("=", 1) for x in urlparse(req.path).query.split("&") if "=" in x)
+            given = raw.get("loginPassword")
+            self.deletes.append(given is not None)
+            if self.need_login_pw and given is None:
+                return self._bad(req, 400, "badParameters")
+            if given is not None and given != admin_pw:
+                return self._bad(req, 401, "loginPasswordError")
+            name = next((n for n, a in self.accounts.items() if a["id"] == int(m.group(1))), None)
+            if name is None or self.accounts[name]["level"] == "Administrator":
+                return self._bad(req, 400, "badParameters")
+            del self.accounts[name]
+            self.rights.pop(name, None)
+            return self._send(req, 200, self.OK)
+        by_id = {a["id"]: n for n, a in self.accounts.items()}
+        if path == "/ISAPI/Security/UserPermission" and req.command == "GET":
+            items = ""
+            for uid, n in sorted(by_id.items()):
+                if self.hide_new_rights and self.accounts[n]["level"] != "Administrator":
+                    continue
+                r = self.rights.get(n) or {x: "true" for x in self.RIGHTS}
+                items += (f'<UserPermission version="2.0"><id>{uid}</id><userID>{uid}</userID>'
+                          f'<userType>{"admin" if self.accounts[n]["level"] == "Administrator" else "operator"}</userType>'
+                          '<remotePermission version="2.0">' + "".join(f"<{x}>{r[x]}</{x}>" for x in self.RIGHTS[:3])
+                          + f'<videoChannelPermissionList><videoChannelPermission><id>1</id><preview>{r["preview"]}</preview>'
+                          f'<playBack>{r["playBack"]}</playBack><record>{r["record"]}</record></videoChannelPermission></videoChannelPermissionList>'
+                          + "".join(f"<{x}>{r[x]}</{x}>" for x in self.RIGHTS[3:]) + "</remotePermission></UserPermission>")
+            pad = f"<!-- {'x' * self.rights_pad} -->" if self.rights_pad else ""
+            return self._send(req, 200, f'<UserPermissionList {ns} version="2.0">{pad}{items}</UserPermissionList>')
+        m = _re.fullmatch(r"/ISAPI/Security/UserPermission/(\d+)", path)
+        if m and req.command == "PUT":
+            if self.refuse_rights:
+                return self._bad(req, 400, "invalidOperation")
+            n = by_id.get(int(m.group(1)))
+            if n is None:
+                return self._bad(req, 400, "badParameters")
+            rp = _re.search(r"<remotePermission[^>]*>(.*)</remotePermission>", body, _re.S)
+            flat = _re.sub(r"<videoChannelPermissionList>.*?</videoChannelPermissionList>", "", rp.group(1), flags=_re.S) if rp else ""
+            for x in self.RIGHTS:
+                v = _re.search(rf"<{x}>(true|false)</{x}>", flat)
+                if v:
+                    self.rights[n][x] = v.group(1)
+            return self._send(req, 200, self.OK)
+        return self._bad(req, 404, "notSupport")
+
     def load_settings(self, folder):
         """Serve the saved real setting documents (tests/fixtures/hik_settings)."""
         import os as _os
@@ -267,6 +380,8 @@ class Device:
                               extra={"WWW-Authenticate": chal})
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         path = u.path
+        if self.accounts is not None and (path.startswith("/ISAPI/Security/users") or path.startswith("/ISAPI/Security/UserPermission")):
+            return self._users(req, path)
         if "/PTZCtrl/" in path or "/PTZCtrlProxy/" in path:
             return self._ptz(req, path)
         if self.settings is not None and path in self.settings:

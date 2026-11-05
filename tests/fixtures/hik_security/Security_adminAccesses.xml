@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AdminAccessProtocolList xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+<AdminAccessProtocol version="2.0">
+<id>1</id>
+<enabled>true</enabled>
+<protocol>HTTP</protocol>
+<portNo>80</portNo>
+</AdminAccessProtocol>
+<AdminAccessProtocol version="2.0">
+<id>2</id>
+<enabled>true</enabled>
+<redirectToHttps>false</redirectToHttps>
+<protocol>HTTPS</protocol>
+<portNo>443</portNo>
+<TLS1_1Enable>true</TLS1_1Enable>
+<TLS1_2Enable>true</TLS1_2Enable>
+</AdminAccessProtocol>
+<AdminAccessProtocol version="2.0">
+<id>3</id>
+<enabled>true</enabled>
+<protocol>DEV_MANAGE</protocol>
+<portNo>8000</portNo>
+</AdminAccessProtocol>
+<AdminAccessProtocol version="2.0">
+<id>4</id>
+<enabled>true</enabled>
+<protocol>RTSP</protocol>
+<portNo>554</portNo>
+</AdminAccessProtocol>
+<AdminAccessProtocol version="2.0">
+<id>5</id>
+<enabled>true</enabled>
+<protocol>SDK_OVER_TLS</protocol>
+<portNo>8443</portNo>
+</AdminAccessProtocol>
+<AdminAccessProtocol version="2.0">
+<id>6</id>
+<enabled>true</enabled>
+<protocol>WebSocket</protocol>
+<portNo>7681</portNo>
+</AdminAccessProtocol>
+<AdminAccessProtocol version="2.0">
+<id>7</id>
+<enabled>false</enabled>
+<protocol>WebSocketS</protocol>
+<portNo>7682</portNo>
+</AdminAccessProtocol>
+</AdminAccessProtocolList>

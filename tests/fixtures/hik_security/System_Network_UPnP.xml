@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UPnP xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+<enabled>false</enabled>
+<name>HIKVISION DS-2CD2046G2-IU/SL - E79346593</name>
+<ports version="2.0">
+<enabled>true</enabled>
+<natType>auto</natType>
+<natRouterLanAddr>
+<ipVersion>v4</ipVersion>
+<ipAddress>0.0.0.0</ipAddress>
+</natRouterLanAddr>
+<portList>
+<port version="2.0">
+<id>1</id>
+<enabled>false</enabled>
+<internalPort>http</internalPort>
+<externalPort>80</externalPort>
+</port>
+<port version="2.0">
+<id>2</id>
+<enabled>false</enabled>
+<internalPort>admin</internalPort>
+<externalPort>8000</externalPort>
+</port>
+<port version="2.0">
+<id>3</id>
+<enabled>false</enabled>
+<internalPort>SDK_OVER_TLS</internalPort>
+<externalPort>8443</externalPort>
+</port>
+<port version="2.0">
+<id>4</id>
+<enabled>false</enabled>
+<internalPort>https</internalPort>
+<externalPort>443</externalPort>
+</port>
+<port version="2.0">
+<id>5</id>
+<enabled>false</enabled>
+<internalPort>rtsp</internalPort>
+<externalPort>554</externalPort>
+</port>
+<port version="2.0">
+<id>6</id>
+<enabled>false</enabled>
+<internalPort>WebSocket</internalPort>
+<externalPort>7681</externalPort>
+</port>
+<port version="2.0">
+<id>7</id>
+<enabled>false</enabled>
+<internalPort>WebSocketS</internalPort>
+<externalPort>7682</externalPort>
+</port>
+</portList>
+</ports>
+</UPnP>

@@ -330,6 +330,13 @@ def site_camera_ptz(site_id, key):
     return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/ptz", request.method, body, timeout=(5, 20))
 
 
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/account", methods=["POST"])
+def site_camera_account(site_id, key):
+    """The guided Netwatch account job — the site Pi does it; this only forwards."""
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/account", "POST",
+                    request.get_json(silent=True) or {}, timeout=(5, 90))
+
+
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/changes")
 def site_camera_changes(site_id, key):
     return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/changes", "GET")
