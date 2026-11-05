@@ -102,6 +102,7 @@ class DetectTest(unittest.TestCase):
 
 class LiveFakeTest(unittest.TestCase):
     def setUp(self):
+        hikswitch._UNSUPPORTED.clear()
         self.sw = FakeHikSwitch()
         self.addCleanup(self.sw.close)
 
@@ -138,12 +139,15 @@ class LiveFakeTest(unittest.TestCase):
     def test_poe(self):
         snap = self.read()
         ports = {p["id"]: p for p in snap["ports"]}
-        self.assertEqual((ports["0/1"]["poe_mode"], ports["0/1"]["poe_w"], ports["0/1"]["poe_status"]), ("auto", 6.4, "powered on"))
+        self.assertEqual((ports["0/1"]["poe_mode"], ports["0/1"]["poe_w"], ports["0/1"]["poe_status"]), ("auto", 6.4, "powered on (class 4)"))
         self.assertEqual(ports["0/1"]["poe_modes"], ["off", "auto", "compat"])
         self.assertTrue(ports["0/3"]["poe_fault"])
         self.assertIn("over-current", ports["0/3"]["poe_status"])
         self.assertFalse(ports["0/4"]["poe_fault"])               # failed detection = not a PoE device
         self.assertEqual(ports["0/4"]["poe_status"], "no PoE device detected: resistance too high")
+        # "testing" is what a real switch says on an enabled PoE port with nothing that wants
+        # power (no cable, or a laptop/uplink/NVR on it) — not an alarm
+        self.assertEqual((ports["0/6"]["poe_status"], ports["0/6"]["poe_fault"]), ("waiting for load", False))
         self.assertFalse(ports["0/17"]["poe_supported"])
         self.assertEqual(snap["poe"]["budget_w"], 230.0)
         self.assertEqual(snap["poe"]["used_w"], 10.5)
@@ -209,6 +213,46 @@ class LiveFakeTest(unittest.TestCase):
         self.assertTrue(snap["ok"])
         self.assertIn("loop", snap["missing"])
         self.assertFalse(any(p["loop_blocked"] for p in snap["ports"]))
+
+    def test_unsupported_parts_not_asked_again(self):
+        # a DS-3E1520P-EI V3.3.0 answers 404 / 0x00100003 for loop status, SSH and SNMP
+        self.sw.unsupported = {"STPManage/SearchPortPrivateLoopStatus", "SNMPAccess/SNMPCfg"}
+        first = self.read(keep_raw=True)
+        self.assertTrue(first["ok"])
+        self.assertIn("not supported", first["missing"]["loop"])
+        self.assertIn("services.snmp", first["missing"])
+        self.assertEqual(first["raw"]["_not_supported"], ["loop", "services.snmp"])
+        self.assertIsNone(first["services"]["snmp"])
+        self.assertIs(first["services"]["telnet"], True)
+        n0 = len(self.sw.calls)
+        second = self.read()
+        asked = [c[1] for c in self.sw.calls[n0:]]
+        self.assertTrue(second["ok"])
+        self.assertFalse(any("SearchPortPrivateLoopStatus" in a or "SNMPCfg" in a for a in asked), asked)
+        self.assertTrue(any("TelnetServerCfg" in a for a in asked))
+        self.assertNotIn("missing", second)
+        self.assertIsNone(second["services"]["snmp"])
+
+    def test_only_not_supported_answers_are_remembered(self):
+        self.sw.attrs.pop("InfoMgr/DeviceDescription")       # -> 404 as well: counts as unsupported
+        self.read()
+        self.assertIn("description", hikswitch._UNSUPPORTED[self.sw.ip])
+        hikswitch._UNSUPPORTED.clear()
+        err = hikswitch.HikSwitchError("x: busy (HTTP 500, 0x00000001)", "error", 500, "0x00000001")
+        self.assertFalse(hikswitch._not_supported(err))
+
+    def test_full_serial_from_the_description(self):
+        d = self.read()["device"]
+        self.assertEqual(d["serial"], "DS-3E1520P-EI20260101GV0000001")    # as on the label and in SADP
+        self.sw.attrs["InfoMgr/DeviceDescription"].pop("serialNumber")
+        hikswitch._UNSUPPORTED.clear()
+        self.assertEqual(self.read()["device"]["serial"], "GV0000001")
+
+    def test_forced_poe_stays_forced(self):
+        self.assertEqual(hikswitch._poe_item({"poeMode": "force", "enabled": True}, 3, "force")["poeMode"], "force")
+        self.assertEqual(hikswitch._poe_item({"poeMode": "compat", "enabled": True}, 3, "auto")["poeMode"], "standard")
+        self.assertEqual(hikswitch._poe_item({"poeMode": "standard", "enabled": True}, 3, "off"),
+                         {"portID": 3, "enabled": False})
 
     def test_raw_is_kept_on_request_only(self):
         self.assertNotIn("raw", self.read())
@@ -383,7 +427,7 @@ class ServerFlowTest(unittest.TestCase):
         self.assertEqual(self.c.get(f"/api/devices/{self.key}/switch/raw", environ_base=lan).status_code, 401)
         raw = self.c.get(f"/api/devices/{self.key}/switch/raw", headers=self.hdr, environ_base=lan).get_json()
         self.assertEqual((raw["ok"], raw["driver"]), (True, "hikswitch"))
-        self.assertEqual(raw["raw"]["summary"]["serialNumber"], "DS-3E1520P-EI20260101GV0000001")
+        self.assertEqual(raw["raw"]["summary"]["serialNumber"], "GV0000001")
 
         # an uplink (9 MACs) asks first; a PoE cycle on a camera port goes through
         r = self.c.post(f"/api/devices/{self.key}/switch/action", headers=self.hdr, environ_base=lan,

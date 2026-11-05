@@ -47,7 +47,7 @@ SPEED = {1: 10, 3: 100, 4: 1000, 5: 10000}     # the switch's rate codes (web ap
 RATE_TXT = {0: "auto", 1: "10M", 3: "100M", 4: "1000M", 5: "10G"}
 DX_TXT = {0: "half", 1: "full", 3: "auto"}
 POE_STATUS = {"normal": "powered on", "down": "off", "nonStandardPD": "non-standard device",
-              "testing": "detecting", "abnormal": "power fault", "detectAbnormal": "no PoE device detected",
+              "testing": "waiting for load", "abnormal": "power fault", "detectAbnormal": "no PoE device detected",
               "powerupAbnormal": "power-up fault", "classAbnormal": "PoE class fault"}
 # A port that stopped powering a device it had. "detectAbnormal" is NOT here: a laptop
 # or an uplink on a PoE port fails detection too, and that is normal.
@@ -62,6 +62,10 @@ PD_DETAIL = {
     "inrushAbnormal": "inrush current",
 }
 MAX_PAGES = 40
+# ip -> parts of a read the switch answered "not supported" (HTTP 404 / 0x00100003; e.g.
+# loop status, SSH and SNMP on a DS-3E1520P-EI V3.3.0). Not asked again until a restart:
+# fewer calls per poll matter on a switch behind a thin radio link.
+_UNSUPPORTED = {}
 
 
 class HikSwitchError(Exception):
@@ -70,6 +74,10 @@ class HikSwitchError(Exception):
         self.kind = kind            # auth_failed | unreachable | error
         self.status = status
         self.code = code
+
+
+def _not_supported(e):
+    return e.status == 404 or str(e.code or "").lower() == "0x00100003"
 
 
 def _model_of(dev):
@@ -301,6 +309,12 @@ def _pd_detail(e):
     return ""
 
 
+def _pd_class(e):
+    pd = e.get("PDTestInfo") if isinstance(e.get("PDTestInfo"), dict) else {}
+    m = re.fullmatch(r"class\s*(\d)", str(pd.get("testLevel") or "").strip().lower())
+    return int(m.group(1)) if m else None
+
+
 def normalize(raw):
     """The switch's answers -> the snapshot shape of edgeswitch.normalize()."""
     raw = raw or {}
@@ -351,6 +365,8 @@ def normalize(raw):
             pstat = POE_STATUS.get(code, code)
             if code == "normal" and mode != "off" and (poe_w or 0) < 0.5:
                 pstat = "waiting for load"
+            elif code == "normal" and _pd_class(e) is not None:
+                pstat = f"{pstat} (class {_pd_class(e)})"
             detail = _pd_detail(e)
             if detail and (fault or code == "detectAbnormal"):
                 pstat = f"{pstat}: {detail}"
@@ -393,6 +409,10 @@ def normalize(raw):
     name = str(desc.get("deviceName") or summ.get("deviceName") or "").strip()
     if name.upper() in ("", model.upper(), "SWITCH", "HIKVISION"):
         name = ""
+    serial = str(summ.get("serialNumber") or "")
+    full = str(desc.get("serialNumber") or "").strip()
+    if full and (not serial or full.endswith(serial)):
+        serial = full
     budget = _num(summ.get("maxPower"))
     poe_ports = [p for p in ports if p["poe_supported"]]
     used = _num(summ.get("power"))
@@ -409,7 +429,7 @@ def normalize(raw):
         "device": {
             "model": model, "product": "Hikvision smart switch", "family": "hikswitch",
             "mac": normalize_mac(summ.get("macAddress")), "name": name,
-            "firmware": str(summ.get("softwareVersion") or ""), "serial": str(summ.get("serialNumber") or ""),
+            "firmware": str(summ.get("softwareVersion") or ""), "serial": serial,
             "hardware": str(summ.get("hardwareVersion") or ""),
             "uptime": _int(summ.get("deviceUpTime")), "ip": str(summ.get("ipv4Address") or ""),
         },
@@ -462,7 +482,11 @@ def read(ip, username, password, with_neighbors=False, keep_raw=False):
         with Session(ip, username, password) as s:
             raw["summary"] = s.svc("PortMgr", "GetSwitchSumInfo") or {}
             raw["status"] = s.search("PortMgr", "SearchPortStatus", page=1000)
+            skip = _UNSUPPORTED.setdefault(ip, set())
             for name, fn in _OPTIONAL:
+                if name in skip:
+                    raw[name] = None
+                    continue
                 try:
                     raw[name] = fn(s)
                 except HikSwitchError as e:
@@ -470,13 +494,22 @@ def read(ip, username, password, with_neighbors=False, keep_raw=False):
                         raise
                     raw[name] = None
                     raw.setdefault("_missing", {})[name] = str(e)
+                    if _not_supported(e):
+                        skip.add(name)
             raw["services"] = {}
             for key, group, attr in _SERVICES:
+                if "services." + key in skip:
+                    continue
                 try:
                     raw["services"][key] = s.attr(group, attr)
                 except HikSwitchError as e:
                     if e.kind == "unreachable":
                         raise
+                    raw.setdefault("_missing", {})["services." + key] = str(e)
+                    if _not_supported(e):
+                        skip.add("services." + key)
+            if skip:
+                raw["_not_supported"] = sorted(skip)
     except HikSwitchError as e:
         return {"ok": False, "error": str(e), "kind": e.kind, "ip": ip}
     if not raw.get("status"):
@@ -556,7 +589,7 @@ def _poe_item(e, n, mode):
             item["nonStandardEnabled"] = _on(e.get("nonStandardEnabled"))
         return item
     if "poeMode" in e:
-        item["poeMode"] = "compat" if mode == "compat" else "standard"
+        item["poeMode"] = {"compat": "compat", "force": "force"}.get(mode, "standard")
     elif "nonStandardEnabled" in e:
         item["nonStandardEnabled"] = mode == "compat"
     elif mode == "compat":

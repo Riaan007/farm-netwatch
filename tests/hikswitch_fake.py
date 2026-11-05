@@ -58,8 +58,9 @@ class FakeHikSwitch:
                        "inErrorPacket": "7" if p["ID"] == 3 else "0", "inLossPkt": "0"} for p in self.ports]
         self.poe = [{"portID": n, "portName": f"Ge{n}", "enabled": True, "nonStandardEnabled": False,
                      "poePower": {1: 6.4, 2: 4.1}.get(n, 0.0),
-                     "portStatus": {3: "abnormal", 4: "detectAbnormal"}.get(n, "normal" if n in (1, 2) else "down"),
-                     "PDTestInfo": {3: {"powerAbnormal": "icutFault"}, 4: {"detectAbnormal": "bigResistance"}}.get(n, {})}
+                     "portStatus": {3: "abnormal", 4: "detectAbnormal"}.get(n, "normal" if n in (1, 2) else "testing"),
+                     "PDTestInfo": {1: {"testLevel": "class4"}, 2: {"testLevel": "class3"},
+                                    3: {"powerAbnormal": "icutFault"}, 4: {"detectAbnormal": "bigResistance"}}.get(n, {})}
                     for n in range(1, 17)]
         self.macs = ([{"macAddress": "C0-51-7E-00-00-01", "addressType": "dynamic", "portName": "Ge1"},
                       {"macAddress": "04:ee:cd:00:00:65", "addressType": "dynamic", "portID": 2},
@@ -70,13 +71,14 @@ class FakeHikSwitch:
                      + [{"macAddress": "11:22:33:44:55:66", "addressType": "static", "portID": 0}])
         self.loop = [{"portID": n, "loopProtectionStatus": "block" if n == 5 else "forward"} for n in range(1, 21)]
         self.summary = {"model": "DS-3E1520P-EI", "softwareVersion": "V3.3.0 build 251010",
-                        "serialNumber": "DS-3E1520P-EI20260101GV0000001", "ipv4Address": "192.168.1.243",
+                        "serialNumber": "GV0000001", "ipv4Address": "192.168.1.243",
                         "macAddress": "84:94:59:00:02:43", "deviceUpTime": 86400 * 3 + 125,
                         "EZRegisterStatus": False, "EZEnabled": False, "VLANMaxNum": 4094,
                         "maxPower": 230, "day7PeakPower": 41.2, "power": 10.5, "hardwareVersion": "0x0",
                         "CPUList": [{"CPUUtilization": 12}], "memoryList": [{"memoryUtilization": 41}]}
         self.attrs = {"POE/PoEWatchdogParams": {"enabled": True},
-                      "InfoMgr/DeviceDescription": {"deviceName": "Yard Switch", "deviceType": "switch"},
+                      "InfoMgr/DeviceDescription": {"deviceName": "Yard Switch", "deviceType": "Switch",
+                                                    "serialNumber": "DS-3E1520P-EI20260101GV0000001"},
                       "SystemMaintenance/SSHCfg": {"enabled": False},
                       "SystemMaintenance/TelnetServerCfg": {"enabled": True},
                       "SNMPAccess/SNMPCfg": {"enabled": False}}
@@ -168,14 +170,14 @@ class FakeHikSwitch:
         if parts[0] == "attribute":
             key = "/".join(parts[2:])
             if key in self.unsupported or key not in self.attrs:
-                return h._send(404, {"status": 404, "code": "0x00000005", "errorMsg": "Not support."})
+                return h._send(404, {"status": 404, "code": "0x00100003", "errorMsg": "This function is not supported."})
             if parts[1] == "get":
                 return h._send(200, {**OK, "data": {"Value": self.attrs[key]}})
             self.attrs[key] = (data or {}).get("Value")
             return h._send(200, {**OK, "data": {}})
         key = "/".join(parts[2:])
         if key in self.unsupported:
-            return h._send(404, {"status": 404, "code": "0x00000005", "errorMsg": "Not support."})
+            return h._send(404, {"status": 404, "code": "0x00100003", "errorMsg": "This function is not supported."})
         return self._service(h, key, data)
 
     def _page(self, h, rows, data, list_key="matchResults"):
@@ -239,4 +241,4 @@ class FakeHikSwitch:
         if key == "SystemMaintenance/SystemReboot":
             self.rebooted = True
             return h._send(200, {**OK, "data": {}})
-        return h._send(404, {"status": 404, "code": "0x00000005", "errorMsg": "Not support."})
+        return h._send(404, {"status": 404, "code": "0x00100003", "errorMsg": "This function is not supported."})
