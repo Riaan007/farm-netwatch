@@ -72,6 +72,7 @@
       const sites = () => S.sites.filter((s) => s.enabled);
       this.ctl = CamView.mount($("#cm-host"), {
         groups: () => sites().map(groupOf), picUrl, fleet: true, storeKey: "cc.cams",
+        apiBase: (g, c) => `/api/hub/sites/${enc(g.id)}/cameras/${enc(c.key)}`,
         onOpen: (g, c) => CC.go(`#/cameras?site=${enc(g.id)}&key=${enc(c.key)}`),
       });
       const refresh = async () => {
@@ -110,6 +111,7 @@
       }
       this.ctl = CamView.mount($("#ct-host"), {
         groups: () => [groupOf(s)], picUrl, storeKey: "cc.cams", nvr: p.get("nvr") || "",
+        apiBase: (_g, c) => `/api/hub/sites/${enc(s.id)}/cameras/${enc(c.key)}`,
         onOpen: (_g, c) => CC.go(`#/site/${enc(s.id)}/cameras?key=${enc(c.key)}`),
       });
       const refresh = async (force) => {

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<storageExtension version="2.0" xmlns="http://www.isapi.org/ver20/XMLSchema">
+<LoopEnable>true</LoopEnable>
+<enableDormant>true</enableDormant>
+<packDuration>0</packDuration>
+<logStorageMode>custom</logStorageMode>
+<logStorageCycle>90</logStorageCycle>
+<dualVCAEnabled>true</dualVCAEnabled>
+</storageExtension>

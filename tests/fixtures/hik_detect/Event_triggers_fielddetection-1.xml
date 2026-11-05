@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EventTrigger version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>fielddetection-1</id>
+<eventType>fielddetection</eventType>
+<eventDescription>fielddetection Event trigger Information</eventDescription>
+<videoInputChannelID>1</videoInputChannelID>
+<dynVideoInputChannelID>1</dynVideoInputChannelID>
+<EventTriggerNotificationList>
+<EventTriggerNotification>
+<id>record-1</id>
+<notificationMethod>record</notificationMethod>
+<notificationRecurrence>beginning</notificationRecurrence>
+<videoInputID>1</videoInputID>
+</EventTriggerNotification>
+<EventTriggerNotification>
+<id>beep</id>
+<notificationMethod>beep</notificationMethod>
+<notificationRecurrence>beginning</notificationRecurrence>
+</EventTriggerNotification>
+<EventTriggerNotification>
+<id>center</id>
+<notificationMethod>center</notificationMethod>
+<notificationRecurrence>beginning</notificationRecurrence>
+</EventTriggerNotification>
+<EventTriggerNotification>
+<id>whiteLight</id>
+<notificationMethod>whiteLight</notificationMethod>
+<notificationRecurrence>beginning</notificationRecurrence>
+<WhiteLightAction>
+<whiteLightDurationTime>0</whiteLightDurationTime>
+</WhiteLightAction>
+</EventTriggerNotification>
+</EventTriggerNotificationList>
+</EventTrigger>

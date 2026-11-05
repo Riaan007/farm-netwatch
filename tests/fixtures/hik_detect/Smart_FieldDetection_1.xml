@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FieldDetection version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>1</id>
+<enabled>true</enabled>
+<startTriggerTime>500</startTriggerTime>
+<endTriggerTime>500</endTriggerTime>
+<normalizedScreenSize>
+<normalizedScreenWidth>1000</normalizedScreenWidth>
+<normalizedScreenHeight>1000</normalizedScreenHeight>
+</normalizedScreenSize>
+<FieldDetectionRegionList size="4" >
+<FieldDetectionRegion version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>1</id>
+<enabled>false</enabled>
+<sensitivityLevel>50</sensitivityLevel>
+<timeThreshold>1</timeThreshold>
+<RegionCoordinatesList>
+<RegionCoordinates>
+<positionX>252</positionX>
+<positionY>2</positionY>
+</RegionCoordinates>
+<RegionCoordinates>
+<positionX>309</positionX>
+<positionY>597</positionY>
+</RegionCoordinates>
+<RegionCoordinates>
+<positionX>0</positionX>
+<positionY>469</positionY>
+</RegionCoordinates>
+<RegionCoordinates>
+<positionX>4</positionX>
+<positionY>4</positionY>
+</RegionCoordinates>
+</RegionCoordinatesList>
+<detectionTarget>human</detectionTarget>
+<alarmConfidence opt="low,mediumLow,mediumHigh,high">mediumHigh</alarmConfidence>
+</FieldDetectionRegion>
+<FieldDetectionRegion version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>2</id>
+<enabled>false</enabled>
+<sensitivityLevel>50</sensitivityLevel>
+<timeThreshold>1</timeThreshold>
+<RegionCoordinatesList>
+<RegionCoordinates>
+<positionX>356</positionX>
+<positionY>475</positionY>
+</RegionCoordinates>
+<RegionCoordinates>
+<positionX>762</positionX>
+<positionY>720</positionY>
+</RegionCoordinates>
+<RegionCoordinates>
+<positionX>987</positionX>
+<positionY>553</positionY>
+</RegionCoordinates>
+<RegionCoordinates>
+<positionX>384</positionX>
+<positionY>9</positionY>
+</RegionCoordinates>
+</RegionCoordinatesList>
+<detectionTarget>human</detectionTarget>
+<alarmConfidence opt="low,mediumLow,mediumHigh,high">low</alarmConfidence>
+</FieldDetectionRegion>
+<FieldDetectionRegion version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>3</id>
+<enabled>false</enabled>
+<sensitivityLevel>50</sensitivityLevel>
+<timeThreshold>0</timeThreshold>
+<detectionTarget>human</detectionTarget>
+<alarmConfidence opt="low,mediumLow,mediumHigh,high">low</alarmConfidence>
+</FieldDetectionRegion>
+<FieldDetectionRegion version="2.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>4</id>
+<enabled>false</enabled>
+<sensitivityLevel>50</sensitivityLevel>
+<timeThreshold>0</timeThreshold>
+<detectionTarget>human</detectionTarget>
+<alarmConfidence opt="low,mediumLow,mediumHigh,high">low</alarmConfidence>
+</FieldDetectionRegion>
+</FieldDetectionRegionList>
+<isSupportMultiScene>false</isSupportMultiScene>
+<isSupportHumanMisinfoFilter>true</isSupportHumanMisinfoFilter>
+<isSupportVehicleMisinfoFilter>true</isSupportVehicleMisinfoFilter>
+</FieldDetection>

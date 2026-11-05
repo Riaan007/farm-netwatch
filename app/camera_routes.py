@@ -78,19 +78,24 @@ def _err(e):
 @bp.route("/api/cameras/<path:key>/settings", methods=["GET", "POST"])
 @guard
 def api_camera_settings(key):
-    """GET ?lens=1: the camera's picture, text-on-video, time and stream settings,
-    with what each may be set to (from the camera's own capabilities).
+    """GET ?lens=1&group=basic|detect|record|recorder: the camera's settings — basic =
+    picture, text on video, time and streams; detect = motion, intrusion, line crossing,
+    tampering, privacy masks, strobe and siren; record = its recording on its recorder;
+    recorder (a recorder's own key) = the recorder's disk settings — with what each may
+    be set to (from the device's own capabilities).
     POST {lens, section, changes: {field: value}, expect: {field: value seen}, confirm}:
     change them — needs the site's "Camera settings" switch; careful sections need
     confirm; the camera is read back to prove the change took."""
     try:
         if request.method == "GET":
-            return jsonify(settings.read(key, int(request.args.get("lens") or 1)))
+            return jsonify(settings.read(key, int(request.args.get("lens") or 1),
+                                         str(request.args.get("group") or "basic"),
+                                         route=str(request.args.get("route") or "") or None))
         b = request.get_json(force=True, silent=True) or {}
         return jsonify(settings.apply(key, int(b.get("lens") or 1), str(b.get("section") or ""),
                                       b.get("changes") if isinstance(b.get("changes"), dict) else {},
                                       who=_who(), expect=b.get("expect") if isinstance(b.get("expect"), dict) else {},
-                                      confirm=b.get("confirm") is True))
+                                      confirm=b.get("confirm") is True, route=str(b.get("route") or "") or None))
     except ValueError:
         return jsonify({"ok": False, "error": "lens must be a number"}), 400
     except hiksettings.SettingsError as e:
@@ -113,5 +118,26 @@ def api_camera_change_undo(key, cid):
         return jsonify({"ok": False, "error": "confirm the undo first", "needs_confirm": True}), 400
     try:
         return jsonify(settings.undo(key, cid, who=_who()))
+    except hiksettings.SettingsError as e:
+        return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/ptz", methods=["GET", "POST"])
+@guard
+def api_camera_ptz(key):
+    """GET ?lens=1: what PTZ the camera has and its presets.
+    POST {lens, action: "move", pan, tilt, zoom (-100..100), ms} — a move that stops by
+    itself — or {action: "goto", preset}. Needs the site's "Camera settings" switch."""
+    try:
+        if request.method == "GET":
+            return jsonify(settings.ptz(key, int(request.args.get("lens") or 1),
+                                        route=str(request.args.get("route") or "") or None))
+        b = request.get_json(force=True, silent=True) or {}
+        return jsonify(settings.ptz_do(key, int(b.get("lens") or 1), str(b.get("action") or ""),
+                                       pan=b.get("pan", 0), tilt=b.get("tilt", 0), zoom=b.get("zoom", 0),
+                                       ms=b.get("ms", 500), preset=b.get("preset"), who=_who(),
+                                       route=str(b.get("route") or "") or None))
+    except ValueError:
+        return jsonify({"ok": False, "error": "lens must be a number"}), 400
     except hiksettings.SettingsError as e:
         return _err(e)

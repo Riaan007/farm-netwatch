@@ -1,0 +1,85 @@
+{
+	"WhiteLightAlarm":	{
+		"channelID":	1,
+		"durationTime":	15,
+		"frequency":	"normallyOn",
+		"TimeRangeList":	[{
+				"week":	1,
+				"TimeRange":	[{
+						"id":	1,
+						"beginTime":	"00:00",
+						"endTime":	"05:00"
+					}, {
+						"id":	2,
+						"beginTime":	"21:00",
+						"endTime":	"24:00"
+					}]
+			}, {
+				"week":	2,
+				"TimeRange":	[{
+						"id":	1,
+						"beginTime":	"00:00",
+						"endTime":	"05:00"
+					}, {
+						"id":	2,
+						"beginTime":	"21:00",
+						"endTime":	"24:00"
+					}]
+			}, {
+				"week":	3,
+				"TimeRange":	[{
+						"id":	1,
+						"beginTime":	"00:00",
+						"endTime":	"05:00"
+					}, {
+						"id":	2,
+						"beginTime":	"21:00",
+						"endTime":	"24:00"
+					}]
+			}, {
+				"week":	4,
+				"TimeRange":	[{
+						"id":	1,
+						"beginTime":	"00:00",
+						"endTime":	"05:00"
+					}, {
+						"id":	2,
+						"beginTime":	"21:00",
+						"endTime":	"24:00"
+					}]
+			}, {
+				"week":	5,
+				"TimeRange":	[{
+						"id":	1,
+						"beginTime":	"00:00",
+						"endTime":	"05:00"
+					}, {
+						"id":	2,
+						"beginTime":	"21:00",
+						"endTime":	"24:00"
+					}]
+			}, {
+				"week":	6,
+				"TimeRange":	[{
+						"id":	1,
+						"beginTime":	"00:00",
+						"endTime":	"05:00"
+					}, {
+						"id":	2,
+						"beginTime":	"21:00",
+						"endTime":	"24:00"
+					}]
+			}, {
+				"week":	7,
+				"TimeRange":	[{
+						"id":	1,
+						"beginTime":	"00:00",
+						"endTime":	"05:00"
+					}, {
+						"id":	2,
+						"beginTime":	"21:00",
+						"endTime":	"24:00"
+					}]
+			}]
+	}
+}

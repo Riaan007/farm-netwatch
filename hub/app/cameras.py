@@ -324,6 +324,12 @@ def site_camera_settings(site_id, key):
     return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/settings", request.method, body)
 
 
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/ptz", methods=["GET", "POST"])
+def site_camera_ptz(site_id, key):
+    body = (request.get_json(silent=True) or {}) if request.method == "POST" else None
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/ptz", request.method, body, timeout=(5, 20))
+
+
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/changes")
 def site_camera_changes(site_id, key):
     return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/changes", "GET")

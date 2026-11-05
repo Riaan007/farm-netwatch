@@ -95,7 +95,7 @@
     const st = {
       // The filter always starts at All: a remembered one hid cameras without saying so.
       q: "", filt: "all", size: mem.get(pre + ".size", "m"),
-      pics: new Map(), learned: new Map(), keepUntil: 0, dead: false, obs: null, timers: [], nvr: opts.nvr || "",
+      pics: new Map(), learned: new Map(), keepUntil: 0, dead: false, obs: null, timers: [], nvr: opts.nvr || "", recSet: new Map(),
     };
     el.innerHTML = `<div class="cv">
       <div class="cv-bar">
@@ -194,6 +194,7 @@
       return `<section class="cv-group">${head}
         ${recs.length ? `<div class="cv-recs">${recs.map((r) => recHtml(g, r)).join("")}</div>` : ""}
         ${rec ? recPanel(rec) : ""}
+        ${rec && opts.apiBase && rec.has_login ? `<div data-recset="${esc(rec.key)}" data-g="${esc(g.id)}"></div>` : ""}
         ${note}
         ${cams.length ? `<div class="cv-grid cv-${esc(st.size)}">${cams.map((c) => tileHtml(g, c)).join("")}</div>`
           : `<p class="cv-msg">${camsOf(g).length ? "No camera matches." : "Netwatch has not found any cameras here yet."}</p>`}
@@ -226,6 +227,18 @@
       chips();
       body.innerHTML = groups().map(groupHtml).join("");
       body.querySelectorAll(".cv-tile").forEach((t) => { paint(t); st.obs.observe(t); });
+      body.querySelectorAll("[data-recset]").forEach((ph) => {
+        const id = ph.dataset.g + "|" + ph.dataset.recset;
+        let p = st.recSet.get(id);
+        if (!p) {
+          const g = groups().find((x) => String(x.id) === ph.dataset.g); if (!g) return;
+          const host = document.createElement("section"); host.className = "cv-set cv-recset";
+          p = { host, ctl: settingsPanel(host, opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), { key: ph.dataset.recset }, () => {},
+            { group: "recorder", title: "⚙ Recorder settings", sub: "what it does when its disks are full" }) };
+          st.recSet.set(id, p);
+        }
+        ph.replaceWith(p.host);
+      });
     }
 
     function find(k) {
@@ -325,6 +338,7 @@
       destroy() {
         st.dead = true;
         st.timers.forEach(clearInterval);
+        st.recSet.forEach((p) => p.ctl.destroy());
         if (st.obs) st.obs.disconnect();
         st.pics.forEach((p) => p.src && URL.revokeObjectURL(p.src));
         st.pics.clear();
@@ -382,8 +396,8 @@
           </dl>
         </div>
       </div>
-      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-set></section>` : ""}
-      <p class="cv-foot">Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.${opts.apiBase && c.kind === "camera" ? " Detection, PTZ and the rest of the settings come in the next phases." : ""}</p>
+      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}` : ""}
+      <p class="cv-foot">Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.</p>
     </div>`;
     const root = el.querySelector(".cv"), note = root.querySelector(".cv-note");
     const boxOf = (n) => root.querySelector(`.cv-view[data-v="${n}"] .cv-pic`);
@@ -445,12 +459,25 @@
     });
     const ages = setInterval(tick, 1000);
     if (c.route || c.picture) get("thumb", false);
-    const setHost = root.querySelector("[data-set]");
-    const panel = setHost ? settingsPanel(setHost, opts.apiBase(g, c), c, () => { if (!st.dead) setTimeout(() => get("thumb", true), 1000); }) : null;
+    const setHost = root.querySelector("[data-set]"), detHost = root.querySelector("[data-det]");
+    const refresh = () => { if (!st.dead) setTimeout(() => get("thumb", true), 1000); };
+    const panel = setHost ? settingsPanel(setHost, opts.apiBase(g, c), c, refresh) : null;
+    const dpanel = detHost ? settingsPanel(detHost, opts.apiBase(g, c), c, refresh, {
+      group: "detect", title: "🚨 Detection and alarms",
+      sub: "motion · intrusion · line crossing · tampering · privacy masks · strobe and siren",
+      pic: (n) => (st.pics[n] || st.pics[1] || {}).src || "" }) : null;
+    const recHost = root.querySelector("[data-rec]");
+    const rpanel = recHost ? settingsPanel(recHost, opts.apiBase(g, c), c, () => {}, {
+      group: "record", title: "⏺ Recording", sub: "when the recorder records it · before and after an event · stream · days kept" }) : null;
+    const ptzHost = root.querySelector("[data-ptz]");
+    const ppanel = ptzHost ? ptzPanel(ptzHost, opts.apiBase(g, c), vs, names, () => { if (!st.dead) setTimeout(() => get("thumb", true), 700); }) : null;
     return {
       destroy() {
         st.dead = true; clearInterval(ages); clearTimeout(st.timer);
         if (panel) panel.destroy();
+        if (dpanel) dpanel.destroy();
+        if (rpanel) rpanel.destroy();
+        if (ppanel) ppanel.destroy();
         Object.values(st.pics).forEach((p) => p && p.src && URL.revokeObjectURL(p.src));
         el.innerHTML = "";
       },
@@ -469,19 +496,72 @@
   }
   const RISK = { safe: "", careful: "Asks you to confirm" };
 
-  function settingsPanel(el, base, cam, onPicture) {
-    const st = { lens: 1, sec: "picture", data: null, dead: false, edits: {}, preview: null, busy: false };
-    el.innerHTML = `<details class="cv-setd"><summary><h3>⚙ Camera settings</h3><span class="cv-dimtx">picture · text on video · time · video</span></summary><div class="cv-setb" data-b></div></details>`;
+  // Areas, lines, mask boxes and the motion grid are drawn over the camera's picture.
+  // The page works in 0..1000 both ways with the origin top-left; the Pi converts to
+  // the camera's own screen. A drawing in progress (too few points) stays a draft.
+  const DRAW = new Set(["area", "line", "rects", "grid"]);
+  const NS = "http://www.w3.org/2000/svg";
+  const pts = (v) => String(v || "").split(/\s+/).filter(Boolean).map((p) => p.split(",").map(Number));
+  const rects = (v) => String(v || "").split(";").filter((x) => x.trim()).map((r) => r.split(",").map(Number));
+  function gridCells(hex, rows, cols) {
+    const per = Math.ceil(cols / 8) * 2, out = [];
+    for (let r = 0; r < rows; r++) {
+      const bits = (hex.slice(r * per, (r + 1) * per).match(/../g) || []).map((b) => parseInt(b, 16).toString(2).padStart(8, "0")).join("");
+      for (let c = 0; c < cols; c++) out.push(bits[c] === "1");
+    }
+    return out;
+  }
+  function gridHex(cells, rows, cols) {
+    const per = Math.ceil(cols / 8) * 8; let hex = "";
+    for (let r = 0; r < rows; r++) {
+      let bits = ""; for (let c = 0; c < per; c++) bits += c < cols && cells[r * cols + c] ? "1" : "0";
+      hex += bits.match(/.{8}/g).map((b) => parseInt(b, 2).toString(16).padStart(2, "0")).join("");
+    }
+    return hex;
+  }
+  // The recording week: 7 days x 24 hours, each hour one kind of recording ("-" = none).
+  const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const weekRows = (v) => { const r = String(v || "").split("|"); return r.length === 7 && r.every((x) => x.length === 24) ? r : Array(7).fill("-".repeat(24)); };
+  const hh = (n) => String(n).padStart(2, "0");
+  function weekShown(f, v) {
+    const names = Object.fromEntries((f.modes || []).map((m) => [m.v, m.label])), rows = weekRows(v);
+    if (rows.every((r) => !/[^-]/.test(r))) return "Never";
+    const one = (r) => { const out = []; for (let h = 0; h < 24;) { const k = r[h]; let j = h; while (j < 24 && r[j] === k) j++; if (k !== "-") out.push(`${names[k] || k} ${hh(h)}–${hh(j)}`); h = j; } return out.join(", ") || "not recorded"; };
+    const out = [];
+    for (let i = 0; i < 7;) { let j = i; while (j + 1 < 7 && rows[j + 1] === rows[i]) j++;
+      out.push((i === 0 && j === 6 ? "Every day" : i === j ? WEEKDAYS[i] : WEEKDAYS[i] + "–" + WEEKDAYS[j]) + ": " + one(rows[i])); i = j + 1; }
+    return out.join("; ");
+  }
+  function shownOf(f, v) {
+    if (f.kind === "week") return weekShown(f, v);
+    if (f.kind === "area") return v ? `${pts(v).length} points drawn` : "not drawn";
+    if (f.kind === "line") return v ? "line drawn" : "not drawn";
+    if (f.kind === "rects") { const n = rects(v).length; return n ? `${n} box${n > 1 ? "es" : ""}` : "none"; }
+    if (f.kind === "grid") return `${gridCells(v, f.rows, f.cols).filter(Boolean).length} of ${f.rows * f.cols} squares`;
+    if (f.kind === "set" || f.kind === "links") { const names = Object.fromEntries((f.opts || []).map((o) => [o.v, o.label]));
+      return String(v).split(",").filter(Boolean).map((x) => names[x] || x).join(", ") || (f.kind === "set" ? "Anything that moves" : "Nothing"); }
+    if (f.kind === "bool") return v === "true" ? "On" : "Off";
+    const o = (f.opts || []).find((x) => x.v === v); return o ? o.label : v;
+  }
+
+  function settingsPanel(el, base, cam, onPicture, o) {
+    o = o || {};
+    const group = o.group || "basic";
+    const st = { lens: 1, sec: group === "basic" ? "picture" : "", data: null, dead: false, edits: {}, preview: null, busy: false, draft: {}, route: "", brush: {} };
+    const onCam = (group === "basic" || group === "detect");
+    el.innerHTML = `<details class="cv-setd"><summary><h3>${esc(o.title || "⚙ Camera settings")}</h3><span class="cv-dimtx">${esc(o.sub || "picture · text on video · time · video")}</span></summary><div class="cv-setb" data-b></div></details>`;
     const det = el.querySelector("details"), body = el.querySelector("[data-b]");
     det.addEventListener("toggle", () => { if (det.open && !st.data) load(); });
 
     async function load() {
       body.innerHTML = `<p class="cv-dimtx">Reading the camera's settings…</p>`;
       try {
-        st.data = await jcall(`${base}/settings?lens=${st.lens}`);
+        st.data = await jcall(`${base}/settings?lens=${st.lens}${group === "basic" ? "" : "&group=" + group}${st.route ? "&route=" + st.route : ""}`);
         if (st.dead) return;
+        if ((st.data.group || "basic") !== group) { body.innerHTML = `<p class="cv-setmsg cv-warn">This site's Netwatch is too old for these settings — update it.</p>`; st.data = null; return; }
+        if (!st.data.sections.length) { body.innerHTML = `<p class="cv-dimtx">${group === "record" ? "The recorder has no recording settings for this camera." : group === "recorder" ? "This recorder has none of these settings." : "This camera has none of these settings."}</p>`; return; }
         if (!st.data.sections.some((x) => x.id === st.sec)) st.sec = (st.data.sections[0] || {}).id;
-        st.edits = {}; st.preview = null; paint();
+        st.edits = {}; st.draft = {}; st.preview = null; paint();
         loadChanges();
       } catch (e) {
         if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.message)}</p>`;
@@ -496,30 +576,175 @@
     }
     function ctl(f) {
       const v = valOf(f), dis = !st.data.can_change || !f.editable ? " disabled" : "";
-      if (!f.editable) return `<span class="cv-setro">${esc(f.shown ?? "—")}</span>`;
+      if (!f.editable && !DRAW.has(f.kind)) return `<span class="cv-setro">${esc(f.shown ?? "—")}</span>`;
       if (f.kind === "bool") return `<label class="cv-sw"><input type="checkbox" data-f="${esc(f.id)}"${v === "true" ? " checked" : ""}${dis}><span>${v === "true" ? "On" : "Off"}</span></label>`;
       if (f.kind === "enum") return `<select class="cv-q cv-setin" data-f="${esc(f.id)}"${dis}>${(f.opts || []).map((o) => `<option value="${esc(o.v)}"${o.v === v ? " selected" : ""}>${esc(o.label)}</option>`).join("")}</select>`;
-      if (f.kind === "int" && f.max - f.min <= 100 && f.min >= 0) return `<span class="cv-rng"><input type="range" min="${f.min}" max="${f.max}" value="${esc(v)}" data-f="${esc(f.id)}"${dis}><output>${esc(v)}</output></span>`;
+      if (DRAW.has(f.kind)) return drawBox(f, v, !dis);
+      if (f.kind === "week") return weekBox(f, v, !dis);
+      if (f.kind === "set" || f.kind === "links") {
+        const on = new Set(String(v).split(",").filter(Boolean));
+        return `<span class="cv-chks" data-multi="${esc(f.id)}">${(f.opts || []).map((x) => `<label class="cv-sw"><input type="checkbox" value="${esc(x.v)}"${on.has(x.v) ? " checked" : ""}${dis}><span>${esc(x.label)}</span></label>`).join("")}${(f.fixed || []).length ? `<small class="cv-dimtx">Also set on the camera: ${esc(f.fixed.join(", "))}</small>` : ""}</span>`;
+      }
+      if (f.kind === "int" && f.max - f.min <= 100 && f.min >= 0) return `<span class="cv-rng"><input type="range" min="${f.min}" max="${f.max}"${f.step ? ` step="${f.step}"` : ""} value="${esc(v)}" data-f="${esc(f.id)}"${dis}><output>${esc(v)}</output></span>`;
       if (f.kind === "int") return `<input class="cv-q cv-setin" type="number" min="${f.min}" max="${f.max}" value="${esc(v)}" data-f="${esc(f.id)}"${dis}>`;
       return `<input class="cv-q cv-setin" type="text" maxlength="${f.maxlen || 32}" value="${esc(v)}" data-f="${esc(f.id)}"${dis}>`;
+    }
+    function drawBox(f, v, can) {
+      const src = o.pic ? o.pic(st.lens) : "", d = st.draft[f.id];
+      const hint = f.kind === "area" ? `Tap the picture to place ${f.min === f.max ? f.min : f.min + " to " + f.max} corners${d ? ` (${d.length} placed)` : ""}; drag a corner to move it.`
+        : f.kind === "line" ? `Tap where the line starts (A), then where it ends (B)${d ? ` (${d.length} placed)` : ""}; drag an end to move it.`
+        : f.kind === "rects" ? `Drag across the picture to add a box (up to ${f.max}); tap a box to remove it.`
+        : "Tap or drag over the squares to switch them on or off.";
+      return `<div class="cv-draw${can ? " cv-dcan" : ""}" data-draw="${esc(f.id)}">${src ? `<img src="${esc(src)}" alt="">` : ""}<svg aria-label="${esc(f.label)}"></svg></div>`
+        + (can ? `<div class="cv-drawbar"><small class="cv-dimtx">${esc(hint)}</small>${f.kind === "grid"
+          ? `<button type="button" class="cv-btn" data-gall="1" data-fid="${esc(f.id)}">All</button><button type="button" class="cv-btn" data-gall="0" data-fid="${esc(f.id)}">None</button>`
+          : `<button type="button" class="cv-btn" data-dclear="${esc(f.id)}">${f.kind === "rects" ? "Remove all" : "Start again"}</button>`}</div>`
+          : `<small class="cv-dimtx">${esc(f.shown || "")}</small>`);
+    }
+    function weekBox(f, v, can) {
+      const rows = weekRows(v), br = st.brush[f.id] || ((f.modes || [])[0] || {}).v || "C";
+      const cls = (k) => "cv-wm-" + (k === "-" ? "x" : k);
+      const brush = can ? `<div class="cv-wbr" role="group" aria-label="Kind of recording">${(f.modes || []).concat([{ v: "-", label: "Not recorded" }]).map((m) =>
+        `<button type="button" class="cv-btn" data-wbrush="${esc(m.v)}" data-fid="${esc(f.id)}" aria-pressed="${m.v === br}"><i class="${cls(m.v)}"></i>${esc(m.label)}</button>`).join("")}</div>` : "";
+      const head = `<tr><th></th>${Array.from({ length: 24 }, (_, h) => `<th>${h % 3 ? "" : hh(h)}</th>`).join("")}</tr>`;
+      const tb = rows.map((r, d) => `<tr><th>${WEEKDAYS[d]}</th>${[...r].map((k, h) => `<td class="${cls(k)}" data-d="${d}" data-h="${h}" title="${WEEKDAYS[d]} ${hh(h)}:00–${hh(h + 1)}:00"></td>`).join("")}</tr>`).join("");
+      return `<div class="cv-week${can ? " cv-dcan" : ""}" data-week="${esc(f.id)}">${brush}<div class="cv-wkwrap"><table class="cv-wk"><thead>${head}</thead><tbody>${tb}</tbody></table></div>`
+        + (can ? `<div class="cv-drawbar"><small class="cv-dimtx">Pick a kind of recording, then tap or drag over the hours.</small><button type="button" class="cv-btn" data-wcopy="5" data-fid="${esc(f.id)}">Monday → Tue–Fri</button><button type="button" class="cv-btn" data-wcopy="7" data-fid="${esc(f.id)}">Monday → every day</button><button type="button" class="cv-btn" data-wfill data-fid="${esc(f.id)}">Whole week</button></div>` : "")
+        + `<small class="cv-dimtx">${esc(weekShown(f, v))}</small></div>`;
+    }
+    function mountWeek(box) {
+      if (!box.classList.contains("cv-dcan")) return;
+      const fid = box.dataset.week, f = sec().fields.find((x) => x.id === fid); if (!f) return;
+      const rows = weekRows(valOf(f)).map((r) => [...r]), tbl = box.querySelector("table");
+      let on = false;
+      const hit = (ev) => { const t = document.elementFromPoint(ev.clientX, ev.clientY); return t && tbl.contains(t) ? t.closest("td[data-d]") : null; };
+      const put = (td) => { if (!td) return; const k = st.brush[fid] || ((f.modes || [])[0] || {}).v || "C";
+        rows[+td.dataset.d][+td.dataset.h] = k; td.className = "cv-wm-" + (k === "-" ? "x" : k); };
+      tbl.addEventListener("pointerdown", (ev) => { if (ev.button > 0) return; const td = hit(ev); if (!td) return;
+        ev.preventDefault(); tbl.setPointerCapture(ev.pointerId); on = true; put(td); });
+      tbl.addEventListener("pointermove", (ev) => { if (on) put(hit(ev)); });
+      const up = () => { if (!on) return; on = false; setEdit(fid, rows.map((r) => r.join("")).join("|")); };
+      tbl.addEventListener("pointerup", up);
+      tbl.addEventListener("pointercancel", up);
+    }
+    function mountDraw(box) {
+      const fid = box.dataset.draw, f = sec().fields.find((x) => x.id === fid), can = box.classList.contains("cv-dcan");
+      const svg = box.querySelector("svg"), img = box.querySelector("img");
+      if (!f) return;
+      if (img) img.addEventListener("load", () => { if (img.naturalWidth) { box.style.aspectRatio = (img.naturalWidth / img.naturalHeight).toFixed(4); draw(); } });
+      let P = null, R = null, G = null, temp = null;
+      if (f.kind === "area" || f.kind === "line") P = (st.draft[fid] || pts(valOf(f))).map((p) => p.slice());
+      if (f.kind === "rects") R = rects(valOf(f));
+      if (f.kind === "grid") G = gridCells(valOf(f), f.rows, f.cols);
+      let W = 1, H = 1;
+      const px = (u, v) => [u * W / 1000, v * H / 1000];
+      function add(tag, a, text) {
+        const e = document.createElementNS(NS, tag);
+        Object.entries(a).forEach(([k, v]) => e.setAttribute(k, v));
+        if (text) e.textContent = text;
+        svg.appendChild(e); return e;
+      }
+      function draw() {
+        W = svg.clientWidth || box.clientWidth || 1; H = svg.clientHeight || box.clientHeight || 1;
+        svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+        svg.textContent = "";
+        if (G) {
+          const cw = W / f.cols, rh = H / f.rows;
+          G.forEach((on, i) => { if (on) add("rect", { x: (i % f.cols) * cw, y: Math.floor(i / f.cols) * rh, width: cw, height: rh, class: "cv-dcell" }); });
+          for (let c = 1; c < f.cols; c++) add("line", { x1: c * cw, y1: 0, x2: c * cw, y2: H, class: "cv-dgrid" });
+          for (let r = 1; r < f.rows; r++) add("line", { x1: 0, y1: r * rh, x2: W, y2: r * rh, class: "cv-dgrid" });
+        }
+        (R || []).concat(temp ? [temp] : []).forEach((r, i) => {
+          const [x1, y1] = px(r[0], r[1]), [x2, y2] = px(r[2], r[3]);
+          add("rect", { x: Math.min(x1, x2), y: Math.min(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), class: "cv-dmask", "data-i": r === temp ? "" : i });
+        });
+        if (P && P.length) {
+          const xy = P.map((p) => px(p[0], p[1]));
+          if (f.kind === "area") add(P.length >= 3 ? "polygon" : "polyline", { points: xy.map((p) => p.join(",")).join(" "), class: "cv-dpoly" });
+          if (f.kind === "line" && P.length === 2) add("line", { x1: xy[0][0], y1: xy[0][1], x2: xy[1][0], y2: xy[1][1], class: "cv-dline" });
+          xy.forEach((p, i) => {
+            add("circle", { cx: p[0], cy: p[1], r: 9, class: "cv-dpt", "data-i": i });
+            if (f.kind === "line") add("text", { x: p[0] + 12, y: p[1] - 10, class: "cv-dlab" }, i ? "B" : "A");
+          });
+        }
+      }
+      function commit(v, draft) {
+        if (draft) { st.draft[fid] = draft; st.preview = null; st.msg = null; paint(); return; }
+        delete st.draft[fid]; setEdit(fid, v);
+      }
+      const at = (ev) => { const r = svg.getBoundingClientRect();
+        return [Math.round(Math.min(1000, Math.max(0, (ev.clientX - r.left) * 1000 / r.width))), Math.round(Math.min(1000, Math.max(0, (ev.clientY - r.top) * 1000 / r.height)))]; };
+      const cell = (p) => Math.min(f.rows - 1, Math.floor(p[1] * f.rows / 1000)) * f.cols + Math.min(f.cols - 1, Math.floor(p[0] * f.cols / 1000));
+      let drag = null;
+      if (can) {
+        svg.addEventListener("pointerdown", (ev) => {
+          if (ev.button > 0) return;
+          ev.preventDefault(); svg.setPointerCapture(ev.pointerId);
+          const p = at(ev), hit = ev.target.dataset ? ev.target.dataset.i : undefined;
+          if (P) {
+            if (hit !== undefined && hit !== "") drag = { i: +hit, moved: false };
+            else if (P.length < (f.kind === "line" ? 2 : f.max)) { P.push(p); drag = { i: P.length - 1, moved: true, added: true }; draw(); }
+          } else if (R) {
+            drag = { start: p, hit: hit !== undefined && hit !== "" ? +hit : null, moved: false };
+          } else if (G) {
+            const c = cell(p); drag = { mode: !G[c] }; G[c] = drag.mode; draw();
+          }
+        });
+        svg.addEventListener("pointermove", (ev) => {
+          if (!drag) return;
+          const p = at(ev);
+          if (P && drag.i !== undefined) { P[drag.i] = p; drag.moved = true; draw(); }
+          else if (R && drag.start) { if (Math.abs(p[0] - drag.start[0]) + Math.abs(p[1] - drag.start[1]) > 8) { drag.moved = true; temp = [drag.start[0], drag.start[1], p[0], p[1]]; draw(); } }
+          else if (G) { const c = cell(p); if (G[c] !== drag.mode) { G[c] = drag.mode; draw(); } }
+        });
+        const up = () => {
+          if (!drag) return;
+          const d = drag; drag = null;
+          if (P) {
+            const need = f.kind === "line" ? 2 : f.min, max = f.kind === "line" ? 2 : f.max;
+            if (P.length >= need && P.length <= max) commit(P.map((q) => q.join(",")).join(" "));
+            else commit(null, P);
+          } else if (R) {
+            if (!d.moved && d.hit !== null) R.splice(d.hit, 1);
+            else if (d.moved && temp) {
+              const r = [Math.min(temp[0], temp[2]), Math.min(temp[1], temp[3]), Math.max(temp[0], temp[2]), Math.max(temp[1], temp[3])];
+              temp = null;
+              if (r[2] - r[0] < 10 || r[3] - r[1] < 10) return draw();
+              if (R.length >= f.max) { draw(); return say(`This camera takes up to ${f.max} boxes.`, "cv-warn"); }
+              R.push(r);
+            } else return draw();
+            commit(R.map((r) => r.join(",")).join(";"));
+          } else if (G) commit(gridHex(G, f.rows, f.cols));
+        };
+        svg.addEventListener("pointerup", up);
+        svg.addEventListener("pointercancel", () => { drag = null; temp = null; draw(); });
+      }
+      requestAnimationFrame(draw);
     }
     function paint() {
       const d = st.data, s = sec();
       const lens = d.lenses.length > 1 ? `<div class="cv-seg" role="group" aria-label="Lens">${d.lenses.map((n) => `<button type="button" data-lens="${n}" aria-pressed="${n === st.lens}">Lens ${n}</button>`).join("")}</div>` : "";
       const tabs = `<div class="cv-seg cv-settabs" role="tablist">${d.sections.map((x) => `<button type="button" role="tab" data-sec="${esc(x.id)}" aria-pressed="${x.id === st.sec}">${esc(x.label)}</button>`).join("")}</div>`;
       let html = `<div class="cv-setbar">${tabs}${lens}<button type="button" class="cv-btn" data-a="reload">↻ Read again</button></div>`;
+      if (d.route === "nvr" || (d.routes || []).length > 1) {
+        const via = d.via ? `${esc(d.via.name || d.via.ip || "the recorder")} · channel ${esc(d.via.channel)}` : "";
+        html += `<p class="cv-route">${d.route === "nvr" ? `Through the recorder: <b>${via}</b>.` : "Straight to the camera, with its own login."}${(d.routes || []).length > 1
+          ? ` <span class="cv-seg" role="group" aria-label="Change it through"><button type="button" data-route="direct" aria-pressed="${d.route === "direct"}">The camera</button><button type="button" data-route="nvr" aria-pressed="${d.route === "nvr"}">The recorder</button></span>` : ""}</p>`;
+      }
       if (!d.can_change) html += `<p class="cv-setmsg">${esc(d.why_not)} You can look, not change.</p>`;
       if (s) {
         if (s.note) html += `<p class="cv-dimtx">${esc(s.note)}</p>`;
         if (s.error) html += `<p class="cv-setmsg cv-warn">${esc(s.error)}</p>`;
         if (d.can_change && (s.presets || []).length) html += `<div class="cv-setpre">${s.presets.map((p) => `<button type="button" class="cv-btn" data-pre="${esc(p.id)}">★ ${esc(p.label)}</button>`).join("")}</div>`;
-        html += `<div class="cv-setgrid">${s.fields.filter((f) => visible(f, s)).map((f) => `<div class="cv-setrow${f.id in st.edits ? " cv-chg" : ""}"><div class="cv-setl"><b>${esc(f.label)}</b>${f.help ? `<small>${esc(f.help)}</small>` : ""}</div><div class="cv-setc">${ctl(f)}${f.id === "name.name" && d.can_change && d.netwatch_name && d.netwatch_name !== f.value ? ` <button type="button" class="cv-btn" data-nwname>Use “${esc(d.netwatch_name)}”</button>` : ""}</div></div>`).join("") || `<p class="cv-dimtx">This camera has none of these settings.</p>`}</div>`;
+        html += `<div class="cv-setgrid">${s.fields.filter((f) => visible(f, s)).map((f) => `<div class="cv-setrow${f.id in st.edits ? " cv-chg" : ""}${DRAW.has(f.kind) || f.kind === "week" ? " cv-wide" : ""}"><div class="cv-setl"><b>${esc(f.label)}</b>${f.help ? `<small>${esc(f.help)}</small>` : ""}</div><div class="cv-setc">${ctl(f)}${f.id === "name.name" && d.can_change && d.netwatch_name && d.netwatch_name !== f.value ? ` <button type="button" class="cv-btn" data-nwname>Use “${esc(d.netwatch_name)}”</button>` : ""}</div></div>`).join("") || `<p class="cv-dimtx">This camera has none of these settings.</p>`}</div>`;
         const n = Object.keys(st.edits).length;
         if (d.can_change && s.fields.length) html += `<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-a="apply"${n ? "" : " disabled"}>${s.risk === "careful" ? "Review " : "Apply "}${n ? n + " change" + (n > 1 ? "s" : "") : "changes"}</button><button type="button" class="cv-btn" data-a="reset"${n ? "" : " disabled"}>Cancel</button>${RISK[s.risk] ? `<span class="cv-dimtx">${RISK[s.risk]}</span>` : ""}</div>`;
         if (st.preview) html += st.preview;
       }
       html += `<p class="cv-setmsg" data-msg aria-live="polite"></p><div class="cv-chgs" data-chgs></div>`;
       body.innerHTML = html;
+      body.querySelectorAll("[data-draw]").forEach(mountDraw);
+      body.querySelectorAll("[data-week]").forEach(mountWeek);
       if (st.msg) say(st.msg[0], st.msg[1]);
       paintChanges();
     }
@@ -538,18 +763,20 @@
       const changes = { ...st.edits }, expect = {};
       Object.keys(changes).forEach((k) => { const f = s.fields.find((x) => x.id === k); if (f) expect[k] = f.value; });
       if (s.risk === "careful" && !confirm) {
-        const list = Object.keys(changes).map((k) => { const f = s.fields.find((x) => x.id === k); const o = (f.opts || []).find((x) => x.v === changes[k]);
-          return { label: f.label, from: f.shown ?? f.value, to: o ? o.label : f.kind === "bool" ? (changes[k] === "true" ? "On" : "Off") : changes[k] }; });
-        st.preview = `<div class="cv-setprev"><p><b>Change on the camera:</b></p>${rows(list)}${s.id === "time" ? `<p class="cv-dimtx">The camera's clock is also set from this Pi's clock, so it is right straight away.</p>` : ""}${s.id === "main" || s.id === "sub" ? `<p class="cv-dimtx">The picture may drop for a few seconds while the camera switches.</p>` : ""}<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-a="confirm">Yes, change it</button><button type="button" class="cv-btn" data-a="unpreview">Back</button></div></div>`;
+        const list = Object.keys(changes).map((k) => { const f = s.fields.find((x) => x.id === k);
+          return { label: f.label, from: f.shown ?? f.value, to: shownOf(f, changes[k]) }; });
+        const loses = (changes["t.Duration"] && changes["t.Duration"] !== "0") || changes["x.LoopEnable"] === "false" || changes["t.CustomExtensionList/CustomExtension/enableSchedule"] === "false";
+        st.preview = `<div class="cv-setprev"><p><b>Change on the ${onCam && st.data.route !== "nvr" ? "camera" : "recorder"}:</b></p>${rows(list)}${loses ? `<p class="cv-warn">${changes["t.Duration"] && changes["t.Duration"] !== "0" ? "The recorder deletes this camera's footage older than that straight away — Undo can't bring it back." : changes["x.LoopEnable"] === "false" ? "When the disks are full the recorder will stop recording every camera." : "The recorder stops recording this camera."}</p>` : ""}${s.id === "time" ? `<p class="cv-dimtx">The camera's clock is also set from this Pi's clock, so it is right straight away.</p>` : ""}${s.id === "main" || s.id === "sub" ? `<p class="cv-dimtx">The picture may drop for a few seconds while the camera switches.</p>` : ""}<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-a="confirm">Yes, change it</button><button type="button" class="cv-btn" data-a="unpreview">Back</button></div></div>`;
         paint(); return;
       }
-      st.busy = true; say("Changing it on the camera…", "");
+      if (Object.keys(st.draft).length) return say("Finish the drawing first (or press Start again).", "cv-warn");
+      st.busy = true; say(`Changing it on the ${onCam && st.data.route !== "nvr" ? "camera" : "recorder"}…`, "");
       try {
-        const j = await jcall(`${base}/settings`, { method: "POST", body: JSON.stringify({ lens: st.lens, section: s.id, changes, expect, confirm: true }) });
+        const j = await jcall(`${base}/settings`, { method: "POST", body: JSON.stringify({ lens: st.lens, section: s.id, changes, expect, confirm: true, route: st.data.route }) });
         st.busy = false;
         const msg = j.message || "Done.";
         await load(); say(msg, j.ok ? "cv-okt" : "cv-warn");
-        if (s.id === "picture" || s.id === "osd") onPicture();
+        if (s.id === "picture" || s.id === "osd" || s.id === "masks") onPicture();
       } catch (e) {
         st.busy = false;
         if (e.status === 409 && e.body && e.body.conflict) { await load(); say(e.message + " — it was read again; make the change once more.", "cv-warn"); }
@@ -582,23 +809,92 @@
       if (t.type === "range") { const o = t.parentElement.querySelector("output"); if (o) o.textContent = t.value; }
     });
     body.addEventListener("change", (e) => {
+      const m = e.target.closest("[data-multi]");
+      if (m) {
+        const f = sec().fields.find((x) => x.id === m.dataset.multi); if (!f) return;
+        const on = [...m.querySelectorAll("input:checked")].map((x) => x.value).concat(f.fixed || []);
+        const order = (f.opts || []).map((x) => x.v).concat(f.fixed || []);
+        return setEdit(f.id, order.filter((x) => on.includes(x)).join(","));
+      }
       const t = e.target.closest("[data-f]"); if (!t) return;
       setEdit(t.dataset.f, t.type === "checkbox" ? String(t.checked) : t.value);
     });
     body.addEventListener("click", (e) => {
       const b = e.target.closest("button"); if (!b || b.disabled) return;
-      if (b.dataset.sec) { st.sec = b.dataset.sec; st.edits = {}; st.preview = null; st.msg = null; paint(); }
+      if (b.dataset.wbrush !== undefined) { st.brush[b.dataset.fid] = b.dataset.wbrush; paint(); return; }
+      if (b.dataset.wcopy || b.hasAttribute("data-wfill")) {
+        const f = sec().fields.find((x) => x.id === b.dataset.fid); if (!f) return;
+        const r = weekRows(valOf(f)), k = st.brush[f.id] || ((f.modes || [])[0] || {}).v || "C";
+        const out = b.dataset.wcopy ? r.map((x, i) => (i > 0 && i < +b.dataset.wcopy ? r[0] : x)) : Array(7).fill(k.repeat(24));
+        return setEdit(f.id, out.join("|"));
+      }
+      if (b.dataset.sec) { st.sec = b.dataset.sec; st.edits = {}; st.draft = {}; st.preview = null; st.msg = null; paint(); }
+      else if (b.dataset.dclear) { const f = sec().fields.find((x) => x.id === b.dataset.dclear); if (!f) return;
+        if (f.kind === "rects") { delete st.draft[f.id]; setEdit(f.id, ""); } else { st.draft[f.id] = []; st.preview = null; st.msg = null; paint(); } }
+      else if (b.dataset.gall) { const f = sec().fields.find((x) => x.id === b.dataset.fid); if (f) setEdit(f.id, gridHex(new Array(f.rows * f.cols).fill(b.dataset.gall === "1"), f.rows, f.cols)); }
       else if (b.dataset.lens) { st.lens = +b.dataset.lens; st.msg = null; load(); }
+      else if (b.dataset.route) { if (b.dataset.route !== st.data.route) { st.route = b.dataset.route; st.msg = null; load(); } }
       else if (b.dataset.pre) { const p = (sec().presets || []).find((x) => x.id === b.dataset.pre); if (p) { Object.entries(p.changes).forEach(([k, v]) => { const f = sec().fields.find((x) => x.id === k); if (f && f.editable && String(f.value) !== String(v)) st.edits[k] = String(v); }); st.preview = null; st.msg = Object.keys(st.edits).length ? null : ["The camera already has these values.", "cv-okt"]; paint(); } }
       else if (b.hasAttribute("data-nwname")) setEdit("name.name", st.data.netwatch_name);
       else if (b.dataset.undo) undo(b.dataset.undo, b);
       else if (b.dataset.a === "reload") { st.msg = null; load(); }
-      else if (b.dataset.a === "reset") { st.edits = {}; st.preview = null; st.msg = null; paint(); }
+      else if (b.dataset.a === "reset") { st.edits = {}; st.draft = {}; st.preview = null; st.msg = null; paint(); }
       else if (b.dataset.a === "apply") apply(false);
       else if (b.dataset.a === "confirm") apply(true);
       else if (b.dataset.a === "unpreview") { st.preview = null; paint(); }
     });
     return { destroy() { st.dead = true; } };
+  }
+
+  // ---- PTZ (Phase 4b): each press is one short move the camera stops by itself, so a
+  // dropped connection can never leave it turning. Holding a button repeats the move.
+  function ptzPanel(el, base, views, names, onMoved) {
+    const st = { dead: false, lens: 0, info: null, timer: null, busy: false, speed: 50 };
+    (async () => {
+      for (const n of views) {
+        try {
+          const j = await jcall(`${base}/ptz?lens=${n}`);
+          if (st.dead) return;
+          if (j.has_ptz) { st.lens = n; st.info = j; break; }
+        } catch (e) { return; }
+      }
+      if (!st.info || st.dead) return;
+      paint();
+    })();
+    function paint() {
+      const j = st.info, dis = j.can_move ? "" : " disabled", ax = j.axes || {};
+      const btn = (a, label, aria) => `<button type="button" class="cv-btn cv-ptzb" data-mv="${a}" aria-label="${aria}"${dis}>${label}</button>`;
+      el.hidden = false;
+      el.innerHTML = `<div class="cv-setd cv-ptz"><div class="cv-ptzhead"><h3>🎮 Move the camera</h3><span class="cv-dimtx">${views.length > 1 ? esc(names[st.lens] || "Lens " + st.lens) + " · " : ""}${j.route === "nvr" ? "through the recorder" : "straight to the camera"}${j.guessed ? " · the recorder didn't say what it can do, so try a small move" : ""}</span></div>
+        ${j.can_move ? "" : `<p class="cv-setmsg">${esc(j.why_not || "")} You can look, not move.</p>`}
+        <div class="cv-ptzrow">
+          ${ax.pan || ax.tilt ? `<div class="cv-ptzpad"><span></span>${ax.tilt ? btn("0,1,0", "▲", "Up") : "<span></span>"}<span></span>${ax.pan ? btn("-1,0,0", "◀", "Left") : "<span></span>"}<span class="cv-ptzc">●</span>${ax.pan ? btn("1,0,0", "▶", "Right") : "<span></span>"}<span></span>${ax.tilt ? btn("0,-1,0", "▼", "Down") : "<span></span>"}<span></span></div>` : ""}
+          ${ax.zoom ? `<div class="cv-ptzz">${btn("0,0,1", "＋", "Zoom in")}${btn("0,0,-1", "－", "Zoom out")}</div>` : ""}
+          <label class="cv-dimtx">Speed <select class="cv-q cv-setin" data-speed${dis}>${[[20, "Slow"], [50, "Medium"], [90, "Fast"]].map(([v, l]) => `<option value="${v}"${v === st.speed ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+        </div>
+        ${(j.presets || []).length ? `<div class="cv-ptzpre"><span class="cv-dimtx">Go to:</span>${j.presets.map((p) => `<button type="button" class="cv-btn" data-pre="${p.id}"${dis}>${esc(p.name)}</button>`).join("")}</div>` : ""}
+        <p class="cv-setmsg" data-pmsg aria-live="polite"></p></div>`;
+    }
+    const say = (t, cls) => { const m = el.querySelector("[data-pmsg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (cls || ""); } };
+    async function send(body) {
+      if (st.busy) return;
+      st.busy = true;
+      try { await jcall(`${base}/ptz`, { method: "POST", body: JSON.stringify(Object.assign({ lens: st.lens, route: st.info.route }, body)) }); say(""); onMoved(); }
+      catch (e) { stopHold(); say(e.message, "cv-warn"); }
+      finally { st.busy = false; }
+    }
+    function move(dir) { const [p, t, z] = dir.split(",").map(Number); send({ action: "move", pan: p * st.speed, tilt: t * st.speed, zoom: z * st.speed, ms: 500 }); }
+    function stopHold() { clearInterval(st.timer); st.timer = null; }
+    el.addEventListener("pointerdown", (e) => {
+      const b = e.target.closest("[data-mv]"); if (!b || b.disabled) return;
+      e.preventDefault(); stopHold(); move(b.dataset.mv);
+      st.timer = setInterval(() => move(b.dataset.mv), 450);
+    });
+    ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => el.addEventListener(ev, stopHold));
+    el.addEventListener("keydown", (e) => { const b = e.target.closest("[data-mv]"); if (b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); move(b.dataset.mv); } });
+    el.addEventListener("change", (e) => { if (e.target.matches("[data-speed]")) st.speed = +e.target.value; });
+    el.addEventListener("click", (e) => { const b = e.target.closest("[data-pre]"); if (b && !b.disabled) { say("Going to " + b.textContent + "…"); send({ action: "goto", preset: +b.dataset.pre }); } });
+    return { destroy() { st.dead = true; stopHold(); } };
   }
 
   window.CamView = { mount, camera, ago, fetchPic: (lid, url) => queue(lid, () => fetchPic(url)) };
