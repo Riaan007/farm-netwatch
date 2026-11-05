@@ -413,7 +413,7 @@ def api_devices():
         d["meta_src"] = dict(ms) if isinstance(ms, dict) else {}
         ct = _kreg.get("cred_test")
         d["cred_test"] = {k: v for k, v in ct.items() if k != "fp"} if ct else None
-        sp = plugged.get(edgeswitch.normalize_mac(d.get("mac"))) if d.get("mac") else None
+        sp = next((plugged[m] for m in switchmon.device_macs(d) if m in plugged), None)
         d["switch_port"] = sp if sp and sp["switch_key"] != d.get("key") else None
         if switchmon.is_switch(d):
             d["is_switch"] = True
@@ -1693,13 +1693,13 @@ def _sw_view(key, dev, row, by_mac, problems):
 
 def _sw_devices():
     devs = scanner.get_devices()
-    by_mac = {edgeswitch.normalize_mac(d.get("mac")): d for d in devs if d.get("mac")}
-    return devs, by_mac
+    return devs, switchmon.devices_by_mac(devs)
 
 
 @app.route("/api/switches")
 def api_switches():
-    """Every Ubiquiti EdgeSwitch/UISP switch on the site with its ports, PoE,
+    """Every managed switch on the site (Ubiquiti EdgeSwitch/UISP, MikroTik SwOS,
+    Hikvision smart switch) with its ports, PoE,
     traffic, what is plugged in where, and its problems — from the monitor's last
     reading (no login happens here; POST …/switch/poll reads live)."""
     devs, by_mac = _sw_devices()
@@ -1761,6 +1761,29 @@ def api_switch_poll(key):
     if not row:
         return jsonify({"ok": False, "error": "not a switch Netwatch can read (is it online?)"}), 404
     return jsonify({"ok": True, **_sw_view(key, dev, row, by_mac, snap["problems"]), "manage": _sw_enabled()})
+
+
+@app.route("/api/devices/<path:key>/switch/raw")
+@guard
+def api_switch_raw(key):
+    """The switch's OWN answers from one live read (its saved login), next to the
+    snapshot Netwatch made of them — for checking a new driver against a real
+    switch without SSH. Login only, nothing is changed."""
+    dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
+    if not dev or not dev.get("ip"):
+        return jsonify({"ok": False, "error": "unknown switch"}), 404
+    drv = switchmon.driver(dev)
+    if drv is None:
+        return jsonify({"ok": False, "error": "not a switch Netwatch can read"}), 404
+    c = creds.get(key)
+    if not (c["username"] or c["password"]):
+        return jsonify({"ok": False, "error": "Save the switch's login first"}), 400
+    try:
+        res = drv.read(dev["ip"], c["username"], c["password"], keep_raw=True)
+    except TypeError:                      # a driver without keep_raw
+        res = drv.read(dev["ip"], c["username"], c["password"])
+    return app.response_class(json.dumps({"ok": bool(res.get("ok")), "driver": drv.__name__, **res},
+                                         default=str), mimetype="application/json")
 
 
 def _sw_audit(dev, action, result, extra=None):
