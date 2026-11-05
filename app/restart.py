@@ -28,6 +28,7 @@ import time
 import airos
 import credtest
 import edgeswitch
+import hikswitch
 import hikvision
 import identify
 import mikrotik
@@ -52,6 +53,9 @@ EDGESWITCH = {"id": "edgeswitch", "label": "Ubiquiti EdgeSwitch", "gate": "switc
 SWOS = {"id": "swos", "label": "MikroTik SwOS", "gate": "switch_manage",
         "gate_label": "Manage switches",
         "warn": "Every device on this switch loses its network for about a minute."}
+HIKSWITCH = {"id": "hikswitch", "label": "Hikvision switch", "gate": "switch_manage",
+             "gate_label": "Manage switches",
+             "warn": "Every device on this switch loses its network (and PoE power) for about two minutes."}
 HIKVISION = {"id": "hikvision", "label": "Hikvision ISAPI", "gate": None,
              "warn": "The camera stops recording and goes off the network for about a minute."}
 AIROS = {"id": "airos", "label": "Ubiquiti airOS (SSH)", "gate": None,
@@ -69,6 +73,10 @@ def method_for(dev):
     cat = dev.get("category") or ""
     ports = dev.get("ports") or []
     web = any(p in ports for p in (80, 443, 8080, 8443))
+    if hikswitch.is_hikswitch(dev):
+        return HIKSWITCH
+    if (identify.hik_kind_of(dev) or ("",))[0] == "network":
+        return None                    # a Hikvision switch with no web API (SDK port only)
     if swos.is_swos(dev):
         return SWOS
     if edgeswitch.is_edgeswitch(dev):
@@ -115,6 +123,8 @@ def _send(method, dev, ip, user, pw):
         return edgeswitch.reboot(ip, user, pw)
     if method["id"] == "swos":
         return swos.reboot(ip, user, pw)
+    if method["id"] == "hikswitch":
+        return hikswitch.reboot(ip, user, pw)
     if method["id"] == "hikvision":
         return _send_hikvision(dev, ip, user, pw)
     return _send_airos(dev, ip, user, pw)

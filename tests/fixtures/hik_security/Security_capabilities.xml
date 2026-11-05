@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SecurityCap xmlns="http://www.hikvision.com/ver20/XMLSchema" version="2.0">
+<supportUserNums>32</supportUserNums>
+<userBondIpNums>0</userBondIpNums>
+<userBondMacNums>0</userBondMacNums>
+<isSupCertificate>true</isSupCertificate>
+<issupIllegalLoginLock>true</issupIllegalLoginLock>
+<isSupportOnlineUser>true</isSupportOnlineUser>
+<isSupportAnonymous>false</isSupportAnonymous>
+<isSupportStreamEncryption>false</isSupportStreamEncryption>
+<securityVersion opt="1" />
+<keyIterateNum>100</keyIterateNum>
+<isSupportUserCheck>true</isSupportUserCheck>
+<isSupportSecurityQuestionConfig>true</isSupportSecurityQuestionConfig>
+<supportSecurityNode opt="wirelessDial" />
+<SecurityLimits>
+<LoginPasswordLenLimit min="1" max="16" />
+<SecurityAnswerLenLimit min="1" max="128" />
+</SecurityLimits>
+<RSAKeyLength opt="1024,2048" def="2048" />
+<isSupportONVIFUserManagement>true</isSupportONVIFUserManagement>
+<isSupportGB35114Certificate>false</isSupportGB35114Certificate>
+<isSupportSIPCertificatesManagement>false</isSupportSIPCertificatesManagement>
+<WebCertificateCap>
+<CertificateType opt="digest,digest/basic" />
+<SecurityAlgorithm>
+<algorithmType opt="MD5,SHA256,MD5/SHA256" />
+</SecurityAlgorithm>
+</WebCertificateCap>
+<isSupportConfigFileImport>true</isSupportConfigFileImport>
+<isSupportConfigFileExport>true</isSupportConfigFileExport>
+<cfgFileSecretKeyLenLimit min="1" max="16" />
+<isIrreversible>true</isIrreversible>
+<salt>0000</salt>
+<isSupportOnvifInfo>true</isSupportOnvifInfo>
+<isSupportDeviceCertificatesManagement>true</isSupportDeviceCertificatesManagement>
+<isSupportDeviceSelfSignCertExport>true</isSupportDeviceSelfSignCertExport>
+<isSupportSecurityEmail>true</isSupportSecurityEmail>
+<maxIllegalLoginTimes min="3" max="20" def="7" />
+<SecurityAdvanced>
+<noOperationEnabled>true</noOperationEnabled>
+<noOperationTime min="1" max="60" def="15" />
+</SecurityAdvanced>
+<LoginLinkNum>
+<maxLinkNum min="1" max="128" def="50" />
+</LoginLinkNum>
+<isSupportCertificateCustomID>true</isSupportCertificateCustomID>
+<isSupportEncryptCertificate>false</isSupportEncryptCertificate>
+<maxIllegalLoginLockTime min="1" max="120" def="30" />
+</SecurityCap>

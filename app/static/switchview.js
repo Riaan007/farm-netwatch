@@ -151,7 +151,7 @@
   const isDefaultName = (n) => !n || /^port\s*\d+$/i.test(n) || /^sfp\s*\d*$/i.test(n);
   const devName = (d) => d.name || d.ip || d.mac || "device";
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
-  const POE_LABEL = { off: "Off", auto: "Auto (powers what asks for it)", on: "Forced on", active: "802.3af/at", "active-4pair": "802.3bt", "24v": "24 V passive", "24v-4pair": "24 V 4-pair", "27v": "27 V passive", "27v-4pair": "27 V 4-pair", "48v": "48 V passive", "54v": "54 V passive", "54v-4pair": "54 V 4-pair", pthru: "Pass-through" };
+  const POE_LABEL = { off: "Off", auto: "Auto (powers what asks for it)", on: "Forced on", active: "802.3af/at", "active-4pair": "802.3bt", "24v": "24 V passive", "24v-4pair": "24 V 4-pair", "27v": "27 V passive", "27v-4pair": "27 V 4-pair", "48v": "48 V passive", "54v": "54 V passive", "54v-4pair": "54 V 4-pair", pthru: "Pass-through", compat: "Auto + non-standard devices", force: "Forced on (no detection)" };
   const poeLabel = (m) => POE_LABEL[m] || m || "—";
 
   function portState(p, probs) {
@@ -519,7 +519,7 @@
       if (!el) return;
       const d = st.data, dev = d.device || {}, svc = d.services || {}, h = d.health || {};
       const on = (v) => v == null ? "—" : v ? "on" : "off";
-      const bk = o.backups ? `<h3 style="margin-top:14px">Config backups</h3><div id="swv-bk" class="swv-muted" style="font-size:13px">The switch's own configuration file, kept on the site Pi (last 10).</div>
+      const bk = o.backups && (d.caps || {}).backup !== false ? `<h3 style="margin-top:14px">Config backups</h3><div id="swv-bk" class="swv-muted" style="font-size:13px">The switch's own configuration file, kept on the site Pi (last 10).</div>
         <div class="swv-row" style="margin-top:6px"><button class="swv-btn sm" data-i="backup">💾 Take a backup now</button><button class="swv-btn sm" data-i="bklist">Show kept backups</button></div>` : "";
       el.innerHTML = `<h3>Switch</h3><dl class="swv-kv">
           <dt>Model</dt><dd>${esc([d.model || dev.model, dev.product && dev.product !== dev.model ? "(" + dev.product + ")" : ""].filter(Boolean).join(" ") || "—")}</dd>
@@ -537,7 +537,7 @@
       const b = (n) => el.querySelector(`[data-i="${n}"]`);
       if (b("locate")) b("locate").onclick = (e) => act({ action: "locate", on: true }, e.currentTarget, "The switch LEDs are blinking");
       if (b("reboot")) b("reboot").onclick = async (e) => { if (await o.confirm(`Restart ${d.name}?`, "Every device on this switch loses the network and PoE power for about 2 minutes.", { danger: true })) act({ action: "reboot", confirm: true }, e.currentTarget, "The switch is restarting"); };
-      if (o.backups) {
+      if (o.backups && (d.caps || {}).backup !== false) {
         const list = async () => {
           const box = el.querySelector("#swv-bk");
           try {

@@ -1,6 +1,7 @@
 """Switch monitor: what is happening on every managed switch — Ubiquiti
-EdgeSwitch / UISP (edgeswitch.py) and MikroTik SwOS (swos.py). Both drivers
-return the same snapshot shape, so everything below is driver-blind.
+EdgeSwitch / UISP (edgeswitch.py), MikroTik SwOS (swos.py) and Hikvision smart
+switches (hikswitch.py). The drivers return the same snapshot shape, so
+everything below is driver-blind.
 
 A farm's cameras, radios and NVR all hang off one or two PoE switches. When a
 cable corrodes, a camera's PoE fails or somebody unplugs the wrong thing, the
@@ -28,6 +29,7 @@ import time
 
 import creds
 import edgeswitch
+import hikswitch
 import history
 import notify
 import swos
@@ -56,6 +58,8 @@ INFRA_CATEGORIES = {"camera", "nvr", "network", "internet-ap", "router", "solar"
 
 def driver(dev):
     """The module that speaks this switch's language, or None if it isn't one."""
+    if hikswitch.is_hikswitch(dev):          # by model: behind a radio bridge the vendor lies
+        return hikswitch
     if swos.is_swos(dev):
         return swos
     if edgeswitch.is_edgeswitch(dev):
@@ -65,6 +69,33 @@ def driver(dev):
 
 def is_switch(dev):
     return driver(dev) is not None
+
+
+def device_macs(d):
+    """Every MAC a device record is known by: its own, plus the real one Hikvision
+    discovery heard when the record carries a proxy-ARP bridge's MAC (devices
+    behind a wireless bridge all show the bridge's MAC, but a switch's MAC table
+    lists their real ones)."""
+    out = []
+    for m in (d.get("mac"), (d.get("sadp") or {}).get("mac") if isinstance(d.get("sadp"), dict) else None):
+        m = edgeswitch.normalize_mac(m)
+        if m and m not in out:
+            out.append(m)
+    return out
+
+
+def devices_by_mac(devs):
+    """{mac: device} over device_macs(). Who wins a MAC that several records
+    carry: the record keyed by that MAC (the real owner — e.g. the radio bridge
+    itself), then a record's own MAC field, then a discovery MAC."""
+    by, rank = {}, {}
+    for d in devs:
+        key_mac = edgeswitch.normalize_mac(d.get("key"))
+        for i, m in enumerate(device_macs(d)):
+            r = 2 if m == key_mac else 1 if i == 0 else 0
+            if m not in by or r > rank[m]:
+                by[m], rank[m] = d, r
+    return by
 
 
 def targets(devices, registry):
@@ -360,7 +391,7 @@ class SwitchMonitor:
     def _changes(self, key, dev, prev, snap):
         if not prev or not prev.get("ports"):
             return []
-        by_mac = {edgeswitch.normalize_mac(d.get("mac")): d for d in self._devices().values() if d.get("mac")}
+        by_mac = devices_by_mac(self._devices().values())
         before = {p["id"]: p for p in prev["ports"]}
         named = {**dev, "name": dev.get("name") or dev.get("device_name") or (snap.get("device") or {}).get("name") or ""}
         rows = []
@@ -480,7 +511,12 @@ class SwitchMonitor:
                 add("poe_lost", "crit", f"{label} is powering nothing — it normally draws {base['poe_w']:.1f} W",
                     "The PoE device on this port has died or its cable is broken. Try a PoE power cycle from here "
                     "first; if it stays at 0 W someone must check the device and cable.", port=p)
-            if p.get("poe_fault"):         # SwOS says why a port stopped powering
+            if p.get("loop_blocked"):      # the switch's own loop protection shut the port
+                add("loop", "crit", f"{label} was blocked by the switch's loop protection",
+                    "Two cables make a circle somewhere behind this port (a loop), or a device is bridging "
+                    "two ports. The switch blocks the port to stop a broadcast storm. Find the second cable "
+                    "between the same switches and unplug it.", port=p)
+            if p.get("poe_fault"):         # the switch says why a port stopped powering
                 add("poe_fault", "crit", f"{label} PoE: {p.get('poe_status')}",
                     "The switch cut power to this port. A short circuit or overload is a wet/damaged cable or "
                     "a faulty device; a voltage/current fault can be a device that needs more power than this port gives.",
@@ -514,7 +550,7 @@ class SwitchMonitor:
     def _infra_ports(self, key):
         """Ports whose last known devices include a camera/NVR/radio/router."""
         snap = (self._last.get(key) or {}).get("snap") or {}
-        by_mac = {edgeswitch.normalize_mac(d.get("mac")): d for d in self._devices().values() if d.get("mac")}
+        by_mac = devices_by_mac(self._devices().values())
         out = set()
         for pid, mem in (snap.get("port_memory") or {}).items():
             for mac in mem.get("macs") or []:

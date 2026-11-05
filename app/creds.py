@@ -113,11 +113,36 @@ def get(key):
 def set_(key, username="", password="", notes=""):
     store = _load()
     if not (username or password or notes):
-        store.pop(key, None)            # empty save clears the entry
+        store.pop(key, None)            # empty save clears the entry (and its admin slot)
     else:
-        store[key] = {"u": _enc(username), "p": _enc(password), "n": _enc(notes)}
+        old = store.get(key) or {}
+        store[key] = {"u": _enc(username), "p": _enc(password), "n": _enc(notes),
+                      **{k: old[k] for k in ("au", "ap") if k in old}}
     _save(store)
     return has(key)
+
+
+def get_admin(key):
+    """The device's admin login kept aside when Netwatch switched to its own `netwatch`
+    account (hiksecurity.py). Only risky jobs use it; get() never returns it, so the
+    login API and normal polling never see it."""
+    e = _load().get(key) or {}
+    return {"username": _dec(e.get("au", "")), "password": _dec(e.get("ap", ""))}
+
+
+def set_admin(key, username="", password=""):
+    """Keep (or, with nothing, drop) the admin login beside the saved one."""
+    store = _load()
+    e = store.get(key)
+    if e is None:
+        return False
+    if username or password:
+        e["au"], e["ap"] = _enc(username), _enc(password)
+    else:
+        e.pop("au", None)
+        e.pop("ap", None)
+    _save(store)
+    return True
 
 
 def fingerprint(username, password):

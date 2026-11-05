@@ -27,6 +27,7 @@ from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 import airos
 import edgeswitch
+import hikswitch
 import identify
 import swos
 import hikvision
@@ -180,6 +181,22 @@ def test_edgeswitch(ip, username, password):
         return _r("unreachable" if e.kind == "unreachable" else "untestable", "EdgeSwitch API", str(e)[:160])
 
 
+def test_hikswitch(ip, username, password):
+    """ONE login on the switch's API (AuthInfo + Login) and its summary — the same
+    calls the switch monitor makes. A wrong password counts towards the switch's
+    lock-out, so this never retries."""
+    try:
+        with hikswitch.Session(ip, username, password, timeout=(5, 12)) as s:
+            summ = s.svc("PortMgr", "GetSwitchSumInfo") or {}
+        return _r("ok", "Hikvision switch API", "The switch accepted the login",
+                  model=str(summ.get("model") or ""), name=str(summ.get("deviceName") or ""))
+    except hikswitch.HikSwitchError as e:
+        if e.kind == "auth_failed":
+            return _r("auth_failed", "Hikvision switch API",
+                      str(e)[:1].upper() + str(e)[1:200] + " (use the login of the switch's own web page)")
+        return _r("unreachable" if e.kind == "unreachable" else "untestable", "Hikvision switch API", str(e)[:160])
+
+
 def test_swos(ip, username, password):
     """One read of the SwOS system page — the same call the switch monitor makes.
     Its factory login is admin with a blank password."""
@@ -219,6 +236,8 @@ def plan(dev, ports):
            or bool(dev.get("sadp")) or bool(identify.hik_kind_of(dev)))
     mikrotik = "mikrotik" in v or "routerboard" in v or "routeros" in v
     steps = []
+    if hikswitch.is_hikswitch(dev):
+        return ["hikswitch"]          # its web page is a login form; ISAPI isn't there
     if hik and web:
         steps.append("hikvision")
     if web and swos.is_swos(dev):
@@ -257,6 +276,8 @@ def test(dev, username, password):
             res = test_edgeswitch(ip, username, password)
         elif step == "swos":
             res = test_swos(ip, username, password)
+        elif step == "hikswitch":
+            res = test_hikswitch(ip, username, password)
         elif step == "ssh":
             res = test_ssh(ip, username, password)
         elif step == "mikrotik":

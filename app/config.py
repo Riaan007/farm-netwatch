@@ -115,6 +115,10 @@ DEFAULTS = {
         # streams on cameras with their own saved login — each change read back, logged in
         # History and undoable. Off by default: the first switch that WRITES to a camera.
         "camera_manage": False,
+        # Risky camera work (hiksecurity.py): login lock, SSH, UPnP and the guided Netwatch
+        # account (an Operator user `netwatch`; the admin login is kept aside for risky jobs
+        # only). Needs camera_manage too, a typed confirmation word, one job at a time.
+        "camera_risky": False,
     },
     # Camera pictures (campics.py): each camera's small picture is read again
     # every refresh_min on the LAN (0 = only when someone looks), and its last

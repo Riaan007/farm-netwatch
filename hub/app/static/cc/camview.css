@@ -226,3 +226,22 @@
 .cv-wm-D { background: #60a5fa; }
 .cv-wm-P { background: #a3e635; }
 .cv-recset { margin: 0 0 12px; }
+/* Phase 4d: logins and security */
+.cv-recset > .cv-set { margin: 0 0 12px; }
+.cv-secinfo { margin: 0 0 12px; }
+.cv-secwarn { margin: 0 0 10px; padding: 8px 12px 8px 28px; border-radius: 10px; border: 1px solid rgba(251, 191, 36, .4); background: rgba(251, 191, 36, .07); color: #fde68a; font-size: 13px; }
+.cv-secwarn li { margin: 2px 0; }
+.cv-secdl { display: grid; grid-template-columns: minmax(110px, max-content) 1fr; gap: 4px 14px; margin: 0 0 10px; font-size: 13px; }
+.cv-secdl dt { color: var(--cv-muted); }
+.cv-secdl dd { margin: 0; overflow-wrap: anywhere; }
+.cv-word { width: 9rem; padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(251, 191, 36, .5); background: #050b16; color: var(--cv-ink); font: inherit; letter-spacing: .08em; text-transform: uppercase; }
+@media (max-width: 520px) { .cv-secdl { grid-template-columns: 1fr; } .cv-secdl dt { margin-top: 6px; } }
+/* Phase 4d part 2: recorder channels, password job */
+.cv-chwrap { overflow-x: auto; margin: 0 0 10px; }
+.cv-ch { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cv-ch th, .cv-ch td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--cv-line); vertical-align: top; }
+.cv-ch th { color: var(--cv-muted); font-weight: 600; }
+.cv-chact { white-space: nowrap; }
+.cv-chact .cv-btn { height: 28px; padding: 0 9px; margin: 0 4px 4px 0; }
+.cv-pwrow { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.cv-pwin, .cv-sel { min-width: 0; flex: 1 1 10rem; max-width: 16rem; height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--cv-line2); background: #050b16; color: var(--cv-ink); font: inherit; }
