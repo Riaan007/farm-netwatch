@@ -29,8 +29,22 @@ import siteapi
 
 IDLE_TTL = 600
 MAX_TTL = 8 * 3600
+CONNECT_TIMEOUT = 10      # reaching the far end only, NOT a limit on a quiet session
 BUF = 65536
 WEB_PORTS = {80, 81, 443, 3000, 8000, 8080, 8081, 8443, 9000}
+
+
+def _relay_socket(sk):
+    """Ready a relay socket for a long session: no timeout (a quiet spell is not a
+    dead link) and TCP keepalive instead, which notices a vanished peer in ~2 min."""
+    sk.settimeout(None)
+    try:
+        sk.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for name, val in (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 15), ("TCP_KEEPCNT", 4)):
+            if hasattr(socket, name):
+                sk.setsockopt(socket.IPPROTO_TCP, getattr(socket, name), val)
+    except OSError:
+        pass
 
 
 class TunnelError(Exception):
@@ -98,10 +112,15 @@ class Tunnel:
 
     def _handle(self, client):
         try:
-            upstream = socket.create_connection((self.dst_ip, self.dst_port), timeout=10)
+            upstream = socket.create_connection((self.dst_ip, self.dst_port),
+                                                timeout=CONNECT_TIMEOUT)
         except OSError:
             client.close()
             return
+        # The timeout above is for the connect only. Left on the socket it was a read
+        # timeout too (a device quiet for 10 s was cut: WinBox, SSH, an idle page).
+        for sk in (client, upstream):
+            _relay_socket(sk)
         with self._lock:
             self._socks.update((client, upstream))
         self.last_active = time.time()
@@ -148,6 +167,10 @@ class Tunnel:
             socks = list(self._socks)
             self._socks.clear()
         for sk in socks:
+            try:
+                sk.shutdown(socket.SHUT_RDWR)   # wakes a pump blocked in recv();
+            except OSError:                     # close() alone does not on Linux
+                pass
             try:
                 sk.close()
             except OSError:
