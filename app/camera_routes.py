@@ -159,3 +159,37 @@ def api_camera_account(key):
                                         confirm_text=str(b.get("confirm_text") or "")[:20]))
     except hiksettings.SettingsError as e:
         return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/channels", methods=["GET", "POST"])
+@guard
+def api_recorder_channels(key):
+    """A recorder's channels (hikchannels.py). GET: each channel's camera, address,
+    login user and state, matched to Netwatch's devices, and the cameras Netwatch could
+    add. POST {action: fix_login|move|add|remove, ch, camera, ip, port, confirm_text}:
+    the channel's password always comes from Netwatch's saved admin login."""
+    try:
+        if request.method == "GET":
+            return jsonify(settings.channels(key))
+        b = request.get_json(force=True, silent=True) or {}
+        return jsonify(settings.channel_do(key, str(b.get("action") or ""), ch=b.get("ch"), camera=b.get("camera"),
+                                           ip=b.get("ip"), port=b.get("port"), who=_who(),
+                                           confirm_text=str(b.get("confirm_text") or "")[:20]))
+    except hiksettings.SettingsError as e:
+        return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/password", methods=["GET", "POST"])
+@guard
+def api_camera_password(key):
+    """The password job. GET: the camera's admin user and the recorder channels that
+    would get the new password. POST {new, again, confirm_text}: change it on the
+    camera and those channels; Netwatch saves it. The password is never logged."""
+    try:
+        if request.method == "GET":
+            return jsonify(settings.password_plan(key))
+        b = request.get_json(force=True, silent=True) or {}
+        return jsonify(settings.password(key, str(b.get("new") or "")[:64], str(b.get("again") or "")[:64],
+                                         who=_who(), confirm_text=str(b.get("confirm_text") or "")[:20]))
+    except hiksettings.SettingsError as e:
+        return _err(e)

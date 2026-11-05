@@ -83,6 +83,9 @@ class Device:
         self.refuse_rights = False           # answer the rights PUT with an error
         self.deletes = []                    # did each user DELETE carry ?loginPassword=
         self.rights_pad = 0                  # bytes of padding in the rights list (a big recorder)
+        self.chan_max = 8                    # channel numbers a recorder takes
+        self.chan_calls = []                 # (method, path, body) of every channel change
+        self.known_cams = []                 # Devices a new channel address can point at
         self.hide_new_rights = False         # leave new users out of the rights list
         self.nonce = secrets.token_hex(8)
         self.srv = None
@@ -325,6 +328,17 @@ class Device:
             del self.accounts[name]
             self.rights.pop(name, None)
             return self._send(req, 200, self.OK)
+        if m and req.command == "PUT":
+            name = next((n for n, a in self.accounts.items() if a["id"] == int(m.group(1))), None)
+            lp = tag("loginPassword")
+            if lp is not None and lp != admin_pw:
+                return self._bad(req, 401, "loginPasswordError")
+            if self.need_login_pw and lp is None:
+                return self._bad(req, 401, "loginPasswordError")
+            if name is None or not tag("password"):
+                return self._bad(req, 400, "badParameters")
+            self.accounts[name]["pw"] = tag("password")
+            return self._send(req, 200, self.OK)
         by_id = {a["id"]: n for n, a in self.accounts.items()}
         if path == "/ISAPI/Security/UserPermission" and req.command == "GET":
             items = ""
@@ -355,6 +369,70 @@ class Device:
                     self.rights[n][x] = v.group(1)
             return self._send(req, 200, self.OK)
         return self._bad(req, 404, "notSupport")
+
+    # ---- recorder channels (hikchannels) ----
+    # a channel {id, name, ip, online} may also carry {user, pw, port, cam: Device}: then it
+    # is connected exactly when cam takes that login (cam.accounts, or cam.user/password)
+    def _chan_on(self, c):
+        cam = c.get("cam")
+        if cam is None:
+            return bool(c.get("online", True))
+        acc = (cam.accounts or {}).get(c.get("user")) if cam.accounts is not None else (
+            {"pw": cam.password} if c.get("user") == cam.user else None)
+        return bool(acc and acc["pw"] == c.get("pw"))
+
+    def _chan_xml(self, c):
+        return (f"<id>{c['id']}</id><name>{c.get('name', '')}</name><sourceInputPortDescriptor>"
+                f"<proxyProtocol>HIKVISION</proxyProtocol><addressingFormatType>ipaddress</addressingFormatType>"
+                f"<ipAddress>{c['ip']}</ipAddress><managePortNo>{c.get('port', 8000)}</managePortNo><srcInputPort>1</srcInputPort>"
+                f"<userName>{c.get('user', 'admin')}</userName><streamType>auto</streamType><model>{c.get('model', '')}</model>"
+                f"<serialNumber>X1</serialNumber></sourceInputPortDescriptor><devIndex>AB</devIndex>")
+
+    def _chan_admin(self, req, path):
+        import re as _re
+        base = "/ISAPI/ContentMgmt/InputProxy/channels"
+        body = getattr(req, "body", b"").decode()
+        ns = 'xmlns="http://www.hikvision.com/ver20/XMLSchema"'
+
+        def tag(t):
+            m = _re.search(rf"<{t}>([^<]*)</{t}>", body)
+            return m.group(1) if m else None
+        if path == base + "/capabilities":
+            return self._send(req, 200, f'<InputProxyChannelListCap {ns}><InputProxyChannel><id min="1" max="{self.chan_max}"/></InputProxyChannel></InputProxyChannelListCap>')
+        if path == base and req.command == "POST":
+            self.chan_calls.append(("POST", path, body))
+            cid, ip, pw = tag("id"), tag("ipAddress"), tag("password")
+            if not cid or not ip or not pw or any(c["id"] == cid for c in self.channels) or "<model>" in body:
+                return self._bad(req, 400, "badParameters")
+            cam = next((d for d in self.known_cams if d.addr == ip), None)
+            self.channels.append({"id": cid, "name": tag("name") or "", "ip": ip, "user": tag("userName"), "pw": pw,
+                                  "port": int(tag("managePortNo") or 8000), "cam": cam, "online": False})
+            return self._send(req, 200, self.OK)
+        m = _re.fullmatch(base + r"/(\d+)(/status)?", path)
+        if not m:
+            return None
+        c = next((x for x in self.channels if x["id"] == m.group(1)), None)
+        if c is None:
+            return self._bad(req, 404, "notSupport")
+        if m.group(2):
+            on = self._chan_on(c)
+            return self._send(req, 200, f"<InputProxyChannelStatus {ns}><id>{c['id']}</id><online>{str(on).lower()}</online></InputProxyChannelStatus>")
+        if req.command == "GET":
+            return self._send(req, 200, f"<InputProxyChannel {ns} version=\"2.0\">{self._chan_xml(c)}</InputProxyChannel>")
+        if req.command == "PUT":
+            self.chan_calls.append(("PUT", path, body))
+            if "<password>" not in body or "<serialNumber>" in body:
+                return self._bad(req, 400, "badXmlContent")       # never blank a channel's password
+            c.update(ip=tag("ipAddress") or c["ip"], user=tag("userName"), pw=tag("password"),
+                     port=int(tag("managePortNo") or 8000))
+            if c.get("cam") is not None and c["cam"].addr != c["ip"]:
+                c["cam"] = next((d for d in self.known_cams if d.addr == c["ip"]), None)
+            return self._send(req, 200, self.OK)
+        if req.command == "DELETE":
+            self.chan_calls.append(("DELETE", path, body))
+            self.channels.remove(c)
+            return self._send(req, 200, self.OK)
+        return self._bad(req, 405, "notSupport")
 
     def load_settings(self, folder):
         """Serve the saved real setting documents (tests/fixtures/hik_settings)."""
@@ -417,14 +495,15 @@ class Device:
                 return self._send(req, 200, jpeg(*self.sub, pad=25000), "image/jpeg")
             return self._send(req, 200, jpeg(*self.main, pad=900000), "image/jpeg")
         if self.channels is not None:
+            hit = self._chan_admin(req, path)
+            if hit is not None:
+                return hit
             if path == "/ISAPI/ContentMgmt/InputProxy/channels":
-                items = "".join(
-                    f"<InputProxyChannel><id>{c['id']}</id><name>{c.get('name', '')}</name><sourceInputPortDescriptor>"
-                    f"<ipAddress>{c['ip']}</ipAddress><model>{c.get('model', '')}</model></sourceInputPortDescriptor>"
-                    f"</InputProxyChannel>" for c in self.channels)
+                items = "".join(f"<InputProxyChannel>{self._chan_xml(c)}</InputProxyChannel>" for c in self.channels)
                 return self._send(req, 200, f'<InputProxyChannelList xmlns="http://www.hikvision.com/ver20/XMLSchema">{items}</InputProxyChannelList>')
             if path == "/ISAPI/ContentMgmt/InputProxy/channels/status":
-                items = "".join(f"<InputProxyChannelStatus><id>{c['id']}</id><online>{str(c.get('online', True)).lower()}</online>"
+                items = "".join(f"<InputProxyChannelStatus><id>{c['id']}</id><online>{str(self._chan_on(c)).lower()}</online>"
+                                f"<chanDetectResult>{'connect' if self._chan_on(c) else 'passwordError'}</chanDetectResult>"
                                 f"</InputProxyChannelStatus>" for c in self.channels)
                 return self._send(req, 200, f"<InputProxyChannelStatusList>{items}</InputProxyChannelStatusList>")
             for c in self.channels:

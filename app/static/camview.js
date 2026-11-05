@@ -233,13 +233,14 @@
         if (!p) {
           const g = groups().find((x) => String(x.id) === ph.dataset.g); if (!g) return;
           const host = document.createElement("div"); host.className = "cv-recset";
-          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section>`;
-          const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2] = host.children;
+          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>`;
+          const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2, h3] = host.children;
           const a = settingsPanel(h1, base, { key: ph.dataset.recset }, () => {},
             { group: "recorder", title: "⚙ Recorder settings", sub: "what it does when its disks are full" });
           const b = settingsPanel(h2, base, { key: ph.dataset.recset }, () => {},
             { group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" });
-          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); } } };
+          const cpan = channelsPanel(h3, base);
+          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); } } };
           st.recSet.set(id, p);
         }
         ph.replaceWith(p.host);
@@ -776,6 +777,15 @@
           ? `<div class="cv-setact"><button type="button" class="cv-btn" data-acct="remove">Remove the Netwatch account</button><span class="cv-dimtx">Netwatch goes back to the admin login.</span></div>`
           : `<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-acct="create">Set up the Netwatch account</button><span class="cv-dimtx">A user called netwatch with a long random password nobody sees. Netwatch then logs in with it instead of admin, so it can never lock admin out.</span></div>`;
       }
+      if (d.can_change && !d.recorder && !st.pw) h += `<div class="cv-setact"><button type="button" class="cv-btn" data-a="pw-open">Change the admin password…</button><span class="cv-dimtx">Changes it on the camera and on every recorder channel that uses it, then saves it in Netwatch.</span></div>`;
+      if (st.pw) {
+        const pl = st.pw;
+        const recs = (pl.recorders || []).map((r) => `<li>${esc(r.name)}: ${r.channels.length ? "channel " + r.channels.map(esc).join(", ") + " gets the new password" : "no channel uses this login"}${(r.other_user || []).length ? ` · <span class="cv-dimtx">channel ${r.other_user.map((x) => esc(x.channel) + " uses " + esc(x.user)).join(", ")} — not changed</span>` : ""}</li>`).join("");
+        h += `<div class="cv-setprev"><p><b>Change the password of <i>${esc(pl.user)}</i> on this camera</b></p>
+          <ul class="cv-chglist"><li>The camera's login lock is paused while the recorder catches up, then switched back on.</li>${recs || "<li>No recorder records this camera with that login.</li>"}<li>Netwatch saves the new password the moment the camera takes it. It is never shown or logged.</li></ul>
+          <div class="cv-pwrow"><input type="password" class="cv-pwin" data-pw1 autocomplete="new-password" placeholder="New password" aria-label="New password" maxlength="${esc(pl.max)}"><input type="password" class="cv-pwin" data-pw2 autocomplete="new-password" placeholder="Again" aria-label="New password again" maxlength="${esc(pl.max)}"></div>
+          <p class="cv-dimtx">${esc(pl.min)}–${esc(pl.max)} characters; at least two of small letters, capitals, digits and the symbols - . _ ~ ! $ ' ( ) * , / : ; @ [ ]</p>${wordBox("pw-go")}</div>`;
+      }
       if (st.acct) h += `<div class="cv-setprev"><p><b>${st.acct === "create" ? `Set up the Netwatch account on this ${dev}?` : `Remove the Netwatch account from this ${dev}?`}</b></p>${st.acct === "create"
         ? `<ul class="cv-chglist"><li>Adds an Operator user <b>netwatch</b> with rights for pictures, health, settings, restart and PTZ — not firmware.</li><li>Tests that it logs in, then Netwatch uses it from now on.</li><li>The admin login stays saved, for risky jobs only. If anything fails, the new user is removed again.</li></ul>`
         : `<p>The netwatch user is deleted and Netwatch logs in as admin again.</p>`}${wordBox("acct-go")}</div>`;
@@ -786,6 +796,21 @@
       return `<p class="cv-dimtx">Type <b>${esc(w)}</b> to go ahead.</p><div class="cv-setact"><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type ${esc(w)}"><button type="button" class="cv-btn cv-on" data-a="${go}">Go ahead</button><button type="button" class="cv-btn" data-a="unpreview">Back</button></div>`;
     }
     const word = () => ((body.querySelector("[data-word]") || {}).value || "").trim().toUpperCase();
+    async function pwOpen() {
+      say("Finding the recorder channels that use this login…", "");
+      try { st.pw = await jcall(`${base}/password`); st.acct = null; st.msg = null; paint(); }
+      catch (e) { say(e.message, "cv-warn"); }
+    }
+    async function pwGo() {
+      if (st.busy) return;
+      const v1 = (body.querySelector("[data-pw1]") || {}).value || "", v2 = (body.querySelector("[data-pw2]") || {}).value || "";
+      if (!v1 || v1 !== v2) return say("Type the same new password twice.", "cv-warn");
+      st.busy = true; say("Changing the password — the camera first, then the recorder; this can take a minute…", "");
+      try {
+        const j = await jcall(`${base}/password`, { method: "POST", body: JSON.stringify({ new: v1, again: v2, confirm_text: word() }) });
+        st.busy = false; st.pw = null; await load(); say(j.message || "Done.", j.ok ? "cv-okt" : "cv-warn");
+      } catch (e) { st.busy = false; say(e.message, "cv-warn"); }
+    }
     async function account(action) {
       if (st.busy) return;
       st.busy = true; say(action === "create" ? "Setting up the Netwatch account — this takes a few seconds…" : "Removing the Netwatch account…", "");
@@ -885,11 +910,70 @@
       else if (b.dataset.undo) undo(b.dataset.undo, b);
       else if (b.dataset.acct) { st.acct = b.dataset.acct; st.preview = null; st.msg = null; paint(); }
       else if (b.dataset.a === "acct-go") account(st.acct);
+      else if (b.dataset.a === "pw-open") pwOpen();
+      else if (b.dataset.a === "pw-go") pwGo();
       else if (b.dataset.a === "reload") { st.msg = null; load(); }
       else if (b.dataset.a === "reset") { st.edits = {}; st.draft = {}; st.preview = null; st.msg = null; paint(); }
       else if (b.dataset.a === "apply") apply(false);
       else if (b.dataset.a === "confirm") apply(true);
-      else if (b.dataset.a === "unpreview") { st.preview = null; st.acct = null; paint(); }
+      else if (b.dataset.a === "unpreview") { st.preview = null; st.acct = null; st.pw = null; paint(); }
+    });
+    return { destroy() { st.dead = true; } };
+  }
+
+  // ---- a recorder's cameras (Phase 4d part 2: app/hikchannels.py) -----------------------
+  // Every channel login comes from Netwatch's saved admin login for that camera; nobody
+  // types a camera password here. Fix login / move / remove / add are risky: typed word.
+  function channelsPanel(el, base) {
+    const st = { data: null, dead: false, busy: false, ask: null, msg: null };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>📹 Cameras on this recorder</h3><span class="cv-dimtx">channels · their logins · add, move, fix or remove</span></summary><div class="cv-setb" data-b></div></details>`;
+    const det = el.querySelector("details"), body = el.querySelector("[data-b]");
+    det.addEventListener("toggle", () => { if (det.open && !st.data) load(); });
+    async function load() {
+      body.innerHTML = `<p class="cv-dimtx">Reading the recorder's channels…</p>`;
+      try { st.data = await jcall(`${base}/channels`); if (!st.dead) paint(); }
+      catch (e) { if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.status === 404 || e.status === 501 ? "This site's Netwatch is too old for this — update it." : e.message)}</p>`; }
+    }
+    const stateOf = (r) => r.online ? `<span class="cv-okt">connected</span>` : `<span class="cv-warn">${esc(r.state || "not connected")}</span>`;
+    function paint() {
+      const d = st.data, can = d.can_change;
+      let h = can ? "" : `<p class="cv-setmsg">${esc(d.why_not)} You can look, not change.</p>`;
+      h += `<div class="cv-chwrap"><table class="cv-ch"><thead><tr><th>Ch</th><th>Camera</th><th>Address</th><th>Login</th><th>State</th>${can ? "<th></th>" : ""}</tr></thead><tbody>${d.channels.map((r) => `<tr>
+        <td>${esc(r.id)}</td><td>${esc(r.name)}${r.netwatch && r.netwatch.name !== r.name ? `<br><small class="cv-dimtx">Netwatch: ${esc(r.netwatch.name)}</small>` : ""}</td>
+        <td>${esc(r.ip)}${r.port && r.port !== 8000 ? ":" + esc(r.port) : ""}</td><td>${esc(r.user)}${r.login_known ? "" : ` <small class="cv-dimtx">(no login in Netwatch)</small>`}</td><td>${stateOf(r)}</td>
+        ${can ? `<td class="cv-chact">${r.login_known ? `<button type="button" class="cv-btn" data-ask="fix_login" data-ch="${esc(r.id)}">Fix login</button>` : ""}<button type="button" class="cv-btn" data-ask="move" data-ch="${esc(r.id)}">Move</button><button type="button" class="cv-btn" data-ask="remove" data-ch="${esc(r.id)}">Remove</button></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
+      if (can && d.addable.length && d.free) h += `<div class="cv-setact"><select class="cv-sel" data-addcam>${d.addable.map((c) => `<option value="${esc(c.key)}">${esc(c.name)} (${esc(c.ip)})</option>`).join("")}</select><button type="button" class="cv-btn" data-ask="add">Add to this recorder</button><span class="cv-dimtx">${esc(d.free)} free channel${d.free === 1 ? "" : "s"}</span></div>`;
+      if (st.ask) {
+        const a = st.ask, r = d.channels.find((x) => x.id === a.ch) || {};
+        const what = a.action === "fix_login" ? `Give channel ${esc(a.ch)} (${esc(r.name)}) the login Netwatch has for ${esc(r.ip)} (${esc(r.login_user)})?`
+          : a.action === "remove" ? `Remove channel ${esc(a.ch)} (${esc(r.name)}, ${esc(r.ip)}) from this recorder?`
+          : a.action === "add" ? `Add ${esc(a.label)} to this recorder, with the login Netwatch has for it?`
+          : `Move channel ${esc(a.ch)} (${esc(r.name)}) to another camera address`;
+        h += `<div class="cv-setprev"><p><b>${what}</b></p>${a.action === "remove" ? `<p class="cv-warn">The recorder stops recording this camera. Its old footage stays until it is overwritten.</p>` : ""}${a.action === "move" ? `<div class="cv-pwrow"><input class="cv-pwin" data-mip placeholder="New address" value="${esc(r.ip)}" aria-label="New address"><input class="cv-pwin" data-mport placeholder="Port" value="${esc(r.port || 8000)}" aria-label="Port" style="width:6rem"></div><p class="cv-dimtx">Netwatch gives the channel the login it has for the camera at the new address.</p>` : ""}
+          <p class="cv-dimtx">Type <b>${esc(d.confirm_word)}</b> to go ahead.</p><div class="cv-setact"><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type ${esc(d.confirm_word)}"><button type="button" class="cv-btn cv-on" data-go>Go ahead</button><button type="button" class="cv-btn" data-back>Back</button></div></div>`;
+      }
+      h += `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      body.innerHTML = h;
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    async function go() {
+      if (st.busy) return;
+      const a = st.ask, w = ((body.querySelector("[data-word]") || {}).value || "").trim().toUpperCase();
+      const b = { action: a.action, ch: a.ch, camera: a.camera, confirm_text: w };
+      if (a.action === "move") { b.ip = (body.querySelector("[data-mip]") || {}).value; b.port = (body.querySelector("[data-mport]") || {}).value; }
+      st.busy = true; say("Working on the recorder — it can take up to a minute for the channel to connect…", "");
+      try {
+        const j = await jcall(`${base}/channels`, { method: "POST", body: JSON.stringify(b) });
+        st.busy = false; st.ask = null; await load(); say(j.message || "Done.", j.ok ? "cv-okt" : "cv-warn");
+      } catch (e) { st.busy = false; say(e.message, "cv-warn"); }
+    }
+    body.addEventListener("click", (e) => {
+      const bt = e.target.closest("button"); if (!bt || bt.disabled) return;
+      if (bt.dataset.ask === "add") { const s = body.querySelector("[data-addcam]"); st.ask = { action: "add", camera: s.value, label: s.options[s.selectedIndex].text }; st.msg = null; paint(); }
+      else if (bt.dataset.ask) { st.ask = { action: bt.dataset.ask, ch: +bt.dataset.ch }; st.msg = null; paint(); }
+      else if (bt.hasAttribute("data-go")) go();
+      else if (bt.hasAttribute("data-back")) { st.ask = null; paint(); }
     });
     return { destroy() { st.dead = true; } };
   }

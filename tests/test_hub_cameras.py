@@ -180,6 +180,18 @@ class HubCameras(unittest.TestCase):
         anon = server.app.test_client()
         self.assertEqual(anon.post("/api/hub/sites/farm/cameras/aa:01/ptz", json=body).status_code, 401)
 
+    def test_channels_and_the_password_job_are_forwarded(self):
+        self.c.get("/api/hub/sites/farm/cameras/aa:09/channels")
+        self.assertTrue(FakeSite.calls[-1][0].startswith("/api/cameras/aa%3A09/channels"))
+        body = {"action": "fix_login", "ch": 3, "confirm_text": "CHANGE"}
+        r = self.c.post("/api/hub/sites/farm/cameras/aa:09/channels", json=body)
+        self.assertEqual((FakeSite.calls[-1][0], r.get_json()["echo"]), ("/api/cameras/aa%3A09/channels", body))
+        body = {"new": "x", "again": "x", "confirm_text": "CHANGE"}
+        r = self.c.post("/api/hub/sites/farm/cameras/aa:01/password", json=body)
+        self.assertEqual((FakeSite.calls[-1][0], r.get_json()["echo"]), ("/api/cameras/aa%3A01/password", body))
+        anon = server.app.test_client()
+        self.assertEqual(anon.post("/api/hub/sites/farm/cameras/aa:01/password", json=body).status_code, 401)
+
     def test_the_account_job_is_forwarded(self):
         body = {"action": "create", "confirm_text": "CHANGE"}
         r = self.c.post("/api/hub/sites/farm/cameras/aa:01/account", json=body)
