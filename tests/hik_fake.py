@@ -15,6 +15,7 @@ import base64
 import hashlib
 import secrets
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -464,6 +465,45 @@ class Device:
             return self._send(req, 200, "<ResponseStatus><statusCode>7</statusCode><statusString>Reboot Required</statusString></ResponseStatus>")
         return self._send(req, 405, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
 
+    # ---- firmware (hikfw) ----
+    # fw_mode: "ask" (answers "Reboot Required"), "self" (answers OK and restarts by
+    # itself), "refuse" (languageMismatch), "keep" (OK, restart, but still the old version)
+    def _fw(self, req, path):
+        now = time.time()
+        if now < getattr(self, "down_until", 0):
+            return self._sent(req, 503, "<down/>")
+        if path == "/ISAPI/System/deviceInfo":
+            fw, build = getattr(self, "fw", ("V5.7.3", "build 220112"))
+            return self._sent(req, 200, f'<DeviceInfo xmlns="http://www.hikvision.com/ver20/XMLSchema"><model>{getattr(self, "model", "DS-2CD2046G2-IU")}</model>'
+                                        f"<firmwareVersion>{fw}</firmwareVersion><firmwareReleasedDate>{build}</firmwareReleasedDate></DeviceInfo>")
+        if path == "/ISAPI/System/upgradeStatus":
+            return self._sent(req, 200, "<upgradeStatus><upgrading>false</upgrading><percent>100</percent></upgradeStatus>")
+        if path == "/ISAPI/System/reboot" and req.command == "PUT":
+            self.reboots = getattr(self, "reboots", 0) + 1
+            self._go_down()
+            return self._sent(req, 200, "<ResponseStatus><statusCode>1</statusCode></ResponseStatus>")
+        if path == "/ISAPI/System/updateFirmware" and req.command == "PUT":
+            body = getattr(req, "body", b"")
+            self.fw_loaded = getattr(self, "fw_loaded", []) + [len(body)]
+            mode = getattr(self, "fw_mode", "ask")
+            if mode == "refuse":
+                return self._sent(req, 400, "<ResponseStatus><statusCode>6</statusCode><subStatusCode>languageMismatch</subStatusCode></ResponseStatus>")
+            self._pending_fw = getattr(self, "new_fw", ("V5.7.15", "build 230425")) if mode != "keep" else None
+            if mode == "self":
+                threading.Timer(0.3, self._go_down).start()
+                return self._sent(req, 200, "<ResponseStatus><statusCode>1</statusCode></ResponseStatus>")
+            return self._sent(req, 200, "<ResponseStatus><statusCode>7</statusCode><statusString>Reboot Required</statusString></ResponseStatus>")
+        return None
+
+    def _sent(self, *a, **k):
+        self._send(*a, **k)
+        return True
+
+    def _go_down(self):
+        self.down_until = time.time() + getattr(self, "down_s", 0.6)
+        if getattr(self, "_pending_fw", None):
+            self.fw, self._pending_fw = self._pending_fw, None
+
     def load_settings(self, folder):
         """Serve the saved real setting documents (tests/fixtures/hik_settings)."""
         import os as _os
@@ -492,6 +532,9 @@ class Device:
             return self._users(req, path)
         if "/PTZCtrl/" in path or "/PTZCtrlProxy/" in path:
             return self._ptz(req, path)
+        hit = self._fw(req, path)
+        if hit is not None or path in ("/ISAPI/System/reboot", "/ISAPI/System/updateFirmware"):
+            return hit
         if path == "/ISAPI/System/configurationData":
             return self._cfgfile(req, q)
         if self.settings is not None and path in self.settings:

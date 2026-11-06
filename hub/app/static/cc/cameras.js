@@ -52,6 +52,7 @@
       apiBase: (_g, c) => `/api/hub/sites/${enc(siteId)}/cameras/${enc(c.key)}`,
       stdBase: () => `/api/hub/sites/${enc(siteId)}`,
       backupBase: (_g, c) => `/api/hub/sites/${enc(siteId)}/cameras/${enc(c.key)}/backups`,
+      fwBase: (_g, c) => `/api/hub/sites/${enc(siteId)}/cameras/${enc(c.key)}/firmware`, fwLib: "/api/hub/firmware",
       deviceAction: dev ? { label: "Device details", run: () => CC.openDevice(siteId, key) } : null,
     });
   }
@@ -65,17 +66,19 @@
       const p = CC.params(), sid = p.get("site"), key = p.get("key");
       CC.setCrumbs([{ label: "Overview", href: "#/" }, { label: "Cameras", href: "#/cameras" }, ...(key ? [{ label: "Camera" }] : [])]);
       view().innerHTML = (key ? "" : `<div class="ph"><div><div class="eyebrow">Fleet</div><h1>Cameras</h1><p>A current picture from every camera at every site, read by each site's Pi with the camera's own login or through its recorder. Click a picture for the camera page. A camera that is off shows its last saved picture.</p></div></div>`)
-        + `<section id="cm-host"></section>`;
+        + (key ? "" : `<section class="cv cv-set" id="cm-fwlib"></section>`) + `<section id="cm-host"></section>`;
       if (key && sid) {
         const ctl = await openOne($("#cm-host"), sid, key, () => CC.go("#/cameras"), alive);
         if (alive()) this.ctl = ctl; else if (ctl) ctl.destroy();
         return;
       }
       const sites = () => S.sites.filter((s) => s.enabled);
+      this.lib = CamView.firmwareLibrary($("#cm-fwlib"), "/api/hub/firmware", { devHref: (x) => `#/cameras?site=${enc(x.site)}&key=${enc(x.key)}` });
       this.ctl = CamView.mount($("#cm-host"), {
         groups: () => sites().map(groupOf), picUrl, fleet: true, storeKey: "cc.cams",
         apiBase: (g, c) => `/api/hub/sites/${enc(g.id)}/cameras/${enc(c.key)}`,
         backupBase: (g, c) => `/api/hub/sites/${enc(g.id)}/cameras/${enc(c.key)}/backups`,
+        fwBase: (g, c) => `/api/hub/sites/${enc(g.id)}/cameras/${enc(c.key)}/firmware`, fwLib: "/api/hub/firmware",
         onOpen: (g, c) => CC.go(`#/cameras?site=${enc(g.id)}&key=${enc(c.key)}`),
       });
       const refresh = async () => {
@@ -93,6 +96,8 @@
     leave() {
       this.gen++;
       if (this.ctl) this.ctl.destroy();
+      if (this.lib) this.lib.destroy();
+      this.lib = null;
       this.ctl = null;
       clearInterval(this.timer); this.timer = null;
     },
@@ -117,6 +122,7 @@
         apiBase: (_g, c) => `/api/hub/sites/${enc(s.id)}/cameras/${enc(c.key)}`,
         stdBase: () => `/api/hub/sites/${enc(s.id)}`,
         backupBase: (_g, c) => `/api/hub/sites/${enc(s.id)}/cameras/${enc(c.key)}/backups`,
+        fwBase: (_g, c) => `/api/hub/sites/${enc(s.id)}/cameras/${enc(c.key)}/firmware`, fwLib: "/api/hub/firmware",
         onOpen: (_g, c) => CC.go(`#/site/${enc(s.id)}/cameras?key=${enc(c.key)}`),
       });
       const refresh = async (force) => {

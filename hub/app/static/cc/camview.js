@@ -249,15 +249,17 @@
         if (!p) {
           const g = groups().find((x) => String(x.id) === ph.dataset.g); if (!g) return;
           const host = document.createElement("div"); host.className = "cv-recset";
-          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>${opts.backupBase ? `<section class="cv-set"></section>` : ""}`;
+          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>${opts.backupBase ? `<section class="cv-set"></section>` : ""}${opts.fwBase ? `<section class="cv-set" data-fw></section>` : ""}`;
           const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2, h3, h4, h5] = host.children;
+          const fh = host.querySelector("[data-fw]");
+          const fpan = fh ? firmwarePanel(fh, opts.fwBase(g, { key: ph.dataset.recset, kind: "recorder" }), opts.fwLib) : null;
           const a = settingsPanel(h1, base, { key: ph.dataset.recset }, () => {},
             { group: "recorder", title: "⚙ Recorder settings", sub: "what it does when its disks are full" });
           const b = settingsPanel(h2, base, { key: ph.dataset.recset }, () => {},
             { group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" });
           const cpan = channelsPanel(h3, base), xpan = explorerPanel(h4, base);
-          const bpan = h5 ? backupsPanel(h5, opts.backupBase(g, { key: ph.dataset.recset, kind: "recorder" })) : null;
-          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); xpan.destroy(); if (bpan) bpan.destroy(); } } };
+          const bpan = h5 && opts.backupBase ? backupsPanel(h5, opts.backupBase(g, { key: ph.dataset.recset, kind: "recorder" })) : null;
+          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); xpan.destroy(); if (bpan) bpan.destroy(); if (fpan) fpan.destroy(); } } };
           st.recSet.set(id, p);
         }
         ph.replaceWith(p.host);
@@ -420,7 +422,7 @@
           </dl>
         </div>
       </div>
-      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section><section class="cv-set" data-isapi></section>${opts.backupBase ? `<section class="cv-set" data-bak></section>` : ""}` : ""}${opts.stdBase && similarOf(g, c).length ? `<section class="cv-set" data-copy></section>` : ""}` : ""}
+      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section><section class="cv-set" data-isapi></section>${opts.backupBase ? `<section class="cv-set" data-bak></section>` : ""}${opts.fwBase ? `<section class="cv-set" data-fw></section>` : ""}` : ""}${opts.stdBase && similarOf(g, c).length ? `<section class="cv-set" data-copy></section>` : ""}` : ""}
       <p class="cv-foot">Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.</p>
     </div>`;
     const root = el.querySelector(".cv"), note = root.querySelector(".cv-note");
@@ -500,6 +502,8 @@
     const xpanel = xHost ? explorerPanel(xHost, opts.apiBase(g, c)) : null;
     const bkHost = root.querySelector("[data-bak]");
     const bkpanel = bkHost ? backupsPanel(bkHost, opts.backupBase(g, c)) : null;
+    const fwHost = root.querySelector("[data-fw]");
+    const fwpanel = fwHost ? firmwarePanel(fwHost, opts.fwBase(g, c), opts.fwLib) : null;
     const cpHost = root.querySelector("[data-copy]");
     const cpanel = cpHost ? copyPanel(cpHost, opts.stdBase(g), c, similarOf(g, c), vs) : null;
     const ptzHost = root.querySelector("[data-ptz]");
@@ -514,6 +518,7 @@
         if (xpanel) xpanel.destroy();
         if (cpanel) cpanel.destroy();
         if (bkpanel) bkpanel.destroy();
+        if (fwpanel) fwpanel.destroy();
         if (ppanel) ppanel.destroy();
         Object.values(st.pics).forEach((p) => p && p.src && URL.revokeObjectURL(p.src));
         el.innerHTML = "";
@@ -1198,6 +1203,180 @@
     return { destroy() { st.dead = true; } };
   }
 
+  // ---- firmware (Phase 6 part 2: hub/app/camfw.py + app/hikfw.py) — hub only ----------------
+  const FWSTEP = [["backup", "Configuration backup"], ["stage", "File to the site Pi"], ["send", "File to the device"],
+    ["install", "Device installs it"], ["restart", "Restart"], ["wait", "Waiting for it to answer"], ["check", "Checks"]];
+  const FWCMP = { newer: ["newer than it runs", "cv-okt"], same: ["the version it runs", "cv-dimtx"], older: ["OLDER than it runs", "cv-warn"], unknown: ["can't compare", "cv-dimtx"] };
+  const mb = (n) => `${((n || 0) / (1 << 20)).toFixed(n >= 100 << 20 ? 0 : 1)} MB`;
+  function fwJobHtml(j) {
+    if (!j) return "";
+    const at = FWSTEP.findIndex(([k]) => k === j.step), live = j.state === "running";
+    let h = `<div class="cv-fwjob"><p><b>${live ? "Updating" : "Update"} ${esc(j.from || "?")} → ${esc(j.to)}</b>${j.test_unit ? ` <span class="cv-warn">test unit</span>` : ""} <span class="cv-dimtx">started ${esc(ago(j.started))}</span></p><ol class="cv-fwsteps">`;
+    FWSTEP.forEach(([k, label], i) => {
+      const cls = !live && j.result === "ok" ? "done" : i < at ? "done" : i === at ? (live ? "now" : "stop") : "";
+      let extra = "";
+      if (k === "stage" && j.bytes && (i === at || j.staged)) extra = ` · ${mb(j.staged)} of ${mb(j.bytes)}${j.rate && i === at ? ` · ${mb(j.rate)}/s` : ""}`;
+      if (k === "send" && i === at && j.bytes) extra = ` · ${mb(j.sent)} of ${mb(j.bytes)}`;
+      if (k === "install" && i === at && j.percent != null) extra = ` · ${esc(j.percent)}%`;
+      h += `<li class="${cls}">${esc(label)}${extra}</li>`;
+    });
+    h += `</ol>`;
+    if ((j.checks || []).length) h += `<ul class="cv-fwchecks">${j.checks.map((c) => `<li class="${c.ok ? "cv-okt" : "cv-warn"}">${c.ok ? "✓" : "✗"} ${esc(c.text)}</li>`).join("")}</ul>`;
+    if (!live) h += `<p class="cv-setmsg ${j.result === "ok" ? "cv-okt" : "cv-warn"}">${esc(j.message)}</p>`;
+    else h += `<p class="cv-dimtx">The device stops recording while it installs and restarts (usually 3–10 minutes). You can leave this page; the hub carries on.</p>`;
+    const log = [...(j.log || []), ...(j.site_log || [])].sort((a, b) => a[0] - b[0]);
+    if (log.length) h += `<details class="cv-xcaps"><summary>What happened</summary><ul class="cv-fwlog">${log.map(([t, s]) => `<li><span class="cv-dimtx">${esc(new Date(t * 1000).toLocaleTimeString())}</span> ${esc(s)}</li>`).join("")}</ul></details>`;
+    return h + `</div>`;
+  }
+  // Add a file to the library: sent in pieces (a farm-sized file passes any proxy).
+  function fwAddHtml(regions, model) {
+    return `<details class="cv-xcaps cv-fwadd"><summary>Add a firmware file to the library</summary>
+      <p class="cv-dimtx">Download it from Hikvision for this model (a .dav file, or the .zip it comes in). Check the region on the download page: a unit bought in China needs Chinese firmware, and the other way round.</p>
+      <div class="cv-fwform"><label>File <input type="file" data-fwf accept=".dav,.zip"></label>
+      <label>Version <input class="cv-pwin" data-fwv placeholder="V5.7.15 build 230425" spellcheck="false"></label>
+      <label>Models it is for <input class="cv-pwin" data-fwm value="${esc(model || "")}" placeholder="DS-2CD2046G2-IU, DS-2CD2*G2*" spellcheck="false"></label>
+      <label>Region <select class="cv-sel" data-fwr><option value="">choose…</option>${(regions || []).map((r) => `<option>${esc(r)}</option>`).join("")}</select></label>
+      <label>Notes <input class="cv-pwin" data-fwn placeholder="what the release notes say it fixes"></label></div>
+      <div class="cv-setact"><button type="button" class="cv-btn cv-on" data-fwadd>Add to the library</button><span class="cv-dimtx" data-fwprog></span></div></details>`;
+  }
+  async function fwAdd(root, lib, say) {
+    const q = (s) => root.querySelector(s), file = (q("[data-fwf]").files || [])[0];
+    if (!file) return say("Choose the file first.", "cv-warn");
+    const meta = { version: q("[data-fwv]").value.trim(), models: q("[data-fwm]").value, region: q("[data-fwr]").value, notes: q("[data-fwn]").value };
+    if (!meta.version || !meta.models.trim() || !meta.region) return say("Fill in the version, the models and the region.", "cv-warn");
+    const prog = q("[data-fwprog]");
+    const b = await jcall(`${lib}/uploads`, { method: "POST", body: JSON.stringify({ name: file.name, bytes: file.size }) });
+    for (let off = 0; off < file.size; off += b.piece) {
+      let tries = 0;
+      for (;;) {
+        try {
+          const r = await fetch(`${lib}/uploads/${b.id}?offset=${off}`, { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/octet-stream" }, body: file.slice(off, off + b.piece) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok || j.ok === false) throw new Error(j.error || "HTTP " + r.status);
+          break;
+        } catch (e) { if (++tries >= 4) throw e; await new Promise((res) => setTimeout(res, 2000 * tries)); }
+      }
+      prog.textContent = `${mb(Math.min(file.size, off + b.piece))} of ${mb(file.size)}`;
+    }
+    prog.textContent = "Checking the file…";
+    const j = await jcall(`${lib}/uploads/${b.id}/finish`, { method: "POST", body: JSON.stringify(meta) });
+    prog.textContent = "";
+    return j.file;
+  }
+
+  function firmwarePanel(el, base, lib) {
+    const st = { dead: false, data: null, ask: null, busy: false, msg: null, timer: null, regions: null };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>⬆ Firmware</h3><span class="cv-dimtx">the version it runs · update from the hub's library · backup first · one at a time</span></summary><div class="cv-setb" data-b></div></details>`;
+    const body = el.querySelector("[data-b]");
+    el.querySelector("details").addEventListener("toggle", (e) => { if (e.target.open && !st.data) load(); });
+    async function load() {
+      if (!st.data) body.innerHTML = `<p class="cv-dimtx">Loading…</p>`;
+      try {
+        st.data = await jcall(base);
+        if (!st.regions) st.regions = (await jcall(lib).catch(() => ({}))).regions || [];
+        if (!st.dead) paint();
+      } catch (e) { if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.message)}</p>`; }
+      clearTimeout(st.timer);
+      if (!st.dead && st.data && st.data.job && st.data.job.state === "running") st.timer = setTimeout(load, 3000);
+    }
+    function paint() {
+      const d = st.data, dev = d.device, live = d.job && d.job.state === "running";
+      let h = dev ? `<p>Runs <b>${esc(dev.firmware || "an unknown version")}</b> <span class="cv-dimtx">(${esc(dev.model || "model unknown")})</span></p>` : `<p class="cv-warn">This device is not in the site's camera list.</p>`;
+      if (dev && !dev.own_login) h += `<p class="cv-dimtx">Netwatch updates a device through its own login. This one is reached only through its recorder: save its own login first (an admin login).</p>`;
+      if (d.job) h += fwJobHtml(d.job);
+      if (d.site_busy) h += `<p class="cv-dimtx">Another device on this site is being updated (${esc(d.site_busy.name)}); one at a time.</p>`;
+      if (dev && !live) {
+        h += d.files.length ? `<table class="cv-ch"><thead><tr><th>Version</th><th>Region</th><th>File</th><th></th></tr></thead><tbody>${d.files.map((f) => {
+          const [ct, cc] = FWCMP[f.compare] || FWCMP.unknown;
+          return `<tr><td><b>${esc(f.version)}</b><br><span class="${cc}">${esc(ct)}</span></td><td>${esc(f.region)}</td>
+            <td>${esc(f.inner || f.file)} · ${esc(mb(f.bytes))}${f.notes ? `<br><span class="cv-dimtx">${esc(f.notes)}</span>` : ""}<br><span class="cv-dimtx">${f.proven.length ? `used on ${f.proven.length} device${f.proven.length > 1 ? "s" : ""}` : "not used yet — this device would be its test unit"}${f.failed.length ? ` · <span class="cv-warn">failed on ${f.failed.length}</span>` : ""}</span></td>
+            <td>${f.compare === "newer" && dev.own_login ? `<button type="button" class="cv-btn" data-fwask="${esc(f.sha256)}">Update…</button>` : ""}</td></tr>`;
+        }).join("")}</tbody></table>` : `<p class="cv-dimtx">The library has no file for ${esc(dev.model || "this model")} yet.</p>`;
+      }
+      if (st.ask && !live) {
+        const f = d.files.find((x) => x.sha256 === st.ask) || {};
+        h += `<div class="cv-setprev"><p><b>Update ${esc(dev.name)} from ${esc(dev.firmware || "?")} to ${esc(f.version)}?</b></p>
+          <ul class="cv-warn"><li>A configuration backup is taken first; without one the update does not start.</li>
+          <li>${dev.recorder ? "The recorder stops recording ALL its cameras" : "The camera stops sending pictures and recording"} while it installs and restarts — usually 3–10 minutes.</li>
+          ${f.proven.length ? "" : `<li><b>Nobody has used this file yet: this device is its test unit.</b> Other devices wait until this update is checked. Pick a device you can reach if it doesn't come back.</li>`}
+          ${dev.recorder ? "<li>Recorders are not updated at night (19:00–06:00).</li>" : ""}
+          <li>Firmware can't be undone from Netwatch: going back needs the old file, and some devices refuse older versions.</li></ul>
+          <p><label><input type="checkbox" data-fwregion> This device was bought for the file's region: <b>${esc(f.region)}</b></label></p>
+          <p class="cv-dimtx">Type <b>CHANGE</b> to go ahead (needs "Risky camera work" on the site).</p>
+          <div class="cv-setact"><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type CHANGE"><button type="button" class="cv-btn cv-on" data-fwgo>Update</button><button type="button" class="cv-btn" data-fwback>Back</button></div></div>`;
+      }
+      if (dev && !live) h += fwAddHtml(st.regions, dev.model);
+      h += `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      const keep = {}; body.querySelectorAll(".cv-fwform input:not([type=file]), .cv-fwform select").forEach((i) => { keep[Object.keys(i.dataset)[0]] = i.value; });
+      const addOpen = !!body.querySelector(".cv-fwadd[open]"), file = body.querySelector("[data-fwf]");
+      body.innerHTML = h;
+      Object.entries(keep).forEach(([k, v]) => { const i = body.querySelector(`[data-${k}]`); if (i) i.value = v; });
+      if (addOpen) { const a = body.querySelector(".cv-fwadd"); if (a) a.open = true; const nf = body.querySelector("[data-fwf]"); if (nf && file && file.files.length) nf.replaceWith(file); }
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    body.addEventListener("click", async (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled || st.busy) return;
+      if (b.dataset.fwask) { st.ask = b.dataset.fwask; st.msg = null; paint(); }
+      else if (b.hasAttribute("data-fwback")) { st.ask = null; paint(); }
+      else if (b.hasAttribute("data-fwgo")) {
+        const w = ((body.querySelector("[data-word]") || {}).value || "").trim().toUpperCase(), reg = !!(body.querySelector("[data-fwregion]") || {}).checked;
+        st.busy = true; say("Checking the device…", "");
+        try { await jcall(base, { method: "POST", body: JSON.stringify({ sha256: st.ask, confirm_text: w, region_ok: reg }) }); st.ask = null; st.msg = null; await load(); }
+        catch (err) { say(err.message, "cv-warn"); }
+        st.busy = false;
+      } else if (b.hasAttribute("data-fwadd")) {
+        st.busy = true; b.disabled = true; say("", "");
+        try { const f = await fwAdd(body, lib, say); if (f) { st.msg = [`Added ${f.version} to the library.`, "cv-okt"]; await load(); } }
+        catch (err) { say(err.message, "cv-warn"); }
+        st.busy = false; b.disabled = false;
+      }
+    });
+    return { destroy() { st.dead = true; clearTimeout(st.timer); } };
+  }
+
+  // The library itself, for the all-sites Cameras page: what each file fits, where it is old.
+  function firmwareLibrary(el, lib, opts) {
+    const st = { dead: false, data: null, busy: false, msg: null, del: null };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>📦 Firmware library</h3><span class="cv-dimtx">files you added from Hikvision · which devices they fit · which run older firmware</span></summary><div class="cv-setb" data-b></div></details>`;
+    const body = el.querySelector("[data-b]");
+    el.querySelector("details").addEventListener("toggle", (e) => { if (e.target.open && !st.data) load(); });
+    async function load() {
+      try { st.data = await jcall(lib); if (!st.dead) paint(); }
+      catch (e) { if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.message)}</p>`; }
+    }
+    function paint() {
+      const d = st.data;
+      let h = `<p class="cv-dimtx">Update a device from its camera or recorder page (⬆ Firmware). A new file goes on one device first, its test unit.</p>`;
+      if (d.running.length) h += `<p><b>Running now:</b> ${d.running.map((j) => `${esc(j.name)} → ${esc(j.to)}`).join(", ")}</p>`;
+      h += d.files.length ? d.files.map((f) => {
+        const older = f.fits.filter((x) => x.compare === "newer");
+        return `<div class="cv-fwfile"><p><b>${esc(f.version)}</b> · ${esc(f.models.join(", "))} · ${esc(f.region)} <span class="cv-dimtx">· ${esc(f.inner || f.file)} · ${esc(mb(f.bytes))} · added ${esc(ago(f.added))}</span>
+          <button type="button" class="cv-btn" data-fwdel="${esc(f.sha256)}">${st.del === f.sha256 ? "Really remove?" : "Remove"}</button></p>
+          ${f.notes ? `<p class="cv-dimtx">${esc(f.notes)}</p>` : ""}
+          <p class="cv-dimtx">Fits ${f.fits.length} device${f.fits.length === 1 ? "" : "s"}; ${older.length} run${older.length === 1 ? "s" : ""} an older version. ${f.proven.length ? `Used on ${f.proven.length}.` : "Not used yet."}${f.failed.length ? ` <span class="cv-warn">Failed on ${f.failed.length}.</span>` : ""}</p>
+          ${older.length ? `<ul class="cv-stdl">${older.map((x) => `<li>${opts && opts.devHref ? `<a href="${esc(opts.devHref(x))}">` : ""}<b>${esc(x.name)}</b>${opts && opts.devHref ? "</a>" : ""} <span class="cv-dimtx">${esc(x.site_name)} · ${esc(x.firmware || "?")}${x.own_login ? "" : " · no own login"}${x.online ? "" : " · offline"}</span></li>`).join("")}</ul>` : ""}</div>`;
+      }).join("") : `<p class="cv-dimtx">No firmware files yet.</p>`;
+      h += fwAddHtml(d.regions, "") + `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      body.innerHTML = h;
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    body.addEventListener("click", async (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled || st.busy) return;
+      if (b.dataset.fwdel) {
+        if (st.del !== b.dataset.fwdel) { st.del = b.dataset.fwdel; paint(); return; }
+        try { await jcall(`${lib}/${b.dataset.fwdel}`, { method: "DELETE" }); st.del = null; st.msg = ["Removed.", "cv-okt"]; await load(); } catch (err) { say(err.message, "cv-warn"); }
+      } else if (b.hasAttribute("data-fwadd")) {
+        st.busy = true; b.disabled = true;
+        try { const f = await fwAdd(body, lib, say); if (f) { st.msg = [`Added ${f.version}: it fits ${f.fits.length} device(s), ${f.newer} run older firmware.`, "cv-okt"]; await load(); } }
+        catch (err) { say(err.message, "cv-warn"); }
+        st.busy = false; b.disabled = false;
+      }
+    });
+    return { destroy() { st.dead = true; } };
+  }
+
   const COPY = { picture: "Picture", osd: "Text on video (not the name)", main: "Main stream", sub: "Sub stream" };
   function copyPanel(el, base, cam, similar, views) {
     const st = { dead: false, job: null, stopWatch: null, msg: null, busy: false };
@@ -1349,5 +1528,5 @@
     return { destroy() { st.dead = true; stopHold(); } };
   }
 
-  window.CamView = { mount, camera, ago, fetchPic: (lid, url) => queue(lid, () => fetchPic(url)) };
+  window.CamView = { mount, camera, ago, firmwareLibrary, fetchPic: (lid, url) => queue(lid, () => fetchPic(url)) };
 })();

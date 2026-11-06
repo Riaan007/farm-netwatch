@@ -278,3 +278,19 @@
 .cv-bkch > li { margin: 6px 0; }
 .cv-bkch ul { margin: 2px 0; padding-left: 16px; }
 .cv-bkch li li { overflow-wrap: anywhere; }
+/* firmware (Phase 6 part 2) */
+.cv-fwjob { margin: 10px 0; padding: 12px 14px; border: 1px solid var(--cv-line2); border-radius: 12px; background: rgba(34, 211, 238, .04); }
+.cv-fwjob p { margin: 0 0 8px; }
+.cv-fwsteps { margin: 0 0 8px; padding-left: 22px; font-size: 13px; color: var(--cv-dim); }
+.cv-fwsteps li { margin: 3px 0; }
+.cv-fwsteps li.done { color: var(--cv-ok); }
+.cv-fwsteps li.now { color: var(--cv-cyan); font-weight: 700; }
+.cv-fwsteps li.stop { color: var(--cv-bad); font-weight: 700; }
+.cv-fwchecks { margin: 0 0 8px; padding-left: 4px; list-style: none; font-size: 13px; }
+.cv-fwlog { margin: 6px 0 0; padding-left: 16px; font-size: 12px; max-height: 220px; overflow: auto; }
+.cv-fwform { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 8px 12px; margin: 8px 0; }
+.cv-fwform label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--cv-muted); min-width: 0; }
+.cv-fwform input, .cv-fwform select { width: 100%; min-width: 0; }
+.cv-fwfile { padding: 10px 0; border-top: 1px solid var(--cv-line); }
+.cv-fwfile p { margin: 0 0 6px; overflow-wrap: anywhere; }
+.cv-fwfile .cv-btn { height: 28px; margin-left: 6px; }

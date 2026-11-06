@@ -342,3 +342,72 @@ def api_camera_snapshot(key):
         return jsonify(hikbackup.snapshot(settings, key))
     except hikbackup.BackupError as e:
         return _bkerr(e)
+
+
+# ---- firmware updates (hikfw.py, Phase 6 part 2) ---------------------------------------
+# The hub keeps the firmware library, sends one file here in pieces, then starts the job.
+import hikfw  # noqa: E402
+import hikisapi  # noqa: E402
+
+firmware = hikfw.Firmware(settings)
+
+
+def _fwerr(e):
+    return jsonify({"ok": False, "error": str(e), **e.extra}), e.status
+
+
+@bp.route("/api/firmware/<sha>", methods=["GET", "PUT"])
+@guard
+def api_firmware_stage(sha):
+    """GET: how much of this file the site Pi has. PUT ?offset=&total= (raw piece,
+    up to 8 MB): add the next piece."""
+    try:
+        if request.method == "GET":
+            return jsonify(hikfw.stage_status(sha))
+        try:
+            offset, total = int(request.args.get("offset", "")), int(request.args.get("total", ""))
+        except ValueError:
+            raise hikfw.FirmwareError("offset and total are needed", 400) from None
+        try:
+            piece = _raw_body(hikfw.CHUNK_MAX)
+        except hikbackup.BackupError:
+            raise hikfw.FirmwareError("bad piece (empty or over 8 MB)", 400) from None
+        return jsonify(hikfw.stage_put(sha, offset, total, piece))
+    except hikfw.FirmwareError as e:
+        return _fwerr(e)
+
+
+def _models_arg(v):
+    return [m for m in (str(v or "").split(",")) if m.strip()][:40]
+
+
+@bp.route("/api/cameras/<path:key>/firmware", methods=["GET", "POST"])
+@guard
+def api_camera_firmware(key):
+    """GET ?version=&models=a,b: the device and whether that file may go on it.
+    POST {sha256, version, models[], confirm_text}: start the update (risky work)."""
+    try:
+        if request.method == "GET":
+            models = _models_arg(request.args.get("models")) if "models" in request.args else None
+            out = firmware.preflight(key, str(request.args.get("version") or "")[:60], models)
+            out["job"] = firmware.job(key)
+            return jsonify(out)
+        b = request.get_json(silent=True) or {}
+        models = [str(m)[:60] for m in (b.get("models") or [])][:40]
+        job = firmware.start(key, str(b.get("sha256") or ""), str(b.get("version") or "")[:60], models,
+                             who=_who(), confirm_text=str(b.get("confirm_text") or "")[:20])
+        return jsonify({"ok": True, "job": firmware.job(key) or job})
+    except hikfw.FirmwareError as e:
+        return _fwerr(e)
+    except hikbackup.BackupError as e:
+        return _bkerr(e)
+    except hiksettings.SettingsError as e:
+        return _err(e)
+    except hikisapi.LoginRefused as e:
+        return jsonify({"ok": False, "error": str(e) or "the device refused the login"}), 403
+
+
+@bp.route("/api/cameras/<path:key>/firmware/job")
+@guard
+def api_camera_firmware_job(key):
+    return jsonify({"ok": True, "job": firmware.job(key)})
