@@ -80,6 +80,31 @@ POLL_S = 6
 _TMP = "/tmp/nwfix"
 _SAFE_KEY = re.compile(r"^radio\.1\.[a-z0-9_.]+$")
 _PROBE_MARK = "===NW-PROBE==="
+_FREQ_MARK = "===NW-FREQ==="
+# The live channel, read the same way at preview (to prove the reading works on this
+# radio) and in the fix script (to prove a channel move is live before it is saved).
+# Two sources, each printed as src=MHz: iwconfig ("Frequency:5.745 GHz", any wireless
+# interface) and mca-status (its freq key, commas and CRs tolerated). Tri-Lectro
+# 2026-11-06: a grep for a bare "freq=5745" line found nothing on an airOS 6 NanoBeam
+# and undid a move without saying what the radio really reported.
+_FREQ_SH = r"""PATH="$PATH:/bin:/sbin:/usr/bin:/usr/sbin"
+mhz() { case "$1" in *.*) i=${1%%.*}; d=${1#*.}000; d=${d%"${d#???}"}; echo $((i*1000 + 1$d - 1000)) ;; [0-9]*) echo "$1" ;; esac; }
+livefreq() {
+  f=$(iwconfig 2>/dev/null | grep -o 'Frequency[:=][0-9.]*' | head -1 | cut -c11-)
+  [ -n "$f" ] && echo "iw=$(mhz "$f")"
+  m=$(mca-status 2>/dev/null | tr ',\r' '\n\n' | grep -iE '^ *(wlanfreq|freq|frequency) *=' | head -1 | cut -d= -f2 | grep -o '[0-9][0-9.]*' | head -1)
+  [ -n "$m" ] && echo "mca=$(mhz "$m")"
+}"""
+
+
+def _freqs(text):
+    """livefreq output -> {"iw": 5745, "mca": 5745} (sources that answered)."""
+    out = {}
+    for ln in (text or "").split():
+        src, _, val = ln.partition("=")
+        if src in ("iw", "mca") and val.isdigit() and 2000 <= int(val) <= 7000:
+            out[src] = int(val)
+    return out
 
 
 def _safe_key(key):
@@ -104,7 +129,8 @@ def read(ip, user, pw):
                                             f"cat {airos.CFG_PATH} 2>/dev/null; echo '{airos._WSTA_MARK}'; "
                                             f"wstalist 2>/dev/null; echo '{_PROBE_MARK}'; "
                                             f"grep -c test /usr/etc/rc.d/rc.softrestart 2>/dev/null; "
-                                            f"command -v cfgmtd; cat /etc/version 2>/dev/null", timeout=30)
+                                            f"command -v cfgmtd; cat /etc/version 2>/dev/null; "
+                                            f"echo '{_FREQ_MARK}'\n{_FREQ_SH}\nlivefreq", timeout=30)
     if rc != 0 and not out:
         low = (err or "").lower()
         why = ("the saved login was rejected" if "denied" in low else "the radio did not answer over SSH")
@@ -112,6 +138,7 @@ def read(ip, user, pw):
     status, _, rest = out.partition(airos._CFG_MARK)
     cfg_txt, _, wsta = rest.partition(airos._WSTA_MARK)
     wsta, _, probe = wsta.partition(_PROBE_MARK)
+    probe, _, freq_txt = probe.partition(_FREQ_MARK)
     kv, cfg = airos._status_kv(status), airos._kv(cfg_txt)
     if "netconf." not in cfg_txt:
         raise FixError("logged in, but could not read the radio's config — not an airOS radio?")
@@ -119,7 +146,8 @@ def read(ip, user, pw):
     return {"kv": kv, "cfg": cfg, "peers": airos._stations(wsta, cfg.get("wireless.1.ssid", "")),
             "test_mode": bool(pl) and pl[0].isdigit() and int(pl[0]) > 0,
             "cfgmtd": any(ln.endswith("cfgmtd") for ln in pl[1:]),
-            "version": next((ln for ln in pl[1:] if not ln.endswith("cfgmtd")), "")}
+            "version": next((ln for ln in pl[1:] if not ln.endswith("cfgmtd")), ""),
+            "live_freq": _freqs(freq_txt), "live_freq_raw": " ".join(freq_txt.split())[:120]}
 
 
 def _centre_key(cfg):
@@ -313,6 +341,17 @@ def plan(kind, target, login_for, find_device=None, params=None):
                 raise FixError(f"{target['name']} is an airOS 6 radio on a 40 MHz channel — Netwatch can only "
                                f"move it to a 20 MHz channel (add width 20)")
             _needs_test_mode(r, target["name"])
+            # The script proves the move is live by reading the channel the radio RUNS. Try that
+            # same reading on the current channel first: if it cannot see what the radio reports
+            # now, it would undo a good move later (Tri-Lectro 2026-11-06), so refuse up front.
+            lf = r.get("live_freq") or {}
+            if not live_f or live_f not in lf.values():
+                raise FixError(f"Netwatch cannot read {target['name']}'s live channel the way its safety check "
+                               f"needs to (the radio reports {live_f or '?'} MHz, the check read "
+                               f"{r.get('live_freq_raw') or 'nothing'}) — change the channel in airOS by hand")
+            out["notes"].append("Live-channel check tried on the radio first: "
+                                + ", ".join(f"{'iwconfig' if s == 'iw' else 'mca-status'} {v} MHz"
+                                            for s, v in sorted(lf.items())))
             cur_c, off = live_c or cur_f, 0
             out["edits"].append(_edit(cfg, "radio.1.freq", new, want_old=live_f if live_f and cur_f == live_f else None))
             out["edits"].append(_edit(cfg, "radio.1.ieee_mode", "11naht20", text=True))
@@ -378,6 +417,8 @@ def plan(kind, target, login_for, find_device=None, params=None):
                                 + " — if they do not follow, the AP moves back by itself")
         out["lines"].append(f"{len(peers)} station{'s' if len(peers) != 1 else ''} must follow: "
                             + ", ".join(p.get("name") or p.get("ip") or p.get("mac") for p in peers))
+        # What the radio holds for its channel now, shown with the plan (radio.* keys hold no secrets)
+        out["radio_cfg"] = {k: v for k, v in sorted(cfg.items()) if k.startswith("radio.")}
 
     out["lines"].append(f"Undo by itself if fewer than {out['min_peers']} peer"
                         f"{'s are' if out['min_peers'] != 1 else ' is'} back within {out['wait_s'] // 60} min")
@@ -436,19 +477,25 @@ def script(edits, min_peers, wait_s, verify_restart=False, verify_freq=None):
         checks += ('a1=$(assoc); log "ASSOC $a0 -> $a1 dropped=$dropped"\n'
                    'if [ "$dropped" != 1 ] && { [ -z "$a1" ] || [ "$a1" -ge "$a0" ] || [ "$a1" -gt $((i+60)) ]; }; '
                    'then log "NOTLIVE link did not drop and re-associate"; ok=0; fi\n')
+    freq_sh, freq0 = "", ""
     if verify_freq is not None:
-        checks += (f"mca-status 2>/dev/null | grep -Eiq '^(wlanfreq|freq|frequency)={int(verify_freq)}( MHz)?$' "
-                   f"|| {{ log 'NOTLIVE frequency is not {int(verify_freq)}'; ok=0; }}\n")
+        # Every source that answered is logged (FREQ0 before, FREQ after), so a refusal says
+        # what the radio really ran; any one source on the new channel is the proof.
+        f = int(verify_freq)
+        freq_sh = _FREQ_SH + "\n"
+        freq0 = 'f0=$(livefreq | tr \'\\n\' \' \'); log "FREQ0 ${f0% }"\n'
+        checks += ('lf=$(livefreq | tr \'\\n\' \' \'); lf=${lf% }; log "FREQ ${lf:-none}"\n'
+                   f'case " $lf " in *"={f} "*) ;; *) log "NOTLIVE frequency is not {f}, the radio reports ${{lf:-nothing}}"; ok=0 ;; esac\n')
     return f"""#!/bin/sh
 ST={_TMP}.state; BAK={_TMP}.bak
 log() {{ echo "$(cut -d' ' -f1 /proc/uptime) $*" >> $ST; }}
 peers() {{ wstalist 2>/dev/null | grep -o '"remote"' | wc -l; }}
 assoc() {{ wstalist 2>/dev/null | grep -o '"uptime" *: *[0-9]*' | grep -o '[0-9]*$' | sort -n | tail -1; }}
-: > $ST
+{freq_sh}: > $ST
 a0=$(assoc); [ -n "$a0" ] || a0=999999999
 cp /tmp/system.cfg $BAK || {{ log 'FAIL backup'; exit 1; }}
 log BACKUP
-{sed}
+{freq0}{sed}
 log APPLY
 /usr/etc/rc.d/rc.softrestart test >/dev/null 2>&1
 ok=0; i=0; n=0; dropped=0
@@ -527,6 +574,8 @@ def _run(p, login, on_done):
             after = read(ip, user, pw)
             changed = {e["key"]: after["cfg"].get(e["key"]) for e in p["edits"]}
             good = all(changed[e["key"]] == e["new"] for e in p["edits"]) and len(after["peers"]) >= p["min_peers"]
+            if p.get("verify_freq") and int(p["verify_freq"]) not in (after.get("live_freq") or {}).values():
+                good = False
             res = dict(phase="done", ok=good, verdict="applied" if good else "check",
                        msg=("Done — the change is saved and every peer is back." if good else
                             "Saved on the radio, but the read-back does not match — check it in airOS."),

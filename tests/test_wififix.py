@@ -26,7 +26,10 @@ STUBS = tempfile.mkdtemp()
 PEERS_FILE = os.path.join(STUBS, "peers")      # how many peers wstalist reports
 FLASH = os.path.join(STUBS, "flash")           # what cfgmtd "wrote"
 ASSOC_FILE = os.path.join(STUBS, "assoc")      # peers' connection time (s) wstalist reports
-LIVE_FILE = os.path.join(STUBS, "live")        # what mca-status reports as running
+LIVE_FILE = os.path.join(STUBS, "live")        # the frequency (MHz) the radio runs
+FMT_FILE = os.path.join(STUBS, "fmt")          # printf format mca-status uses for it (default "freq=%s")
+IW_FILE = os.path.join(STUBS, "iw")            # present = iwconfig reports it too ("Frequency:5.745 GHz")
+STUCK_FILE = os.path.join(STUBS, "stuck")      # present = the restart drops the link but keeps the old channel
 NOOP_FILE = os.path.join(STUBS, "noop")        # present = soft restart applies nothing
 DROP_FILE = os.path.join(STUBS, "drop")        # wstalist answers "no peers" this many more times
 
@@ -44,9 +47,12 @@ def wsta(n, model="PowerBeam 5AC"):
                         "remote": {"hostname": f"Sta{i}", "platform": model}} for i in range(n)])
 
 
-def ssh_out(cfg, peers, mode="ap-ptmp-ac", freq="5480", tx="18", center="5490", probe="1\n/sbin/cfgmtd\nXW.v6.1.7"):
+def ssh_out(cfg, peers, mode="ap-ptmp-ac", freq="5480", tx="18", center="5490", probe="1\n/sbin/cfgmtd\nXW.v6.1.7",
+            livefreq=None):
     status = f"wlanOpmode={mode}\nfreq={freq}\nwlanTxPower={tx}\n" + (f"centerFreq={center}\n" if center else "")
-    return f"{status}{airos._CFG_MARK}\n{cfg}{airos._WSTA_MARK}\n{peers}\n{wififix._PROBE_MARK}\n{probe}"
+    lf = f"mca={freq}\n" if livefreq is None else livefreq       # what the probe's livefreq printed
+    return (f"{status}{airos._CFG_MARK}\n{cfg}{airos._WSTA_MARK}\n{peers}\n{wififix._PROBE_MARK}\n{probe}\n"
+            f"{wififix._FREQ_MARK}\n{lf}")
 
 
 def m5_cfg(over=None):
@@ -81,7 +87,10 @@ class FakeRadios:
             subprocess.run(["/bin/sh", "/tmp/nwfix.sh"], env={**os.environ, "PATH": f"{STUBS}:/usr/bin:/bin"},
                            timeout=60, check=False)
             with open("/tmp/system.cfg") as f:
-                self.radios[ip] = (f.read(), peers, live)
+                cfg_after = f.read()
+            if os.path.exists(LIVE_FILE):                # what the radio RUNS after the script
+                live = {**live, "freq": open(LIVE_FILE).read().strip()}
+            self.radios[ip] = (cfg_after, peers, live)
             return 0, "STARTED\n", ""
         if command.startswith("cat /tmp/nwfix.state"):
             with open("/tmp/nwfix.state") as f:
@@ -96,8 +105,13 @@ def stubs():
                                        f'if [ "$d" -gt 0 ]; then echo $((d-1)) > {DROP_FILE}; printf "[]"; exit 0; fi; '
                                        f'n=$(cat {PEERS_FILE}); u=$(cat {ASSOC_FILE} 2>/dev/null || echo 5000); i=0; printf "["; '
                                        f'while [ $i -lt $n ]; do printf \'{{"uptime": %s, "remote":{{}}}},\' $u; i=$((i+1)); done; printf "]"')
-    # mca-status reports the frequency the radio RUNS: what the last soft restart applied
-    w(os.path.join(STUBS, "mca-status"), f'cat {LIVE_FILE} 2>/dev/null')
+    # mca-status reports the frequency the radio RUNS: what the last soft restart applied,
+    # in the format FMT_FILE gives (airOS builds differ); iwconfig reports it in GHz
+    w(os.path.join(STUBS, "mca-status"), f'[ -f {LIVE_FILE} ] || exit 0; f=$(cat {LIVE_FILE}); '
+                                         f'if [ -f {FMT_FILE} ]; then printf "$(cat {FMT_FILE})" "$f"; else echo "freq=$f"; fi')
+    w(os.path.join(STUBS, "iwconfig"), f'[ -f {IW_FILE} ] && [ -f {LIVE_FILE} ] || exit 0; f=$(cat {LIVE_FILE}); '
+                                       f'echo "ath0  IEEE 802.11na  ESSID:\\"LAN\\""; '
+                                       f'echo "      Mode:Master  Frequency:${{f%???}}.${{f#?}} GHz  Access Point: 18:E8:29:30:39:00"')
     w(os.path.join(STUBS, "sleep"), "exit 0")
     w(os.path.join(STUBS, "cfgmtd"), f'cp /tmp/running.cfg {FLASH}')
     # a real test-mode restart re-associates the link (connection time resets) and makes the
@@ -105,7 +119,7 @@ def stubs():
     # airOS 6 (like the real Tri-Lectro radios): the link drops for a while and comes back,
     # and wstalist "uptime" does NOT reset (it is the peer's own uptime)
     w("/usr/etc/rc.d/rc.softrestart", f'[ -f {NOOP_FILE} ] && exit 0; echo 1 > {DROP_FILE}; '
-                                       f'echo "freq=$(sed -n "s/^radio.1.freq=//p" /tmp/system.cfg)" > {LIVE_FILE}; exit 0')
+                                       f'[ -f {STUCK_FILE} ] || sed -n "s/^radio.1.freq=//p" /tmp/system.cfg > {LIVE_FILE}; exit 0')
 
 
 def set_peers(n):
@@ -249,9 +263,30 @@ class Planning(unittest.TestCase):
         self.assertEqual({e["key"]: e["new"] for e in p["edits"]},
                          {"radio.1.freq": "5745", "radio.1.ieee_mode": "11naht20", "radio.1.chanbw": "20"})
         self.assertEqual(p["verify_freq"], 5745)
+        self.assertTrue(any("Live-channel check tried on the radio first: mca-status 5180 MHz" in n for n in p["notes"]), p["notes"])
+        self.assertEqual(p["radio_cfg"]["radio.1.ieee_mode"], "11naht40plus")
+        self.assertFalse(any(not k.startswith("radio.") for k in p["radio_cfg"]))
         with self.assertRaisesRegex(wififix.FixError, "20 MHz"):
             wififix.plan("channel", self.tgt(), lambda k: LOGIN, lambda **k: None,
                          {"freq": 5755, "width": 40, "accept_unverified": True})
+
+    def test_airos6_channel_refused_when_the_live_reading_fails(self):
+        """The check that proves a move must first read the channel the radio runs NOW."""
+        for lf in ("", "mca=5745\n", "iw=5185\n"):
+            airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1, "NanoBeam M5"),
+                                                  {"center": "5190", "freq": "5180", "mode": "ap", "livefreq": lf})})
+            with self.assertRaisesRegex(wififix.FixError, "cannot read NanoBeam's live channel"):
+                wififix.plan("channel", {"key": "m5", "ip": "10.0.0.1", "name": "NanoBeam"}, lambda k: LOGIN,
+                             lambda **k: None, {"freq": 5745, "width": 20, "accept_unverified": True})
+        airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1, "NanoBeam M5"),
+                                              {"center": "5190", "freq": "5180", "mode": "ap", "livefreq": "iw=5180\n"})})
+        p = wififix.plan("channel", {"key": "m5", "ip": "10.0.0.1", "name": "NanoBeam"}, lambda k: LOGIN,
+                         lambda **k: None, {"freq": 5745, "width": 20, "accept_unverified": True})
+        self.assertTrue(any("iwconfig 5180 MHz" in n for n in p["notes"]))
+
+    def test_freqs_parser(self):
+        self.assertEqual(wififix._freqs("iw=5745 mca=5745 "), {"iw": 5745, "mca": 5745})
+        self.assertEqual(wififix._freqs("iw= mca=abc x=5745 mca=99"), {})
 
     def test_script_rejects_unsafe_edits(self):
         with self.assertRaises(wififix.FixError):
@@ -274,7 +309,7 @@ class OnTheRadio(unittest.TestCase):
     def setUp(self):
         self._ssh, self._poll = airos._ssh, wififix.POLL_S
         wififix.POLL_S = 0.05
-        for p in (FLASH, "/tmp/nwfix.state", ASSOC_FILE, LIVE_FILE, NOOP_FILE, DROP_FILE):
+        for p in (FLASH, "/tmp/nwfix.state", ASSOC_FILE, LIVE_FILE, NOOP_FILE, DROP_FILE, FMT_FILE, IW_FILE, STUCK_FILE):
             if os.path.exists(p):
                 os.remove(p)
 
@@ -363,6 +398,32 @@ class OnTheRadio(unittest.TestCase):
         flash = open(FLASH).read()
         self.assertIn("radio.1.freq=5745", flash)
         self.assertIn("radio.1.ieee_mode=11naht20", flash)
+
+    def test_airos6_channel_live_check_reads_other_formats(self):
+        """Comma-separated, CR-terminated or GHz output, or iwconfig only: all prove the move."""
+        for fmt, iw in (("deviceName=NB,deviceId=x,freq=%s,platform=NanoBeam M5\r\n", False),
+                        ("wlanFreq=%s MHz\r\n", False), ("signal=-60 freq_unknown=%s\n", True)):
+            for p in (FLASH, LIVE_FILE, FMT_FILE, IW_FILE):
+                if os.path.exists(p):
+                    os.remove(p)
+            open(FMT_FILE, "w").write(fmt)
+            if iw:
+                open(IW_FILE, "w").close()
+            job, radios = self.run_m5("channel", {"freq": 5745, "width": 20, "accept_unverified": True})
+            self.assertEqual(job["verdict"], "applied", (fmt, job))
+            self.assertTrue(any(" FREQ " in f" {ln} " and "=5745" in ln for ln in job["log"]), job["log"])
+            self.assertTrue(any("FREQ0" in ln for ln in job["log"]), job["log"])
+            self.assertIn("radio.1.freq=5745", open(FLASH).read())
+
+    def test_airos6_channel_that_did_not_move_is_put_back_and_says_what_it_ran(self):
+        open(STUCK_FILE, "w").close()
+        open(LIVE_FILE, "w").write("5180")
+        job, radios = self.run_m5("channel", {"freq": 5745, "width": 20, "accept_unverified": True})
+        self.assertEqual(job["verdict"], "reverted", job)
+        self.assertIn("frequency is not 5745", job["msg"])
+        self.assertIn("mca=5180", job["msg"])
+        self.assertFalse(os.path.exists(FLASH))
+        self.assertIn("radio.1.freq=5180", radios.radios["10.0.0.1"][0])
 
     def test_ntp_adds_lines_and_saves(self):
         job, radios = self.run_m5("ntp", {})
