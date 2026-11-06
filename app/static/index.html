@@ -2958,6 +2958,10 @@
                 load: (hours, port) => swJson(base + '?hours=' + (hours || 24) + (port ? '&port=' + encodeURIComponent(port) : '')),
                 poll: () => swJson(base + '/poll', {method:'POST'}),
                 action: (body) => swJson(base + '/action', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}),
+                advanced: {
+                    load: (refresh) => swJson(base + '/advanced' + (refresh ? '?refresh=1' : '')),
+                    set: (body) => swJson(base + '/advanced', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}),
+                },
                 backups: {
                     list: () => swJson(base + '/backups'),
                     take: () => swJson(base + '/backups', {method:'POST'}),

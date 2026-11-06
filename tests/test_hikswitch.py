@@ -330,8 +330,8 @@ class LiveFakeTest(unittest.TestCase):
     def test_unsupported_actions_say_so(self):
         for fn in (hikswitch.locate, hikswitch.backup):
             self.assertFalse(fn(self.sw.ip, "admin", "Secret#123")["ok"])
-        self.assertFalse(hikswitch.cable_test(self.sw.ip, "admin", "Secret#123", "0/1")["ok"])
         self.assertEqual(self.sw.calls, [])                       # no login for nothing
+        # (the cable test is the switch's own Cable Detection: test_hikswitch_adv.py)
 
     def test_credtest_one_login(self):
         dev = dict(DEV_243, ip=self.sw.ip)
