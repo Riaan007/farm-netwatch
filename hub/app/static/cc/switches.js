@@ -17,6 +17,10 @@
       load: (hours, p) => api(`${b}?hours=${hours || 24}${p ? "&port=" + enc(p) : ""}`, { timeout: 45000 }),
       poll: () => api(`${b}/poll`, { method: "POST", timeout: 60000 }),
       action: (body) => api(`${b}/action`, { method: "POST", body, timeout: 100000 }),
+      advanced: {
+        load: (refresh) => api(`${b}/advanced${refresh ? "?refresh=1" : ""}`, { timeout: 95000 }),
+        set: (body) => api(`${b}/advanced`, { method: "POST", body, timeout: 155000 }),
+      },
       backups: {
         list: () => api(`${b}/backups`, { timeout: 30000 }),
         take: () => api(`${b}/backups`, { method: "POST", timeout: 80000 }),
@@ -106,7 +110,8 @@
     const d = e.detail || {};
     const port = d.port ? `Port ${portNo(d.port)}${d.port_name && !/^port\s*\d+$/i.test(d.port_name) ? " (" + d.port_name + ")" : ""}` : "";
     const who = (d.devices || []).length ? " — " + d.devices.join(", ") : "";
-    if (d.switch_event === "action") return `${SW_ACT[d.action] || d.action}${port ? " on " + port : ""} from Netwatch — ${d.result === "ok" ? "done" : "failed" + (d.error ? ": " + d.error : "")}`;
+    const act = SW_ACT[d.action] || (String(d.action || "").startsWith("set-") ? "setting: " + d.action.slice(4).replace(/_/g, " ") : d.action);
+    if (d.switch_event === "action") return `${act}${port ? " on " + port : ""} from Netwatch — ${d.result === "ok" ? "done" : "failed" + (d.error ? ": " + d.error : "")}`;
     if (d.switch_event === "speed_change") return `${port}: ${d.was} → ${d.speed} Mbit/s${who}`;
     return [port, SW_EV[d.switch_event] || d.switch_event].filter(Boolean).join(" ") + who;
   };

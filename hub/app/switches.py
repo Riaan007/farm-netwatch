@@ -110,6 +110,22 @@ def switch_action(site_id, key):
     return _forward(site, "POST", _dev(key, "/action"), body=request.get_json(silent=True) or {}, read_s=90)[1]
 
 
+@bp.route("/api/hub/sites/<site_id>/devices/<path:key>/switch/advanced", methods=["GET", "POST"])
+def switch_advanced(site_id, key):
+    """Advanced settings of a Hikvision smart switch (RSTP, loop guard, storm control,
+    PoE watchdog, DHCP snooping …). Reading them all is one login on the site; turning
+    RSTP on can wait up to a minute while the switch's ports re-learn."""
+    site, err = _site(site_id)
+    if err:
+        return err
+    if request.method == "POST":
+        with _LOCK:
+            _CACHE.pop(site_id, None)
+        return _forward(site, "POST", _dev(key, "/advanced"), body=request.get_json(silent=True) or {}, read_s=150)[1]
+    params = {"refresh": "1"} if request.args.get("refresh") else None
+    return _forward(site, "GET", _dev(key, "/advanced"), params=params, read_s=90)[1]
+
+
 @bp.route("/api/hub/sites/<site_id>/devices/<path:key>/switch/backups", methods=["GET", "POST"])
 def switch_backups(site_id, key):
     site, err = _site(site_id)

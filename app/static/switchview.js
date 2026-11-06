@@ -9,6 +9,8 @@
  *     poll()             -> Promise<view>     POST …/switch/poll
  *     action(body)       -> Promise<result>   POST …/switch/action (throws {body} on HTTP errors)
  *     backups: { list(), take(), href(name) }  (optional)
+ *     advanced: { load(refresh), set(body) }  (optional) GET / POST …/switch/advanced —
+ *                                             shown for switches whose caps.advanced is true
  *     deviceHref(dev)    -> href | null       (optional) link to a connected device
  *     onLogin()                               (optional) where to fix the login
  *     settingsHref                            (optional) where "Manage switches" is turned on
@@ -96,6 +98,23 @@
 .swv .swv-banner.bad{border-color:rgba(251,113,133,.4);background:rgba(127,29,29,.16)}
 .swv .swv-lock{border-radius:10px;padding:9px 11px;background:rgba(99,102,241,.12);border:1px solid rgba(165,180,252,.3);font-size:13px}
 .swv select.swv-sel,.swv input.swv-in{background:#050b16;border:1px solid rgba(148,163,184,.28);border-radius:8px;padding:5px 8px;color:#e2e8f0;font:inherit;font-size:13px}
+.swv .swv-adv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px}
+.swv .swv-adv-sec{margin-top:16px} .swv .swv-adv-sec>h3{margin-bottom:8px}
+.swv .swv-feat{border:1px solid var(--swv-line);border-radius:12px;padding:10px 12px;display:grid;gap:5px;align-content:start;min-width:0}
+.swv .swv-feat-h{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.swv .swv-feat-h b{font-size:14px}
+.swv .swv-chips{display:flex;flex-wrap:wrap;gap:4px}
+.swv .swv-chip{min-width:34px;border:1px solid rgba(148,163,184,.28);background:#0d1627;border-radius:7px;padding:3px 6px;font-size:12px;font-weight:700;text-align:center;line-height:1.3}
+.swv .swv-chip.on{background:rgba(16,185,129,.18);border-color:rgba(52,211,153,.6);color:#a7f3d0}
+.swv .swv-chip.chg{outline:2px dashed #22d3ee;outline-offset:1px}
+.swv .swv-chip.lock{opacity:.5;cursor:not-allowed} .swv .swv-chip.no{opacity:.22;cursor:not-allowed}
+.swv .swv-chip:disabled{cursor:default}
+.swv .swv-tips{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.swv .swv-tip{border-radius:10px;padding:8px 10px;border:1px solid var(--swv-line);display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:start}
+.swv .swv-tip.do{border-color:rgba(34,211,238,.4);background:rgba(8,51,68,.28)}
+.swv .swv-tip .t{font-weight:600} .swv .swv-tip .h{font-size:12.5px;color:var(--swv-muted);margin-top:2px}
+.swv .swv-res{margin-top:6px;border-radius:9px;padding:7px 9px;font-size:13px;background:#050b16;border:1px solid rgba(148,163,184,.2)}
+.swv .swv-res.ok{border-color:rgba(52,211,153,.45)} .swv .swv-res.warn{border-color:rgba(251,191,36,.45)}
 .swv .swv-skel{height:90px;border-radius:12px;background:linear-gradient(90deg,rgba(148,163,184,.06),rgba(148,163,184,.13),rgba(148,163,184,.06));background-size:200% 100%;animation:swvsk 1.4s infinite}
 @keyframes swvsk{to{background-position:-200% 0}}
 @media (max-width:720px){
@@ -213,7 +232,11 @@
     port_enabled: ["✅", "Port switched on"], port_renamed: ["✏️", "Port renamed"], device_moved: ["🔀", "Device moved port"],
     rebooted: ["🔄", "Switch restarted"], action: ["🛠️", "Action from Netwatch"],
   };
-  const ACTION_LABEL = { "port-off": "turn port off", "port-on": "turn port on", "poe-off": "PoE off", "poe-mode": "PoE mode", "poe-cycle": "PoE power cycle", name: "rename port", "cable-test": "cable test", locate: "find-me LEDs", reboot: "reboot", backup: "config backup" };
+  const ACTION_LABEL = { "port-off": "turn port off", "port-on": "turn port on", "poe-off": "PoE off", "poe-mode": "PoE mode", "poe-cycle": "PoE power cycle", name: "rename port", "cable-test": "cable test", locate: "find-me LEDs", reboot: "reboot", backup: "config backup",
+    "set-rstp": "RSTP", "set-loop_guard": "loop protection", "set-storm": "storm control", "set-rate_limit": "bandwidth limit", "set-qos": "QoS", "set-poe_watchdog": "PoE watchdog", "set-long_range": "long-range ports", "set-eee": "EEE", "set-lldp": "LLDP", "set-dhcp_snooping": "DHCP snooping", "set-isolation": "port isolation", "set-telnet": "Telnet", "set-onvif": "ONVIF discovery", "set-sadp_agent": "SADP agent", "set-ntp": "NTP clock", "set-counters": "clear counters" };
+  const advVal = (d) => [d.enabled === true ? "on" : d.enabled === false ? "off" : "", d.isolated === true ? "isolated" : d.isolated === false ? "not isolated" : "", d.high === true ? "high priority" : d.high === false ? "normal priority" : "",
+    (d.ports || []).length ? "ports " + d.ports.map((p) => String(p).split("/").pop()).join(", ") : "", (d.trusted || []).length ? "trusted " + d.trusted.map((p) => String(p).split("/").pop()).join(", ") : "", d.server ? "server " + d.server : "",
+    d.rx_mbps || d.tx_mbps ? `↓${d.rx_mbps || "–"}/↑${d.tx_mbps || "–"} Mbit/s` : "", d.priority != null ? "priority " + d.priority : ""].filter(Boolean).join(", ");
   function evText(e) {
     const d = e.detail || {};
     const port = d.port ? `Port ${esc(String(d.port).split("/").pop())}${d.port_name && !isDefaultName(d.port_name) ? ` (${esc(d.port_name)})` : ""}` : "";
@@ -225,7 +248,7 @@
       case "port_renamed": return `${port}: “${esc(d.was || "")}” → “${esc(d.port_name || "")}”`;
       case "device_moved": return `${who.slice(3)} now on ${port} (was port ${esc(String(d.was_port || "").split("/").pop())})`;
       case "rebooted": return `The switch restarted (power cut or reboot)`;
-      case "action": return `${esc(ACTION_LABEL[d.action] || d.action)}${d.port ? " on " + port : ""}${d.mode ? " → " + esc(poeLabel(d.mode)) : ""}${d.name ? ` “${esc(d.name)}”` : ""} — ${d.result === "ok" ? "done" : "<span style='color:#fb7185'>failed" + (d.error ? ": " + esc(d.error) : "") + "</span>"}`;
+      case "action": return `${esc(ACTION_LABEL[d.action] || d.action)}${String(d.action || "").startsWith("set-") && advVal(d) ? " → " + esc(advVal(d)) : `${d.port ? " on " + port : ""}${d.mode ? " → " + esc(poeLabel(d.mode)) : ""}${d.name ? ` “${esc(d.name)}”` : ""}`} — ${d.result === "ok" ? "done" : "<span style='color:#fb7185'>failed" + (d.error ? ": " + esc(d.error) : "") + "</span>"}`;
       default: return `${port}${who}`;
     }
   }
@@ -234,7 +257,8 @@
   function mount(root, opts) {
     injectCss();
     const o = Object.assign({ confirm: (t, x) => Promise.resolve(window.confirm(t + (x ? "\n\n" + x : ""))), toast: () => {} }, opts);
-    const st = { data: null, hours: 24, sel: null, portSeries: {}, busy: false, backups: null, timer: null, dead: false, err: "" };
+    const st = { data: null, hours: 24, sel: null, portSeries: {}, busy: false, backups: null, timer: null, dead: false, err: "",
+      adv: null, advOpen: false, advErr: "", advPick: {}, advOut: {} };
     root.classList.add("swv");
     root.innerHTML = `<div class="swv-skel"></div><div class="swv-skel" style="height:140px"></div>`;
 
@@ -372,11 +396,13 @@
             <td data-l="Errors" class="swv-tnum">${errs ? `<span style="color:#fbbf24">${errs}</span>` : `<span class="swv-dim">0</span>`}</td></tr>`;
         }).join("")}</tbody></table></div><p class="swv-note" style="margin:8px 0 0">Click a port for its charts, what's plugged in${d.manage ? " and its controls" : ""}. Errors are the switch's counters since it last restarted.</p></div>`;
 
-      root.innerHTML = title + banner + kpis + probList + face + `<div id="swv-detail"></div>` + table + `<div class="swv-grid2"><div class="swv-box" id="swv-events"></div><div class="swv-box" id="swv-info"></div></div>`;
+      const advBox = o.advanced && (d.caps || {}).advanced ? `<div class="swv-box" id="swv-adv"></div>` : "";
+      root.innerHTML = title + banner + kpis + probList + face + `<div id="swv-detail"></div>` + table + advBox + `<div class="swv-grid2"><div class="swv-box" id="swv-events"></div><div class="swv-box" id="swv-info"></div></div>`;
       bindTop();
       drawDetail();
       drawEvents();
       drawInfo();
+      drawAdv();
     }
 
     function devChip(x) {
@@ -500,8 +526,309 @@
         if (!(await o.confirm(`Cable test on port ${portNo(p)}?`, "The link drops for a few seconds while the switch measures the pairs.", { danger: true }))) return;
         const r = await act({ action: "cable-test", port: p.id }, e.currentTarget, "Cable test finished");
         const out = el.querySelector("#swv-cable");
-        if (r && out) out.innerHTML = `<pre class="swv-mono" style="white-space:pre-wrap;margin:8px 0 0;font-size:12px;background:#050b16;border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:8px">${esc(JSON.stringify(r.result, null, 2))}</pre>`;
+        if (r && out) out.innerHTML = cableHtml(r.result);
       };
+    }
+
+    function cableHtml(res) {
+      res = res || {};
+      if (res.text == null) return `<pre class="swv-mono" style="white-space:pre-wrap;margin:8px 0 0;font-size:12px;background:#050b16;border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:8px">${esc(JSON.stringify(res, null, 2))}</pre>`;
+      return `<div class="swv-res ${res.good ? "ok" : "warn"}">${res.good ? "✅" : "⚠️"} <b>${esc(res.text.charAt(0).toUpperCase() + res.text.slice(1))}</b>${res.length_m != null ? ` · cable about ${esc(Math.round(res.length_m))} m` : ""}${res.status ? ` <span class="swv-dim">(${esc(res.status)})</span>` : ""}
+        ${res.good ? "" : `<div class="swv-note" style="margin-top:3px">Open = a core is broken or not punched down; short = two cores touch; high impedance = a bad crimp or a corroded joint. Re-terminate both ends first.</div>`}</div>`;
+    }
+
+    // ---- advanced settings (Hikvision smart switches: hikswitch_adv on the site) -----------------
+    async function advLoad(refresh) {
+      st.advOpen = true; st.advErr = "";
+      if (refresh) st.adv = null;
+      drawAdv();
+      try { st.adv = await o.advanced.load(!!refresh); st.advPick = {}; }
+      catch (e) { st.advErr = (e.body && e.body.error) || e.message || String(e); }
+      if (!st.dead) drawAdv();
+    }
+
+    async function advSet(body, btn, okMsg) {
+      if (btn) btn.disabled = true;
+      const send = async (b) => {
+        try { return await o.advanced.set(b); }
+        catch (e) { if (e.body && e.body.needs_confirm) return e.body; throw e; }
+      };
+      try {
+        let r = await send(body);
+        if (r && r.needs_confirm) {
+          if (!(await o.confirm("Are you sure?", r.warning, { danger: true }))) return null;
+          r = await send(Object.assign({}, body, { confirm: true }));
+        }
+        if (!r || r.ok === false) throw new Error((r && r.error) || "failed");
+        if (r.advanced) st.adv = r.advanced;
+        else if (st.adv && r.shows && r.after) st.adv.features[r.shows] = r.after;
+        delete st.advPick[body.feature];
+        o.toast(okMsg || "Saved on the switch", "ok");
+        drawAdv();
+        setTimeout(() => refresh(true), 4000);
+        return r;
+      } catch (e) {
+        o.toast((e.body && e.body.error) || e.message || String(e), "bad");
+        return null;
+      } finally { if (btn) btn.disabled = false; }
+    }
+
+    function drawAdv() {
+      const el = root.querySelector("#swv-adv");
+      if (!el) return;
+      const d = st.data || {};
+      if (!st.advOpen) {
+        el.innerHTML = `<div class="swv-head"><div style="min-width:0"><h3 style="margin:0">Advanced settings</h3>
+          <p class="swv-note" style="margin:4px 0 0">Loop protection (RSTP and the switch's own loop guard), storm control, PoE watchdog, long-range ports, DHCP snooping, LLDP, QoS, bandwidth limits, cable test, SFP diagnostics and the clock — read from the switch with its saved login.</p></div>
+          <button class="swv-btn" data-adv="open">⚙️ Show advanced settings</button></div>`;
+        el.querySelector("[data-adv=open]").onclick = () => advLoad(false);
+        return;
+      }
+      const a = st.adv;
+      if (!a) {
+        el.innerHTML = `<h3>Advanced settings</h3>` + (st.advErr
+          ? `<div class="swv-banner bad">${esc(st.advErr)}</div><div class="swv-row" style="margin-top:8px"><button class="swv-btn" data-adv="reload">↻ Try again</button></div>`
+          : `<div class="swv-skel"></div><p class="swv-note">Reading the switch's settings (one login)…</p>`);
+        const b = el.querySelector("[data-adv=reload]"); if (b) b.onclick = () => advLoad(true);
+        return;
+      }
+      const f = a.features || {}, manage = !!a.manage, prot = a.protected || {}, ups = a.uplinks || {};
+      const vp = (id) => (d.ports || []).find((p) => p.id === id) || {};
+      const pn = (id) => String(id).split("/").pop();
+      const pTitle = (p) => { const v = vp(p.id); return `Port ${pn(p.id)}${v.name && !isDefaultName(v.name) ? " · " + v.name : ""}${(v.devices || []).length ? " · " + v.devices.map(devName).join(", ") : ""}${prot[p.id] ? " · 🔒 " + prot[p.id] : ups[p.id] ? ` · ${ups[p.id]} devices behind it` : ""}`; };
+      const portsTxt = (ids) => (ids || []).length ? ids.map((x) => "port " + pn(x)).join(", ") : "none";
+      const badge = (v, onTxt, offTxt) => v == null ? `<span class="swv-b">—</span>` : v ? `<span class="swv-b ok">${onTxt || "On"}</span>` : `<span class="swv-b">${offTxt || "Off"}</span>`;
+      const J = (o2) => esc(JSON.stringify(o2));
+      const setBtn = (body, label, cls, ask) => manage ? `<button class="swv-btn sm ${cls || ""}" data-set="${J(body)}"${ask ? ` data-ask="${esc(ask)}"` : ""}>${label}</button>` : "";
+      const toggle = (feature, cur, what, ask) => cur == null ? "" : setBtn({ feature, enabled: !cur }, cur ? `Turn ${what} off` : `Turn ${what} on`, cur ? "" : "pri", ask === false ? "" : ask || `Turn ${what} ${cur ? "off" : "on"} on this switch?`);
+      const card = (title, state, desc, body) => `<div class="swv-feat"><div class="swv-feat-h"><b>${title}</b>${state || ""}</div><div class="swv-note">${desc}</div>${body || ""}</div>`;
+      const na = (x) => !x || x.supported === false;
+      const err = (x) => x && x.error ? `<div class="swv-note" style="color:#fbbf24">Couldn't read: ${esc(x.error)}</div>` : "";
+      const edge = (a.ports || []).filter((p) => p.up && !prot[p.id] && !ups[p.id]).map((p) => p.id);
+
+      // per-port chips: the switch's current state, with clicks collected until Save
+      function chips(feature, opt) {
+        opt = opt || {};
+        const on = new Set(advCur(feature)), pend = st.advPick[feature] || new Set(), rng = opt.range;
+        return `<div class="swv-chips">${(a.ports || []).map((p) => {
+          const n = +pn(p.id);
+          const no = (rng && (n < rng[0] || n > rng[1])) || (opt.copper && p.type === "sfp");
+          const lock = opt.lock && prot[p.id] && !on.has(p.id);
+          const isOn = on.has(p.id) !== pend.has(p.id);
+          return `<button class="swv-chip ${isOn ? "on" : ""} ${pend.has(p.id) ? "chg" : ""} ${no ? "no" : lock ? "lock" : ""}" data-chip="${esc(feature)}" data-p="${esc(p.id)}" ${!manage || no || lock ? "disabled" : ""} title="${esc(pTitle(p) + (no ? " — this port doesn't have it" : lock ? " — Netwatch won't change this port" : ""))}">${esc(pn(p.id))}</button>`;
+        }).join("")}</div>`;
+      }
+      const saveRow = (feature, label) => {
+        const pend = st.advPick[feature];
+        if (!manage || !pend || !pend.size) return "";
+        return `<div class="swv-row" style="margin-top:4px"><button class="swv-btn sm pri" data-save="${esc(feature)}">${label || `Save ${plural(pend.size, "change")}`}</button><button class="swv-btn sm" data-undo="${esc(feature)}">Undo</button></div>`;
+      };
+      const pick = (feature, ids) => manage && ids.length ? `<button class="swv-btn sm" data-pick="${esc(feature)}" data-ids="${J(ids)}">Pick all device ports</button>` : "";
+
+      // ---- what Netwatch suggests
+      const tips = (a.advice || []);
+      const tipsHtml = tips.length ? `<ul class="swv-tips">${tips.map((t, i) => {
+        let btn = "";
+        if (manage && t.change && t.feature === "cable_test") btn = `<button class="swv-btn sm pri" data-cable="${esc(t.change.port)}">Test port ${esc(pn(t.change.port))}</button>`;
+        else if (manage && t.change) btn = `<button class="swv-btn sm ${t.level === "do" ? "pri" : ""}" data-set="${J(Object.assign({ feature: t.feature }, t.change))}"${["rstp", "poe_watchdog", "dhcp_snooping"].includes(t.feature) ? "" : ` data-ask="${esc(t.title + "?")}"`}>${t.level === "info" ? "OK" : "Do it"}</button>`;
+        return `<li class="swv-tip ${esc(t.level)}"><span>${t.level === "do" ? "👉" : t.level === "consider" ? "💡" : "ℹ️"}</span><div style="min-width:0"><div class="t">${esc(t.title)}</div><div class="h">${esc(t.why)}</div>${t.feature === "cable_test" && st.advOut["cable:" + (t.change || {}).port] ? st.advOut["cable:" + t.change.port] : ""}</div>${btn}</li>`;
+      }).join("")}</ul>` : `<p class="swv-muted" style="margin:0">Nothing to suggest — this switch's protections are set the way Netwatch would set them.</p>`;
+
+      // ---- loop protection
+      const r = f.rstp || {}, lg = f.loop_guard || {};
+      const rstpBody = !na(r) ? `${r.enabled ? `<div class="swv-note">${r.is_root ? "This switch is the <b>root bridge</b> (the centre of the tree)." : r.root_id ? `Root bridge: <span class="swv-mono">${esc(r.root_id)}</span>` : ""}${r.priority != null ? ` · bridge priority ${esc(r.priority)}` : ""}</div>
+          ${(r.blocked || []).length ? `<div class="swv-note" style="color:#fbbf24">Blocking ${esc(portsTxt(r.blocked))} — a second path, kept as a standby.</div>` : `<div class="swv-note">No port blocked — there is no second path.</div>`}
+          <details><summary class="swv-note" style="cursor:pointer">Port roles</summary><div class="swv-chips" style="margin-top:4px">${(a.ports || []).filter((p) => p.up).map((p) => { const x = (r.ports || {})[p.id] || {}; return `<span class="swv-b ${x.state === "forwarding" ? "" : "warn"}" title="${esc(pTitle(p))}">${esc(pn(p.id))}: ${esc(x.role || "?")}${x.state && x.state !== "forwarding" ? " · " + esc(x.state) : ""}</span>`; }).join("")}</div></details>` : ""}
+        ${manage ? `<div class="swv-row" style="margin-top:4px">${setBtn({ feature: "rstp", enabled: !r.enabled }, r.enabled ? "Turn RSTP off" : "Turn RSTP on", r.enabled ? "" : "pri")}
+          ${r.enabled ? `<label class="swv-row" style="gap:6px"><span class="swv-note">Priority</span><select class="swv-sel" data-prio>${Array.from({ length: 16 }, (_, i) => i * 4096).map((v) => `<option value="${v}" ${v === r.priority ? "selected" : ""}>${v}${v === 4096 ? " (make root)" : v === 32768 ? " (default)" : ""}</option>`).join("")}</select></label>` : ""}</div>` : ""}` : err(r);
+      const loopSec = `<div class="swv-adv-sec"><h3>Loop protection</h3><div class="swv-adv-grid">
+        ${na(r) && !r.error ? "" : card("RSTP (spanning tree)", badge(r.enabled), "Switches agree on one path through the network, so a second cable between two switches waits as a standby instead of flooding the network. Standard: works with MikroTik and other managed switches.", rstpBody)}
+        ${na(lg) && !lg.error ? "" : card("Loop protection", badge(lg.enabled), "Hikvision's own loop detection: when a loop forms behind a port — even through a cheap unmanaged switch — the switch blocks just that port.",
+          (lg.enabled && (lg.blocked || []).length ? `<div class="swv-note" style="color:#fb7185">Blocked now: ${esc(portsTxt(lg.blocked))}</div>` : "") + err(lg) + (manage && lg.supported ? `<div class="swv-row" style="margin-top:4px">${setBtn({ feature: "loop_guard", enabled: !lg.enabled }, lg.enabled ? "Turn off" : "Turn on", lg.enabled ? "" : "pri", lg.enabled ? "" : "Turn loop protection on?")}</div>` : ""))}
+        ${na(f.erps) ? "" : card("ERPS ring protection", badge(f.erps.enabled), "For switches cabled in a ring: one link waits as a standby and takes over in under a second. Set it up on the switch's own page — every switch in the ring needs it.", f.erps.enabled ? `<div class="swv-note">Ring ports: ${esc((f.erps.ports || []).join(", "))}</div>` : "")}
+        ${na(r) && na(lg) ? `<p class="swv-muted">This switch has no loop protection settings.</p>` : ""}
+      </div></div>`;
+
+      // ---- traffic
+      const sm = f.storm || {}, rl = f.rate_limit || {}, q = f.qos || {};
+      const MODE = { broadCast: "broadcast", multiCast: "multicast", unknownUnicast: "unknown-unicast", broadcast: "broadcast", multicast: "multicast", unicast: "unknown-unicast" };
+      const g = sm.global;
+      const stormBody = na(sm) ? err(sm) : `${g ? `<div class="swv-note">Limits <b>${esc(MODE[g.mode] || g.mode)}</b> traffic to <b>${esc(g.ratio_pct)}%</b> of the port's speed on the ports marked green.</div>
+          ${manage ? `<div class="swv-row"><select class="swv-sel" data-storm-mode>${(g.modes || []).map((m) => `<option value="${esc(m)}" ${m === g.mode ? "selected" : ""}>${esc(MODE[m] || m)}</option>`).join("")}</select><input class="swv-in" data-storm-ratio type="number" min="${esc((g.ratio_range || [1])[0])}" max="${esc((g.ratio_range || [1, 100])[1])}" value="${esc(g.ratio_pct)}" style="width:70px"> %<button class="swv-btn sm" data-storm-global>Save limit</button></div>` : ""}`
+          : `<div class="swv-note">New ports get <b>broadcast</b> limited to <input class="swv-in" data-storm-lim type="number" value="10" min="1" max="1000" style="width:64px"> Mbit/s.</div>`}
+        ${chips("storm")}${saveRow("storm")}<div class="swv-row">${pick("storm", edge)}</div>`;
+      const limited = Object.entries(rl.ports || {}).filter(([, v]) => v.rx_mbps != null || v.tx_mbps != null);
+      const rateBody = na(rl) ? err(rl) : `${limited.length ? `<div class="swv-chips">${limited.map(([k, v]) => `<span class="swv-b info">port ${esc(pn(k))}: ↓${esc(v.rx_mbps ?? "–")} ↑${esc(v.tx_mbps ?? "–")} Mbit/s ${manage ? `<button class="swv-btn sm" style="padding:0 5px" data-set="${J({ feature: "rate_limit", ports: [k], rx_mbps: null, tx_mbps: null })}" data-ask="Remove the limit on port ${esc(pn(k))}?" title="Remove the limit">✕</button>` : ""}</span>`).join("")}</div>` : `<div class="swv-note">No port is limited.</div>`}
+        ${manage ? `<div class="swv-row"><select class="swv-sel" data-rl-port>${(a.ports || []).map((p) => `<option value="${esc(p.id)}" ${prot[p.id] ? "disabled" : ""}>Port ${esc(pn(p.id))}${prot[p.id] ? " 🔒" : ""}</option>`).join("")}</select>↓<input class="swv-in" data-rl-rx type="number" min="1" placeholder="in" style="width:62px">↑<input class="swv-in" data-rl-tx type="number" min="1" placeholder="out" style="width:62px">Mbit/s<button class="swv-btn sm" data-rl-save>Set limit</button></div>` : ""}`;
+      const qosBody = na(q) ? err(q) : `${q.enabled ? `<div class="swv-note">${q.type === "redPort" ? "High-priority port mode" : `QoS ${esc(q.algorithm || "")}${q.algorithm === "WRR" ? ` · high:low weight ${esc(q.high_weight)}:${esc(q.low_weight)}` : ""}`}. High-priority ports are green.</div>` : ""}
+        ${manage && q.can_set ? `<div class="swv-row">${setBtn(q.enabled ? { feature: "qos", enabled: false } : { feature: "qos", enabled: true, algorithm: "WRR", high_weight: 8, low_weight: 1 }, q.enabled ? "Turn QoS off" : "Turn QoS on (WRR 8:1)", "", q.enabled ? "Turn QoS off?" : "Turn QoS on? Ports you mark high-priority then go first when a link is full.")}</div>` : ""}
+        ${q.enabled ? chips("qos", { range: q.port_range }) + saveRow("qos") : ""}`;
+      const trafficSec = na(sm) && na(rl) && na(q) ? "" : `<div class="swv-adv-sec"><h3>Traffic</h3><div class="swv-adv-grid">
+        ${na(sm) && !sm.error ? "" : card("Storm control", `<span class="swv-b ${advCur("storm").length ? "ok" : ""}">${advCur("storm").length ? plural(advCur("storm").length, "port") : "Off"}</span>`, "Caps broadcast floods per port, so one faulty device or a loop can't swamp the rest of the network.", stormBody)}
+        ${na(rl) && !rl.error ? "" : card("Bandwidth limits", limited.length ? `<span class="swv-b info">${plural(limited.length, "port")}</span>` : `<span class="swv-b">None</span>`, "Caps how fast one port may send or receive — e.g. so one camera can't fill a slow radio link.", rateBody)}
+        ${na(q) && !q.error ? "" : card("QoS / priority", badge(q.enabled), "When a link is full, traffic from high-priority ports goes first (e.g. the recorder, or a gate controller behind a radio link).", qosBody)}
+      </div></div>`;
+
+      // ---- PoE and cabling
+      const wd = f.poe_watchdog || {}, lr = f.long_range || {}, eee = f.eee || {}, ct = f.cable_test || {}, sfp = f.sfp || {};
+      const lrBody = na(lr) ? err(lr) : `${lr.auto != null ? `<div class="swv-row"><span class="swv-note">Automatic long-range: ${lr.auto ? "<b>on</b> — the switch picks the ports itself" : "off"}</span>${setBtn({ feature: "long_range", auto: !lr.auto }, lr.auto ? "Choose ports myself" : "Let the switch decide", "", lr.auto ? "Turn automatic long-range mode off?" : "Turn automatic long-range mode on?")}</div>` : ""}
+        ${lr.auto ? "" : chips("long_range", { range: lr.port_range, lock: true }) + saveRow("long_range")}`;
+      const copper = (a.ports || []).filter((p) => p.type !== "sfp" && !(ct.port_range && (+pn(p.id) < ct.port_range[0] || +pn(p.id) > ct.port_range[1])));
+      const ctBody = manage ? `<div class="swv-row"><select class="swv-sel" data-ct-port>${copper.map((p) => `<option value="${esc(p.id)}" ${prot[p.id] ? "disabled" : ""}>Port ${esc(pn(p.id))}${prot[p.id] ? " 🔒" : ""}${vp(p.id).name && !isDefaultName(vp(p.id).name) ? " · " + esc(vp(p.id).name) : ""}</option>`).join("")}</select><button class="swv-btn sm" data-ct-run>📏 Test cable</button></div>${st.advOut.cable || ""}` : "";
+      const mods = Object.entries(sfp.modules || {});
+      const sfpBody = mods.length ? mods.map(([k, m]) => m.error ? `<div class="swv-note">Port ${esc(pn(k))}: ${esc(m.error)}</div>` : `<div class="swv-note"><b>Port ${esc(pn(k))}</b> ${esc([m.vendor, m.type, m.wavelength_nm ? m.wavelength_nm + " nm" : ""].filter(Boolean).join(" · "))}<br>rx ${m.rx_dbm != null ? esc(m.rx_dbm.toFixed(1)) + " dBm" : "—"} · tx ${m.tx_dbm != null ? esc(m.tx_dbm.toFixed(1)) + " dBm" : "—"} · ${m.temp_c != null ? esc(Math.round(m.temp_c)) + "°C" : ""}</div>`).join("") : `<div class="swv-note">No SFP module with a link.</div>`;
+      const poeSec = `<div class="swv-adv-sec"><h3>PoE and cabling</h3><div class="swv-adv-grid">
+        ${na(wd) && !wd.error ? "" : card("PoE watchdog", badge(wd.enabled), "A camera that hangs keeps drawing power but stops sending data. The watchdog notices and power-cycles that port by itself.", err(wd) + (manage && wd.supported ? `<div class="swv-row" style="margin-top:4px">${setBtn({ feature: "poe_watchdog", enabled: !wd.enabled }, wd.enabled ? "Turn off" : "Turn on", wd.enabled ? "" : "pri", wd.enabled ? "Turn the PoE watchdog off? Hung cameras then stay down until someone restarts them." : "")}</div>` : ""))}
+        ${na(lr) && !lr.error ? "" : card("Long-range ports", `<span class="swv-b ${(lr.ports_on || []).length ? "info" : ""}">${(lr.ports_on || []).length ? plural(lr.ports_on.length, "port") : lr.auto ? "Auto" : "None"}</span>`, "A long-range port runs at 10 Mbit/s so its cable can reach about 250–300 m — for a camera far beyond the normal 100 m.", lrBody)}
+        ${na(eee) && !eee.error ? "" : card("EEE (energy saving)", badge(eee.enabled), "Energy-efficient Ethernet lets quiet links nap. Some cameras and radios drop or count errors with it; keep it off if ports misbehave.", err(eee) + (manage && eee.supported ? `<div class="swv-row" style="margin-top:4px">${toggle("eee", eee.enabled, "EEE")}</div>` : ""))}
+        ${ct.supported === false ? "" : card("Cable test", "", "Measures each pair of a copper cable: broken, short, badly crimped, and roughly how long. The link drops for a few seconds.", ctBody)}
+        ${na(sfp) ? "" : card("SFP modules", "", "Fibre/SFP module health: light received and sent, temperature.", sfpBody)}
+        ${card("Port counters", "", "Clear the switch's traffic and error counters — after fixing a cable, to see whether errors come back.", manage ? `<div class="swv-row" style="margin-top:4px">${setBtn({ feature: "counters" }, "Clear counters", "", "Clear every port's traffic and error counters on this switch?")}</div>` : "")}
+      </div></div>`;
+
+      // ---- discovery and security
+      const ld = f.lldp || {}, dh = f.dhcp_snooping || {}, iso = f.isolation || {}, acc = f.access || {}, ps = f.port_security || {}, ot = f.other || {};
+      const lldpBody = err(ld) + (ld.enabled && (ld.neighbors || []).length ? `<div class="swv-tablewrap"><table class="swv-t"><thead><tr><th>Port</th><th>Neighbour</th><th>Its port</th></tr></thead><tbody>${ld.neighbors.map((n) => `<tr><td data-l="Port">${esc(n.port ? pn(n.port) : n.port_label)}</td><td data-l="Neighbour">${esc(n.name || n.ip || n.mac)}${n.ip && n.name ? ` <span class="swv-dim swv-mono">${esc(n.ip)}</span>` : ""}</td><td data-l="Its port">${esc(n.peer_port)}</td></tr>`).join("")}</tbody></table></div>` : ld.enabled ? `<div class="swv-note">No LLDP neighbours yet.</div>` : "")
+        + (manage && ld.supported ? `<div class="swv-row" style="margin-top:4px">${toggle("lldp", ld.enabled, "LLDP")}</div>` : "");
+      const dhBody = na(dh) ? err(dh) : `<div class="swv-note">${dh.enabled ? `Trusted (may hand out addresses): <b>${esc(portsTxt(dh.trusted))}</b>.${(dh.entries || []).length ? ` ${plural(dh.entries.length, "lease")} seen.` : ""}` : "Pick the port(s) the DHCP server (usually the router) is behind — Netwatch pre-picks the router's port:"}</div>
+        ${manage ? chips("dhcp_snooping") + (dh.enabled ? saveRow("dhcp_snooping", "Save trusted ports") : "") : ""}
+        ${manage ? `<div class="swv-row" style="margin-top:4px">${dh.enabled ? setBtn({ feature: "dhcp_snooping", enabled: false }, "Turn off", "", "Turn DHCP snooping off?") : `<button class="swv-btn sm pri" data-dh-on>Turn on, trusting the green ports</button>`}</div>` : ""}`;
+      const isoBody = na(iso) ? err(iso) : `<div class="swv-note">${(iso.ports || []).length ? `Isolated: <b>${esc(portsTxt(iso.ports))}</b> — they can't reach each other, only the other ports.` : "No port isolated."}</div>${chips("isolation", { range: iso.port_range, lock: true })}${saveRow("isolation")}`;
+      const accRows = [
+        ["Telnet", acc.telnet, "telnet", "Old remote console — sends the password in plain text. Keep it off."],
+        ["ONVIF discovery", acc.onvif, "onvif", "Answers ONVIF searches from recorders and VMS software. A switch doesn't need it."],
+        ["SADP agent", acc.sadp_agent, "sadp_agent", "Broadcasts a discovery packet every minute to draw Hikvision's topology. Netwatch doesn't need it."],
+      ];
+      const accBody = `<dl class="swv-kv">${accRows.filter((x) => x[1] != null).map(([l, v, k, h]) => `<dt>${esc(l)}</dt><dd>${badge(v)} ${manage ? setBtn({ feature: k, enabled: !v }, v ? "Turn off" : "Turn on", "", `Turn ${l} ${v ? "off" : "on"}?`) : ""}<div class="swv-note">${esc(h)}</div></dd>`).join("")}
+        ${acc.sadp_server != null ? `<dt>SADP server</dt><dd>${badge(acc.sadp_server)}<div class="swv-note">Lets SADP tools (and Netwatch) find the switch — keep it on.</div></dd>` : ""}
+        ${acc.http_port != null ? `<dt>Web page</dt><dd>HTTP port ${esc(acc.http_port)}${acc.https != null ? ` · HTTPS ${acc.https ? "on" : "off"}${acc.https_port ? " (" + esc(acc.https_port) + ")" : ""}${acc.https_redirect ? " · redirects to HTTPS" : ""}` : ""}<div class="swv-note">Netwatch talks to the switch over HTTP — don't force HTTPS-only from the switch's own page.</div></dd>` : ""}
+        ${acc.ssh != null ? `<dt>SSH</dt><dd>${badge(acc.ssh)}</dd>` : ""}
+        ${acc.cloud != null ? `<dt>Hik-Connect cloud</dt><dd>${badge(acc.cloud)}</dd>` : ""}
+        ${ps.supported ? `<dt>Port security</dt><dd>${ps.enabled ? "on (" + esc(ps.mode) + ")" : "off"}</dd>` : ""}</dl>
+        ${ot.supported && [ot.acl, ot.ip_source_guard, ot.arp_protection].some(Boolean) ? `<div class="swv-note" style="margin-top:6px">Also on this switch, set on its own page: ${esc([ot.acl && "access lists (ACL)", ot.ip_source_guard && "IP source guard", ot.arp_protection && "ARP gateway protection", ot.dscp && "DSCP priority"].filter(Boolean).join(", "))}.</div>` : ""}`;
+      const secSec = `<div class="swv-adv-sec"><h3>Discovery and security</h3><div class="swv-adv-grid">
+        ${na(ld) && !ld.error ? "" : card("LLDP", badge(ld.enabled), "Switches, routers and many cameras announce themselves to their neighbour, so you can see what is on each port.", lldpBody)}
+        ${na(dh) && !dh.error ? "" : card("DHCP snooping", badge(dh.enabled), "Only trusted ports may hand out IP addresses: a home router or phone hotspot plugged in by mistake can't knock cameras off the network.", dhBody)}
+        ${na(iso) && !iso.error ? "" : card("Port isolation", `<span class="swv-b ${(iso.ports || []).length ? "info" : ""}">${(iso.ports || []).length ? plural(iso.ports.length, "port") : "None"}</span>`, "Isolated ports can't talk to each other — a hacked camera can't reach the others. Never isolate the recorder's port or an uplink.", isoBody)}
+        ${card("Remote access", "", "How the switch can be reached and found.", accBody)}
+      </div></div>`;
+
+      // ---- network layout (read only)
+      const vl = f.vlan || {}, lag = f.lag || {}, mir = f.mirror || {};
+      const vports = Object.entries(vl.ports || {});
+      const plain = vports.length && vports.every(([, v]) => v.type === "access" && v.pvid === 1);
+      const layoutSec = na(vl) && na(lag) && na(mir) ? "" : `<div class="swv-adv-sec"><h3>Network layout <span class="swv-dim" style="text-transform:none;letter-spacing:0">(read only — change on the switch's own page)</span></h3><div class="swv-adv-grid">
+        ${na(vl) ? "" : card("VLANs", plain ? `<span class="swv-b">VLAN 1 only</span>` : `<span class="swv-b info">${plural((vl.ids || []).length, "VLAN")}</span>`, plain ? "Every port is in VLAN 1 — one flat network." : "Which VLANs each port carries.", plain ? "" : `<div class="swv-chips">${vports.map(([k, v]) => `<span class="swv-b" title="${esc(v.type)}">${esc(pn(k))}: ${esc(v.type === "access" ? "VLAN " + v.pvid : v.type + " pvid " + v.pvid + " · " + (v.vlans || []).join(","))}</span>`).join("")}</div>`)}
+        ${na(lag) ? "" : card("Link aggregation", `<span class="swv-b">${(lag.groups || []).length ? plural(lag.groups.length, "group") : "None"}</span>`, "Several cables bundled into one faster, redundant link.", (lag.groups || []).map((x) => `<div class="swv-note">Group ${esc(x.id)}: ${esc(portsTxt(x.ports))}</div>`).join(""))}
+        ${na(mir) ? "" : card("Port mirroring", badge(mir.enabled), "Copies one port's traffic to another, for a packet capture.", mir.enabled ? `<div class="swv-note">${esc(portsTxt(mir.from))} → port ${esc(pn(mir.to))}</div>` : "")}
+      </div></div>`;
+
+      // ---- clock
+      const tm = f.time || {};
+      const drift = tm.drift_s;
+      const timeSec = na(tm) ? "" : `<div class="swv-adv-sec"><h3>Clock</h3><div class="swv-adv-grid">${card("Time", tm.mode ? `<span class="swv-b ${tm.mode === "NTP" ? "ok" : "warn"}">${esc(tm.mode === "manually" ? "set by hand" : tm.mode)}</span>` : "",
+        "With the right time, the switch's log lines up with the cameras and the recorder when you look into a fault.",
+        `<div class="swv-note">Switch clock: <span class="swv-mono">${esc((tm.time || "").replace("T", " "))}</span>${drift != null ? ` · ${Math.abs(drift) < 60 ? "on time" : `<b style="color:#fbbf24">${drift > 0 ? "ahead" : "behind"} by ${esc(uptime(Math.abs(drift)))}</b>`}` : ""}${tm.mode === "NTP" && tm.ntp_server ? ` · NTP ${esc(tm.ntp_server)} every ${esc(tm.interval_min)} min` : ""}</div>
+         ${manage && tm.can_ntp ? `<div class="swv-row"><input class="swv-in" data-ntp-server placeholder="pool.ntp.org" value="${esc(tm.ntp_server || "pool.ntp.org")}" style="width:170px"><button class="swv-btn sm" data-ntp-save>Use this NTP server</button></div><div class="swv-note">The switch needs a gateway and DNS for a name like pool.ntp.org; the router's IP works when it runs an NTP server.</div>` : ""}`)}</div></div>`;
+
+      el.innerHTML = `<div class="swv-head"><div style="min-width:0"><h3 style="margin:0">Advanced settings</h3>
+          <p class="swv-note" style="margin:4px 0 0">Read ${ago(a.ts)}${a.read_s != null ? ` in ${esc(a.read_s)} s` : ""}${a.model_known ? "" : " · the switch didn't list its features, so Netwatch tried each one"}</p></div>
+          <div class="swv-row"><button class="swv-btn sm" data-adv="reload">↻ Read again</button><button class="swv-btn sm" data-adv="hide">Hide</button></div></div>
+        ${manage ? "" : `<div class="swv-lock" style="margin-top:8px">🔒 Changing settings from here is turned off for this site.${o.settingsHref ? ` <a href="${esc(o.settingsHref)}" style="color:#a5b4fc">Turn on “Manage switches”</a>` : ""}</div>`}
+        <div class="swv-adv-sec"><h3>Netwatch suggests</h3>${tipsHtml}</div>
+        ${loopSec}${trafficSec}${poeSec}${secSec}${layoutSec}${timeSec}
+        <p class="swv-note" style="margin:12px 0 0">Every change is logged under “What happened”. 🔒 ports carry the Pi or the router — Netwatch won't make changes there that could cut the site off.</p>`;
+      bindAdv(el);
+    }
+
+    function bindAdv(el) {
+      const q = (s) => el.querySelector(s);
+      el.querySelectorAll("[data-adv=reload]").forEach((b) => (b.onclick = () => advLoad(true)));
+      el.querySelectorAll("[data-adv=hide]").forEach((b) => (b.onclick = () => { st.advOpen = false; drawAdv(); }));
+      el.querySelectorAll("[data-set]").forEach((b) => (b.onclick = async () => {
+        const body = JSON.parse(b.dataset.set);
+        if (b.dataset.ask && !(await o.confirm(b.dataset.ask, ""))) return;
+        advSet(body, b);
+      }));
+      el.querySelectorAll("[data-chip]").forEach((b) => (b.onclick = () => {
+        const k = b.dataset.chip;
+        const s = st.advPick[k] || (st.advPick[k] = new Set());
+        if (s.has(b.dataset.p)) s.delete(b.dataset.p); else s.add(b.dataset.p);
+        drawAdv();
+      }));
+      el.querySelectorAll("[data-undo]").forEach((b) => (b.onclick = () => { delete st.advPick[b.dataset.undo]; drawAdv(); }));
+      el.querySelectorAll("[data-pick]").forEach((b) => (b.onclick = () => {
+        const k = b.dataset.pick, ids = JSON.parse(b.dataset.ids);
+        const cur = new Set(advCur(k));
+        st.advPick[k] = new Set(ids.filter((id) => !cur.has(id)));
+        drawAdv();
+      }));
+      el.querySelectorAll("[data-save]").forEach((b) => (b.onclick = () => advSavePorts(b.dataset.save, b)));
+      const prio = q("[data-prio]");
+      if (prio) prio.onchange = async () => {
+        const v = +prio.value;
+        if (!(await o.confirm(`Set this switch's bridge priority to ${v}?`, "The switch with the LOWEST priority becomes the root (the centre of the tree). Ports may re-learn for a few seconds."))) { drawAdv(); return; }
+        advSet({ feature: "rstp", enabled: true, priority: v, confirm: true }, prio);
+      };
+      const sg = q("[data-storm-global]");
+      if (sg) sg.onclick = () => advSet({ feature: "storm", mode: q("[data-storm-mode]").value, ratio_pct: +q("[data-storm-ratio]").value }, sg);
+      const rls = q("[data-rl-save]");
+      if (rls) rls.onclick = () => {
+        const rx = +q("[data-rl-rx]").value || null, tx = +q("[data-rl-tx]").value || null;
+        if (!rx && !tx) { o.toast("Type a limit in Mbit/s (download, upload or both)", "bad"); return; }
+        advSet({ feature: "rate_limit", ports: [q("[data-rl-port]").value], rx_mbps: rx, tx_mbps: tx }, rls);
+      };
+      const ctr = q("[data-ct-run]");
+      if (ctr) ctr.onclick = () => runCable(q("[data-ct-port]").value, ctr, "cable");
+      el.querySelectorAll("[data-cable]").forEach((b) => (b.onclick = () => runCable(b.dataset.cable, b, "cable:" + b.dataset.cable)));
+      const dho = q("[data-dh-on]");
+      if (dho) dho.onclick = () => {
+        const cur = new Set(advCur("dhcp_snooping")), pend = st.advPick.dhcp_snooping || new Set();
+        const trusted = [...new Set([...cur].filter((p) => !pend.has(p)).concat([...pend].filter((p) => !cur.has(p))))];
+        if (!trusted.length) { o.toast("Pick the port the DHCP server (the router) is behind first", "bad"); return; }
+        advSet({ feature: "dhcp_snooping", enabled: true, trusted }, dho, "DHCP snooping is on");
+      };
+      const ntp = q("[data-ntp-save]");
+      if (ntp) ntp.onclick = () => advSet({ feature: "ntp", server: q("[data-ntp-server]").value.trim() }, ntp, "NTP server set");
+    }
+
+    function advCur(feature) {
+      const f = (st.adv || {}).features || {};
+      if (feature === "storm") return Object.entries((f.storm || {}).ports || {}).filter(([, v]) => v.enabled).map(([k]) => k);
+      if (feature === "long_range") return (f.long_range || {}).ports_on || [];
+      if (feature === "isolation") return (f.isolation || {}).ports || [];
+      if (feature === "qos") return (f.qos || {}).high_ports || [];
+      if (feature === "dhcp_snooping") {
+        if ((f.dhcp_snooping || {}).enabled) return f.dhcp_snooping.trusted || [];
+        const tip = ((st.adv || {}).advice || []).find((x) => x.feature === "dhcp_snooping");
+        const prot = (st.adv || {}).protected || {};
+        return (tip && tip.change && tip.change.trusted) || Object.keys(prot).filter((k) => /router/.test(prot[k]));
+      }
+      return [];
+    }
+
+    async function advSavePorts(feature, btn) {
+      const cur = new Set(advCur(feature)), pend = st.advPick[feature] || new Set();
+      const on = [...pend].filter((p) => !cur.has(p)), off = [...pend].filter((p) => cur.has(p));
+      const flag = { storm: "enabled", long_range: "enabled", isolation: "isolated", qos: "high" }[feature];
+      const bodies = [];
+      if (feature === "dhcp_snooping") {
+        bodies.push({ feature, enabled: true, trusted: [...cur].filter((p) => !pend.has(p)).concat(on) });
+      } else {
+        const extra = feature === "storm" && !((st.adv.features.storm || {}).global) ? { type: "broadcast", limit_mbps: +((root.querySelector("[data-storm-lim]") || {}).value || 10) } : {};
+        if (on.length) bodies.push(Object.assign({ feature, ports: on, [flag]: true }, extra));
+        if (off.length) bodies.push({ feature, ports: off, [flag]: false });
+      }
+      for (const b of bodies) {
+        if (!(await advSet(b, btn))) return;
+      }
+    }
+
+    async function runCable(port, btn, slot) {
+      if (!port) return;
+      if (!(await o.confirm(`Cable test on port ${String(port).split("/").pop()}?`, "The link drops for a few seconds while the switch measures the pairs.", { danger: true }))) return;
+      const r = await act({ action: "cable-test", port }, btn, "Cable test finished");
+      if (r) { st.advOut[slot] = cableHtml(r.result); drawAdv(); }
     }
 
     function drawEvents() {

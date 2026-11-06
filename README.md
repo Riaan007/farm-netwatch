@@ -32,6 +32,14 @@ device drops offline.
   default) unlocks port on/off, PoE mode, PoE power cycle, rename, cable test, blink
   LEDs, restart and config backups — ports the Pi or the router are on are always
   refused. Same view on the site's **Switches** page and the hub's site **Switches** tab.
+- **Hikvision smart switches (DS-3E with a web page, e.g. DS-3E1520P-EI)** — the same view
+  and port controls, plus **Advanced settings**: loop protection (RSTP and the switch's own
+  loop guard), storm control, bandwidth limits, QoS, PoE watchdog, long-range ports, EEE,
+  LLDP, DHCP snooping, port isolation, Telnet / ONVIF / SADP agent, the NTP clock, a cable
+  test and SFP diagnostics, with Netwatch's suggestions for that switch. Changes that could
+  cut a port off are refused on the Pi's and the router's ports and ask first on uplinks;
+  the whole-switch ones (RSTP, DHCP snooping, PoE watchdog…) say what will happen first.
+  A wrong saved password locks the switch's account, so a login is tried once, never looped.
 - **Network view — diagram and map of how it is connected** — the site's **Network**
   page (and the hub's site tab **Network**) draws towers, sites and buildings as groups
   with the equipment on each, and the Ethernet, fibre and wireless links between them —

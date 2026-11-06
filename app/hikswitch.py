@@ -29,8 +29,14 @@ not again until the login changes; never loop logins here.
 The snapshot has the SAME shape as edgeswitch.normalize()/swos.normalize(), so
 the switch monitor, its problems, events, protected ports and both UIs work
 unchanged. Port ids are "0/<n>", n = the switch's own portID.
+
+The switch's thing model (load_model: what it has, with ranges and options) and
+attribute writes (Session.set_attr) are here too; the advanced settings built on
+them — RSTP, loop guard, storm control, PoE watchdog, DHCP snooping and the rest —
+live in hikswitch_adv.py. The cable test is the switch's own Cable Detection.
 """
 import hashlib
+import json
 import random
 import re
 import time
@@ -218,6 +224,11 @@ class Session:
     def attr(self, group, name):
         return self._send("GET", f"/attribute/get/{group}/{name}")
 
+    def set_attr(self, group, name, value, timeout=None):
+        """An attribute write: POST attribute/set/… with {"data": {"Value": …}} (the
+        web app's request wrapper does exactly this for every POST to an attribute)."""
+        return self._send("POST", f"/attribute/set/{group}/{name}", {"Value": value}, timeout=timeout)
+
     def search(self, group, cmd, list_key="matchResults", page=100, extra=None, mac_paging=False):
         """Every row of a paged Search… command (responseStatus "MORE" = ask again)."""
         rows, pos, last_mac = [], 1, ""
@@ -278,6 +289,92 @@ class Session:
             raise HikSwitchError("the switch accepted the login but gave no session", "error")
         self.tag = tag
         return res
+
+
+# ---- the switch's thing model ---------------------------------------------------------
+# (ip, firmware) -> {domain identifier: domain} — the list the switch's own web app
+# builds its menus from (DynamicCapability/GetModelFile). None = the switch has none
+# (then every part is just tried). Read once per switch and firmware.
+_MODELS = {}
+
+
+def load_model(s, firmware=""):
+    key = (s.ip, str(firmware or ""))
+    if key in _MODELS:
+        return _MODELS[key]
+    model = None
+    try:
+        res = s.svc("DynamicCapability", "GetModelFile", {"filePath": ""}, timeout=(5, 40)) or {}
+        doc = res.get("filePath") if isinstance(res, dict) else None
+        if isinstance(doc, str) and str(res.get("filePathType") or "text") == "text":
+            doc = json.loads(doc)
+        doms = ((doc.get("resources") or [{}])[0].get("domains") or []) if isinstance(doc, dict) else []
+        model = {d["identifier"]: d for d in doms if isinstance(d, dict) and d.get("identifier")} or None
+    except HikSwitchError as e:
+        if e.kind == "unreachable":
+            raise
+        if not _not_supported(e):
+            return None                       # a hiccup: ask again next time
+    except (ValueError, TypeError, AttributeError, IndexError):
+        model = None
+    _MODELS[key] = model
+    return model
+
+
+def model_has(model, group, name=None, kind=None):
+    """True/False from the thing model; None when there is no model to ask."""
+    if model is None:
+        return None
+    d = model.get(group)
+    if not isinstance(d, dict):
+        return False
+    if name is None:
+        return True
+    kinds = (kind,) if kind else ("props", "actions", "events")
+    return any(isinstance(x, dict) and x.get("identifier") == name for k in kinds for x in d.get(k) or [])
+
+
+def _schema_caps(props, prefix=""):
+    """The web app's formatData(): {default, range, options} keyed like
+    "portRateList-rxLimitRate" for nested fields."""
+    out = {"default": {}, "range": {}, "options": {}}
+    for k, sch in (props or {}).items():
+        if not isinstance(sch, dict):
+            continue
+        key = f"{prefix}-{k}" if prefix else k
+        if "default" in sch:
+            out["default"][key] = sch["default"]
+        if isinstance(sch.get("enum"), list):
+            out["options"][key] = sch["enum"]
+        if sch.get("minimum") is not None and sch.get("maximum") is not None:
+            out["range"].setdefault(key, {}).update(min=sch["minimum"], max=sch["maximum"])
+        for sub in (sch.get("items") if isinstance(sch.get("items"), dict) else {}, sch):
+            if sub is not None and isinstance(sub.get("properties"), dict):
+                deeper = _schema_caps(sub["properties"], key)
+                for part in out:
+                    out[part].update(deeper[part])
+    return out
+
+
+def model_caps(model, path):
+    """getCaps("<Group>/<Name>"): ranges, options and defaults of one setting."""
+    group, _, name = str(path).partition("/")
+    d = (model or {}).get(group) if isinstance(model, dict) else None
+    e = None
+    for k in ("props", "actions", "events"):
+        for x in (d or {}).get(k) or []:
+            if isinstance(x, dict) and x.get("identifier") == name:
+                e = e or x
+    if not e:
+        return {"default": {}, "range": {}, "options": {}}
+    if isinstance(e.get("schema"), dict):
+        return _schema_caps(e["schema"].get("properties"))
+    props = {}
+    for side in ("input", "output"):
+        sch = (e.get(side) or {}).get("schema") if isinstance(e.get(side), dict) else None
+        if isinstance(sch, dict):
+            props.update(sch.get("properties") or (sch.get("items") or {}).get("properties") or {})
+    return _schema_caps(props)
 
 
 # ---- read + normalise -----------------------------------------------------------------
@@ -433,8 +530,8 @@ def normalize(raw):
             "hardware": str(summ.get("hardwareVersion") or ""),
             "uptime": _int(summ.get("deviceUpTime")), "ip": str(summ.get("ipv4Address") or ""),
         },
-        "caps": {"locate": False, "cable_test": False, "backup": False, "reboot": True,
-                 "poe_cycle": bool(poe_ports), "rename_port": True},
+        "caps": {"locate": False, "cable_test": True, "backup": False, "reboot": True,
+                 "poe_cycle": bool(poe_ports), "rename_port": True, "advanced": True},
         "health": {"cpu": first(summ.get("CPUList"), "CPUUtilization"),
                    "ram": first(summ.get("memoryList"), "memoryUtilization"),
                    "temps": [], "temp": None, "fans": [], "psu": []},
@@ -667,8 +764,56 @@ def locate(ip, username, password, on=True):
     return {"ok": False, "error": "This Hikvision switch has no find-me LEDs"}
 
 
+# What the cable test answers (description codes, the switch's own English).
+CABLE_TEXT = {
+    "NORMAL": "cable is normal",
+    "RX_SHORT": "the receive pair is short-circuited", "TX_SHORT": "the transmit pair is short-circuited",
+    "RX_OPEN": "the receive pair is open (broken or not connected)",
+    "TX_OPEN": "the transmit pair is open (broken or not connected)",
+    "A_SHORT": "pair A is short-circuited", "B_SHORT": "pair B is short-circuited",
+    "C_SHORT": "pair C is short-circuited", "D_SHORT": "pair D is short-circuited",
+    "A_OPEN": "pair A is open (broken or not connected)", "B_OPEN": "pair B is open (broken or not connected)",
+    "C_OPEN": "pair C is open (broken or not connected)", "D_OPEN": "pair D is open (broken or not connected)",
+    "A_HIIMPEDANCE": "pair A has high impedance (bad crimp, corrosion or a damaged core)",
+    "B_HIIMPEDANCE": "pair B has high impedance (bad crimp, corrosion or a damaged core)",
+    "C_HIIMPEDANCE": "pair C has high impedance (bad crimp, corrosion or a damaged core)",
+    "D_HIIMPEDANCE": "pair D has high impedance (bad crimp, corrosion or a damaged core)",
+    "OTHER": "another cable fault", "FAIL": "the test failed",
+}
+CABLE_ERRORS = {
+    "0x004000bb": "The switch can't test a cable while the port runs at 10 Mbit/s (long-range ports run at 10).",
+    "0x004000bc": "This port has no cable tester (the SFP ports don't).",
+    "0x004000bd": "The cable test failed — try again.",
+    "0x004000be": "A cable test is already running on this switch — try again in a minute.",
+}
+
+
+def cable_result(res):
+    """GetPortLineStatus {lineStatus, lineLength, description} -> plain words."""
+    res = res if isinstance(res, dict) else {}
+    codes = [c for c in re.split(r"[\s,;|]+", str(res.get("description") or "").strip()) if c]
+    good = bool(codes) and all(c.upper() == "NORMAL" for c in codes)
+    return {"good": good, "status": str(res.get("lineStatus") or ""), "length_m": _num(res.get("lineLength")),
+            "codes": codes, "text": "; ".join(CABLE_TEXT.get(c.upper(), c) for c in codes) or "no answer"}
+
+
 def cable_test(ip, username, password, port_id):
-    return {"ok": False, "error": "Cable tests on Hikvision switches aren't supported yet"}
+    """The switch's own cable tester (Cable Detection) on one copper port. The link
+    drops for a few seconds while it measures; the server refuses it on the Pi's
+    and the router's port."""
+    n = _port_no(port_id)
+    if n is None:
+        return {"ok": False, "error": f"bad port {port_id!r}"}
+    try:
+        with Session(ip, username, password, timeout=(5, 45)) as s:
+            _check_port(s, port_id)
+            res = s.svc("PortMgr", "GetPortLineStatus", {"portID": n}, timeout=(5, 45)) or {}
+        return {"ok": True, "port": port_id, "result": cable_result(res)}
+    except HikSwitchError as e:
+        known = CABLE_ERRORS.get(str(e.code or "").lower())
+        if not known and _not_supported(e):
+            known = "This switch has no cable tester."
+        return {"ok": False, "error": known or str(e), "kind": e.kind}
 
 
 def backup(ip, username, password):

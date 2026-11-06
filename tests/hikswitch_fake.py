@@ -83,6 +83,7 @@ class FakeHikSwitch:
                       "SystemMaintenance/TelnetServerCfg": {"enabled": True},
                       "SNMPAccess/SNMPCfg": {"enabled": False}}
         self.unsupported = set()         # e.g. {"STPManage/SearchPortPrivateLoopStatus"}
+        self._advanced()
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -96,6 +97,7 @@ class FakeHikSwitch:
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
+                return True                      # "answered" (the advanced handlers rely on it)
 
             def _body(self):
                 n = int(self.headers.get("Content-Length") or 0)
@@ -113,6 +115,229 @@ class FakeHikSwitch:
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), H)
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    # ---- advanced settings (hikswitch_adv) ---------------------------------------------
+    def _advanced(self):
+        """The advanced settings a DS-3E1520P-EI shows in its web app, factory-ish:
+        RSTP and loop protection off, storm control global (10 % broadcast) and off
+        per port, PoE watchdog on, EEE and LLDP on, DHCP snooping off, Telnet,
+        ONVIF and the SADP agent on, clock set by hand."""
+        self.attrs.update({
+            "STPManage/STPGlobalCfg": {"STPEnabled": False, "STPMode": "RSTP", "sysPriority": 32768,
+                                       "helloTime": 2, "maxAgingTime": 20, "forwardDelayTime": 15},
+            "STPManage/STPGlobalStatus": {"bridgeID": "32768.84:94:59:00:02:43", "rootBridgeID": "4096.48:a9:8a:00:00:01",
+                                          "rootBridgeHelloTime": 2, "rootBridgeMaxAgingTime": 20,
+                                          "rootBridgeForwardDelayTime": 15},
+            "STPManage/PrivateLoopProtocolCfg": {"enabled": False},
+            "PortCast/PortStormGlobalCfg": {"castCtrlMode": "broadCast", "maxSpeedRatio": 10},
+            "NetworkQoS/QoSCfg": {"QoSEnabled": False, "QoSType": "wholeQoS", "QoSAlgorithm": "WRR",
+                                  "lowPriorityWeight": 1, "highPriorityWeight": 8},
+            "NetworkQoS/QOSPortPriorityBatchCfg": {"QOSPortPriorityList": [{"portID": n, "priority": 0} for n in range(1, 17)]},
+            "PowerMgr/PowerSavingModeParam": {"enabled": True},
+            "LLDPMange/LLDPCfg": {"enabled": True},
+            "NetworkSecurityProtection/DHCPSnoopingCfg": {"enabled": False,
+                                                          "trustPortList": [{"portID": n, "enabled": False} for n in range(1, 21)]},
+            "NetworkSecurityProtection/PortSecurity": {"enabled": False, "portSecurityType": "none", "portSecurityList": []},
+            "HTTPAccess/HTTPAccessCfg": {"enabled": True, "portNo": 80},
+            "HTTPAccess/HTTPSAccessCfg": {"enabled": True, "portNo": 443, "redirectEnabled": False},
+            "SADPMgr/SADPCfg": {"SADPDevive": {"enabled": True}, "SADPClient": {"enabled": True}},
+            "DeviceNetworkDiscovery/ONVIFDiscoveryParams": {"enabled": True},
+            "TimeMgr/SystemDateTime": {"dateTimeType": "manually", "time": "2026-11-05T21:00:00+02:00",
+                                       "NTPServer": {"addressingFormatType": "hostname", "hostName": "time.ys7.com",
+                                                     "portNo": 123, "synchronizeInterval": 60}},
+        })
+        self.storm = [{"portID": n, "enabled": False, "stormControlType": "broadcast", "limitRate": 100}
+                      for n in range(1, 21)]
+        self.rate = [{"portID": n, "portName": f"Ge{n}", "rxEnabled": n == 6, "rxLimitRate": 20 if n == 6 else 0,
+                      "txEnabled": False, "txLimitRate": 0} for n in range(1, 21)]
+        self.remote = [{"portID": n, "enabled": n == 8} for n in range(1, 9)]
+        self.isolation = []
+        self.lldp = [{"portAddress": "Ge17", "chassisID": "48:a9:8a:00:00:01", "neighborhoodPortID": "ether3",
+                      "peerIpv4Address": "192.168.1.20", "systemName": "Yard Router"}]
+        self.stp_ports = []
+        self.reset_count = 0
+        self.model_file = True              # False: DynamicCapability/GetModelFile answers "not supported"
+        self.model_drop = set()             # thing-model entries left out, e.g. {"PortCast/PortStormGlobalCfg"}
+
+    def thing_model(self):
+        """The switch's capability file, the parts hikswitch_adv reads (schemas only
+        where the web app takes ranges or options from them)."""
+        rng = lambda lo, hi: {"type": "integer", "minimum": lo, "maximum": hi}  # noqa: E731
+        port_list = lambda lo, hi: {"type": "array", "items": {"type": "object", "properties": {"portID": rng(lo, hi)}}}  # noqa: E731
+        doms = {
+            "STPManage": {"props": {"STPGlobalCfg": {"sysPriority": rng(0, 61440), "helloTime": rng(1, 10)},
+                                    "STPGlobalStatus": {}, "PrivateLoopProtocolCfg": {}},
+                          "actions": {"SearchSTPPortStatus": None, "SearchSTPPortCfg": None, "ModifyBatchSTPPortCfg": None,
+                                      "SearchPortPrivateLoopStatus": None}},
+            "PortCast": {"props": {"PortStormGlobalCfg": {"castCtrlMode": {"type": "string", "enum": ["broadCast", "multiCast", "unknownUnicast"]},
+                                                          "maxSpeedRatio": rng(1, 100)}},
+                         "actions": {"SearchPortCastCfg": None,
+                                     "ModifyPortCastCfgInfo": {"stormControlType": {"type": "string", "enum": ["broadcast", "multicast", "unicast"]},
+                                                               "limitRate": rng(1, 1000)}}},
+            "PortRate": {"props": {}, "actions": {"SearchPortRateCfg": None, "ModifyPortRateCfgInfo": {
+                "portRateList": {"type": "array", "items": {"type": "object", "properties": {
+                    "portID": rng(1, 20), "rxLimitRate": rng(1, 1000), "txLimitRate": rng(1, 1000)}}}}}},
+            "NetworkQoS": {"props": {"QoSCfg": {"QoSType": {"type": "string", "enum": ["redPort", "wholeQoS"]},
+                                                "QoSAlgorithm": {"type": "string", "enum": ["WRR", "SP"]}},
+                                     "QOSPortPriorityBatchCfg": {"QOSPortPriorityList": port_list(1, 16)},
+                                     "DSCPGlobalParams": {}}, "actions": {}},
+            "POE": {"props": {"PoEWatchdogParams": {}}, "actions": {"SearchPortPoeInfo": None, "ModifyPortPoeInfo": None}},
+            "PortRemoteTrans": {"props": {}, "actions": {"SearchPortRemoteTrans": None,
+                                                         "ModifyPortRemoteTrans": {"__array__": {"portID": rng(1, 8)}}}},
+            "PowerMgr": {"props": {"PowerSavingModeParam": {}}, "actions": {}},
+            "LLDPMange": {"props": {"LLDPCfg": {}}, "actions": {"SearchLLDPNeighbor": None}},
+            "NetworkSecurityProtection": {"props": {"DHCPSnoopingCfg": {}, "PortSecurity": {}},
+                                          "actions": {"SearchDHCPSnoopingEntry": None, "GetARPGatewayProtectionEntry": None,
+                                                      "AddIPSGAddressCheck": None}},
+            "PortIsolationGroup": {"props": {}, "actions": {"GetIsolationGroupList": None,
+                                                            "ModifyIsolationGroup": {"portList": port_list(1, 18)}}},
+            "SystemMaintenance": {"props": {"TelnetServerCfg": {}}, "actions": {"SystemReboot": None}},
+            "HTTPAccess": {"props": {"HTTPAccessCfg": {}, "HTTPSAccessCfg": {}}, "actions": {}},
+            "SADPMgr": {"props": {"SADPCfg": {}}, "actions": {}},
+            "DeviceNetworkDiscovery": {"props": {"ONVIFDiscoveryParams": {}}, "actions": {}},
+            "TimeMgr": {"props": {"SystemDateTime": {"dateTimeType": {"type": "string", "enum": ["NTP", "manually"]},
+                                                     "NTPServer": {"type": "object", "properties": {
+                                                         "synchronizeInterval": rng(1, 1440), "portNo": rng(1, 65535)}}}},
+                        "actions": {}},
+            "PortMgr": {"props": {}, "actions": {"GetPortLineStatus": {"portID": rng(1, 16)},
+                                                 "GetOpticalModulesDiagnosticInfo": {"portID": rng(19, 20)},
+                                                 "ResetAllPortStatistics": None, "SearchPortStatus": None}},
+            "L2Mgr": {"props": {}, "actions": {"SearchPortVLAN": None, "SearchVLAN": None, "SearchAggregatedLink": None}},
+            "MirrorGroup": {"props": {}, "actions": {"GetMirrorGroup": None}},
+            "ACLMgr": {"props": {}, "actions": {"SearchACL": None}},
+        }
+        out = []
+        for dom, parts in doms.items():
+            d = {"identifier": dom, "props": [], "actions": [], "events": []}
+            for name, props in parts["props"].items():
+                if f"{dom}/{name}" not in self.model_drop:
+                    d["props"].append({"identifier": name, "access": "rw",
+                                       "schema": {"type": "object", "properties": props or {}}})
+            for name, props in parts["actions"].items():
+                if f"{dom}/{name}" in self.model_drop:
+                    continue
+                if props and "__array__" in props:
+                    sch = {"type": "array", "items": {"type": "object", "properties": props["__array__"]}}
+                else:
+                    sch = {"type": "object", "properties": props or {}}
+                d["actions"].append({"identifier": name, "input": {"schema": sch}, "output": {"schema": {"type": "object"}}})
+            out.append(d)
+        return {"resources": [{"domains": out}], "capacities": {"support_token_deviceadd": 0}}
+
+    @staticmethod
+    def _merge(old, new):
+        """An attribute write the way the switch takes it: given fields replace,
+        others stay; port lists merge by portID."""
+        if not isinstance(old, dict) or not isinstance(new, dict):
+            return copy.deepcopy(new)
+        out = copy.deepcopy(old)
+        for k, v in new.items():
+            if isinstance(v, list) and isinstance(out.get(k), list) and all(isinstance(x, dict) and "portID" in x for x in v):
+                by = {x.get("portID"): x for x in out[k] if isinstance(x, dict)}
+                for x in v:
+                    by.setdefault(x["portID"], {}).update(copy.deepcopy(x))
+                out[k] = sorted(by.values(), key=lambda x: x.get("portID") or 0)
+            elif isinstance(v, dict) and isinstance(out.get(k), dict):
+                out[k] = FakeHikSwitch._merge(out[k], v)
+            else:
+                out[k] = copy.deepcopy(v)
+        return out
+
+    def _bad(self, h, code="0x00000002", msg="Invalid Content.", status=400):
+        return h._send(status, {"status": status, "code": code, "errorMsg": msg})
+
+    def _adv_service(self, h, key, data):
+        """The advanced settings' service commands; None = not one of them."""
+        if key == "DynamicCapability/GetModelFile":
+            if not self.model_file:
+                return self._bad(h, "0x00100003", "This function is not supported.", 404)
+            return h._send(200, {**OK, "data": {"filePathType": "text", "filePath": json.dumps(self.thing_model())}})
+        if key == "STPManage/SearchSTPPortStatus":
+            if not self.attrs["STPManage/STPGlobalCfg"]["STPEnabled"]:
+                return self._page(h, [], data)
+            rows = [{"portID": p["ID"], "portName": p["name"], "pathCost": 20000 if p["rate"] == 4 else 200000,
+                     "portRole": {17: "root", 19: "alternate"}.get(p["ID"], "designated" if p["lnkSta"] else "disabled"),
+                     "portStatus": "blocking" if p["ID"] == 19 else "forwarding" if p["lnkSta"] else "discarding"}
+                    for p in self.ports]
+            return self._page(h, rows, data)
+        if key == "STPManage/SearchSTPPortCfg":
+            return self._page(h, [{"portID": p["ID"], "portEnabled": True, "portPriority": 128} for p in self.ports], data)
+        if key == "PortCast/SearchPortCastCfg":
+            return self._page(h, self.storm, data)
+        if key == "PortCast/ModifyPortCastCfgInfo":
+            if not isinstance(data, list) or not all(isinstance(x, dict) and "portID" in x and isinstance(x.get("enabled"), bool) for x in data):
+                return self._bad(h)
+            for x in data:
+                row = next((r for r in self.storm if r["portID"] == x["portID"]), None)
+                if row is None:
+                    return self._bad(h, "0x00000003", "Invalid port.")
+                row.update(x)
+            return h._send(200, {**OK, "data": {}})
+        if key == "PortRate/SearchPortRateCfg":
+            return self._page(h, self.rate, data, "MatchResults")
+        if key == "PortRate/ModifyPortRateCfgInfo":
+            items = (data or {}).get("portRateList") if isinstance(data, dict) else None
+            if not isinstance(items, list):
+                return self._bad(h)
+            for x in items:
+                if not {"portID", "rxEnabled", "txEnabled"} <= set(x):
+                    return self._bad(h, "0x004000b3", "Invalid port rate limiting mode.")
+                row = next(r for r in self.rate if r["portID"] == x["portID"])
+                row.update(x)
+            return h._send(200, {**OK, "data": {}})
+        if key == "PortRemoteTrans/SearchPortRemoteTrans":
+            return self._page(h, self.remote, data)
+        if key == "PortRemoteTrans/ModifyPortRemoteTrans":
+            if not isinstance(data, list):
+                return self._bad(h)
+            for x in data:
+                row = next((r for r in self.remote if r["portID"] == x.get("portID")), None)
+                if row is None:
+                    return self._bad(h, "0x00400098", "Invalid long-range port number.")
+                row["enabled"] = bool(x.get("enabled"))
+            return h._send(200, {**OK, "data": {}})
+        if key == "LLDPMange/SearchLLDPNeighbor":
+            return self._page(h, self.lldp if self.attrs["LLDPMange/LLDPCfg"]["enabled"] else [], data)
+        if key == "NetworkSecurityProtection/SearchDHCPSnoopingEntry":
+            return self._page(h, [{"portName": "Ge2", "ipv4Address": "192.168.1.65", "macAddress": "04:ee:cd:00:00:65",
+                                   "VLANID": 1, "leaseTimeRemaining": 3500}], data)
+        if key == "PortIsolationGroup/GetIsolationGroupList":
+            return h._send(200, {**OK, "data": {"isolationGroupList": [
+                {"isolationGroupID": 1, "portList": [{"portID": n} for n in self.isolation]}]}})
+        if key == "PortIsolationGroup/ModifyIsolationGroup":
+            if (data or {}).get("isolationGroupID") != 1 or not isinstance(data.get("portList"), list):
+                return self._bad(h)
+            self.isolation = sorted(x["portID"] for x in data["portList"])
+            return h._send(200, {**OK, "data": {}})
+        if key == "PortMgr/GetPortLineStatus":
+            n = (data or {}).get("portID")
+            if not isinstance(n, int) or n > 16:
+                return self._bad(h, "0x004000bc", "Cable detection is not supported by this port.")
+            res = {3: {"lineStatus": "abnormal", "lineLength": 46, "description": "B_OPEN"}}.get(
+                n, {"lineStatus": "normal", "lineLength": 23, "description": "NORMAL"})
+            return h._send(200, {**OK, "data": res})
+        if key == "PortMgr/GetOpticalModulesDiagnosticInfo":
+            if (data or {}).get("portID") != 19:
+                return self._bad(h, "0x0040012a", "DDM is not supported by the optical module plugged into this port.")
+            return h._send(200, {**OK, "data": {
+                "realtimeParam": {"temp": 41.5, "voltage": 3.29, "biasCurrent": 6.1, "receivedPower": -9.8, "transmitPower": -5.2},
+                "paramThreshold": {"receivedPowerLowAlarm": -23.0},
+                "transceiverInfo": {"connectorType": "LC", "transceiverType": "1000BASE-LX", "wavelength": 1310,
+                                    "vendorName": "HIKVISION", "singleModeKM": 20}}})
+        if key == "PortMgr/ResetAllPortStatistics":
+            self.reset_count += 1
+            for r in self.stats:
+                r["inErrorPacket"] = "0"
+            return h._send(200, {**OK, "data": {}})
+        if key == "L2Mgr/SearchPortVLAN":
+            return self._page(h, [{"portName": p["name"], "VLANType": "access", "accessMode": {"VLANID": 1}}
+                                  for p in self.ports], data)
+        if key == "L2Mgr/SearchAggregatedLink":
+            return self._page(h, [], data)
+        if key == "MirrorGroup/GetMirrorGroup":
+            return h._send(200, {**OK, "data": {"mirroringGroupList": [
+                {"mirroringGroupID": 1, "destinationPortNo": 0, "sourcePortInfo": []}]}})
+        return None
 
     @property
     def ip(self):
@@ -173,7 +398,9 @@ class FakeHikSwitch:
                 return h._send(404, {"status": 404, "code": "0x00100003", "errorMsg": "This function is not supported."})
             if parts[1] == "get":
                 return h._send(200, {**OK, "data": {"Value": self.attrs[key]}})
-            self.attrs[key] = (data or {}).get("Value")
+            if parts[1] != "set" or not isinstance(data, dict) or not isinstance(data.get("Value"), dict):
+                return self._bad(h)
+            self.attrs[key] = self._merge(self.attrs[key], data["Value"])
             return h._send(200, {**OK, "data": {}})
         key = "/".join(parts[2:])
         if key in self.unsupported:
@@ -195,6 +422,8 @@ class FakeHikSwitch:
                                             list_key: copy.deepcopy(chunk)}})
 
     def _service(self, h, key, data):
+        if self._adv_service(h, key, data):
+            return True
         if key == "Session/Logout":
             self.tag = None
             return h._send(200, {**OK, "data": {}})

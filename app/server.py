@@ -21,6 +21,8 @@ import camera_routes
 import campics
 import commands
 import hikhealth
+import hikswitch
+import hikswitch_adv
 import credtest
 import config
 import creds
@@ -1870,6 +1872,153 @@ def api_switch_action(key):
         threading.Thread(target=switchmon.monitor.poll_round, kwargs={"force": True, "only": key},
                          daemon=True).start()
     return jsonify(res), (200 if res.get("ok") else 502)
+
+
+# ---- advanced settings (Hikvision smart switches) ---------------------------------------
+_SW_ADV = {}                  # key -> the last advanced read, kept 5 minutes
+_SW_ADV_TTL = 300
+_SW_ADV_LOCK = threading.Lock()
+_SW_ADV_LOCKS = {}            # key -> lock: one advanced login at a time per switch
+_ADV_EXTRA = ("enabled", "ports", "trusted", "isolated", "high", "auto", "priority", "mode", "ratio_pct",
+              "rx_mbps", "tx_mbps", "server", "interval_min", "algorithm", "type", "limit_mbps")
+
+
+def _adv_lock(key):
+    with _SW_ADV_LOCK:
+        return _SW_ADV_LOCKS.setdefault(key, threading.Lock())
+
+
+def _adv_dhcp_ports(snap):
+    """Ports of this switch a legitimate DHCP server is on (one the DHCP guard judged ok)."""
+    try:
+        servers = (dhcpguard.monitor.snapshot().get("last") or {}).get("servers") or []
+    except Exception:  # noqa: BLE001
+        return []
+    good = {edgeswitch.normalize_mac(s.get("mac")) for s in servers if s.get("verdict") == "ok"} - {""}
+    return sorted({p["id"] for p in snap.get("ports") or [] for m in p.get("macs") or [] if m.get("mac") in good})
+
+
+def _adv_view(key, adv):
+    """The advanced read plus Netwatch's advice, made against the monitor's last reading."""
+    mon = switchmon.monitor.snapshot()
+    snap = (mon["switches"].get(key) or {}).get("snap") or {}
+    probs = [p for p in mon["problems"] if p.get("key") == key]
+    out = dict(adv)
+    out["protected"], out["uplinks"] = snap.get("protected") or {}, snap.get("uplinks") or {}
+    out["advice"] = hikswitch_adv.advice(adv, protected=out["protected"], uplinks=out["uplinks"], problems=probs,
+                                         dhcp_ports=_adv_dhcp_ports(snap), snap_ports=snap.get("ports"))
+    out["manage"] = _sw_enabled()
+    return out
+
+
+def _adv_warning(feature, body):
+    """What to say before a change that touches the whole switch (None = just do it)."""
+    on = body.get("enabled")
+    if feature == "rstp":
+        return ("While RSTP starts, every port re-learns the network: devices on this switch can lose their "
+                "connection for up to 30 seconds. If two paths exist, one port then stays blocked as a standby."
+                if on else "Without spanning tree, a second cable between two switches (or a loop behind a camera "
+                "port) floods the network and stops the whole site.")
+    if feature == "loop_guard" and on is False:
+        return "Without loop protection, a cable loop floods the network and every device on this switch stops."
+    if feature == "poe_watchdog" and on:
+        return ("The switch power-cycles any PoE port whose device still draws power but sends no data. "
+                "A camera that is silent on purpose (during a firmware update, say) gets restarted too.")
+    if feature == "dhcp_snooping" and on:
+        return (f"Only {', '.join('port ' + p.split('/')[-1] for p in body.get('trusted') or [])} may then hand out "
+                "addresses. A device that gets its address from a DHCP server on any other port of this switch "
+                "stops getting one.")
+    if feature == "isolation" and body.get("isolated"):
+        return ("Isolated ports can't reach EACH OTHER — only the ports outside the group. Keep the recorder's port "
+                "and the uplinks out of the group, or the cameras lose their recorder.")
+    if feature == "long_range" and on:
+        return ("Long-range mode drops the port to 10 Mbit/s so its cable can run up to about 250–300 m. Enough for "
+                "one camera; too slow for a recorder, an uplink or a 4K main stream.")
+    return None
+
+
+@app.route("/api/devices/<path:key>/switch/advanced", methods=["GET", "POST"])
+@guard
+def api_switch_advanced(key):
+    """Advanced settings of a Hikvision smart switch (hikswitch_adv). GET reads them
+    all with one login (kept 5 minutes; ?refresh=1 reads again) plus Netwatch's
+    advice. POST {feature, …} changes one setting — needs Settings → Manage
+    switches; settings that can cut a port off are refused on the Pi's and the
+    router's ports (checked on a FRESH read), and the risky ones ask first."""
+    dev = next((d for d in scanner.get_devices() if d.get("key") == key), None)
+    if not dev or not dev.get("ip"):
+        return jsonify({"ok": False, "error": "unknown switch"}), 404
+    if switchmon.driver(dev) is not hikswitch:
+        return jsonify({"ok": False, "error": "Advanced settings are only for Hikvision smart switches so far"}), 404
+    c = creds.get(key)
+    ip, user, pw = dev["ip"], c["username"], c["password"]
+    if not (user or pw):
+        return jsonify({"ok": False, "error": "Save the switch's login first"}), 400
+    if request.method == "GET":
+        cached = _SW_ADV.get(key)
+        if cached and not request.args.get("refresh") and time.time() - cached.get("ts", 0) < _SW_ADV_TTL:
+            return jsonify({**_adv_view(key, cached), "cached": True})
+        with _adv_lock(key):
+            res = hikswitch_adv.read_advanced(ip, user, pw)
+        if not res.get("ok"):
+            return jsonify(res), 502
+        _SW_ADV[key] = res
+        return jsonify(_adv_view(key, res))
+
+    if not _sw_enabled():
+        return jsonify({"ok": False, "error": "Switch management is turned off in Settings"}), 403
+    body = request.get_json(force=True, silent=True) or {}
+    feature = str(body.get("feature") or "").strip()
+    if feature not in hikswitch_adv.SETTINGS:
+        return jsonify({"ok": False, "error": f"unknown setting {feature!r}"}), 400
+    for k in ("ports", "trusted"):
+        if k in body and (not isinstance(body[k], list) or not all(isinstance(p, str) and re.match(r"^\d+/\d+$", p)
+                                                                    for p in body[k])):
+            return jsonify({"ok": False, "error": f"{k}: a list of port ids like \"0/3\""}), 400
+    extra = {"feature": feature, **{k: body[k] for k in _ADV_EXTRA if k in body}}
+    warnings = []
+    cutting = ((feature == "long_range" and body.get("enabled") is True)
+               or (feature == "isolation" and body.get("isolated") is True)
+               or (feature == "rate_limit" and bool(body.get("rx_mbps") or body.get("tx_mbps"))))
+    if cutting or (feature == "dhcp_snooping" and body.get("enabled") is True):
+        live = hikswitch.read(ip, user, pw)
+        if not live.get("ok"):
+            return jsonify({"ok": False, "error": f"couldn't check the switch first: {live.get('error')}"}), 502
+        prot, ups = switchmon.protected_ports(live), switchmon.uplink_ports(live)
+        if cutting:
+            hit = [p for p in body.get("ports") or [] if p in prot]
+            if hit:
+                res = {"ok": False, "protected": True,
+                       "error": f"Refused — port {hit[0].split('/')[-1]}: {prot[hit[0]]}. This change could cut the "
+                                "site off, and nobody could undo it remotely."}
+                _sw_audit(dev, "set-" + feature, res, extra)
+                return jsonify(res), 409
+            busy = [p for p in body.get("ports") or [] if p in ups]
+            if busy:
+                warnings.append(f"Port {busy[0].split('/')[-1]} has {ups[busy[0]]} devices behind it (another switch "
+                                "or a wireless link) — this change hits all of them.")
+        else:
+            router = [p for p, why in prot.items() if "router" in str(why)]
+            body["trusted"] = list(dict.fromkeys([*(body.get("trusted") or []), *router]))
+            if not body["trusted"]:
+                return jsonify({"ok": False, "error": "Netwatch can't tell which port leads to the DHCP server here — "
+                                                      "choose the trusted port(s) yourself"}), 400
+            extra["trusted"] = body["trusted"]
+    warnings.append(_adv_warning(feature, body))
+    if any(warnings) and not body.get("confirm"):
+        return jsonify({"ok": False, "needs_confirm": True, "warning": " ".join(w for w in warnings if w)})
+    with _adv_lock(key):
+        res = hikswitch_adv.set_feature(ip, user, pw, feature, body)
+    _sw_audit(dev, "set-" + feature, res, extra)
+    if res.get("ok"):
+        cached = _SW_ADV.get(key)
+        if cached and res.get("shows") and isinstance(res.get("after"), dict):
+            cached["features"][res["shows"]] = res["after"]
+        threading.Thread(target=switchmon.monitor.poll_round, kwargs={"force": True, "only": key},
+                         daemon=True).start()
+        if cached:
+            res["advanced"] = _adv_view(key, cached)
+    return jsonify(res), (200 if res.get("ok") else 400 if res.get("refused") else 502)
 
 
 def _sw_backup_dir(key):
