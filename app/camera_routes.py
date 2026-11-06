@@ -280,3 +280,65 @@ def api_camera_job_action(jid, action):
         return jsonify({"ok": False, "error": "unknown action"}), 404
     except hikbulk.BulkError as e:
         return _berr(e)
+
+
+# ---- device backup files and settings snapshots (hikbackup.py, Phase 6) ----------------
+# The hub keeps them (encrypted); the site Pi only reads from the device and passes on.
+import json as _json  # noqa: E402
+
+import hikbackup  # noqa: E402
+
+
+def _raw_body(limit):
+    """The request body up to `limit` bytes. A backup file is bigger than the site's
+    general 8 MB upload cap (MAX_CONTENT_LENGTH), so it is read from the raw stream."""
+    try:
+        n = int(request.headers.get("Content-Length") or 0)
+    except ValueError:
+        n = 0
+    if n <= 0 or n > limit:
+        raise hikbackup.BackupError("that is not a backup file (or it is too big)", 413 if n > limit else 400)
+    stream, out = request.environ["wsgi.input"], bytearray()
+    while len(out) < n:
+        chunk = stream.read(min(1 << 20, n - len(out)))
+        if not chunk:
+            break
+        out += chunk
+    return bytes(out)
+
+
+def _bkerr(e):
+    return jsonify({"ok": False, "error": str(e), **e.extra}), e.status
+
+
+@bp.route("/api/cameras/<path:key>/config-file", methods=["GET", "PUT"])
+@guard
+def api_camera_config_file(key):
+    """GET: the device's own backup file, read now with a fresh file password (in the
+    X-Config-Secret header — keep it with the file). PUT (raw file body, X-Config-Secret,
+    X-Confirm-Text): load it into the device, which restarts — risky work."""
+    try:
+        if request.method == "GET":
+            data, secret, facts = hikbackup.export(settings, key)
+            resp = Response(data, mimetype="application/octet-stream")
+            resp.headers["X-Config-Secret"] = secret
+            resp.headers["X-Config-Facts"] = _json.dumps(facts, ensure_ascii=True)
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
+        return jsonify(hikbackup.restore(settings, key, _raw_body(hikbackup.MAX_FILE),
+                                         str(request.headers.get("X-Config-Secret") or "")[:64], who=_who(),
+                                         confirm_text=str(request.headers.get("X-Confirm-Text") or "")[:20]))
+    except hikbackup.BackupError as e:
+        return _bkerr(e)
+    except hiksettings.SettingsError as e:
+        return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/snapshot")
+@guard
+def api_camera_snapshot(key):
+    """Every setting Netwatch knows on this device, now (for "what changed")."""
+    try:
+        return jsonify(hikbackup.snapshot(settings, key))
+    except hikbackup.BackupError as e:
+        return _bkerr(e)

@@ -435,6 +435,35 @@ class Device:
             return self._send(req, 200, self.OK)
         return self._bad(req, 405, "notSupport")
 
+    def _cfgfile(self, req, q):
+        """The device's backup file. cfg_mode: "secret" (current firmware: a file password
+        is required), "old" (no password parameter known), "refuse" (not this login)."""
+        mode = getattr(self, "cfg_mode", "secret")
+        if mode == "refuse":
+            return self._send(req, 403, "<ResponseStatus><statusCode>4</statusCode><subStatusCode>invalidOperation</subStatusCode></ResponseStatus>")
+        key = q.get("secretkey")
+        if mode == "secret" and not key:
+            return self._send(req, 400, "<ResponseStatus><statusCode>6</statusCode><subStatusCode>cfgFileSecretKeyError</subStatusCode></ResponseStatus>")
+        if mode == "old" and key is not None:
+            return self._send(req, 400, "<ResponseStatus><statusCode>6</statusCode><subStatusCode>badParameters</subStatusCode></ResponseStatus>")
+        if req.command == "GET":
+            self.cfg_keys = getattr(self, "cfg_keys", []) + [key or ""]
+            body = b"\xef\xff\xef\xff" + (key or "").encode() + b"|" + getattr(self, "cfg_body", b"settings-v1") * 400
+            req.send_response(200)
+            req.send_header("Content-Type", "application/binary")
+            req.send_header("Content-Length", str(len(body)))
+            req.end_headers()
+            req.wfile.write(body)
+            return None
+        if req.command == "PUT":
+            body = getattr(req, "body", b"")
+            want = (key or "").encode()
+            if not body.startswith(b"\xef\xff\xef\xff" + want + b"|"):
+                return self._send(req, 400, "<ResponseStatus><statusCode>6</statusCode><subStatusCode>cfgFileSecretKeyError</subStatusCode></ResponseStatus>")
+            self.cfg_loaded = body
+            return self._send(req, 200, "<ResponseStatus><statusCode>7</statusCode><statusString>Reboot Required</statusString></ResponseStatus>")
+        return self._send(req, 405, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
+
     def load_settings(self, folder):
         """Serve the saved real setting documents (tests/fixtures/hik_settings)."""
         import os as _os
@@ -463,6 +492,8 @@ class Device:
             return self._users(req, path)
         if "/PTZCtrl/" in path or "/PTZCtrlProxy/" in path:
             return self._ptz(req, path)
+        if path == "/ISAPI/System/configurationData":
+            return self._cfgfile(req, q)
         if self.settings is not None and path in self.settings:
             return self._setting(req, path)
         hit = self._health(req, path, q)

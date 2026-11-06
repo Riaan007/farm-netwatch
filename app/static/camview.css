@@ -270,3 +270,11 @@
 .cv-js-ok b, .cv-js-unchanged b { color: #86efac; }
 .cv-js-failed b, .cv-js-partial b { color: #fca5a5; }
 .cv-js-running b { color: #fde68a; }
+/* Phase 6: backups and what changed */
+.cv-chact a.cv-btn { display: inline-flex; align-items: center; height: 28px; padding: 0 9px; margin: 0 4px 4px 0; text-decoration: none; }
+.cv-pwshow { display: inline-block; margin: 4px 0; padding: 2px 8px; border-radius: 6px; background: #050b16; font-size: 12.5px; letter-spacing: .04em; user-select: all; }
+.cv-bkh { margin: 14px 0 6px; font-size: 14px; }
+.cv-bkch { margin: 0 0 10px; padding-left: 18px; font-size: 13px; }
+.cv-bkch > li { margin: 6px 0; }
+.cv-bkch ul { margin: 2px 0; padding-left: 16px; }
+.cv-bkch li li { overflow-wrap: anywhere; }

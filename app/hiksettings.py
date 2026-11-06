@@ -1383,12 +1383,14 @@ class Settings:
         A section the device (or the way to it) doesn't have is left out. No capabilities
         are read — a write reads them itself."""
         e, use, ch, cl, sem, _hd = self._target(key, lens)
-        out, memo = {}, {}
-        wanted = set(section_ids)
+        out, memo, labels, errors = {}, {}, {}, {}
+        wanted = None if section_ids is None else set(section_ids)
         with sem:
             for g in self._groups(e):
                 for sec in sections(lens, g, ch):
-                    if sec["id"] not in wanted or sec["id"] in out:
+                    if (wanted is not None and sec["id"] not in wanted) or sec["id"] in out:
+                        continue
+                    if sec.get("device") and int(lens) != 1:
                         continue
                     if sec["id"] in hiksecurity.SECTION_IDS:
                         if ch is not None:
@@ -1405,11 +1407,18 @@ class Settings:
                         raise SettingsError(str(ex) or "the device refused the saved login", 403) from None
                     except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
                         raise SettingsError(f"the device did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+                    except Exception as ex:  # noqa: BLE001 - one odd section must not hide the rest
+                        if wanted is not None:
+                            raise
+                        errors[sec["id"]] = f"{ex.__class__.__name__}: {ex}"[:200]
+                        continue
                     if fields:
                         out[sec["id"]] = {f["id"]: f.get("value") for f in fields}
+                        labels.update({f["id"]: (sec["label"] + " · " + f["label"]) for f in fields})
         d = e.get("_d") or {}
         return {"key": key, "name": e.get("name"), "route": use, "channel": ch, "recorder": bool(e.get("_recorder")),
-                "netwatch_name": (d.get("name") or e.get("name") or "")[:32], "values": out}
+                "netwatch_name": (d.get("name") or e.get("name") or "")[:32], "values": out, "labels": labels,
+                "errors": errors}
 
     def apply(self, key, lens, section, changes, who="", expect=None, undo_of=None, confirm=False, route=None,
               confirm_text="", lenient=False):

@@ -249,14 +249,15 @@
         if (!p) {
           const g = groups().find((x) => String(x.id) === ph.dataset.g); if (!g) return;
           const host = document.createElement("div"); host.className = "cv-recset";
-          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>`;
-          const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2, h3, h4] = host.children;
+          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>${opts.backupBase ? `<section class="cv-set"></section>` : ""}`;
+          const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2, h3, h4, h5] = host.children;
           const a = settingsPanel(h1, base, { key: ph.dataset.recset }, () => {},
             { group: "recorder", title: "⚙ Recorder settings", sub: "what it does when its disks are full" });
           const b = settingsPanel(h2, base, { key: ph.dataset.recset }, () => {},
             { group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" });
           const cpan = channelsPanel(h3, base), xpan = explorerPanel(h4, base);
-          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); xpan.destroy(); } } };
+          const bpan = h5 ? backupsPanel(h5, opts.backupBase(g, { key: ph.dataset.recset, kind: "recorder" })) : null;
+          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); xpan.destroy(); if (bpan) bpan.destroy(); } } };
           st.recSet.set(id, p);
         }
         ph.replaceWith(p.host);
@@ -419,7 +420,7 @@
           </dl>
         </div>
       </div>
-      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section><section class="cv-set" data-isapi></section>` : ""}${opts.stdBase && similarOf(g, c).length ? `<section class="cv-set" data-copy></section>` : ""}` : ""}
+      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section><section class="cv-set" data-isapi></section>${opts.backupBase ? `<section class="cv-set" data-bak></section>` : ""}` : ""}${opts.stdBase && similarOf(g, c).length ? `<section class="cv-set" data-copy></section>` : ""}` : ""}
       <p class="cv-foot">Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.</p>
     </div>`;
     const root = el.querySelector(".cv"), note = root.querySelector(".cv-note");
@@ -497,6 +498,8 @@
       group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" }) : null;
     const xHost = root.querySelector("[data-isapi]");
     const xpanel = xHost ? explorerPanel(xHost, opts.apiBase(g, c)) : null;
+    const bkHost = root.querySelector("[data-bak]");
+    const bkpanel = bkHost ? backupsPanel(bkHost, opts.backupBase(g, c)) : null;
     const cpHost = root.querySelector("[data-copy]");
     const cpanel = cpHost ? copyPanel(cpHost, opts.stdBase(g), c, similarOf(g, c), vs) : null;
     const ptzHost = root.querySelector("[data-ptz]");
@@ -510,6 +513,7 @@
         if (spanel) spanel.destroy();
         if (xpanel) xpanel.destroy();
         if (cpanel) cpanel.destroy();
+        if (bkpanel) bkpanel.destroy();
         if (ppanel) ppanel.destroy();
         Object.values(st.pics).forEach((p) => p && p.src && URL.revokeObjectURL(p.src));
         el.innerHTML = "";
@@ -1131,6 +1135,67 @@
       const g = body.querySelector("[data-go]"); if (g) { g.disabled = !s.size; g.textContent = `Change ${s.size} device${s.size === 1 ? "" : "s"}`; }
     });
     return { destroy() { st.dead = true; if (st.stopWatch) st.stopWatch(); } };
+  }
+
+  // ---- backups and what changed (Phase 6: hub/app/camconfig.py + app/hikbackup.py) --------
+  // The hub keeps the device's own backup file, encrypted, with the file password it was
+  // made with; snapshots of the settings Netwatch knows show what changed and when.
+  const BWHY = { hand: "by hand", change: "before a risky change", auto: "nightly (settings had changed)" };
+  const kb = (n) => n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+  function backupsPanel(el, base) {
+    const st = { dead: false, data: null, busy: false, msg: null, ask: null, pw: {} };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>💾 Backups and changes</h3><span class="cv-dimtx">the device's own backup file · what changed in its settings · put a backup back</span></summary><div class="cv-setb" data-b></div></details>`;
+    const body = el.querySelector("[data-b]");
+    el.querySelector("details").addEventListener("toggle", (e) => { if (e.target.open && !st.data) load(); });
+    async function load() {
+      if (!st.data) body.innerHTML = `<p class="cv-dimtx">Loading…</p>`;
+      try { st.data = await jcall(base); if (!st.dead) paint(); }
+      catch (e) { if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.message)}</p>`; }
+    }
+    const when = (ts) => new Date(ts * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    function paint() {
+      const d = st.data;
+      let h = `<p class="cv-dimtx">The hub keeps the newest ${esc(d.keep)} backups, encrypted. One is taken before risky work done through the hub, and at night when the settings changed (or a month has passed).</p>
+        <div class="cv-setact"><button type="button" class="cv-btn cv-on" data-bk="now"${st.busy ? " disabled" : ""}>Back up now</button>${d.snapshot ? `<span class="cv-dimtx">Settings last read ${esc(ago(d.snapshot.seen || d.snapshot.ts))}</span>` : ""}</div>`;
+      h += d.backups.length ? `<div class="cv-chwrap"><table class="cv-ch"><thead><tr><th>Taken</th><th>Why</th><th>Size</th><th>Firmware</th><th></th></tr></thead><tbody>${d.backups.map((b) => `<tr>
+          <td>${esc(when(b.ts))}</td><td>${esc(BWHY[b.why] || b.why)}</td><td>${esc(kb(b.bytes))}</td><td>${esc(b.firmware || "—")}</td>
+          <td class="cv-chact"><a class="cv-btn" href="${esc(base + "/" + encodeURIComponent(b.name))}" download>Download</a>${b.has_password ? `<button type="button" class="cv-btn" data-pw="${esc(b.name)}">${st.pw[b.name] ? "Hide password" : "File password"}</button>` : ""}<button type="button" class="cv-btn" data-ask="${esc(b.name)}">Put back…</button>
+          ${st.pw[b.name] ? `<br><code class="cv-pwshow">${esc(st.pw[b.name])}</code> <small class="cv-dimtx">Hikvision's own tools ask for it when importing the file.</small>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+        : `<p class="cv-dimtx">No backup yet.</p>`;
+      if (st.ask) {
+        const b = d.backups.find((x) => x.name === st.ask) || {};
+        h += `<div class="cv-setprev"><p><b>Load the backup of ${esc(when(b.ts))} into the device?</b></p>
+          <p class="cv-warn">The device takes every setting from the file — its users, passwords and network address too — and restarts (two or three minutes without pictures or recording). Use it on this device, or on a replacement of the same model (${esc(b.model || "model unknown")}). Changes made since then are lost.</p>
+          <p class="cv-dimtx">Type <b>CHANGE</b> to go ahead (needs "Risky camera work").</p><div class="cv-setact"><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type CHANGE"><button type="button" class="cv-btn cv-on" data-bk="restore">Put it back</button><button type="button" class="cv-btn" data-bk="back">Back</button></div></div>`;
+      }
+      if (d.changes.length) {
+        h += `<h4 class="cv-bkh">What changed</h4><ul class="cv-bkch">${d.changes.map((c) => `<li><b>Between ${esc(when(c.from))} and ${esc(when(c.ts))}</b><ul>${c.fields.map((f) => `<li>${esc(f.label)}${f.lens !== "1" ? ` (lens ${esc(f.lens)})` : ""}: <span class="cv-dimtx">${esc(f.before == null ? "—" : f.before)} →</span> ${esc(f.after == null ? "—" : f.after)}</li>`).join("")}${c.more ? `<li class="cv-dimtx">and ${esc(c.more)} more</li>` : ""}</ul></li>`).join("")}</ul>`;
+      } else if (d.snapshot) h += `<p class="cv-dimtx">No setting has changed since Netwatch first read them.</p>`;
+      h += `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      body.innerHTML = h;
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    body.addEventListener("click", async (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled || st.busy) return;
+      if (b.dataset.bk === "now") {
+        st.busy = true; paint(); say("Reading the device's backup file — a few MB, it can take a minute…", "");
+        try { const j = await jcall(base, { method: "POST", body: "{}" }); st.busy = false; await load(); say(j.message, j.note ? "cv-warn" : "cv-okt"); }
+        catch (err) { st.busy = false; paint(); say(err.message, "cv-warn"); }
+      } else if (b.dataset.pw) {
+        const n = b.dataset.pw;
+        if (st.pw[n]) { delete st.pw[n]; paint(); return; }
+        try { st.pw[n] = (await jcall(`${base}/${encodeURIComponent(n)}/password`)).password; paint(); } catch (err) { say(err.message, "cv-warn"); }
+      } else if (b.dataset.ask) { st.ask = b.dataset.ask; st.msg = null; paint(); }
+      else if (b.dataset.bk === "back") { st.ask = null; paint(); }
+      else if (b.dataset.bk === "restore") {
+        const w = ((body.querySelector("[data-word]") || {}).value || "").trim().toUpperCase();
+        st.busy = true; say("Sending the file to the device…", "");
+        try { const j = await jcall(`${base}/${encodeURIComponent(st.ask)}/restore`, { method: "POST", body: JSON.stringify({ confirm_text: w }) }); st.busy = false; st.ask = null; paint(); say(j.message, "cv-okt"); }
+        catch (err) { st.busy = false; say(err.message, "cv-warn"); }
+      }
+    });
+    return { destroy() { st.dead = true; } };
   }
 
   const COPY = { picture: "Picture", osd: "Text on video (not the name)", main: "Main stream", sub: "Sub stream" };

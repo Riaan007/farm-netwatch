@@ -51,6 +51,7 @@
       group: { id: siteId, title: s ? s.name : siteId, data: d.data }, cam, picUrl, onBack: back,
       apiBase: (_g, c) => `/api/hub/sites/${enc(siteId)}/cameras/${enc(c.key)}`,
       stdBase: () => `/api/hub/sites/${enc(siteId)}`,
+      backupBase: (_g, c) => `/api/hub/sites/${enc(siteId)}/cameras/${enc(c.key)}/backups`,
       deviceAction: dev ? { label: "Device details", run: () => CC.openDevice(siteId, key) } : null,
     });
   }
@@ -74,6 +75,7 @@
       this.ctl = CamView.mount($("#cm-host"), {
         groups: () => sites().map(groupOf), picUrl, fleet: true, storeKey: "cc.cams",
         apiBase: (g, c) => `/api/hub/sites/${enc(g.id)}/cameras/${enc(c.key)}`,
+        backupBase: (g, c) => `/api/hub/sites/${enc(g.id)}/cameras/${enc(c.key)}/backups`,
         onOpen: (g, c) => CC.go(`#/cameras?site=${enc(g.id)}&key=${enc(c.key)}`),
       });
       const refresh = async () => {
@@ -114,6 +116,7 @@
         groups: () => [groupOf(s)], picUrl, storeKey: "cc.cams", nvr: p.get("nvr") || "",
         apiBase: (_g, c) => `/api/hub/sites/${enc(s.id)}/cameras/${enc(c.key)}`,
         stdBase: () => `/api/hub/sites/${enc(s.id)}`,
+        backupBase: (_g, c) => `/api/hub/sites/${enc(s.id)}/cameras/${enc(c.key)}/backups`,
         onOpen: (_g, c) => CC.go(`#/site/${enc(s.id)}/cameras?key=${enc(c.key)}`),
       });
       const refresh = async (force) => {

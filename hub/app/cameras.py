@@ -24,6 +24,7 @@ from urllib.parse import quote
 import requests
 from flask import Blueprint, Response, jsonify, request
 
+import camconfig
 import hubconfig
 import siteapi
 
@@ -297,11 +298,14 @@ def site_cameras_refresh(site_id):
         return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
 
 
-def _forward(site_id, path, method, body=None, timeout=(5, 60)):
-    """Pass one camera-settings call to the site Pi (which does all the device work)."""
+def _forward(site_id, path, method, body=None, timeout=(5, 60), backup_key=None):
+    """Pass one camera-settings call to the site Pi (which does all the device work).
+    `backup_key`: risky work on that device — take its backup first (camconfig.py),
+    unless a recent one exists. A failed backup never blocks the change; the reply says."""
     site, err = _site(site_id)
     if err:
         return err
+    note = camconfig.before_change(site, backup_key) if backup_key else ""
     try:
         r = requests.request(method, siteapi.base_url(site) + path, headers=siteapi.headers(site),
                              params=request.args if method == "GET" else None, json=body, timeout=timeout)
@@ -313,15 +317,20 @@ def _forward(site_id, path, method, body=None, timeout=(5, 60)):
     if r.status_code == 401:
         return jsonify({"ok": False, "error": "the site refused the hub's key — see the site's Backups tab"}), 502
     try:
-        return jsonify(r.json()), r.status_code
+        j = r.json()
     except ValueError:
         return jsonify({"ok": False, "error": "site returned a bad reply"}), 502
+    if note and isinstance(j, dict):
+        j["backup_note"] = note
+    return jsonify(j), r.status_code
 
 
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/settings", methods=["GET", "POST"])
 def site_camera_settings(site_id, key):
     body = (request.get_json(silent=True) or {}) if request.method == "POST" else None
-    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/settings", request.method, body)
+    risky = bool(body) and body.get("section") == "access"
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/settings", request.method, body,
+                    backup_key=key if risky else None)
 
 
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/ptz", methods=["GET", "POST"])
@@ -334,27 +343,30 @@ def site_camera_ptz(site_id, key):
 def site_camera_account(site_id, key):
     """The guided Netwatch account job — the site Pi does it; this only forwards."""
     return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/account", "POST",
-                    request.get_json(silent=True) or {}, timeout=(5, 90))
+                    request.get_json(silent=True) or {}, timeout=(5, 90), backup_key=key)
 
 
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/channels", methods=["GET", "POST"])
 def site_recorder_channels(site_id, key):
     body = (request.get_json(silent=True) or {}) if request.method == "POST" else None
-    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/channels", request.method, body, timeout=(5, 120))
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/channels", request.method, body, timeout=(5, 120),
+                    backup_key=key if body else None)
 
 
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/password", methods=["GET", "POST"])
 def site_camera_password(site_id, key):
     """The password job — the site Pi does it; the hub only forwards (never logs bodies)."""
     body = (request.get_json(silent=True) or {}) if request.method == "POST" else None
-    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/password", request.method, body, timeout=(5, 300))
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/password", request.method, body, timeout=(5, 300),
+                    backup_key=key if body else None)
 
 
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/isapi", methods=["GET", "POST"])
 def site_camera_isapi(site_id, key):
     """The ISAPI explorer — the site Pi does it; this only forwards (GET ?path= passes on)."""
     body = (request.get_json(silent=True) or {}) if request.method == "POST" else None
-    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/isapi", request.method, body)
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/isapi", request.method, body,
+                    backup_key=key if body and not body.get("preview") else None)
 
 
 @bp.route("/api/hub/sites/<site_id>/camera-standard", methods=["GET", "POST"])
