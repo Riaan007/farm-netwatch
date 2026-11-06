@@ -29,7 +29,18 @@ Fixes:
   ac_mode   AP in airMAX Mixed mode while every station is AC → AC only
   power     set this radio's transmit power to the other end's (match them)
   channel   move an AP to another centre frequency (and optionally width);
-            refused unless every station's Frequency Scan List includes it
+            refused unless every station's Frequency Scan List includes it.
+            airOS 6 (airMAX M) keeps a 40 MHz channel as control + extension
+            (radio.1.ieee_mode 11naht40plus/minus) with no centre key: there
+            the only move offered is to a 20 MHz channel (11naht20)
+  country   set the radio's country code (and optionally its transmit power)
+  ntp       switch the radio's time sync on (server + time zone)
+
+The fixes added for airOS 6 radios (country, ntp, the 20 MHz channel move)
+also need two things the script checks ON the radio before it saves: the
+radio's soft restart must know a test mode, and the wireless link must really
+have dropped and re-associated (the peer's connection time resets). A radio
+that only wrote the file without applying it is put back, never saved.
 """
 import re
 import secrets
@@ -51,11 +62,28 @@ FIXES = {
                 "warn": "Every station on this AP drops and must find the new channel. A DFS channel can take "
                         "over a minute to come up. If they are not all back within the wait, the radio moves "
                         "back to the old channel by itself."},
+    "country": {"label": "Set the radio's country",
+                "warn": "The radio restarts its wireless for about 30 seconds with the new country's channels and "
+                        "power limits. If the link is not back within 2 minutes the old country is put back by "
+                        "itself. Change the far end of a link first."},
+    "ntp": {"label": "Switch on time sync (NTP)",
+            "warn": "The radio restarts its wireless for about 30 seconds. If the link is not back within 2 minutes "
+                    "the old settings are put back by itself."},
 }
+COUNTRIES = {710: "South Africa", 826: "United Kingdom", 840: "United States", 516: "Namibia", 72: "Botswana"}
+# Keys outside radio.1.* that the airOS 6 fixes may edit, and which of them may be ADDED when missing.
+_EXTRA_KEYS = {"radio.countrycode", "ntpclient.status", "ntpclient.1.status", "ntpclient.1.server", "system.timezone"}
+_ADDABLE = {"ntpclient.status", "ntpclient.1.status", "ntpclient.1.server"}
+_STR_VALUE = re.compile(r"^[A-Za-z0-9._:+-]{1,64}$")
 PLAN_TTL_S = 300
 POLL_S = 6
 _TMP = "/tmp/nwfix"
 _SAFE_KEY = re.compile(r"^radio\.1\.[a-z0-9_.]+$")
+_PROBE_MARK = "===NW-PROBE==="
+
+
+def _safe_key(key):
+    return bool(_SAFE_KEY.match(key)) or key in _EXTRA_KEYS
 
 
 class FixError(Exception):
@@ -74,17 +102,24 @@ def read(ip, user, pw):
     """One SSH session: live status, saved config, peers."""
     rc, out, err = airos._ssh(ip, user, pw, f"mca-status 2>/dev/null; echo '{airos._CFG_MARK}'; "
                                             f"cat {airos.CFG_PATH} 2>/dev/null; echo '{airos._WSTA_MARK}'; "
-                                            f"wstalist 2>/dev/null", timeout=30)
+                                            f"wstalist 2>/dev/null; echo '{_PROBE_MARK}'; "
+                                            f"grep -c test /usr/etc/rc.d/rc.softrestart 2>/dev/null; "
+                                            f"command -v cfgmtd; cat /etc/version 2>/dev/null", timeout=30)
     if rc != 0 and not out:
         low = (err or "").lower()
         why = ("the saved login was rejected" if "denied" in low else "the radio did not answer over SSH")
         raise FixError(f"{why} ({(err or '').strip().splitlines()[-1] if err.strip() else rc})")
     status, _, rest = out.partition(airos._CFG_MARK)
     cfg_txt, _, wsta = rest.partition(airos._WSTA_MARK)
+    wsta, _, probe = wsta.partition(_PROBE_MARK)
     kv, cfg = airos._status_kv(status), airos._kv(cfg_txt)
     if "netconf." not in cfg_txt:
         raise FixError("logged in, but could not read the radio's config — not an airOS radio?")
-    return {"kv": kv, "cfg": cfg, "peers": airos._stations(wsta, cfg.get("wireless.1.ssid", ""))}
+    pl = [ln.strip() for ln in probe.splitlines() if ln.strip()]
+    return {"kv": kv, "cfg": cfg, "peers": airos._stations(wsta, cfg.get("wireless.1.ssid", "")),
+            "test_mode": bool(pl) and pl[0].isdigit() and int(pl[0]) > 0,
+            "cfgmtd": any(ln.endswith("cfgmtd") for ln in pl[1:]),
+            "version": next((ln for ln in pl[1:] if not ln.endswith("cfgmtd")), "")}
 
 
 def _centre_key(cfg):
@@ -106,18 +141,33 @@ def _is_ap(r):
     return mode.startswith("ap") or mode == "master"
 
 
-def _edit(cfg, key, new, want_old=None):
-    """A planned edit, refused if the key is missing (firmware layout differs)."""
-    if not _SAFE_KEY.match(key):
+def _edit(cfg, key, new, want_old=None, text=False, add=False):
+    """A planned edit, refused if the key is missing (firmware layout differs).
+    Values are integers; text=True allows a short plain word (no spaces or
+    quotes); add=True lets a few NTP keys be added when the config lacks them."""
+    if not _safe_key(key):
         raise FixError(f"refusing to touch {key}")
-    if key not in cfg:
+    if key not in cfg and not (add and key in _ADDABLE):
         raise FixError(f"this radio's config has no {key} — its firmware stores this differently; "
                        f"change it in airOS by hand")
-    old = cfg[key]
+    old = cfg.get(key)
     if want_old is not None and str(want_old) != old:
         raise FixError(f"{key} is {old} in the config but the radio reports {want_old} — "
                        f"unsaved changes on the radio? Save or discard them in airOS first")
-    return {"key": key, "old": old, "new": str(int(new))}
+    val = str(new) if text else str(int(new))
+    if not _STR_VALUE.match(val):
+        raise FixError(f"refusing the value {val!r} for {key}")
+    e = {"key": key, "old": old, "new": val}
+    if old is None:
+        e["add"] = True
+    return e
+
+
+def _needs_test_mode(r, name):
+    """The airOS 6 fixes only run where the radio can apply without saving."""
+    if not (r.get("test_mode") and r.get("cfgmtd")):
+        raise FixError(f"{name} does not show the soft-restart test mode or cfgmtd this change relies on — "
+                       f"Netwatch will not change it; use airOS's own Test button")
 
 
 # ---- planning --------------------------------------------------------------
@@ -180,6 +230,55 @@ def plan(kind, target, login_for, find_device=None, params=None):
         if theirs > mine:
             out["notes"].append("Raising power can add interference for other links on this tower")
 
+    elif kind == "country":
+        code = _int(params.get("country"))
+        if code is None or not 1 <= code <= 999:
+            raise FixError("give the country as its numeric code (South Africa = 710)")
+        _needs_test_mode(r, target["name"])
+        keys = [k for k in ("radio.countrycode", "radio.1.countrycode") if k in cfg]
+        if not keys:
+            raise FixError(f"{target['name']}'s config has no country code key — change it in airOS by hand")
+        if all(_int(cfg[k]) == code for k in keys):
+            raise FixError(f"{target['name']} is already set to {COUNTRIES.get(code, code)}")
+        for k in keys:
+            out["edits"].append(_edit(cfg, k, code))
+        old = _int(cfg[keys[0]])
+        out["lines"] = [f"Country: {COUNTRIES.get(old, old)} → {COUNTRIES.get(code, code)}"]
+        dbm = _int(params.get("txpower"))
+        if dbm is not None:
+            if not 1 <= dbm <= 27:
+                raise FixError("transmit power must be 1–27 dBm")
+            if cfg.get("radio.1.obey", "enabled") != "enabled":
+                raise FixError(f"{target['name']} does not obey the country power limits — set its power in airOS by hand")
+            if _int(cfg.get("radio.1.txpower")) != dbm:
+                out["edits"].append(_edit(cfg, "radio.1.txpower", dbm))
+                out["lines"].append(f"Transmit power setting: {cfg.get('radio.1.txpower')} → {dbm} dBm "
+                                    f"(the radio still keeps under the new country's limit)")
+        out["verify_restart"] = True
+        if not ap:
+            out["notes"].append("This is a station: if the new country does not allow its AP's channel it cannot "
+                                "reconnect, and the old country comes back by itself")
+
+    elif kind == "ntp":
+        _needs_test_mode(r, target["name"])
+        server = str(params.get("server") or "pool.ntp.org").strip()
+        tz = str(params.get("timezone") or "GMT-2").strip()
+        if not re.match(r"^[a-z0-9][a-z0-9.-]{2,62}$", server, re.I):
+            raise FixError("give the time server as a plain host name, e.g. pool.ntp.org")
+        if not re.match(r"^GMT[+-]\d{1,2}$", tz):
+            raise FixError("give the time zone the way airOS stores it, e.g. GMT-2 for South Africa (UTC+2)")
+        want = [("ntpclient.status", "enabled"), ("ntpclient.1.status", "enabled"), ("ntpclient.1.server", server)]
+        if "system.timezone" in cfg:
+            want.append(("system.timezone", tz))
+        for k, v in want:
+            if cfg.get(k) != v:
+                out["edits"].append(_edit(cfg, k, v, text=True, add=True))
+        if not out["edits"]:
+            raise FixError(f"{target['name']} already syncs its clock with {server}")
+        out["lines"] = [f"Time sync on, server {server}"
+                        + (f", time zone {tz} (UTC+{tz[4:]})" if tz.startswith("GMT-") and "system.timezone" in cfg else "")]
+        out["verify_restart"] = True
+
     elif kind == "channel":
         if not ap:
             raise FixError(f"{target['name']} is not an access point — a station follows its AP's channel")
@@ -207,6 +306,20 @@ def plan(kind, target, login_for, find_device=None, params=None):
             off = (cur_f - cur_c) if cur_f is not None and cur_c is not None else None
             if off is None:
                 raise FixError(f"cannot read {target['name']}'s current channel from its config")
+        elif re.match(r"^11naht40(plus|minus)?$", cfg.get("radio.1.ieee_mode", "")):
+            # airOS 6 (airMAX M): 40 MHz = control channel + extension, no centre key. Offer only
+            # the move to a plain 20 MHz channel, where control and centre are the same.
+            if width != 20:
+                raise FixError(f"{target['name']} is an airOS 6 radio on a 40 MHz channel — Netwatch can only "
+                               f"move it to a 20 MHz channel (add width 20)")
+            _needs_test_mode(r, target["name"])
+            cur_c, off = live_c or cur_f, 0
+            out["edits"].append(_edit(cfg, "radio.1.freq", new, want_old=live_f if live_f and cur_f == live_f else None))
+            out["edits"].append(_edit(cfg, "radio.1.ieee_mode", "11naht20", text=True))
+            if "radio.1.chanbw" in cfg and _int(cfg["radio.1.chanbw"]) not in (0, 20):
+                out["edits"].append(_edit(cfg, "radio.1.chanbw", 20))
+            out["verify_restart"] = True
+            out["verify_freq"] = new
         else:
             # No separate centre in this firmware's config: radio.1.freq must then be the centre.
             if (live_c is not None and live_f is not None and live_c != live_f) or (live_c is None and cur_w and cur_w > 20):
@@ -219,13 +332,15 @@ def plan(kind, target, login_for, find_device=None, params=None):
         reach = width // 2 - 10
         new_off = 0 if reach <= 0 else (1 if off > 0 else -1) * min(abs(off) or 10, reach)
         control = new + new_off
-        if ckey:
+        if out.get("verify_freq"):
+            pass                                  # airOS 6 edits were planned above
+        elif ckey:
             out["edits"].append(_edit(cfg, ckey, new, want_old=live_c if live_c and cur_c == live_c else None))
             out["edits"].append(_edit(cfg, "radio.1.freq", control,
                                       want_old=live_f if live_f and cur_f == live_f else None))
         else:
             out["edits"].append(_edit(cfg, "radio.1.freq", new, want_old=live_f if live_f and cur_f == live_f else None))
-        if width != cur_w:
+        if width != cur_w and not out.get("verify_freq"):
             out["edits"].append(_edit(cfg, "radio.1.chanbw", width))
         out["lines"] = [f"Centre frequency: {cur_c} → {new} MHz"
                         + (f", width {cur_w} → {width} MHz" if width != cur_w else f" ({width} MHz wide)")]
@@ -292,19 +407,40 @@ def take(tok):
 
 
 # ---- the script that runs ON the radio ------------------------------------
-def script(edits, min_peers, wait_s):
-    """sh for busybox airOS. edits come from plan(): whitelisted keys, integer values."""
+def script(edits, min_peers, wait_s, verify_restart=False, verify_freq=None):
+    """sh for busybox airOS. edits come from plan(): whitelisted keys, integer
+    values or short plain words. verify_restart: before saving, the peer's
+    connection time must show the link really re-associated (proof the new
+    settings are live, not only written). verify_freq: the live frequency must
+    be this MHz before saving."""
     for e in edits:
-        if not _SAFE_KEY.match(e["key"]) or not e["new"].lstrip("-").isdigit():
+        if not _safe_key(e["key"]) or not _STR_VALUE.match(e["new"]) or (e.get("add") and e["key"] not in _ADDABLE):
             raise FixError("refusing an unsafe edit")
-    sed = "\n".join(f"grep -q '^{re.escape(e['key'])}=' /tmp/system.cfg || {{ log 'FAIL missing {e['key']}'; exit 1; }}\n"
-                    f"sed -i 's/^{re.escape(e['key'])}=.*/{e['key']}={e['new']}/' /tmp/system.cfg"
-                    for e in edits)
+    if verify_freq is not None and not str(verify_freq).isdigit():
+        raise FixError("refusing an unsafe check")
+
+    def one(e):
+        k, v = e["key"], e["new"]
+        if e.get("add"):
+            return (f"if grep -q '^{re.escape(k)}=' /tmp/system.cfg; then sed -i 's/^{re.escape(k)}=.*/{k}={v}/' /tmp/system.cfg; "
+                    f"else echo '{k}={v}' >> /tmp/system.cfg; fi")
+        return (f"grep -q '^{re.escape(k)}=' /tmp/system.cfg || {{ log 'FAIL missing {k}'; exit 1; }}\n"
+                f"sed -i 's/^{re.escape(k)}=.*/{k}={v}/' /tmp/system.cfg")
+    sed = "\n".join(one(e) for e in edits)
+    checks = ""
+    if verify_restart:
+        checks += ('a1=$(assoc); log "ASSOC $a0 -> $a1"\n'
+                   'if [ -z "$a1" ] || [ "$a1" -ge "$a0" ] || [ "$a1" -gt $((i+60)) ]; then log "NOTLIVE link did not re-associate"; ok=0; fi\n')
+    if verify_freq is not None:
+        checks += (f"mca-status 2>/dev/null | grep -Eiq '^(wlanfreq|freq|frequency)={int(verify_freq)}( MHz)?$' "
+                   f"|| {{ log 'NOTLIVE frequency is not {int(verify_freq)}'; ok=0; }}\n")
     return f"""#!/bin/sh
 ST={_TMP}.state; BAK={_TMP}.bak
 log() {{ echo "$(cut -d' ' -f1 /proc/uptime) $*" >> $ST; }}
 peers() {{ wstalist 2>/dev/null | grep -o '"remote"' | wc -l; }}
+assoc() {{ wstalist 2>/dev/null | grep -o '"uptime" *: *[0-9]*' | grep -o '[0-9]*$' | sort -n | tail -1; }}
 : > $ST
+a0=$(assoc); [ -n "$a0" ] || a0=999999999
 cp /tmp/system.cfg $BAK || {{ log 'FAIL backup'; exit 1; }}
 log BACKUP
 {sed}
@@ -316,6 +452,9 @@ while [ $i -lt {int(wait_s)} ]; do
   [ "$n" -ge {int(min_peers)} ] && {{ ok=1; break; }}
 done
 if [ $ok = 1 ]; then sleep 20; n=$(peers); log "PEERS $n"; [ "$n" -ge {int(min_peers)} ] || ok=0; fi
+if [ $ok = 1 ]; then
+{checks or ":"}
+fi
 if [ $ok = 1 ]; then
   sort /tmp/system.cfg | tr -d '\\r' > /tmp/running.cfg
   if cfgmtd -w -f /tmp/running.cfg -p /etc/ >/dev/null 2>&1; then log 'DONE saved'; else log 'DONE notsaved'; fi
@@ -353,7 +492,8 @@ def _run(p, login, on_done):
         for e in p["edits"]:
             if cfg.get(e["key"]) != e["old"]:
                 raise FixError(f"{e['key']} changed since the preview ({e['old']} → {cfg.get(e['key'])}) — nothing done")
-        body = script(p["edits"], p["min_peers"], p["wait_s"])
+        body = script(p["edits"], p["min_peers"], p["wait_s"],
+                      verify_restart=p.get("verify_restart", False), verify_freq=p.get("verify_freq"))
         rc, _o, err = airos._ssh(ip, user, pw, f"cat > {_TMP}.sh && chmod 700 {_TMP}.sh && rm -f {_TMP}.state && "
                                                f"bgnd -r nwfix -- /bin/sh {_TMP}.sh && echo STARTED",
                                  stdin_data=body, timeout=30)
@@ -385,6 +525,11 @@ def _run(p, login, on_done):
                        msg=("Done — the change is saved and every peer is back." if good else
                             "Saved on the radio, but the read-back does not match — check it in airOS."),
                        peers=len(after["peers"]))
+        elif verdict.startswith("DONE reverted") and any(" NOTLIVE " in f" {ln} " for ln in lines):
+            why = next(ln.split("NOTLIVE", 1)[1].strip() for ln in lines if "NOTLIVE" in ln)
+            res = dict(phase="done", ok=False, verdict="reverted",
+                       msg=f"The change did not take effect on the radio ({why}), so it put the old settings "
+                           f"back by itself. Nothing was saved.")
         elif verdict.startswith("DONE reverted"):
             res = dict(phase="done", ok=False, verdict="reverted",
                        msg="The peers did not all come back, so the radio put the old settings back by itself. "

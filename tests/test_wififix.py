@@ -25,6 +25,9 @@ LOGIN = {"username": "ubnt", "password": "pw"}
 STUBS = tempfile.mkdtemp()
 PEERS_FILE = os.path.join(STUBS, "peers")      # how many peers wstalist reports
 FLASH = os.path.join(STUBS, "flash")           # what cfgmtd "wrote"
+ASSOC_FILE = os.path.join(STUBS, "assoc")      # peers' connection time (s) wstalist reports
+LIVE_FILE = os.path.join(STUBS, "live")        # what mca-status reports as running
+NOOP_FILE = os.path.join(STUBS, "noop")        # present = soft restart applies nothing
 
 
 def cfg_text(over=None):
@@ -40,9 +43,19 @@ def wsta(n, model="PowerBeam 5AC"):
                         "remote": {"hostname": f"Sta{i}", "platform": model}} for i in range(n)])
 
 
-def ssh_out(cfg, peers, mode="ap-ptmp-ac", freq="5480", tx="18", center="5490"):
+def ssh_out(cfg, peers, mode="ap-ptmp-ac", freq="5480", tx="18", center="5490", probe="1\n/sbin/cfgmtd\nXW.v6.1.7"):
     status = f"wlanOpmode={mode}\nfreq={freq}\nwlanTxPower={tx}\n" + (f"centerFreq={center}\n" if center else "")
-    return f"{status}{airos._CFG_MARK}\n{cfg}{airos._WSTA_MARK}\n{peers}"
+    return f"{status}{airos._CFG_MARK}\n{cfg}{airos._WSTA_MARK}\n{peers}\n{wififix._PROBE_MARK}\n{probe}"
+
+
+def m5_cfg(over=None):
+    """An airOS 6 NanoBeam M5 AP like Tri-Lectro's office link: 40 MHz as control + extension."""
+    base = {"netconf.1.ip": "192.168.1.11", "wireless.1.mode": "master", "wireless.1.ssid": "LAN-OFFICE-PTP",
+            "radio.1.freq": "5180", "radio.1.ieee_mode": "11naht40plus", "radio.1.chanbw": "40",
+            "radio.1.txpower": "20", "radio.1.obey": "enabled", "radio.countrycode": "826",
+            "radio.1.countrycode": "826", "system.timezone": "GMT", "ntpclient.status": "disabled"}
+    base.update(over or {})
+    return "\n".join(f"{k}={v}" for k, v in base.items() if v is not None) + "\n"
 
 
 class FakeRadios:
@@ -78,11 +91,16 @@ class FakeRadios:
 def stubs():
     os.makedirs("/usr/etc/rc.d", exist_ok=True)
     w = lambda p, body: (open(p, "w").write("#!/bin/sh\n" + body + "\n"), os.chmod(p, 0o755))  # noqa: E731
-    w(os.path.join(STUBS, "wstalist"), f'n=$(cat {PEERS_FILE}); i=0; printf "["; '
-                                       f'while [ $i -lt $n ]; do printf \'{{"remote":{{}}}},\'; i=$((i+1)); done; printf "]"')
+    w(os.path.join(STUBS, "wstalist"), f'n=$(cat {PEERS_FILE}); u=$(cat {ASSOC_FILE} 2>/dev/null || echo 5000); i=0; printf "["; '
+                                       f'while [ $i -lt $n ]; do printf \'{{"uptime": %s, "remote":{{}}}},\' $u; i=$((i+1)); done; printf "]"')
+    # mca-status reports the frequency the radio RUNS: what the last soft restart applied
+    w(os.path.join(STUBS, "mca-status"), f'cat {LIVE_FILE} 2>/dev/null')
     w(os.path.join(STUBS, "sleep"), "exit 0")
     w(os.path.join(STUBS, "cfgmtd"), f'cp /tmp/running.cfg {FLASH}')
-    w("/usr/etc/rc.d/rc.softrestart", "exit 0")
+    # a real test-mode restart re-associates the link (connection time resets) and makes the
+    # config live; NOOP_FILE makes it a radio that only "accepts" the command
+    w("/usr/etc/rc.d/rc.softrestart", f'[ -f {NOOP_FILE} ] && exit 0; echo 10 > {ASSOC_FILE}; '
+                                       f'echo "freq=$(sed -n "s/^radio.1.freq=//p" /tmp/system.cfg)" > {LIVE_FILE}; exit 0')
 
 
 def set_peers(n):
@@ -191,11 +209,54 @@ class Planning(unittest.TestCase):
             wififix.plan("channel", self.tgt(), lambda k: LOGIN, lambda **k: None,
                          {"freq": 5400, "accept_unverified": True})
 
+    def test_country_plan_sets_both_keys_and_power(self):
+        airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1, "NanoBeam M5"), {"center": None, "freq": "5180"})})
+        p = wififix.plan("country", self.tgt(), lambda k: LOGIN, params={"country": 710, "txpower": 10})
+        self.assertEqual({e["key"]: e["new"] for e in p["edits"]},
+                         {"radio.countrycode": "710", "radio.1.countrycode": "710", "radio.1.txpower": "10"})
+        self.assertTrue(p["verify_restart"])
+        self.assertIn("United Kingdom → South Africa", p["lines"][0])
+        with self.assertRaisesRegex(wififix.FixError, "already set"):
+            airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg({"radio.countrycode": "710", "radio.1.countrycode": "710"}),
+                                                  wsta(1), {"center": None})})
+            wififix.plan("country", self.tgt(), lambda k: LOGIN, params={"country": 710})
+
+    def test_airos6_fixes_need_test_mode_on_the_radio(self):
+        for probe in ("0\n/sbin/cfgmtd", "1\n", ""):
+            airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1), {"center": None, "probe": probe})})
+            with self.assertRaisesRegex(wififix.FixError, "test mode"):
+                wififix.plan("country", self.tgt(), lambda k: LOGIN, params={"country": 710})
+
+    def test_ntp_plan_adds_missing_keys_only_for_ntp(self):
+        airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1), {"center": None})})
+        p = wififix.plan("ntp", self.tgt(), lambda k: LOGIN, params={})
+        got = {e["key"]: (e["new"], e.get("add", False)) for e in p["edits"]}
+        self.assertEqual(got, {"ntpclient.status": ("enabled", False), "ntpclient.1.status": ("enabled", True),
+                               "ntpclient.1.server": ("pool.ntp.org", True), "system.timezone": ("GMT-2", False)})
+        with self.assertRaises(wififix.FixError):
+            wififix.plan("ntp", self.tgt(), lambda k: LOGIN, params={"server": "pool.ntp.org; reboot"})
+
+    def test_airos6_channel_moves_to_20_mhz_only(self):
+        airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1, "NanoBeam M5"),
+                                              {"center": "5190", "freq": "5180", "mode": "ap"})})
+        p = wififix.plan("channel", self.tgt(), lambda k: LOGIN, lambda **k: None,
+                         {"freq": 5745, "width": 20, "accept_unverified": True})
+        self.assertEqual({e["key"]: e["new"] for e in p["edits"]},
+                         {"radio.1.freq": "5745", "radio.1.ieee_mode": "11naht20", "radio.1.chanbw": "20"})
+        self.assertEqual(p["verify_freq"], 5745)
+        with self.assertRaisesRegex(wififix.FixError, "20 MHz"):
+            wififix.plan("channel", self.tgt(), lambda k: LOGIN, lambda **k: None,
+                         {"freq": 5755, "width": 40, "accept_unverified": True})
+
     def test_script_rejects_unsafe_edits(self):
         with self.assertRaises(wififix.FixError):
             wififix.script([{"key": "netconf.1.ip", "old": "1", "new": "2"}], 1, 10)
         with self.assertRaises(wififix.FixError):
             wififix.script([{"key": "radio.1.freq", "old": "1", "new": "5480; reboot"}], 1, 10)
+        with self.assertRaises(wififix.FixError):
+            wififix.script([{"key": "system.timezone", "old": "GMT", "new": "GMT-2'; reboot; '"}], 1, 10)
+        with self.assertRaises(wififix.FixError):     # only NTP keys may be added
+            wififix.script([{"key": "radio.countrycode", "old": None, "new": "710", "add": True}], 1, 10)
 
 
 class OnTheRadio(unittest.TestCase):
@@ -208,7 +269,7 @@ class OnTheRadio(unittest.TestCase):
     def setUp(self):
         self._ssh, self._poll = airos._ssh, wififix.POLL_S
         wififix.POLL_S = 0.05
-        for p in (FLASH, "/tmp/nwfix.state"):
+        for p in (FLASH, "/tmp/nwfix.state", ASSOC_FILE, LIVE_FILE, NOOP_FILE):
             if os.path.exists(p):
                 os.remove(p)
 
@@ -258,6 +319,52 @@ class OnTheRadio(unittest.TestCase):
             time.sleep(0.05)
         self.assertEqual(done[0]["verdict"], "refused")
         self.assertFalse(any(c.startswith("cat > /tmp/nwfix.sh") for c in radios.commands))
+
+    def run_m5(self, kind, params, noop=False):
+        radios = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1, "NanoBeam M5"),
+                                          {"center": "5190", "freq": "5180", "mode": "ap"})})
+        airos._ssh = radios
+        p = wififix.plan(kind, {"key": "m5", "ip": "10.0.0.1", "name": "NanoBeam"}, lambda k: LOGIN,
+                         lambda **k: None, params)
+        p["wait_s"] = 10
+        set_peers(1)
+        if noop:
+            open(NOOP_FILE, "w").close()
+        done = []
+        wififix.start(p, LOGIN, on_done=lambda plan, j: done.append(j))
+        for _ in range(400):
+            if done:
+                break
+            time.sleep(0.05)
+        self.assertTrue(done, "job never finished")
+        return done[0], radios
+
+    def test_country_saved_only_after_the_link_really_restarted(self):
+        job, radios = self.run_m5("country", {"country": 710})
+        self.assertEqual(job["verdict"], "applied", job)
+        self.assertIn("radio.countrycode=710", open(FLASH).read())
+
+    def test_radio_without_a_real_test_restart_is_put_back(self):
+        # the command "succeeds" but nothing re-associates: never save untested settings
+        job, radios = self.run_m5("country", {"country": 710}, noop=True)
+        self.assertEqual(job["verdict"], "reverted", job)
+        self.assertIn("did not re-associate", job["msg"])
+        self.assertFalse(os.path.exists(FLASH))
+        self.assertIn("radio.countrycode=826", radios.radios["10.0.0.1"][0])
+
+    def test_airos6_channel_saved_when_live(self):
+        job, radios = self.run_m5("channel", {"freq": 5745, "width": 20, "accept_unverified": True})
+        self.assertEqual(job["verdict"], "applied", job)
+        flash = open(FLASH).read()
+        self.assertIn("radio.1.freq=5745", flash)
+        self.assertIn("radio.1.ieee_mode=11naht20", flash)
+
+    def test_ntp_adds_lines_and_saves(self):
+        job, radios = self.run_m5("ntp", {})
+        self.assertEqual(job["verdict"], "applied", job)
+        flash = open(FLASH).read()
+        for line in ("ntpclient.status=enabled", "ntpclient.1.server=pool.ntp.org", "system.timezone=GMT-2"):
+            self.assertIn(line, flash)
 
     def test_tokens_expire_and_are_single_use(self):
         tok = wififix.remember({"x": 1})
