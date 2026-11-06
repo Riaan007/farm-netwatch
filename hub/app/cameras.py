@@ -357,6 +357,29 @@ def site_camera_isapi(site_id, key):
     return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/isapi", request.method, body)
 
 
+@bp.route("/api/hub/sites/<site_id>/camera-standard", methods=["GET", "POST"])
+def site_camera_standard(site_id):
+    """The FarmCamSA standard and its check — the site Pi does the work; this forwards."""
+    return _forward(site_id, "/api/camera-standard", request.method, {} if request.method == "POST" else None)
+
+
+@bp.route("/api/hub/sites/<site_id>/camera-jobs", methods=["POST"])
+def site_camera_jobs(site_id):
+    return _forward(site_id, "/api/camera-jobs", "POST", request.get_json(silent=True) or {}, timeout=(5, 60))
+
+
+@bp.route("/api/hub/sites/<site_id>/camera-jobs/<jid>")
+def site_camera_job(site_id, jid):
+    return _forward(site_id, f"/api/camera-jobs/{quote(jid, safe='')}", "GET")
+
+
+@bp.route("/api/hub/sites/<site_id>/camera-jobs/<jid>/<action>", methods=["POST"])
+def site_camera_job_action(site_id, jid, action):
+    if action not in ("stop", "undo"):
+        return jsonify({"ok": False, "error": "unknown action"}), 404
+    return _forward(site_id, f"/api/camera-jobs/{quote(jid, safe='')}/{action}", "POST", {})
+
+
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/changes")
 def site_camera_changes(site_id, key):
     return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/changes", "GET")

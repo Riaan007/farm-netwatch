@@ -200,6 +200,24 @@ class HubCameras(unittest.TestCase):
         r = self.c.post("/api/hub/sites/farm/cameras/aa:01/isapi", json=body)
         self.assertEqual((FakeSite.calls[-1][0], r.get_json()["echo"]), ("/api/cameras/aa%3A01/isapi", body))
 
+    def test_the_standard_and_jobs_are_forwarded(self):
+        self.c.get("/api/hub/sites/farm/camera-standard")
+        self.assertEqual(FakeSite.calls[-1][0], "/api/camera-standard")
+        self.c.post("/api/hub/sites/farm/camera-standard", json={})
+        self.assertEqual(FakeSite.calls[-1][0], "/api/camera-standard")
+        body = {"kind": "rule", "rule": "tz", "keys": ["aa:01"]}
+        r = self.c.post("/api/hub/sites/farm/camera-jobs", json=body)
+        self.assertEqual((FakeSite.calls[-1][0], r.get_json()["echo"]), ("/api/camera-jobs", body))
+        self.c.get("/api/hub/sites/farm/camera-jobs/abc123")
+        self.assertEqual(FakeSite.calls[-1][0], "/api/camera-jobs/abc123")
+        self.c.post("/api/hub/sites/farm/camera-jobs/abc123/undo", json={})
+        self.assertEqual(FakeSite.calls[-1][0], "/api/camera-jobs/abc123/undo")
+        n = len(FakeSite.calls)
+        self.assertEqual(self.c.post("/api/hub/sites/farm/camera-jobs/abc123/delete", json={}).status_code, 404)
+        self.assertEqual(len(FakeSite.calls), n, "an unknown action never reaches the site")
+        anon = server.app.test_client()
+        self.assertEqual(anon.post("/api/hub/sites/farm/camera-jobs", json=body).status_code, 401)
+
     def test_the_account_job_is_forwarded(self):
         body = {"action": "create", "confirm_text": "CHANGE"}
         r = self.c.post("/api/hub/sites/farm/cameras/aa:01/account", json=body)

@@ -211,3 +211,72 @@ def api_camera_isapi(key):
                                               confirm_text=str(b.get("confirm_text") or "")[:20]))
     except hiksettings.SettingsError as e:
         return _err(e)
+
+
+# ---- the FarmCamSA standard and bulk jobs (hikbulk.py, Phase 5) ------------------------
+import hikbulk  # noqa: E402
+
+bulk = hikbulk.jobs
+
+
+def _berr(e):
+    return jsonify({"ok": False, "error": str(e), **e.extra}), e.status
+
+
+@bp.route("/api/camera-standard", methods=["GET", "POST"])
+@guard
+def api_camera_standard():
+    """GET: the rules, the last check (per device, per rule: ok / off / n/a) and the
+    recent jobs. POST: start a new check (reads every device, one at a time; writes nothing)."""
+    try:
+        if request.method == "GET":
+            return jsonify(bulk.overview())
+        return jsonify(bulk.start_check(who=_who()))
+    except hikbulk.BulkError as e:
+        return _berr(e)
+
+
+@bp.route("/api/camera-jobs", methods=["POST"])
+@guard
+def api_camera_jobs():
+    """Start a job: {kind: "rule", rule, keys, pause_s, stop_on_fail, confirm_text} brings
+    the devices to one rule; {kind: "copy", source, lens, sections, keys, …} copies settings
+    to cameras of the same model. One device at a time, each change read back, logged and
+    undoable — and the whole job can be undone at once."""
+    b = request.get_json(force=True, silent=True) or {}
+    keys = [str(k)[:80] for k in b.get("keys") or [] if isinstance(k, str)]
+    try:
+        kind = str(b.get("kind") or "")
+        if kind == "rule":
+            return jsonify(bulk.start_rule(b.get("rule"), keys, who=_who(), pause_s=b.get("pause_s"),
+                                           stop_on_fail=b.get("stop_on_fail") is True,
+                                           confirm_text=str(b.get("confirm_text") or "")[:20]))
+        if kind == "copy":
+            secs = [str(x) for x in b.get("sections") or [] if isinstance(x, str)]
+            return jsonify(bulk.start_copy(str(b.get("source") or ""), int(b.get("lens") or 1), secs, keys, who=_who(),
+                                           pause_s=b.get("pause_s"), stop_on_fail=b.get("stop_on_fail") is True))
+        return jsonify({"ok": False, "error": "unknown job kind"}), 400
+    except ValueError:
+        return jsonify({"ok": False, "error": "lens must be a number"}), 400
+    except hikbulk.BulkError as e:
+        return _berr(e)
+
+
+@bp.route("/api/camera-jobs/<jid>")
+@guard
+def api_camera_job(jid):
+    j = bulk.get(jid)
+    return jsonify({"ok": True, "job": j}) if j else (jsonify({"ok": False, "error": "unknown job"}), 404)
+
+
+@bp.route("/api/camera-jobs/<jid>/<action>", methods=["POST"])
+@guard
+def api_camera_job_action(jid, action):
+    try:
+        if action == "stop":
+            return jsonify(bulk.stop(jid))
+        if action == "undo":
+            return jsonify(bulk.start_undo(jid, who=_who()))
+        return jsonify({"ok": False, "error": "unknown action"}), 404
+    except hikbulk.BulkError as e:
+        return _berr(e)

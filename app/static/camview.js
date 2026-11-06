@@ -192,6 +192,7 @@
       const on = [rec ? `recorder ${rec.name}` : "", st.filt !== "all" ? { look: "Need a look", own: "Picture via own login", nvr: "Picture via recorder" }[st.filt] : "", st.q ? `search "${st.q}"` : ""].filter(Boolean);
       const note = on.length ? `<p class="cv-shown">Showing ${cams.length} of ${st.filt !== "all" || st.q ? scope.length : camsOf(g).length} cameras — ${esc(on.join(" · "))} <button type="button" class="cv-linkb" data-show-all>Show all</button></p>` : "";
       return `<section class="cv-group">${head}
+        ${opts.stdBase && !opts.fleet && !st.nvr ? `<div data-std="${esc(g.id)}"></div>` : ""}
         ${recs.length ? `<div class="cv-recs">${recs.map((r) => recHtml(g, r)).join("")}</div>` : ""}
         ${rec ? recPanel(rec) : ""}
         ${rec && opts.apiBase && rec.has_login ? `<div data-recset="${esc(rec.key)}" data-g="${esc(g.id)}"></div>` : ""}
@@ -227,6 +228,11 @@
       chips();
       body.innerHTML = groups().map(groupHtml).join("");
       body.querySelectorAll(".cv-tile").forEach((t) => { paint(t); st.obs.observe(t); });
+      body.querySelectorAll("[data-std]").forEach((ph) => {
+        const g = groups().find((x) => String(x.id) === ph.dataset.std); if (!g) return;
+        if (!st.std) { const host = document.createElement("section"); host.className = "cv-set cv-stdhost"; st.std = { host, ctl: standardPanel(host, opts.stdBase(g)) }; }
+        ph.replaceWith(st.std.host);
+      });
       body.querySelectorAll("[data-recset]").forEach((ph) => {
         const id = ph.dataset.g + "|" + ph.dataset.recset;
         let p = st.recSet.get(id);
@@ -345,6 +351,7 @@
         st.dead = true;
         st.timers.forEach(clearInterval);
         st.recSet.forEach((p) => p.ctl.destroy());
+        if (st.std) st.std.ctl.destroy();
         if (st.obs) st.obs.disconnect();
         st.pics.forEach((p) => p.src && URL.revokeObjectURL(p.src));
         st.pics.clear();
@@ -402,7 +409,7 @@
           </dl>
         </div>
       </div>
-      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section><section class="cv-set" data-isapi></section>` : ""}` : ""}
+      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section><section class="cv-set" data-isapi></section>` : ""}${opts.stdBase && similarOf(g, c).length ? `<section class="cv-set" data-copy></section>` : ""}` : ""}
       <p class="cv-foot">Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.</p>
     </div>`;
     const root = el.querySelector(".cv"), note = root.querySelector(".cv-note");
@@ -480,6 +487,8 @@
       group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" }) : null;
     const xHost = root.querySelector("[data-isapi]");
     const xpanel = xHost ? explorerPanel(xHost, opts.apiBase(g, c)) : null;
+    const cpHost = root.querySelector("[data-copy]");
+    const cpanel = cpHost ? copyPanel(cpHost, opts.stdBase(g), c, similarOf(g, c), vs) : null;
     const ptzHost = root.querySelector("[data-ptz]");
     const ppanel = ptzHost ? ptzPanel(ptzHost, opts.apiBase(g, c), vs, names, () => { if (!st.dead) setTimeout(() => get("thumb", true), 700); }) : null;
     return {
@@ -490,6 +499,7 @@
         if (rpanel) rpanel.destroy();
         if (spanel) spanel.destroy();
         if (xpanel) xpanel.destroy();
+        if (cpanel) cpanel.destroy();
         if (ppanel) ppanel.destroy();
         Object.values(st.pics).forEach((p) => p && p.src && URL.revokeObjectURL(p.src));
         el.innerHTML = "";
@@ -979,6 +989,182 @@
       else if (bt.hasAttribute("data-back")) { st.ask = null; paint(); }
     });
     return { destroy() { st.dead = true; } };
+  }
+
+  // ---- the FarmCamSA standard and bulk jobs (Phase 5: app/hikbulk.py) -------------------
+  // A check reads every device (writes nothing); a job brings chosen devices to one rule,
+  // or copies settings to cameras of the same model — one device at a time on the site
+  // Pi, each change read back, in History, and the whole job can be undone at once.
+  const similarOf = (g, c) => (c.model ? ((g.data && g.data.cameras) || []).filter((x) => x.key !== c.key && x.kind === "camera"
+    && (x.model || "").toUpperCase() === c.model.toUpperCase() && (x.has_login || (x.nvr && x.route))) : []);
+  const JSTATE = { queued: "waiting", running: "running", done: "finished", stopped: "stopped" };
+  const ISTATE = { pending: "waiting", running: "working…", ok: "done", unchanged: "already right", partial: "partly", failed: "failed", skipped: "not done" };
+  const tzShown = (v) => { const m = /^CST([+-])(\d{1,2})(?::(\d\d))?/.exec(v || ""); return m ? `${v} (UTC${m[1] === "-" ? "+" : "−"}${+m[2]}${m[3] && m[3] !== "00" ? ":" + m[3] : ""})` : v; };
+  const valShown = (id, v) => v === "" || v == null ? "(empty)" : id === "time.timeZone" ? tzShown(v) : v === "true" ? "on" : v === "false" ? "off" : v;
+  function jobHtml(j, withUndo) {
+    const n = j.counts || {}, items = j.items || [];
+    const sum = ["ok", "unchanged", "partial", "failed", "skipped"].filter((k) => n[k]).map((k) => `${n[k]} ${ISTATE[k]}`).join(" · ");
+    const live = j.state === "queued" || j.state === "running";
+    return `<div class="cv-job"><p><b>${esc(j.label)}</b> — ${esc(JSTATE[j.state] || j.state)}${live ? ` (${items.filter((i) => !["pending", "running"].includes(i.status)).length} of ${items.length || j.total})` : ""}${sum ? ` · ${esc(sum)}` : ""}${j.note ? ` <span class="cv-dimtx">(${esc(j.note)})</span>` : ""}${j.undone_by ? ` <span class="cv-dimtx">· undone</span>` : ""}</p>
+      ${items.length ? `<ul class="cv-jobl">${items.map((i) => `<li class="cv-js-${esc(i.status)}"><b>${esc(i.name)}</b> ${esc(ISTATE[i.status] || i.status)}${i.message && i.status !== "ok" ? ` <span class="cv-dimtx">— ${esc(i.message)}</span>` : ""}</li>`).join("")}</ul>` : ""}
+      <div class="cv-setact">${live ? `<button type="button" class="cv-btn" data-jstop="${esc(j.id)}">Stop after this device</button>` : ""}${withUndo && !live && (j.kind === "rule" || j.kind === "copy") && !j.undone_by && items.some((i) => i.change_id) ? `<button type="button" class="cv-btn" data-jundo="${esc(j.id)}">Undo this whole job</button>` : ""}</div></div>`;
+  }
+  // Poll one job until it ends; onTick(job) on every read.
+  function watchJob(base, id, onTick, dead) {
+    let t = null;
+    const tick = async () => {
+      if (dead()) return;
+      try {
+        const j = (await jcall(`${base}/camera-jobs/${encodeURIComponent(id)}`)).job;
+        onTick(j);
+        if (j.state === "queued" || j.state === "running") t = setTimeout(tick, 2000);
+      } catch (e) { t = setTimeout(tick, 5000); }
+    };
+    tick();
+    return () => clearTimeout(t);
+  }
+  async function jobAction(base, b, say, after) {
+    try {
+      if (b.dataset.jstop) { const j = await jcall(`${base}/camera-jobs/${encodeURIComponent(b.dataset.jstop)}/stop`, { method: "POST", body: "{}" }); say(j.message, ""); }
+      else if (b.dataset.jundo) { const j = await jcall(`${base}/camera-jobs/${encodeURIComponent(b.dataset.jundo)}/undo`, { method: "POST", body: "{}" }); after(j.job); }
+    } catch (e) { say(e.message, "cv-warn"); }
+  }
+
+  function standardPanel(el, base) {
+    const st = { dead: false, data: null, open: "", sel: {}, job: null, stopWatch: null, msg: null, busy: false };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>📏 FarmCamSA standard</h3><span class="cv-dimtx">check every camera and recorder · fix one rule on many at once · undo a whole job</span></summary><div class="cv-setb" data-b></div></details>`;
+    const body = el.querySelector("[data-b]");
+    el.querySelector("details").addEventListener("toggle", (e) => { if (e.target.open && !st.data) load(); });
+    async function load() {
+      if (!st.data) body.innerHTML = `<p class="cv-dimtx">Loading…</p>`;
+      try {
+        st.data = await jcall(`${base}/camera-standard`);
+        if (st.data.running && !st.stopWatch) follow(st.data.running.id);
+        if (!st.dead) paint();
+      } catch (e) { if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.status === 404 || e.status === 501 ? "This site's Netwatch is too old for the standard — update it." : e.message)}</p>`; }
+    }
+    function follow(id) {
+      if (st.stopWatch) st.stopWatch();
+      st.stopWatch = watchJob(base, id, (j) => {
+        st.job = j;
+        if (j.state !== "queued" && j.state !== "running") { st.stopWatch = null; load(); } else paint();
+      }, () => st.dead);
+    }
+    const devRows = () => ((st.data.check && st.data.check.devices) || []);
+    function counts(r) {
+      const n = { ok: 0, off: 0, na: 0, err: 0 };
+      devRows().forEach((d) => { if (d.error) { if (r.for.includes(d.kind)) n.err++; return; } const x = d.rules[r.id]; if (x) n[x.state]++; });
+      return n;
+    }
+    function paint() {
+      const d = st.data, ck = d.check, live = st.job && (st.job.state === "queued" || st.job.state === "running");
+      let h = d.can_change ? "" : `<p class="cv-setmsg">Camera settings are turned off for this site (Settings → Cameras), so the standard can't be checked or applied.</p>`;
+      h += `<div class="cv-setact"><button type="button" class="cv-btn${ck ? "" : " cv-on"}" data-check${d.can_change && !live ? "" : " disabled"}>${ck ? "Check again" : "Check every camera and recorder"}</button><span class="cv-dimtx">${ck ? `Last checked ${esc(ago(ck.ts))} · ${devRows().length} devices · reads only, changes nothing` : "Reads each device one at a time and changes nothing."}</span></div>`;
+      if (st.job) h += jobHtml(st.job, true);
+      if (ck) {
+        h += `<div class="cv-chwrap"><table class="cv-ch cv-std"><thead><tr><th>Rule</th><th>Meets</th><th>Off</th><th>Not on it</th><th></th></tr></thead><tbody>`;
+        d.rules.forEach((r) => {
+          const n = counts(r), open = st.open === r.id;
+          h += `<tr><td><b>${esc(r.label)}</b>${r.risky ? ` <span class="cv-badge cv-warn">risky</span>` : ""}<br><small class="cv-dimtx">${esc(r.why)}</small></td><td class="cv-okt">${n.ok}</td><td class="${n.off ? "cv-warn" : ""}">${n.off}</td><td class="cv-dimtx">${n.na + n.err}</td>
+            <td>${n.off || n.na + n.err ? `<button type="button" class="cv-btn" data-open="${esc(r.id)}" aria-expanded="${open}">${open ? "Hide" : "Show"}</button>` : ""}</td></tr>`;
+          if (open) h += `<tr class="cv-stdx"><td colspan="5">${ruleBox(r)}</td></tr>`;
+        });
+        h += `</tbody></table></div>`;
+      }
+      const old = (d.jobs || []).filter((j) => !st.job || j.id !== st.job.id).slice(0, 6);
+      if (old.length) h += `<details class="cv-xcaps"><summary>Recent jobs (${old.length})</summary>${old.map((j) => `<div class="cv-job"><p><b>${esc(j.label)}</b> — ${esc(JSTATE[j.state] || j.state)} ${esc(ago(j.finished || j.created))}${j.who ? ` by ${esc(j.who)}` : ""} · ${esc(Object.entries(j.counts || {}).map(([k, v]) => `${v} ${ISTATE[k] || k}`).join(" · "))}${j.undone_by ? " · undone" : ""}</p>${(j.kind === "rule" || j.kind === "copy") && !j.undone_by && j.state !== "running" && ((j.counts || {}).ok || (j.counts || {}).partial) ? `<div class="cv-setact"><button type="button" class="cv-btn" data-jundo="${esc(j.id)}">Undo this whole job</button></div>` : ""}</div>`).join("")}</details>`;
+      h += `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      body.innerHTML = h;
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function ruleBox(r) {
+      const rows = devRows().filter((x) => x.error ? r.for.includes(x.kind) : x.rules[r.id] && x.rules[r.id].state !== "ok");
+      const sel = st.sel[r.id] || (st.sel[r.id] = new Set(rows.filter((x) => !x.error && x.rules[r.id].state === "off").map((x) => x.key)));
+      let h = `<ul class="cv-stdl">${rows.map((x) => {
+        const v = x.rules[r.id], off = !x.error && v.state === "off";
+        return `<li>${off ? `<label><input type="checkbox" data-pick="${esc(x.key)}"${sel.has(x.key) ? " checked" : ""}> ` : "<span>"}<b>${esc(x.name)}</b>${x.kind === "recorder" ? " <small class='cv-dimtx'>(recorder)</small>" : ""}
+          ${off ? v.diffs.map((f) => ` <span class="cv-dimtx">${esc(valShown(f.id, f.now))} → </span><b>${esc(valShown(f.id, f.want))}</b>`).join(";") : ` <span class="cv-dimtx">— ${esc(x.error || v.why)}</span>`}${off ? "</label>" : "</span>"}</li>`;
+      }).join("")}</ul>`;
+      if (st.data.can_change && rows.some((x) => !x.error && x.rules[r.id].state === "off")) {
+        const blocked = r.risky && !st.data.risky;
+        h += blocked ? `<p class="cv-setmsg">This rule changes logins and remote access: turn on "Risky camera work" (Settings → Cameras) first.</p>`
+          : `<div class="cv-setact cv-stdgo"><label class="cv-dimtx">Pause between devices <input class="cv-pwin cv-num" data-pause type="number" min="0" max="60" value="3"> s</label>
+            <label class="cv-dimtx"><input type="checkbox" data-sof> Stop at the first failure</label>
+            ${r.risky ? `<span class="cv-dimtx">Type <b>${esc(st.data.confirm_word)}</b></span><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type ${esc(st.data.confirm_word)}">` : ""}
+            <button type="button" class="cv-btn cv-on" data-go="${esc(r.id)}"${sel.size ? "" : " disabled"}>Change ${sel.size} device${sel.size === 1 ? "" : "s"}</button></div>
+            <p class="cv-dimtx">One device at a time. Each is read back and listed in its History; the whole job can be undone afterwards.</p>`;
+      }
+      return h;
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    async function post(url, b) {
+      if (st.busy) return null;
+      st.busy = true;
+      try { return await jcall(url, { method: "POST", body: JSON.stringify(b || {}) }); }
+      catch (e) { say(e.message, "cv-warn"); return null; }
+      finally { st.busy = false; }
+    }
+    body.addEventListener("click", async (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled) return;
+      if (b.hasAttribute("data-check")) { st.msg = null; const j = await post(`${base}/camera-standard`); if (j) { st.job = j.job; paint(); follow(j.job.id); } }
+      else if (b.dataset.open) { st.open = st.open === b.dataset.open ? "" : b.dataset.open; st.msg = null; paint(); }
+      else if (b.dataset.go) {
+        const r = b.dataset.go, w = ((body.querySelector("[data-word]") || {}).value || "").trim().toUpperCase();
+        const j = await post(`${base}/camera-jobs`, { kind: "rule", rule: r, keys: [...(st.sel[r] || [])], confirm_text: w,
+          pause_s: +((body.querySelector("[data-pause]") || {}).value || 3), stop_on_fail: !!(body.querySelector("[data-sof]") || {}).checked });
+        if (j) { st.msg = null; st.job = j.job; st.open = ""; delete st.sel[r]; paint(); follow(j.job.id); }
+      } else if (b.dataset.jstop || b.dataset.jundo) jobAction(base, b, say, (job) => { st.job = job; st.msg = null; paint(); follow(job.id); });
+    });
+    body.addEventListener("change", (e) => {
+      const c = e.target.closest("[data-pick]"); if (!c || !st.open) return;
+      const s = st.sel[st.open]; if (c.checked) s.add(c.dataset.pick); else s.delete(c.dataset.pick);
+      const g = body.querySelector("[data-go]"); if (g) { g.disabled = !s.size; g.textContent = `Change ${s.size} device${s.size === 1 ? "" : "s"}`; }
+    });
+    return { destroy() { st.dead = true; if (st.stopWatch) st.stopWatch(); } };
+  }
+
+  const COPY = { picture: "Picture", osd: "Text on video (not the name)", main: "Main stream", sub: "Sub stream" };
+  function copyPanel(el, base, cam, similar, views) {
+    const st = { dead: false, job: null, stopWatch: null, msg: null, busy: false };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>📋 Copy to similar cameras</h3><span class="cv-dimtx">this camera's settings onto other ${esc(cam.model)} cameras · one at a time · with Undo</span></summary><div class="cv-setb" data-b></div></details>`;
+    const body = el.querySelector("[data-b]");
+    el.querySelector("details").addEventListener("toggle", (e) => { if (e.target.open && !body.innerHTML) paint(); });
+    function paint() {
+      const live = st.job && (st.job.state === "queued" || st.job.state === "running");
+      let h = `<p class="cv-dimtx">Copies the values this camera has now. A value another camera doesn't take is left out and listed. The camera's own name is never copied.</p>
+        <div class="cv-stdl2">${Object.entries(COPY).map(([k, v]) => `<label><input type="checkbox" data-sec="${k}"${k === "picture" ? " checked" : ""}> ${esc(v)}</label>`).join("")}</div>
+        ${views.length > 1 ? `<p><label class="cv-dimtx">Lens <select class="cv-sel" data-lens>${views.map((n) => `<option value="${n}">${n}</option>`).join("")}</select></label></p>` : ""}
+        <p class="cv-dimtx">To:</p><ul class="cv-stdl">${similar.map((x) => `<li><label><input type="checkbox" data-to="${esc(x.key)}"${x.online ? " checked" : ""}> <b>${esc(x.name)}</b>${x.online ? "" : " <span class='cv-warn'>offline</span>"}</label></li>`).join("")}</ul>
+        <div class="cv-setact cv-stdgo"><label class="cv-dimtx">Pause between cameras <input class="cv-pwin cv-num" data-pause type="number" min="0" max="60" value="3"> s</label>
+          <label class="cv-dimtx"><input type="checkbox" data-sof> Stop at the first failure</label>
+          <button type="button" class="cv-btn cv-on" data-copygo${live ? " disabled" : ""}>Copy</button></div>`;
+      if (st.job) h += jobHtml(st.job, true);
+      h += `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      const keep = [...body.querySelectorAll("input[type=checkbox]")].map((i) => [i.dataset.sec || i.dataset.to || "sof", i.checked]);
+      body.innerHTML = h;
+      keep.forEach(([k, v]) => { const i = body.querySelector(`[data-sec="${k}"], [data-to="${CSS.escape(k)}"]`) || (k === "sof" ? body.querySelector("[data-sof]") : null); if (i) i.checked = v; });
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    function follow(id) {
+      if (st.stopWatch) st.stopWatch();
+      st.stopWatch = watchJob(base, id, (j) => { st.job = j; paint(); }, () => st.dead);
+    }
+    body.addEventListener("click", async (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled || st.busy) return;
+      if (b.hasAttribute("data-copygo")) {
+        const secs = [...body.querySelectorAll("[data-sec]:checked")].map((i) => i.dataset.sec), keys = [...body.querySelectorAll("[data-to]:checked")].map((i) => i.dataset.to);
+        if (!secs.length || !keys.length) return say("Choose what to copy and the cameras to copy it to.", "cv-warn");
+        st.busy = true; say("Reading this camera's settings…", "");
+        try {
+          const j = await jcall(`${base}/camera-jobs`, { method: "POST", body: JSON.stringify({ kind: "copy", source: cam.key, lens: +((body.querySelector("[data-lens]") || {}).value || 1),
+            sections: secs, keys, pause_s: +((body.querySelector("[data-pause]") || {}).value || 3), stop_on_fail: !!(body.querySelector("[data-sof]") || {}).checked }) });
+          st.msg = null; st.job = j.job; paint(); follow(j.job.id);
+        } catch (err) { say(err.message, "cv-warn"); }
+        st.busy = false;
+      } else if (b.dataset.jstop || b.dataset.jundo) jobAction(base, b, say, (job) => { st.job = job; st.msg = null; paint(); follow(job.id); });
+    });
+    return { destroy() { st.dead = true; if (st.stopWatch) st.stopWatch(); } };
   }
 
   // ---- the ISAPI explorer (Phase 4d part 3: app/hikexplorer.py) --------------------------

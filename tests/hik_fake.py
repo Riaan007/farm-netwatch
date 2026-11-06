@@ -67,6 +67,7 @@ class Device:
         # settings (hiksettings): {ISAPI path: xml text}, served and replaced by PUT when set
         self.settings = None
         self.put_status = {}                 # path -> (http status, statusCode) to answer a PUT with
+        self.put_fail_once = {}              # path -> (http status, statusCode) for the NEXT PUT only
         self.not_kept = set()                # paths whose PUT is answered OK but changes nothing
         self.puts = []                       # (path, body) of every accepted PUT
         # PTZ: None = no PTZ at all (403); else {"caps": bool, "presets": [(id, name)], "momentary": bool}
@@ -222,7 +223,7 @@ class Device:
                 ok = False
             if not ok:
                 return self._send(req, 400, '{"statusCode": 6, "subStatusCode": "badJsonFormat"}')
-            http, code = self.put_status.get(path, (200, 1))
+            http, code = self.put_fail_once.pop(path, None) or self.put_status.get(path, (200, 1))
             if http != 200 or code not in (1, 7):
                 return self._send(req, http, f'{{"statusCode": {code}, "subStatusCode": "invalidContent"}}')
             self.puts.append((path, body))
@@ -237,7 +238,7 @@ class Device:
             ok_xml = False
         if not ok_xml:
             return self._send(req, 400, "<ResponseStatus><statusCode>6</statusCode><subStatusCode>badXmlFormat</subStatusCode></ResponseStatus>")
-        http, code = self.put_status.get(path, (200, 1))
+        http, code = self.put_fail_once.pop(path, None) or self.put_status.get(path, (200, 1))
         if http != 200 or code not in (1, 7):
             return self._send(req, http, f"<ResponseStatus><statusCode>{code}</statusCode><subStatusCode>invalidContent</subStatusCode></ResponseStatus>")
         self.puts.append((path, body))

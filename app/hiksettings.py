@@ -37,6 +37,8 @@ DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
 LOG_PATH = os.path.join(DATA_DIR, "camera_changes.json")
 LOG_KEEP = 1000
 MAX_DOC = 512 << 10
+PUT_RETRY_S = 3        # a refused write is tried once more after this (a camera busy setting
+                       # its clock from a time server refused the clock write at once — live)
 
 # Hikvision writes time zones the POSIX way round: CST-2:00:00 is UTC+2.
 SA_TZ = "CST-2:00:00"
@@ -134,9 +136,9 @@ SHOW_IF = {
 SCALE = {"s.Video/maxFrameRate": 100}      # frames per second are sent in hundredths
 
 
-GROUPS = ("basic", "detect", "record", "recorder", "security")
+GROUPS = ("basic", "detect", "record", "recorder", "security", "clock")
 CAMERA_GROUPS = ("basic", "detect", "record", "security")
-RECORDER_GROUPS = ("recorder", "security")
+RECORDER_GROUPS = ("recorder", "security", "clock")
 RECORDER_SECTIONS = ("record", "storage")
 
 
@@ -152,6 +154,9 @@ def sections(lens, group="basic", via=None):
         return hikrecord.recorder_sections()
     if group == "security":
         return hiksecurity.sections() if via is None else []     # the device's own login only
+    if group == "clock":
+        # a recorder's own clock (a camera's is in "basic"): the same documents
+        return [s for s in sections(1, "basic") if s["id"] == "time"] if via is None else []
     if via is not None:
         return nvr_sections(int(via), group)
     if group == "detect":
@@ -1372,8 +1377,42 @@ class Settings:
                 "why_not": "" if self.enabled() else "Camera settings are turned off for this site (Settings → Cameras).",
                 "sections": out, "ts": int(time.time()), **extra}
 
+    def values(self, key, lens, section_ids):
+        """The current values of some sections of one device, for the FarmCamSA standard
+        and copying (hikbulk.py): {section id: {field id: value}} plus how it was reached.
+        A section the device (or the way to it) doesn't have is left out. No capabilities
+        are read — a write reads them itself."""
+        e, use, ch, cl, sem, _hd = self._target(key, lens)
+        out, memo = {}, {}
+        wanted = set(section_ids)
+        with sem:
+            for g in self._groups(e):
+                for sec in sections(lens, g, ch):
+                    if sec["id"] not in wanted or sec["id"] in out:
+                        continue
+                    if sec["id"] in hiksecurity.SECTION_IDS:
+                        if ch is not None:
+                            continue
+                        c2 = self._admin_client(e["_d"])
+                    else:
+                        c2 = cl
+                    try:
+                        _d, fields, errs = self._section(c2, {**sec, "optional": sec.get("optional") or "|".join(sec["docs"])},
+                                                         with_caps=False, memo=memo, skip_missing=True)
+                    except _Missing:
+                        continue
+                    except hikisapi.LoginRefused as ex:
+                        raise SettingsError(str(ex) or "the device refused the saved login", 403) from None
+                    except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
+                        raise SettingsError(f"the device did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+                    if fields:
+                        out[sec["id"]] = {f["id"]: f.get("value") for f in fields}
+        d = e.get("_d") or {}
+        return {"key": key, "name": e.get("name"), "route": use, "channel": ch, "recorder": bool(e.get("_recorder")),
+                "netwatch_name": (d.get("name") or e.get("name") or "")[:32], "values": out}
+
     def apply(self, key, lens, section, changes, who="", expect=None, undo_of=None, confirm=False, route=None,
-              confirm_text=""):
+              confirm_text="", lenient=False):
         """Change some settings of one section. `expect` = the values the person saw
         ({field: value}); a camera that shows something else now is a conflict (409)."""
         if not self.enabled():
@@ -1405,7 +1444,7 @@ class Settings:
         try:
             with sem:
                 return self._apply(e, cl, sec, int(lens), changes, who, expect or {}, undo_of,
-                                   route=use, ch=ch, hist_dev=hist_dev)
+                                   route=use, ch=ch, hist_dev=hist_dev, lenient=lenient)
         except hikisapi.LoginRefused as ex:
             raise SettingsError(str(ex) or "the camera refused the saved login", 403) from None
         except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
@@ -1415,16 +1454,30 @@ class Settings:
                 self._risky_lock.release()
             lock.release()
 
-    def _apply(self, e, cl, sec, lens, changes, who, expect, undo_of, route="direct", ch=None, hist_dev=None):
+    def _apply(self, e, cl, sec, lens, changes, who, expect, undo_of, route="direct", ch=None, hist_dev=None,
+               lenient=False):
+        """`lenient` (copy to similar cameras): a setting this camera lacks, or a value it
+        doesn't take, is left out and listed in `skipped` instead of refusing the lot."""
         dev = "recorder" if (e.get("_recorder") or sec["id"] in RECORDER_SECTIONS) else "camera"
         docs, fields, errs = self._section(cl, sec, memo={})
         by = {f["id"]: f for f in fields}
-        want = {}
+        want, skipped = {}, []
         for fid, v in changes.items():
             f = by.get(fid)
             if f is None:
+                if lenient:
+                    skipped.append(f"{fid}: not on this {dev}")
+                    continue
                 raise SettingsError(f"'{fid}' is not a setting this camera has")
-            nv = _check(f, v)
+            try:
+                nv = _check(f, v)
+            except SettingsError as ex:
+                if lenient and str(f.get("value")) != str(v).strip():
+                    skipped.append(str(ex))
+                    continue
+                if lenient:
+                    continue
+                raise
             if nv != f["value"]:
                 want[fid] = nv
         moved = [by[fid]["label"] for fid, v in expect.items() if fid in by and str(v) != str(by[fid]["value"])]
@@ -1432,7 +1485,8 @@ class Settings:
             raise SettingsError(f"changed on the {dev} since you looked: " + ", ".join(moved), 409,
                                 {"conflict": moved})
         if not want:
-            return {"ok": True, "applied": [], "unchanged": True, "message": f"Nothing to change — the {dev} already has these values."}
+            return {"ok": True, "applied": [], "unchanged": True, "skipped": skipped,
+                    "message": f"Nothing to change — the {dev} already has these values."}
         before = {fid: by[fid]["value"] for fid in want}
         shown_before = {fid: by[fid]["shown"] for fid in want}
         touched = []
@@ -1456,9 +1510,16 @@ class Settings:
         reboot, written, failed = False, [], ""
         for dk in [d for d in sec.get("order", list(sec["docs"])) if d in touched]:
             js = _is_json(sec["docs"][dk])
-            r = cl.request("PUT", sec["docs"][dk], data=serialize_json(docs[dk]) if js else serialize(docs[dk]),
-                           headers={"Content-Type": "application/json" if js else "application/xml"}, max_bytes=64 << 10)
+            body = serialize_json(docs[dk]) if js else serialize(docs[dk])
+            hdr = {"Content-Type": "application/json" if js else "application/xml"}
+            r = cl.request("PUT", sec["docs"][dk], data=body, headers=hdr, max_bytes=64 << 10)
             ok, rb, msg = _status(r)
+            if not ok and r.status not in (401, 403) and PUT_RETRY_S is not None:
+                # A refused write changed nothing, so the same write once more is safe (a
+                # refused LOGIN is never retried: that is the client's one-try rule).
+                time.sleep(PUT_RETRY_S)
+                r = cl.request("PUT", sec["docs"][dk], data=body, headers=hdr, max_bytes=64 << 10)
+                ok, rb, msg = _status(r)
             if not ok:
                 failed = f"the {dev} refused the change: {msg}"
                 break
@@ -1502,7 +1563,7 @@ class Settings:
                else failed or f"The {dev} did not keep every change — see the list.")
         if reboot:
             msg += f" The {dev} says it needs a restart for this to take effect."
-        return {"ok": not failed and kept_all, "change": entry, "message": msg, "reboot": reboot}
+        return {"ok": not failed and kept_all, "change": entry, "message": msg, "reboot": reboot, "skipped": skipped}
 
     # ---- PTZ: moves that stop by themselves, and presets -------------------------------
     def ptz(self, key, lens=1, route=None):

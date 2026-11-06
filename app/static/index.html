@@ -2886,14 +2886,14 @@
             const cam = key && (CAMS.data.cameras || []).find(c => c.key === key);
             if(key && cam){
                 CAMS.one = CamView.camera(host, {group, cam, picUrl: camPicUrl,
-                    apiBase: (_g, c) => '/api/cameras/' + encodeURIComponent(c.key),
+                    apiBase: (_g, c) => '/api/cameras/' + encodeURIComponent(c.key), stdBase: () => '/api',
                     onBack: () => { location.hash = '#/cameras'; },
                     deviceAction: DEV_BY_KEY[cam.key] ? {label: 'Device details', run: () => openModal(cam.key)} : null});
                 return;
             }
             if(key) history.replaceState(null, '', '#/cameras');
             CAMS.grid = CamView.mount(host, {groups: () => [{id: 'site', title: '', data: CAMS.data}], picUrl: camPicUrl, storeKey: 'nw.cams', nvr: nvr || '',
-                apiBase: (_g, c) => '/api/cameras/' + encodeURIComponent(c.key),
+                apiBase: (_g, c) => '/api/cameras/' + encodeURIComponent(c.key), stdBase: () => '/api',
                 onOpen: (_g, c) => { location.hash = '#/cameras?key=' + encodeURIComponent(c.key); }});
             CAMS.timer = setInterval(async () => {
                 if(PAGE !== 'cameras' || !CAMS.grid) return;

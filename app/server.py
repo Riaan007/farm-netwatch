@@ -2888,6 +2888,7 @@ def main():
                          lambda: set(dict(scanner.mac_multi_ip)), config.load)
     hikhealth.health.start(campics.engine, config.load)
     camera_routes.settings.start(campics.engine, config.load, on_change=_camera_setting_audit)
+    camera_routes.bulk.start(campics.engine, config.load)
     publicip.start()               # this site's public IP, every 15 min
     port = int(os.environ.get("NETWATCH_PORT", "8090"))
     app.run(host="0.0.0.0", port=port, threaded=True)
