@@ -193,3 +193,21 @@ def api_camera_password(key):
                                          who=_who(), confirm_text=str(b.get("confirm_text") or "")[:20]))
     except hiksettings.SettingsError as e:
         return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/isapi", methods=["GET", "POST"])
+@guard
+def api_camera_isapi(key):
+    """The ISAPI explorer (hikexplorer.py). GET ?path=/ISAPI/…: the device's document
+    with every secret hidden, and its capabilities. POST {path, doc, preview, confirm_text}:
+    change VALUES only (same elements, same order); preview returns the change list.
+    Needs Camera settings and Risky camera work; risky paths are refused."""
+    try:
+        if request.method == "GET":
+            return jsonify(settings.explore_read(key, str(request.args.get("path") or "")))
+        b = request.get_json(force=True, silent=True) or {}
+        return jsonify(settings.explore_write(key, str(b.get("path") or ""), str(b.get("doc") or ""),
+                                              preview=b.get("preview") is True, who=_who(),
+                                              confirm_text=str(b.get("confirm_text") or "")[:20]))
+    except hiksettings.SettingsError as e:
+        return _err(e)

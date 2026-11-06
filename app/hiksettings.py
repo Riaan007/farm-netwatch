@@ -28,6 +28,7 @@ import campics
 import creds
 import hikchannels
 import hikdetect
+import hikexplorer
 import hikrecord
 import hikisapi
 import hiksecurity
@@ -1963,6 +1964,112 @@ class Settings:
             msg += " The camera's login lock could not be switched back on — do it in Logins and security."
         return {"ok": not bad and not lock_off, "change": entry, "message": msg}
 
+    # ---- the ISAPI explorer (hikexplorer.py) ---------------------------------------------
+    def _explorer_target(self, key):
+        if not self.enabled() or not self.risky():
+            raise SettingsError("The ISAPI explorer needs Camera settings and Risky camera work (Settings → Cameras).", 403)
+        e, _use, _ch, _cl, sem, d = self._target(key, 1, "direct")
+        return e, sem, d
+
+    def _explore_get(self, cl, path):
+        r = cl.get(path, max_bytes=hikexplorer.MAX_DOC)
+        if r.status != 200:
+            raise SettingsError(f"the device answered HTTP {r.status} for {path}", 404 if r.status in (403, 404) else 502,
+                                {"http": r.status})
+        root = hikisapi.parse(r.content)
+        if root is None:
+            raise SettingsError("the explorer reads XML documents only", 415)
+        return root
+
+    def explore_read(self, key, path):
+        try:
+            path = hikexplorer.check_path(path)
+        except hikexplorer.ExplorerError as ex:
+            raise SettingsError(str(ex), ex.status) from None
+        e, sem, d = self._explorer_target(key)
+        with sem:
+            try:
+                cl = self._admin_client(d)
+                root = self._explore_get(cl, path)
+                try:
+                    cap = self._explore_get(cl, path + "/capabilities")
+                except SettingsError:
+                    cap = None
+            except hikisapi.LoginRefused as ex:
+                raise SettingsError(str(ex) or "the device refused the saved login", 403) from None
+            except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
+                raise SettingsError(f"the device did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+        try:
+            hikexplorer.check_path(path, write=True)
+            writable = True
+        except hikexplorer.ExplorerError:
+            writable = False
+        return {"ok": True, "key": key, "name": e["name"], "path": path, "writable": writable,
+                "doc": _pretty(hikexplorer.redact(root)),
+                "caps": serialize(hikexplorer.redact(cap)).decode("utf-8", "replace") if cap is not None else "",
+                "secret": hikexplorer.SECRET, "common": hikexplorer.COMMON, "confirm_word": hiksecurity.CONFIRM_WORD}
+
+    def explore_write(self, key, path, body, preview=False, who="", confirm_text="", undo_of=None, expect_now=None):
+        """Change values of one document. preview=True only returns the change list."""
+        try:
+            path = hikexplorer.check_path(path, write=True)
+        except hikexplorer.ExplorerError as ex:
+            raise SettingsError(str(ex), ex.status) from None
+        e, sem, d = self._explorer_target(key)
+        if not preview:
+            self._risky_gate(confirm_text, undo=bool(undo_of))
+        lock = self._lock_for(key)
+        if not lock.acquire(blocking=False):
+            raise SettingsError("another change on this device is still running", 409)
+        if not preview and not self._risky_lock.acquire(blocking=False):
+            lock.release()
+            raise SettingsError("another risky job is running on this site; one at a time", 409)
+        dev = "recorder" if e.get("_recorder") else "camera"
+        try:
+            with sem:
+                cl = self._admin_client(d)
+                cur = self._explore_get(cl, path)
+                shown_now = serialize(hikexplorer.redact(cur)).decode("utf-8", "replace")
+                if expect_now is not None and shown_now != expect_now:
+                    raise SettingsError(f"the {dev} shows something else now than after that change — not undone", 409,
+                                        {"conflict": [path]})
+                doc, changes = hikexplorer.merge(cur, str(body or ""))
+                if preview or not changes:
+                    return {"ok": True, "preview": True, "changes": changes,
+                            "message": "" if changes else f"Nothing to change — the {dev} already has these values."}
+                r = cl.request("PUT", path, data=serialize(doc), headers={"Content-Type": "application/xml"},
+                               max_bytes=64 << 10)
+                ok, reboot, msg = _status(r)
+                if not ok:
+                    raise SettingsError(f"the {dev} refused the change: {msg}", 502)
+                back = hikexplorer.leaves(self._explore_get(cl, path))
+        except hikexplorer.ExplorerError as ex:
+            raise SettingsError(str(ex), ex.status) from None
+        except hikisapi.LoginRefused as ex:
+            raise SettingsError(str(ex) or "the device refused the saved login", 403) from None
+        except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
+            raise SettingsError(f"the {dev} did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+        finally:
+            if not preview:
+                self._risky_lock.release()
+            lock.release()
+        rows, kept_all = [], True
+        for c in changes:
+            got = (back.get(c["path"]).text or "").strip() if back.get(c["path"]) is not None else None
+            kept = got == c["after"]
+            kept_all = kept_all and kept
+            rows.append({"id": c["path"], "label": c["path"].split("/", 2)[-1], "before": c["before"], "after": c["after"],
+                         "shown_before": c["before"], "shown_after": c["after"], "now": got, "written": True, "kept": kept})
+        after_txt = serialize(hikexplorer.redact(doc)).decode("utf-8", "replace")
+        undo = ({"path": path, "doc": shown_now, "after": after_txt}
+                if len(shown_now) + len(after_txt) <= 128 << 10 else None)
+        entry = self._log_job(e, d, "explorer", f"ISAPI explorer: {path}", rows, who, undo=undo, undo_of=undo_of,
+                              result="ok" if kept_all else "partial")
+        msg = (f"Done — the {dev} kept every change." if kept_all else f"The {dev} did not keep every change — see the list.")
+        if reboot:
+            msg += f" The {dev} says it needs a restart for this to take effect."
+        return {"ok": kept_all, "change": entry, "message": msg, "reboot": reboot}
+
     def changes(self, key, limit=50):
         return self.log.for_key(key, limit)
 
@@ -1972,6 +2079,11 @@ class Settings:
             raise SettingsError("unknown change", 404)
         if c.get("undone_by"):
             raise SettingsError("this change was already undone", 409)
+        if c.get("section") == "explorer":
+            u = c.get("undo")
+            if not u:
+                raise SettingsError("this change was too big to keep for Undo", 409)
+            return self.explore_write(key, u["path"], u["doc"], who=who, undo_of=cid, expect_now=u["after"])
         if c.get("section") in ("channels", "password"):
             u = c.get("undo")
             if not u:
@@ -2000,6 +2112,14 @@ PTZ_MODEL = re.compile(r"^I?DS-2(DE|DF|DY|SE|SF)", re.I)
 
 def _ptz_base(use, lens, ch):
     return f"/ISAPI/ContentMgmt/PTZCtrlProxy/channels/{int(ch)}" if use == "nvr" else f"/ISAPI/PTZCtrl/channels/{int(lens)}"
+
+
+def _pretty(root):
+    """Indented for reading and editing (the write starts from the device's own document,
+    and only leaf values are compared, so the indentation never reaches the device)."""
+    r = copy.deepcopy(root)
+    ET.indent(r, "  ")
+    return serialize(r).decode("utf-8", "replace")
 
 
 class _Missing(Exception):

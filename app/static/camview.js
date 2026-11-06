@@ -233,14 +233,14 @@
         if (!p) {
           const g = groups().find((x) => String(x.id) === ph.dataset.g); if (!g) return;
           const host = document.createElement("div"); host.className = "cv-recset";
-          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>`;
-          const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2, h3] = host.children;
+          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>`;
+          const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2, h3, h4] = host.children;
           const a = settingsPanel(h1, base, { key: ph.dataset.recset }, () => {},
             { group: "recorder", title: "⚙ Recorder settings", sub: "what it does when its disks are full" });
           const b = settingsPanel(h2, base, { key: ph.dataset.recset }, () => {},
             { group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" });
-          const cpan = channelsPanel(h3, base);
-          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); } } };
+          const cpan = channelsPanel(h3, base), xpan = explorerPanel(h4, base);
+          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); xpan.destroy(); } } };
           st.recSet.set(id, p);
         }
         ph.replaceWith(p.host);
@@ -402,7 +402,7 @@
           </dl>
         </div>
       </div>
-      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section>` : ""}` : ""}
+      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section><section class="cv-set" data-isapi></section>` : ""}` : ""}
       <p class="cv-foot">Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.</p>
     </div>`;
     const root = el.querySelector(".cv"), note = root.querySelector(".cv-note");
@@ -478,6 +478,8 @@
     const secHost = root.querySelector("[data-secu]");
     const spanel = secHost ? settingsPanel(secHost, opts.apiBase(g, c), c, () => {}, {
       group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" }) : null;
+    const xHost = root.querySelector("[data-isapi]");
+    const xpanel = xHost ? explorerPanel(xHost, opts.apiBase(g, c)) : null;
     const ptzHost = root.querySelector("[data-ptz]");
     const ppanel = ptzHost ? ptzPanel(ptzHost, opts.apiBase(g, c), vs, names, () => { if (!st.dead) setTimeout(() => get("thumb", true), 700); }) : null;
     return {
@@ -487,6 +489,7 @@
         if (dpanel) dpanel.destroy();
         if (rpanel) rpanel.destroy();
         if (spanel) spanel.destroy();
+        if (xpanel) xpanel.destroy();
         if (ppanel) ppanel.destroy();
         Object.values(st.pics).forEach((p) => p && p.src && URL.revokeObjectURL(p.src));
         el.innerHTML = "";
@@ -975,6 +978,62 @@
       else if (bt.hasAttribute("data-go")) go();
       else if (bt.hasAttribute("data-back")) { st.ask = null; paint(); }
     });
+    return { destroy() { st.dead = true; } };
+  }
+
+  // ---- the ISAPI explorer (Phase 4d part 3: app/hikexplorer.py) --------------------------
+  // Read any XML document; change VALUES only. Secrets come as •••••• and stay as they are.
+  function explorerPanel(el, base) {
+    const st = { dead: false, busy: false, data: null, prev: null, msg: null, path: "/ISAPI/System/time" };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>🧪 ISAPI explorer</h3><span class="cv-dimtx">any setting the panels don't cover · values only · with Undo</span></summary><div class="cv-setb" data-b></div></details>`;
+    const body = el.querySelector("[data-b]");
+    el.querySelector("details").addEventListener("toggle", (e) => { if (e.target.open && !body.innerHTML) paint(); });
+    function paint() {
+      const d = st.data;
+      let h = `<p class="cv-dimtx">For experts. Every change is risky work: you preview it, type the word, and it can be undone in the change list. Restart, reset, firmware, disk format, users, ports, the address and recorder channels can't be changed here.</p>
+        <div class="cv-setact"><input class="cv-pwin cv-xpath" data-xpath list="cv-xpaths" value="${esc(st.path)}" aria-label="ISAPI path" spellcheck="false"><datalist id="cv-xpaths">${((d && d.common) || []).map((p) => `<option value="${esc(p)}">`).join("")}</datalist><button type="button" class="cv-btn" data-x="read">Read</button></div>`;
+      if (d) {
+        h += `<textarea class="cv-xdoc" data-xdoc spellcheck="false"${d.writable ? "" : " readonly"} aria-label="Document">${esc(d.doc)}</textarea>`;
+        if (d.caps) h += `<details class="cv-xcaps"><summary>What the device allows (capabilities)</summary><pre>${esc(d.caps)}</pre></details>`;
+        h += d.writable ? `<div class="cv-setact"><button type="button" class="cv-btn cv-on" data-x="preview">Preview the change</button><span class="cv-dimtx">Change values only; leave ${esc(d.secret)} as it is.</span></div>`
+          : `<p class="cv-dimtx">This document can be read here, not changed.</p>`;
+      }
+      if (st.prev) h += `<div class="cv-setprev"><p><b>Change on the device:</b></p><ul class="cv-chglist">${st.prev.map((c) => `<li><b>${esc(c.path)}</b> ${esc(c.before)} → ${esc(c.after)}</li>`).join("")}</ul>
+        <p class="cv-dimtx">Type <b>${esc(st.data.confirm_word)}</b> to go ahead.</p><div class="cv-setact"><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type ${esc(st.data.confirm_word)}"><button type="button" class="cv-btn cv-on" data-x="write">Go ahead</button><button type="button" class="cv-btn" data-x="back">Back</button></div></div>`;
+      h += `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      const keep = st.data ? ((body.querySelector("[data-xdoc]") || {}).value) : null;
+      body.innerHTML = h;
+      if (keep != null && st.keepEdit) body.querySelector("[data-xdoc]").value = keep;
+      st.keepEdit = false;
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    async function read() {
+      st.path = ((body.querySelector("[data-xpath]") || {}).value || "").trim(); st.prev = null; st.msg = null;
+      say("Reading…", "");
+      try { st.data = await jcall(`${base}/isapi?path=${encodeURIComponent(st.path)}`); st.msg = null; paint(); }
+      catch (e) { st.data = null; paint(); say(e.status === 404 && !e.body.http ? "This site's Netwatch is too old for the explorer — update it." : e.message, "cv-warn"); }
+    }
+    async function send(preview) {
+      if (st.busy) return;
+      const doc = (body.querySelector("[data-xdoc]") || {}).value || "", w = ((body.querySelector("[data-word]") || {}).value || "").trim().toUpperCase();
+      st.doc = preview ? doc : st.doc;
+      st.busy = true; say(preview ? "Working out the change…" : "Writing it to the device…", "");
+      try {
+        const j = await jcall(`${base}/isapi`, { method: "POST", body: JSON.stringify({ path: st.data.path, doc: st.doc, preview, confirm_text: w }) });
+        st.busy = false;
+        if (preview) { st.prev = j.changes.length ? j.changes : null; st.keepEdit = true; paint(); if (!j.changes.length) say(j.message, "cv-okt"); return; }
+        st.prev = null; await read(); say(j.message || "Done.", j.ok ? "cv-okt" : "cv-warn");
+      } catch (e) { st.busy = false; if (preview) { st.keepEdit = true; paint(); } say(e.message, "cv-warn"); }
+    }
+    body.addEventListener("click", (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled) return;
+      if (b.dataset.x === "read") read();
+      else if (b.dataset.x === "preview") send(true);
+      else if (b.dataset.x === "write") send(false);
+      else if (b.dataset.x === "back") { st.prev = null; st.keepEdit = true; paint(); }
+    });
+    body.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-xpath]")) { e.preventDefault(); read(); } });
     return { destroy() { st.dead = true; } };
   }
 
