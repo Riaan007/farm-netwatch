@@ -429,8 +429,13 @@ def script(edits, min_peers, wait_s, verify_restart=False, verify_freq=None):
     sed = "\n".join(one(e) for e in edits)
     checks = ""
     if verify_restart:
-        checks += ('a1=$(assoc); log "ASSOC $a0 -> $a1"\n'
-                   'if [ -z "$a1" ] || [ "$a1" -ge "$a0" ] || [ "$a1" -gt $((i+60)) ]; then log "NOTLIVE link did not re-associate"; ok=0; fi\n')
+        # Proof the new settings are LIVE, not only written: the link went down after the
+        # change (peers fewer than needed at some check) or the peer's connection time reset.
+        # airOS 6's wstalist "uptime" is the PEER'S system uptime (Tri-Lectro 2026-11-06), so
+        # on those radios only the drop counts.
+        checks += ('a1=$(assoc); log "ASSOC $a0 -> $a1 dropped=$dropped"\n'
+                   'if [ "$dropped" != 1 ] && { [ -z "$a1" ] || [ "$a1" -ge "$a0" ] || [ "$a1" -gt $((i+60)) ]; }; '
+                   'then log "NOTLIVE link did not drop and re-associate"; ok=0; fi\n')
     if verify_freq is not None:
         checks += (f"mca-status 2>/dev/null | grep -Eiq '^(wlanfreq|freq|frequency)={int(verify_freq)}( MHz)?$' "
                    f"|| {{ log 'NOTLIVE frequency is not {int(verify_freq)}'; ok=0; }}\n")
@@ -446,9 +451,10 @@ log BACKUP
 {sed}
 log APPLY
 /usr/etc/rc.d/rc.softrestart test >/dev/null 2>&1
-ok=0; i=0; n=0
+ok=0; i=0; n=0; dropped=0
 while [ $i -lt {int(wait_s)} ]; do
   sleep 5; i=$((i+5)); n=$(peers); log "PEERS $n"
+  [ "$n" -lt {int(min_peers)} ] && dropped=1
   [ "$n" -ge {int(min_peers)} ] && {{ ok=1; break; }}
 done
 if [ $ok = 1 ]; then sleep 20; n=$(peers); log "PEERS $n"; [ "$n" -ge {int(min_peers)} ] || ok=0; fi

@@ -28,6 +28,7 @@ FLASH = os.path.join(STUBS, "flash")           # what cfgmtd "wrote"
 ASSOC_FILE = os.path.join(STUBS, "assoc")      # peers' connection time (s) wstalist reports
 LIVE_FILE = os.path.join(STUBS, "live")        # what mca-status reports as running
 NOOP_FILE = os.path.join(STUBS, "noop")        # present = soft restart applies nothing
+DROP_FILE = os.path.join(STUBS, "drop")        # wstalist answers "no peers" this many more times
 
 
 def cfg_text(over=None):
@@ -91,7 +92,9 @@ class FakeRadios:
 def stubs():
     os.makedirs("/usr/etc/rc.d", exist_ok=True)
     w = lambda p, body: (open(p, "w").write("#!/bin/sh\n" + body + "\n"), os.chmod(p, 0o755))  # noqa: E731
-    w(os.path.join(STUBS, "wstalist"), f'n=$(cat {PEERS_FILE}); u=$(cat {ASSOC_FILE} 2>/dev/null || echo 5000); i=0; printf "["; '
+    w(os.path.join(STUBS, "wstalist"), f'd=$(cat {DROP_FILE} 2>/dev/null || echo 0); '
+                                       f'if [ "$d" -gt 0 ]; then echo $((d-1)) > {DROP_FILE}; printf "[]"; exit 0; fi; '
+                                       f'n=$(cat {PEERS_FILE}); u=$(cat {ASSOC_FILE} 2>/dev/null || echo 5000); i=0; printf "["; '
                                        f'while [ $i -lt $n ]; do printf \'{{"uptime": %s, "remote":{{}}}},\' $u; i=$((i+1)); done; printf "]"')
     # mca-status reports the frequency the radio RUNS: what the last soft restart applied
     w(os.path.join(STUBS, "mca-status"), f'cat {LIVE_FILE} 2>/dev/null')
@@ -99,7 +102,9 @@ def stubs():
     w(os.path.join(STUBS, "cfgmtd"), f'cp /tmp/running.cfg {FLASH}')
     # a real test-mode restart re-associates the link (connection time resets) and makes the
     # config live; NOOP_FILE makes it a radio that only "accepts" the command
-    w("/usr/etc/rc.d/rc.softrestart", f'[ -f {NOOP_FILE} ] && exit 0; echo 10 > {ASSOC_FILE}; '
+    # airOS 6 (like the real Tri-Lectro radios): the link drops for a while and comes back,
+    # and wstalist "uptime" does NOT reset (it is the peer's own uptime)
+    w("/usr/etc/rc.d/rc.softrestart", f'[ -f {NOOP_FILE} ] && exit 0; echo 1 > {DROP_FILE}; '
                                        f'echo "freq=$(sed -n "s/^radio.1.freq=//p" /tmp/system.cfg)" > {LIVE_FILE}; exit 0')
 
 
@@ -269,7 +274,7 @@ class OnTheRadio(unittest.TestCase):
     def setUp(self):
         self._ssh, self._poll = airos._ssh, wififix.POLL_S
         wififix.POLL_S = 0.05
-        for p in (FLASH, "/tmp/nwfix.state", ASSOC_FILE, LIVE_FILE, NOOP_FILE):
+        for p in (FLASH, "/tmp/nwfix.state", ASSOC_FILE, LIVE_FILE, NOOP_FILE, DROP_FILE):
             if os.path.exists(p):
                 os.remove(p)
 
@@ -348,7 +353,7 @@ class OnTheRadio(unittest.TestCase):
         # the command "succeeds" but nothing re-associates: never save untested settings
         job, radios = self.run_m5("country", {"country": 710}, noop=True)
         self.assertEqual(job["verdict"], "reverted", job)
-        self.assertIn("did not re-associate", job["msg"])
+        self.assertIn("did not drop and re-associate", job["msg"])
         self.assertFalse(os.path.exists(FLASH))
         self.assertIn("radio.countrycode=826", radios.radios["10.0.0.1"][0])
 
