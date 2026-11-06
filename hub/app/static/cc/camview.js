@@ -22,7 +22,7 @@
   const WHY = {
     offline: "Offline", no_login: "No login", login_refused: "Login refused",
     nvr_login_refused: "Recorder login refused", nvr_offline: "Recorder offline",
-    chan_offline: "Recorder lost it", not_supported: "Not Hikvision", failed: "Last read failed", off: "Pictures off",
+    chan_offline: "Empty channel", not_supported: "Not Hikvision", failed: "Last read failed", off: "Pictures off",
   };
   const ROUTE = { direct: "its own login", "own-generic": "its own login", "own-rtsp": "its RTSP stream", nvr: "its recorder", saved: "the saved copy", "hub-saved": "the hub's saved copy" };
   const ownLogin = (r) => r === "direct" || r === "own-generic" || r === "own-rtsp";   // the camera's own login (ISAPI, a snapshot URL, or an RTSP frame)
@@ -87,6 +87,10 @@
   const SEV = { crit: "cv-bad", warn: "cv-warn", info: "cv-dim" };
   const worst = (hs) => (hs || []).slice().sort((a, b) => ["crit", "warn", "info"].indexOf(a.sev) - ["crit", "warn", "info"].indexOf(b.sev))[0];
 
+  // A recorder channel that is set up but has no camera behind it (often an old address
+  // the camera moved off). Not "a camera is offline": kept apart, folded, below the grid.
+  // Older site code says "offline" for these, so also read it from the channel itself.
+  const emptyChan = (c) => c.kind === "channel" && (c.why === "chan_offline" || (c.why === "offline" && !!c.nvr && c.nvr.chan_online === false));
   function needsLook(c) { return !c.route || !c.online || c.why === "failed" || (c.health || []).some((h) => h.sev !== "info"); }
 
   // ---- the grid --------------------------------------------------------------------------
@@ -141,11 +145,12 @@
       });
       const inner = vs.length > 1 ? `<div class="cv-duo">${fits.map((f) => `<div class="cv-half">${f}</div>`).join("")}</div>` : fits[0];
       const h = worst(c.health);
-      const badges = (c.why && WHY[c.why] ? `<span class="cv-badge ${c.why === "offline" ? "cv-bad" : "cv-warn"}">${esc(WHY[c.why])}</span>` : "")
+      const why = emptyChan(c) ? "chan_offline" : c.why;
+      const badges = (why && WHY[why] ? `<span class="cv-badge ${why === "offline" ? "cv-bad" : "cv-warn"}">${esc(WHY[why])}</span>` : "")
         + (h && h.sev !== "info" ? `<span class="cv-badge ${SEV[h.sev]}" title="${esc(h.text)}">${esc(h.short || h.text)}</span>` : "")
         + (vs.length > 1 ? `<span class="cv-badge cv-dim" title="${esc(c.views.map((v) => v.name).join(" + "))}">${vs.length} lenses</span>` : "")
         + (c.route === "nvr" ? `<span class="cv-badge cv-via" title="${esc("Through " + ((c.nvr && c.nvr.name) || "its recorder") + (c.nvr ? ", channel " + c.nvr.channel : ""))}">NVR</span>` : "");
-      const ph = c.route || c.picture ? "Loading…" : esc(c.why_text || "No picture");
+      const ph = c.route || c.picture ? "Loading…" : emptyChan(c) ? "No camera on this channel" : esc(c.why_text || "No picture");
       return `<article class="cv-tile ${c.online ? "" : "cv-off"}" data-k="${esc(k)}" tabindex="0" role="button" aria-label="${esc(c.name)}">
         <div class="cv-pic cv-frame">${inner}<div class="cv-ph">${ICON}<span>${ph}</span></div><span class="cv-age" hidden></span></div>
         <div class="cv-cap"><b title="${esc(c.name)}">${esc(c.name)}</b><small>${esc([c.ip, c.model].filter(Boolean).join(" · ") || "—")}</small>${badges ? `<span class="cv-badges">${badges}</span>` : ""}</div>
@@ -184,7 +189,11 @@
       if (!d || d.__loading) return `<section class="cv-group">${head}<p class="cv-msg">Loading cameras…</p></section>`;
       if (d.__error) return `<section class="cv-group">${head}<p class="cv-msg cv-warn">${esc(d.__error)}</p></section>`;
       if (d.enabled === false) return `<section class="cv-group">${head}<p class="cv-msg">Camera pictures are turned off on this site (its Settings → Cameras).</p></section>`;
-      const cams = camsOf(g).filter((c) => visible(g, c));
+      const shown = camsOf(g).filter((c) => visible(g, c));
+      const cams = shown.filter((c) => !emptyChan(c)), empties = shown.filter(emptyChan);
+      const byRec = [...new Set(empties.map((c) => (c.nvr && c.nvr.name) || "a recorder"))].join(", ");
+      const emptyHtml = empties.length ? `<details class="cv-empty"><summary>${empties.length} empty recorder channel${empties.length > 1 ? "s" : ""} <span class="cv-dimtx">on ${esc(byRec)} — set up on the recorder, but no camera is connected. Not counted as cameras offline.</span></summary>
+          <div class="cv-grid cv-${esc(st.size)}">${empties.map((c) => tileHtml(g, c)).join("")}</div></details>` : "";
       const recs = (d.recorders || []);
       // Say when a filter hides cameras, and how many (e.g. a recorder's 19, of which 12 come via it).
       const scope = camsOf(g).filter((c) => !st.nvr || (c.nvr && c.nvr.key === st.nvr));
@@ -199,6 +208,7 @@
         ${note}
         ${cams.length ? `<div class="cv-grid cv-${esc(st.size)}">${cams.map((c) => tileHtml(g, c)).join("")}</div>`
           : `<p class="cv-msg">${camsOf(g).length ? "No camera matches." : "Netwatch has not found any cameras here yet."}</p>`}
+        ${emptyHtml}
       </section>`;
     }
 

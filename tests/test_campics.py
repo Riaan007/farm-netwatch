@@ -90,7 +90,9 @@ class Inventory(Rig):
         pump, silo = c["ch:aa:09:4"], c["ch:aa:09:5"]
         self.assertEqual((pump["kind"], pump["route"], pump["ip"]), ("channel", "nvr", "10.9.9.4"))
         self.assertFalse(silo["online"])
-        self.assertEqual(silo["why"], "offline")
+        # The recorder is up but nothing answers on that channel: an empty recorder
+        # channel, not "a camera is offline" (the device list would disagree).
+        self.assertEqual(silo["why"], "chan_offline")
 
     def test_a_2_lens_camera_on_an_nvr_is_one_tile_with_both_views(self):
         c = self.cams()

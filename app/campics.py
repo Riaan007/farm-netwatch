@@ -74,7 +74,7 @@ WHY = {
     "login_refused": "The camera refused its saved login — test or fix the login",
     "nvr_login_refused": "Its recorder refused the saved login — test or fix the recorder's login",
     "nvr_offline": "Its recorder is offline",
-    "chan_offline": "Its recorder says this camera is not connected",
+    "chan_offline": "Its recorder has this channel set up, but no camera is connected to it",
     "not_supported": "Netwatch found no Hikvision ISAPI or ONVIF snapshot for this camera",
     "failed": "The last try to read a picture failed",
     "unknown": "Unknown camera",
@@ -421,7 +421,13 @@ class Engine:
             route = "nvr"
         else:
             route = None
-        if not online:
+        if not online and d is None and nvr and nvr.get("online") and chan.get("online") is False:
+            # A recorder channel with no camera of ours behind it: the recorder is up but
+            # nothing answers on that channel (often an old address the camera moved off).
+            # That is the recorder's problem, not "a camera is offline" — the device
+            # list only counts real devices, and the two must not disagree.
+            why = "chan_offline"
+        elif not online:
             why = "offline"
         elif route:
             why = "failed" if fail and time.time() - fail[0] < 600 else ""

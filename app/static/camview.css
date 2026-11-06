@@ -103,6 +103,9 @@
   .cv-bar .cv-btn { flex: 1 1 auto; justify-content: center; }
   .cv-chip { height: 30px; padding: 0 9px; font-size: 12px; }
 }
+.cv-empty { margin: 14px 0 0; border: 1px dashed var(--cv-line2); border-radius: 12px; padding: 10px 14px; }
+.cv-empty > summary { cursor: pointer; color: var(--cv-ink2); font-size: 13.5px; font-weight: 600; }
+.cv-empty[open] > summary { margin-bottom: 10px; }
 .cv-shown { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(34, 211, 238, .35); background: rgba(34, 211, 238, .07); color: var(--cv-ink2); font-size: 13px; }
 .cv-linkb { margin-left: 6px; border: 0; background: none; padding: 0; color: var(--cv-cyan); font-weight: 650; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 /* 2-lens cameras: the tile's frame split per lens; the camera page shows each lens */
