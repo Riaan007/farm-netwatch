@@ -188,6 +188,16 @@ class HubBackups(unittest.TestCase):
         self.assertEqual(len(got), 1, "one backup, then the recent one counts")
         self.assertEqual([b["why"] for b in camconfig.list_("farm", "aa:01")], ["change"])
 
+    def test_backup_before_a_confirmed_format_only(self):
+        base = "/api/hub/sites/farm/cameras/aa:01/disks/1/format"
+        self.c.post(base, json={"confirm_text": "CHANGE", "wipe_ok": False})
+        self.c.post(base, json={"confirm_text": "", "wipe_ok": True})
+        self.assertEqual([c for c in Site.calls if c[0] == "GET" and c[1].endswith("/config-file")], [])
+        r = self.c.post(base, json={"confirm_text": "CHANGE", "wipe_ok": True}).get_json()
+        self.assertEqual(r["echo"], {"confirm_text": "CHANGE", "wipe_ok": True})
+        self.assertEqual(len([c for c in Site.calls if c[0] == "GET" and c[1].endswith("/config-file")]), 1)
+        self.assertEqual(Site.calls[-1][1], "/api/cameras/aa%3A01/disks/1/format")
+
     def test_nightly_takes_the_file_only_when_changed(self):
         self.assertEqual(camconfig.nightly_one(self.site, "aa:01"), "file taken")
         camconfig._snaps("farm", "aa:01")

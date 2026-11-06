@@ -249,8 +249,9 @@
         if (!p) {
           const g = groups().find((x) => String(x.id) === ph.dataset.g); if (!g) return;
           const host = document.createElement("div"); host.className = "cv-recset";
-          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>${opts.backupBase ? `<section class="cv-set"></section>` : ""}${opts.fwBase ? `<section class="cv-set" data-fw></section>` : ""}`;
+          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>${opts.backupBase ? `<section class="cv-set"></section>` : ""}${opts.fwBase ? `<section class="cv-set" data-fw></section>` : ""}<section class="cv-set" data-disk></section>`;
           const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2, h3, h4, h5] = host.children;
+          const dpan = disksPanel(host.querySelector("[data-disk]"), base + "/disks", true);
           const fh = host.querySelector("[data-fw]");
           const fpan = fh ? firmwarePanel(fh, opts.fwBase(g, { key: ph.dataset.recset, kind: "recorder" }), opts.fwLib) : null;
           const a = settingsPanel(h1, base, { key: ph.dataset.recset }, () => {},
@@ -258,8 +259,8 @@
           const b = settingsPanel(h2, base, { key: ph.dataset.recset }, () => {},
             { group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" });
           const cpan = channelsPanel(h3, base), xpan = explorerPanel(h4, base);
-          const bpan = h5 && opts.backupBase ? backupsPanel(h5, opts.backupBase(g, { key: ph.dataset.recset, kind: "recorder" })) : null;
-          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); xpan.destroy(); if (bpan) bpan.destroy(); if (fpan) fpan.destroy(); } } };
+          const bpan = h5 && opts.backupBase && !h5.hasAttribute("data-disk") && !h5.hasAttribute("data-fw") ? backupsPanel(h5, opts.backupBase(g, { key: ph.dataset.recset, kind: "recorder" })) : null;
+          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); xpan.destroy(); if (bpan) bpan.destroy(); if (fpan) fpan.destroy(); dpan.destroy(); } } };
           st.recSet.set(id, p);
         }
         ph.replaceWith(p.host);
@@ -422,7 +423,7 @@
           </dl>
         </div>
       </div>
-      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section><section class="cv-set" data-isapi></section>${opts.backupBase ? `<section class="cv-set" data-bak></section>` : ""}${opts.fwBase ? `<section class="cv-set" data-fw></section>` : ""}` : ""}${opts.stdBase && similarOf(g, c).length ? `<section class="cv-set" data-copy></section>` : ""}` : ""}
+      ${opts.apiBase && c.kind === "camera" ? `<section class="cv-set" data-ptz hidden></section><section class="cv-set" data-set></section><section class="cv-set" data-det></section>${c.nvr ? `<section class="cv-set" data-rec></section>` : ""}${c.has_login ? `<section class="cv-set" data-secu></section><section class="cv-set" data-isapi></section><section class="cv-set" data-disk></section>${opts.backupBase ? `<section class="cv-set" data-bak></section>` : ""}${opts.fwBase ? `<section class="cv-set" data-fw></section>` : ""}` : ""}${opts.stdBase && similarOf(g, c).length ? `<section class="cv-set" data-copy></section>` : ""}` : ""}
       <p class="cv-foot">Pictures are kept in memory only, apart from one saved copy per camera so an offline camera still shows what it looks at.</p>
     </div>`;
     const root = el.querySelector(".cv"), note = root.querySelector(".cv-note");
@@ -502,6 +503,8 @@
     const xpanel = xHost ? explorerPanel(xHost, opts.apiBase(g, c)) : null;
     const bkHost = root.querySelector("[data-bak]");
     const bkpanel = bkHost ? backupsPanel(bkHost, opts.backupBase(g, c)) : null;
+    const dkHost = root.querySelector("[data-disk]");
+    const dkpanel = dkHost ? disksPanel(dkHost, opts.apiBase(g, c) + "/disks", false) : null;
     const fwHost = root.querySelector("[data-fw]");
     const fwpanel = fwHost ? firmwarePanel(fwHost, opts.fwBase(g, c), opts.fwLib) : null;
     const cpHost = root.querySelector("[data-copy]");
@@ -519,6 +522,7 @@
         if (cpanel) cpanel.destroy();
         if (bkpanel) bkpanel.destroy();
         if (fwpanel) fwpanel.destroy();
+        if (dkpanel) dkpanel.destroy();
         if (ppanel) ppanel.destroy();
         Object.values(st.pics).forEach((p) => p && p.src && URL.revokeObjectURL(p.src));
         el.innerHTML = "";
@@ -1201,6 +1205,68 @@
       }
     });
     return { destroy() { st.dead = true; } };
+  }
+
+  // ---- disks: SD card / hard disks, and format (Phase 6 part 3: app/hikdisks.py) ---------------
+  const DISKOK = new Set(["ok", "idle", "full"]);
+  function disksPanel(el, base, recorder) {
+    const st = { dead: false, data: null, ask: null, busy: false, msg: null, timer: null };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>💽 ${recorder ? "Hard disks" : "SD card"}</h3><span class="cv-dimtx">${recorder ? "each disk's state and size · format a disk" : "the card's state and size · format it"}</span></summary><div class="cv-setb" data-b></div></details>`;
+    const body = el.querySelector("[data-b]");
+    el.querySelector("details").addEventListener("toggle", (e) => { if (e.target.open && !st.data) load(); });
+    async function load() {
+      if (!st.data) body.innerHTML = `<p class="cv-dimtx">Loading…</p>`;
+      try { st.data = await jcall(base); if (!st.dead) paint(); }
+      catch (e) { if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.message)}</p>`; }
+      clearTimeout(st.timer);
+      if (!st.dead && st.data && st.data.job && st.data.job.state === "running") st.timer = setTimeout(load, 2500);
+    }
+    function paint() {
+      const d = st.data, j = d.job, live = j && j.state === "running";
+      let h = d.disks.length ? `<table class="cv-ch"><thead><tr><th>Disk</th><th>State</th><th>Size</th><th>Free</th><th></th></tr></thead><tbody>${d.disks.map((x) => `<tr>
+          <td>${esc(x.id)}${x.model ? `<br><span class="cv-dimtx">${esc(x.model)}</span>` : ""}</td>
+          <td class="${DISKOK.has(x.status) ? "cv-okt" : "cv-warn"}">${esc(x.plain)}</td>
+          <td>${x.capacity_gb != null ? esc(x.capacity_gb >= 1000 ? (x.capacity_gb / 1024).toFixed(1) + " TB" : x.capacity_gb + " GB") : "—"}</td>
+          <td>${x.free_gb != null ? esc(x.free_gb >= 1000 ? (x.free_gb / 1024).toFixed(1) + " TB" : x.free_gb + " GB") : "—"}</td>
+          <td>${live ? "" : `<button type="button" class="cv-btn" data-dask="${esc(x.id)}">Format…</button>`}</td></tr>`).join("")}</tbody></table>`
+        : `<p class="cv-dimtx">${recorder ? "The recorder lists no hard disk." : "No SD card found (the slot is empty, or this camera has none)."}</p>`;
+      if (recorder && d.disks.some((x) => x.status === "ok")) h += `<p class="cv-dimtx">A full disk shows 0 free: the recorder overwrites the oldest footage. That is normal.</p>`;
+      if (j) {
+        h += `<div class="cv-fwjob"><p><b>${live ? "Formatting" : "Formatted"} disk ${esc(j.disk)}</b> <span class="cv-dimtx">started ${esc(ago(j.started))}</span></p>`;
+        h += live ? `<p>${j.percent != null ? `${esc(j.percent)}%` : "Working…"} <span class="cv-dimtx">An SD card takes about a minute, a large hard disk a few minutes.</span></p>`
+          : `<p class="cv-setmsg ${j.result === "ok" ? "cv-okt" : "cv-warn"}">${esc(j.message)}</p>`;
+        h += `</div>`;
+      }
+      if (st.ask && !live) {
+        const x = d.disks.find((y) => y.id === st.ask) || {};
+        const used = DISKOK.has(x.status);
+        h += `<div class="cv-setprev"><p><b>Format disk ${esc(x.id)} (${esc(x.capacity_gb)} GB, ${esc(x.plain)})?</b></p>
+          <ul class="cv-warn">${used ? `<li><b>Every recording on this ${recorder ? "disk" : "card"} is deleted.</b> It can't be undone.</li>` : `<li>Anything on it is deleted (it isn't usable now, so usually nothing is lost).</li>`}
+          ${recorder ? `<li>${d.disks.length > 1 ? "The recorder keeps recording on its other disks." : "This is the recorder's only disk: it records nothing until formatting is done."}</li>` : ""}
+          <li>A configuration backup is taken first when this is done from the hub.</li></ul>
+          <p><label><input type="checkbox" data-dwipe> I understand everything on this ${recorder ? "disk" : "card"} is deleted</label></p>
+          <p class="cv-dimtx">Type <b>CHANGE</b> to go ahead (needs "Risky camera work").</p>
+          <div class="cv-setact"><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type CHANGE"><button type="button" class="cv-btn cv-on" data-dgo>Format</button><button type="button" class="cv-btn" data-dback>Back</button></div></div>`;
+      }
+      h += `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      body.innerHTML = h;
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    body.addEventListener("click", async (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled || st.busy) return;
+      if (b.dataset.dask) { st.ask = b.dataset.dask; st.msg = null; paint(); }
+      else if (b.hasAttribute("data-dback")) { st.ask = null; paint(); }
+      else if (b.hasAttribute("data-dgo")) {
+        const w = ((body.querySelector("[data-word]") || {}).value || "").trim().toUpperCase(), wipe = !!(body.querySelector("[data-dwipe]") || {}).checked;
+        if (!wipe) return say("Tick that you understand everything on it is deleted.", "cv-warn");
+        st.busy = true; say("Taking a backup and starting…", "");
+        try { const r = await jcall(`${base}/${encodeURIComponent(st.ask)}/format`, { method: "POST", body: JSON.stringify({ confirm_text: w, wipe_ok: wipe }) }); st.ask = null; st.msg = r.backup_note ? [r.backup_note, "cv-warn"] : null; await load(); }
+        catch (err) { say(err.message, "cv-warn"); }
+        st.busy = false;
+      }
+    });
+    return { destroy() { st.dead = true; clearTimeout(st.timer); } };
   }
 
   // ---- firmware (Phase 6 part 2: hub/app/camfw.py + app/hikfw.py) — hub only ----------------

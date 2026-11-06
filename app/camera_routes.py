@@ -411,3 +411,42 @@ def api_camera_firmware(key):
 @guard
 def api_camera_firmware_job(key):
     return jsonify({"ok": True, "job": firmware.job(key)})
+
+
+# ---- disks: read and format (hikdisks.py, Phase 6 part 3) ------------------------------
+import hikdisks  # noqa: E402
+
+disks = hikdisks.Disks(settings)
+
+
+@bp.route("/api/cameras/<path:key>/disks")
+@guard
+def api_camera_disks(key):
+    """The device's SD card or hard disks, and its newest format job."""
+    try:
+        return jsonify(disks.list(key))
+    except hikdisks.DiskError as e:
+        return _fwerr(e)
+    except hikbackup.BackupError as e:
+        return _bkerr(e)
+    except hikisapi.LoginRefused as e:
+        return jsonify({"ok": False, "error": str(e) or "the device refused the login"}), 403
+
+
+@bp.route("/api/cameras/<path:key>/disks/<disk_id>/format", methods=["POST"])
+@guard
+def api_camera_disk_format(key, disk_id):
+    """{confirm_text, wipe_ok}: format that disk (risky: every recording on it is gone)."""
+    b = request.get_json(silent=True) or {}
+    try:
+        job = disks.format(key, disk_id, who=_who(), confirm_text=str(b.get("confirm_text") or "")[:20],
+                           wipe_ok=b.get("wipe_ok") is True)
+        return jsonify({"ok": True, "job": disks.job(key) or job})
+    except hikdisks.DiskError as e:
+        return _fwerr(e)
+    except hikbackup.BackupError as e:
+        return _bkerr(e)
+    except hiksettings.SettingsError as e:
+        return _err(e)
+    except hikisapi.LoginRefused as e:
+        return jsonify({"ok": False, "error": str(e) or "the device refused the login"}), 403

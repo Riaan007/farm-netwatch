@@ -499,6 +499,34 @@ class Device:
         self._send(*a, **k)
         return True
 
+    # ---- disk format (hikdisks): format_mode "ok", "refuse", "bad" (formats, then says error)
+    def _disk(self, req, path):
+        import re as _re
+        m = _re.match(r"^/ISAPI/ContentMgmt/Storage/hdd/(\d+)/(format|formatStatus)$", path)
+        if not m:
+            return None
+        i = int(m.group(1)) - 1
+        if not 0 <= i < len(self.disks):
+            return self._sent(req, 404, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
+        if m.group(2) == "formatStatus":
+            busy = time.time() < getattr(self, "format_until", 0)
+            pct = 50 if busy else 100
+            return self._sent(req, 200, f"<formatStatus><formating>{str(busy).lower()}</formating><percent>{pct}</percent></formatStatus>")
+        if req.command != "PUT":
+            return self._sent(req, 405, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
+        mode = getattr(self, "format_mode", "ok")
+        self.formats = getattr(self, "formats", []) + [i + 1]
+        if mode == "refuse":
+            return self._sent(req, 403, "<ResponseStatus><statusCode>4</statusCode><subStatusCode>notSupport</subStatusCode></ResponseStatus>")
+        cap = self.disks[i][1]
+        self.disks[i] = ("formating", cap)
+        self.format_until = time.time() + getattr(self, "format_s", 0.4)
+
+        def done():
+            self.disks[i] = ("error" if mode == "bad" else "ok", cap)
+        threading.Timer(getattr(self, "format_s", 0.4), done).start()
+        return self._sent(req, 200, "<ResponseStatus><statusCode>1</statusCode></ResponseStatus>")
+
     def _go_down(self):
         self.down_until = time.time() + getattr(self, "down_s", 0.6)
         if getattr(self, "_pending_fw", None):
@@ -532,6 +560,9 @@ class Device:
             return self._users(req, path)
         if "/PTZCtrl/" in path or "/PTZCtrlProxy/" in path:
             return self._ptz(req, path)
+        hit = self._disk(req, path)
+        if hit is not None:
+            return hit
         hit = self._fw(req, path)
         if hit is not None or path in ("/ISAPI/System/reboot", "/ISAPI/System/updateFirmware"):
             return hit

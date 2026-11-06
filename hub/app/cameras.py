@@ -361,6 +361,21 @@ def site_camera_password(site_id, key):
                     backup_key=key if body else None)
 
 
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/disks")
+def site_camera_disks(site_id, key):
+    """The device's SD card or hard disks (and its format job) — read by the site Pi."""
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/disks", "GET", timeout=(5, 30))
+
+
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/disks/<disk_id>/format", methods=["POST"])
+def site_camera_disk_format(site_id, key, disk_id):
+    """Format a disk (risky). A configuration backup is taken first when the request is confirmed."""
+    body = request.get_json(silent=True) or {}
+    sure = str(body.get("confirm_text") or "").strip().upper() == "CHANGE" and body.get("wipe_ok") is True
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/disks/{quote(str(disk_id), safe='')}/format", "POST",
+                    body, timeout=(5, 60), backup_key=key if sure else None)
+
+
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/isapi", methods=["GET", "POST"])
 def site_camera_isapi(site_id, key):
     """The ISAPI explorer — the site Pi does it; this only forwards (GET ?path= passes on)."""
