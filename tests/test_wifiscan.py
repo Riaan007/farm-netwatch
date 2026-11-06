@@ -120,6 +120,8 @@ class Run(unittest.TestCase):
         self.assertEqual(j["found"], 3)
         self.assertIn("Frequency Scan List", j["msg"])
         self.assertEqual(len(wifiscan.load()[t["key"]]["networks"]), 3)
+        self.assertEqual(len(j["networks"]), 3)                  # the caller sees what was heard
+        self.assertEqual([n["freq"] for n in j["networks"]], sorted(n["freq"] for n in j["networks"]))
         self.assertTrue(any("bgnd -r nwscan" in c for c in airos._ssh.commands))
 
     def test_an_access_point_is_never_scanned(self):

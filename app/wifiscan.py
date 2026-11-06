@@ -197,7 +197,11 @@ def _run(target, login, on_done):
         remember(key, rec)
         note = (f" It only looks at its Frequency Scan List ({scan_list.replace(',', ', ')} MHz), so it may "
                 f"miss networks elsewhere." if scan_list else "")
+        # The networks themselves go with the result too (our own radios included): the Wi-Fi
+        # plan leaves our radios out, but how loud a neighbouring link of ours is HERE is what
+        # decides whether a channel next to it is safe (Tri-Lectro 2026-11-06).
         _set(key, phase="done", ok=True, found=len(nets), back=back,
+             networks=sorted(nets, key=lambda n: (n["freq"], -(n.get("signal") or -200)))[:60],
              msg=f"Heard {len(nets)} network{'s' if len(nets) != 1 else ''} in 5 GHz."
                  + ("" if back else " The station has not reconnected yet — check it in a minute.") + note)
     except ScanError as e:
