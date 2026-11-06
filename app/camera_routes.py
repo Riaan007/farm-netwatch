@@ -450,3 +450,41 @@ def api_camera_disk_format(key, disk_id):
         return _err(e)
     except hikisapi.LoginRefused as e:
         return jsonify({"ok": False, "error": str(e) or "the device refused the login"}), 403
+
+
+# ---- live video (camlive.py, Phase 7 part 1) --------------------------------------------
+from flask import stream_with_context  # noqa: E402
+
+import camlive  # noqa: E402
+
+live = camlive.Live(engine)
+
+
+def _lverr(e):
+    return jsonify({"ok": False, "error": str(e), **e.extra}), e.status
+
+
+@bp.route("/api/cameras/<path:key>/live")
+@guard
+def api_camera_live_info(key):
+    """Before watching: the stream's codec (H.265 doesn't play in every browser), size,
+    the time limit and how many views run on the site."""
+    try:
+        return jsonify(live.info(key, request.args.get("view", 1, type=int)))
+    except camlive.LiveError as e:
+        return _lverr(e)
+
+
+@bp.route("/api/cameras/<path:key>/live.mp4")
+@guard
+def api_camera_live(key):
+    """The camera's sub-stream as MP4 for a <video>, up to camlive.MAX_S seconds."""
+    try:
+        name, it = live.open(key, request.args.get("view", 1, type=int), who=_who())
+    except camlive.LiveError as e:
+        return _lverr(e)
+    resp = Response(stream_with_context(it), mimetype="video/mp4", direct_passthrough=True)
+    resp.call_on_close(lambda: live.close(name))      # also when the viewer left before any bytes
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp

@@ -399,6 +399,7 @@
           </figure>`).join("")}</div>
           <div class="cv-acts">
             <button type="button" class="cv-btn" data-act="fresh">↻ New picture</button>
+            ${opts.apiBase && c.kind === "camera" && c.route && (c.has_login || c.nvr) ? `<button type="button" class="cv-btn" data-act="video" title="Real live video from the camera's sub-stream, for up to 5 minutes">🎥 Live video</button>` : ""}
             <button type="button" class="cv-btn" data-act="live">▶ Keep refreshing (2 min)</button>
             <button type="button" class="cv-btn" data-act="full">🔍 Sharper picture</button>
             ${vs.length > 1 ? "" : `<a class="cv-btn" data-act="open" href="${esc(opts.picUrl(g, c, { size: "full" }))}" target="_blank" rel="noopener">Full size ↗</a>`}
@@ -471,10 +472,52 @@
       get("thumb", true).finally(() => { if (st.until && !st.dead) st.timer = setTimeout(loop, 2000); });
     }
 
+    // ---- live video (Phase 7: app/camlive.py through the site, or the hub) ----
+    const vid = { el: null, timer: null, ends: 0, busy: false };
+    function tickVid() {
+      const b = root.querySelector('[data-act="video"]'); if (!b) return;
+      b.classList.toggle("cv-on", !!vid.el);
+      b.textContent = vid.el ? `■ Stop video (${Math.max(0, Math.ceil((vid.ends - Date.now()) / 1000))} s)` : "🎥 Live video";
+    }
+    function stopVideo(msg) {
+      const v = vid.el; vid.el = null;
+      if (v) { v.pause(); v.removeAttribute("src"); v.load(); v.remove(); }
+      clearInterval(vid.timer); vid.timer = null; tickVid();
+      if (msg) note.textContent = msg;
+    }
+    async function startVideo() {
+      if (vid.busy) return;
+      vid.busy = true; note.textContent = "Starting live video…";
+      const base = opts.apiBase(g, c);
+      let info;
+      try { info = await jcall(`${base}/live?view=1`); } catch (err) { vid.busy = false; note.textContent = err.message; return; }
+      vid.busy = false;
+      if (st.dead) return;
+      const h265 = /265|hevc/i.test(info.codec || ""), probe = document.createElement("video");
+      if (h265 && !probe.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') && !probe.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"')) {
+        note.textContent = "This camera sends its live stream as H.265, which this browser can't play. Open it in Chrome, Edge or Safari, or set the camera's Sub stream to H.264 (Picture and streams).";
+        return;
+      }
+      stopLive();
+      const v = document.createElement("video");
+      v.className = "cv-live"; v.autoplay = true; v.muted = true; v.playsInline = true; v.controls = true;
+      v.setAttribute("playsinline", ""); v.disablePictureInPicture = true;
+      v.src = `${base}/live.mp4?view=1`;
+      v.addEventListener("playing", () => { if (vid.el === v) note.textContent = `Live · ${[info.size, info.codec].filter(Boolean).join(" · ")} · stops by itself after ${Math.round(info.max_s / 60)} minutes`; });
+      v.addEventListener("error", () => { if (vid.el === v) stopVideo(h265 ? "This browser could not play the camera's H.265 video. Try Chrome, Edge or Safari, or set the Sub stream to H.264." : "The live video stopped (the camera or the link to the site)."); });
+      v.addEventListener("ended", () => { if (vid.el === v) stopVideo("Live view ended — press Live video to watch again."); });
+      boxOf(1).appendChild(v);
+      vid.el = v; vid.ends = Date.now() + (info.max_s || 300) * 1000;
+      vid.timer = setInterval(() => { tickVid(); if (vid.el && Date.now() > vid.ends + 15000) stopVideo("Live view ended — press Live video to watch again."); }, 1000);
+      tickVid();
+    }
+
     root.addEventListener("click", (e) => {
       const a = e.target.closest("[data-act]");
       if (!a) return;
       const act = a.dataset.act;
+      if (act === "video") { if (vid.el) stopVideo(""); else startVideo(); }
+      if ((act === "live" || act === "full" || act === "back") && vid.el) stopVideo("");
       if (act === "back" && opts.onBack) opts.onBack();
       if (act === "fresh") { st.full = false; get("thumb", true); }
       if (act === "full") { st.full = true; stopLive(); note.textContent = "Reading the sharper picture…"; get("full", true); }
@@ -513,7 +556,7 @@
     const ppanel = ptzHost ? ptzPanel(ptzHost, opts.apiBase(g, c), vs, names, () => { if (!st.dead) setTimeout(() => get("thumb", true), 700); }) : null;
     return {
       destroy() {
-        st.dead = true; clearInterval(ages); clearTimeout(st.timer);
+        st.dead = true; clearInterval(ages); clearTimeout(st.timer); stopVideo("");
         if (panel) panel.destroy();
         if (dpanel) dpanel.destroy();
         if (rpanel) rpanel.destroy();

@@ -361,6 +361,73 @@ def site_camera_password(site_id, key):
                     backup_key=key if body else None)
 
 
+# ---- live video (Phase 7): the site Pi's go2rtc makes the MP4; the hub passes it on --------
+LIVE_PER_SITE = 2
+_live_lock = threading.Lock()
+_live_count = collections.Counter()      # site id -> live views passing through the hub
+
+
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/live")
+def site_camera_live_info(site_id, key):
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/live", "GET", timeout=(5, 20))
+
+
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/live.mp4")
+def site_camera_live(site_id, key):
+    """The camera's live sub-stream, read by the site Pi and passed through. The hub
+    never sees the camera's login; the site stops the stream after 5 minutes."""
+    site, err = _site(site_id)
+    if err:
+        return err
+    with _live_lock:
+        if _live_count[site_id] >= LIVE_PER_SITE:
+            return jsonify({"ok": False, "error": f"{LIVE_PER_SITE} live views are already running on this site"}), 429
+        _live_count[site_id] += 1
+    try:
+        r = requests.get(f"{siteapi.base_url(site)}/api/cameras/{quote(key, safe='')}/live.mp4",
+                         headers=siteapi.headers(site), params={"view": request.args.get("view", "1")},
+                         stream=True, timeout=(5, 30))
+    except requests.RequestException as e:
+        with _live_lock:
+            _live_count[site_id] -= 1
+        return jsonify({"ok": False, "error": f"site unreachable: {e.__class__.__name__}"}), 502
+    if r.status_code != 200 or "video" not in r.headers.get("Content-Type", ""):
+        with _live_lock:
+            _live_count[site_id] -= 1
+        try:
+            j = r.json()
+        except ValueError:
+            j = {"ok": False, "error": "this site's Netwatch is too old for live video — update it" if r.status_code == 404
+                 else f"the site could not start the video (HTTP {r.status_code})"}
+        r.close()
+        return jsonify(j), (501 if r.status_code == 404 else r.status_code)
+
+    done = []
+
+    def cleanup():                        # runs once, also when the viewer left before any bytes
+        if not done:
+            done.append(1)
+            r.close()
+            with _live_lock:
+                _live_count[site_id] -= 1
+
+    def gen():
+        try:
+            for chunk in r.iter_content(64 << 10):
+                if chunk:
+                    yield chunk
+        except requests.RequestException:
+            return
+        finally:
+            cleanup()
+
+    resp = Response(gen(), mimetype="video/mp4", direct_passthrough=True)
+    resp.call_on_close(cleanup)
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
+
+
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/disks")
 def site_camera_disks(site_id, key):
     """The device's SD card or hard disks (and its format job) — read by the site Pi."""

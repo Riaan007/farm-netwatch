@@ -41,6 +41,29 @@ RUN git clone https://github.com/haakonnessjoen/MAC-Telnet.git \
     && make -j"$(nproc)" \
     && strip src/mactelnet
 
+# --- Stage 2b: go2rtc, the live-video relay (Phase 7) -------------------------
+# A small static program (Apache-2.0, github.com/AlexxIT/go2rtc) that takes a camera's
+# RTSP stream and hands it to a browser as MP4 — it repackages, it does not decode,
+# so a Pi 3 copes. Netwatch starts it only while someone watches (app/camlive.py),
+# listening on 127.0.0.1 only. Pinned version AND file hashes: a changed file fails
+# the build.
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS go2rtc
+ARG TARGETARCH
+ARG TARGETVARIANT
+ARG GO2RTC_VERSION=v1.9.4
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    case "${TARGETARCH}${TARGETVARIANT}" in \
+      amd64)  F=go2rtc_linux_amd64; H=8d86510e64e0deadee40d550d46323ddec9f62e14cec56de3a9df0f2f7fe9ada ;; \
+      arm64)  F=go2rtc_linux_arm64; H=ebea4cf3a0bc3a12190ebba1f2c4b3c8cf4aac099fadb4cd50a669429b074f1c ;; \
+      armv7)  F=go2rtc_linux_arm;   H=a40459ab24d3ce5e329226adc905e5192dffccbb53d42de06d3ee3f2ebf2ebc6 ;; \
+      *) echo "no go2rtc for ${TARGETARCH}${TARGETVARIANT}"; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /go2rtc "https://github.com/AlexxIT/go2rtc/releases/download/${GO2RTC_VERSION}/${F}"; \
+    echo "${H}  /go2rtc" | sha256sum -c -; \
+    chmod 0755 /go2rtc
+
 # --- Stage 3: the runtime image ----------------------------------------------
 FROM python:3.12-slim-bookworm
 ENV PYTHONUNBUFFERED=1 \
@@ -59,6 +82,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # mac-telnet: WinBox-style login to a MikroTik by MAC address (built in stage 2).
 # libssl3 above is its only runtime dep (mtwei uses OpenSSL EC). See mikrotik.py.
 COPY --from=mactelnet /build/MAC-Telnet/src/mactelnet /usr/local/bin/mactelnet
+# go2rtc: live video (stage 2b), started on demand by app/camlive.py.
+COPY --from=go2rtc /go2rtc /usr/local/bin/go2rtc
 
 # OPT-IN: DHCP<->static IP control via NetworkManager. The lean :latest image leaves
 # this OFF (INSTALL_NM=0) to stay small. Build with --build-arg INSTALL_NM=1 (see

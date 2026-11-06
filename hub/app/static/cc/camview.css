@@ -294,3 +294,5 @@
 .cv-fwfile { padding: 10px 0; border-top: 1px solid var(--cv-line); }
 .cv-fwfile p { margin: 0 0 6px; overflow-wrap: anywhere; }
 .cv-fwfile .cv-btn { height: 28px; margin-left: 6px; }
+/* live video (Phase 7) — over the picture, in its box */
+.cv-live { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; z-index: 2; }
