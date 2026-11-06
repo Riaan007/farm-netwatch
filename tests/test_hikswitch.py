@@ -136,6 +136,17 @@ class LiveFakeTest(unittest.TestCase):
         self.assertEqual((p1["rx_bps"], p1["tx_bps"], p1["rx_bytes"]), (125000.0, 64000.0, 1000000))
         self.assertEqual(ports["0/3"]["errors"], 7)
 
+    def test_pause_frames_are_not_errors(self):
+        # Real V3.3.0 counters: inErrorPacket = CRCPacket + flowControlFrame (received PAUSE frames).
+        self.sw.stats[16].update({"inErrorPacket": "1234394", "CRCPacket": "0", "flowControlFrame": "1234394"})
+        self.sw.stats[2].update({"inErrorPacket": "7", "CRCPacket": "7", "flowControlFrame": "0"})
+        self.sw.stats[17].update({"inErrorPacket": "5", "CRCPacket": "2", "flowControlFrame": "2"})
+        ports = {p["id"]: p for p in self.read()["ports"]}
+        self.assertEqual((ports["0/17"]["errors"], ports["0/17"]["pause_frames"]), (0, 1234394))
+        self.assertEqual((ports["0/3"]["errors"], ports["0/3"]["pause_frames"]), (7, 0))
+        self.assertEqual(ports["0/18"]["errors"], 3)          # other kinds of error still count
+        self.assertIsNone(ports["0/1"]["pause_frames"])       # a firmware without the field
+
     def test_poe(self):
         snap = self.read()
         ports = {p["id"]: p for p in snap["ports"]}

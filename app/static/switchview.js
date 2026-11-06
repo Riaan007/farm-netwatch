@@ -493,6 +493,7 @@
             ${p.sfp && p.sfp.present ? `<dt>SFP module</dt><dd>${esc([p.sfp.vendor, p.sfp.part].filter(Boolean).join(" ") || "present")}${p.sfp.temp != null ? " · " + p.sfp.temp + "°C" : ""}${p.sfp.rx_power != null ? " · rx " + p.sfp.rx_power + " dBm" : ""}</dd>` : ""}
             <dt>Totals</dt><dd class="swv-tnum">↓ ${bytes(p.rx_bytes)} · ↑ ${bytes(p.tx_bytes)}</dd>
             <dt>Errors / drops</dt><dd class="swv-tnum">${p.errors ?? "—"} / ${p.dropped ?? "—"}</dd>
+            ${Number(p.pause_frames) > 0 ? `<dt>Pause frames</dt><dd><span class="swv-tnum">${esc(p.pause_frames)}</span> — the device on this port asked the switch to wait (it was busy). Not a cable fault.</dd>` : ""}
           </dl></div>
         </div>
         <div><h3>Control</h3>${controls}</div></div>`;

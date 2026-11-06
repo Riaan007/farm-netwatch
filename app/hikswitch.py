@@ -142,6 +142,22 @@ def _num(v):
         return None
 
 
+def _rx_errors(s):
+    """Receive errors of one SearchPortStatistics row, WITHOUT pause frames.
+
+    The switch's inErrorPacket counts the flow-control (PAUSE) frames it receives:
+    on a real DS-3E1520P-EI V3.3.0 inErrorPacket == CRCPacket + flowControlFrame
+    on every port (one uplink: 1,234,394 = 0 + 1,234,394). A pause frame is the
+    device at the other end asking for a break because it is busy, not a damaged
+    frame, so counting it made a busy uplink look like a bad cable."""
+    err, crc, pause = _int(s.get("inErrorPacket")), _int(s.get("CRCPacket")), _int(s.get("flowControlFrame"))
+    if err is None:
+        return crc
+    if pause is None:
+        return err
+    return max(err - pause, crc or 0)
+
+
 def _on(v):
     """The switch says 1/0, true/false or "true"/"false" depending on the field."""
     if isinstance(v, str):
@@ -486,8 +502,9 @@ def normalize(raw):
             "poe_status": pstat, "poe_w": poe_w, "poe_ma": None, "poe_fault": bool(fault),
             "rx_bps": _num(s.get("recvBytesSpeed")), "tx_bps": _num(s.get("sendBytesSpeed")),
             "rx_bytes": _int(s.get("recvBytes")), "tx_bytes": _int(s.get("sendBytes")),
-            "errors": _int(s.get("inErrorPacket"), _int(s.get("CRCPacket"))),
+            "errors": _rx_errors(s),
             "dropped": _int(s.get("inLossPkt")),
+            "pause_frames": _int(s.get("flowControlFrame")),
             "stp_state": "blocked by loop protection" if blocked else "",
             "loop_blocked": blocked,
             "isolated": False, "ping_watchdog": bool(watchdog and e is not None),
