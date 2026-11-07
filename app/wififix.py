@@ -101,6 +101,18 @@ livefreq() {
 }"""
 
 
+# The live transmit power (dBm), two sources like the frequency: iwconfig ("Tx-Power=7 dBm")
+# and mca-status (wlanTxPower). Tri-Lectro 2026-11-07: an airOS 6 LiteBeam M5 applies a
+# power change WITHOUT dropping the link, so a power fix must prove itself by this
+# reading, not by a re-association that never comes.
+_TXP_SH = r"""livetx() {
+  t=$(iwconfig 2>/dev/null | grep -o 'Tx-Power[:=][0-9]*' | head -1 | grep -o '[0-9]*$')
+  [ -n "$t" ] && echo "iw=$t"
+  m=$(mca-status 2>/dev/null | tr ',\r' '\n\n' | grep -iE '^ *wlantxpower *=' | head -1 | cut -d= -f2 | grep -o '[0-9]*' | head -1)
+  [ -n "$m" ] && echo "mca=$m"
+}"""
+
+
 def _freqs(text):
     """livefreq output -> {"iw": 5745, "mca": 5745} (sources that answered)."""
     out = {}
@@ -240,7 +252,10 @@ def _power_direct(out, r, cfg, target, params):
         out["notes"].append(f"The radio transmits {live} dBm now (country limit or automatic power)")
     if mine is not None and dbm > mine:
         out["notes"].append("Raising power can add interference for other links on this tower")
-    out["verify_restart"] = True
+    if mine != dbm:
+        out["verify_power"] = dbm
+        out["lines"].append("Saved only once the radio really transmits a new power (the reading moves); "
+                            "if it stays the same, the old setting comes back")
     out["label"] = "Set transmit power"
     out["radio_cfg"] = {k: v for k, v in sorted(cfg.items()) if k.startswith("radio.")}
 
@@ -498,16 +513,20 @@ def take(tok):
 
 
 # ---- the script that runs ON the radio ------------------------------------
-def script(edits, min_peers, wait_s, verify_restart=False, verify_freq=None):
+def script(edits, min_peers, wait_s, verify_restart=False, verify_freq=None, verify_power=None):
     """sh for busybox airOS. edits come from plan(): whitelisted keys, integer
     values or short plain words. verify_restart: before saving, the peer's
     connection time must show the link really re-associated (proof the new
     settings are live, not only written). verify_freq: the live frequency must
-    be this MHz before saving."""
+    be this MHz before saving. verify_power: the live transmit power must have moved
+    (or be this dBm) before saving; when the radio reports no power at all, the link
+    must have dropped and come back instead."""
     for e in edits:
         if not _safe_key(e["key"]) or not _STR_VALUE.match(e["new"]) or (e.get("add") and e["key"] not in _ADDABLE):
             raise FixError("refusing an unsafe edit")
     if verify_freq is not None and not str(verify_freq).isdigit():
+        raise FixError("refusing an unsafe check")
+    if verify_power is not None and not str(verify_power).isdigit():
         raise FixError("refusing an unsafe check")
 
     def one(e):
@@ -536,6 +555,16 @@ def script(edits, min_peers, wait_s, verify_restart=False, verify_freq=None):
         freq0 = 'f0=$(livefreq | tr \'\\n\' \' \'); log "FREQ0 ${f0% }"\n'
         checks += ('lf=$(livefreq | tr \'\\n\' \' \'); lf=${lf% }; log "FREQ ${lf:-none}"\n'
                    f'case " $lf " in *"={f} "*) ;; *) log "NOTLIVE frequency is not {f}, the radio reports ${{lf:-nothing}}"; ok=0 ;; esac\n')
+    if verify_power is not None:
+        w = int(verify_power)
+        freq_sh += _TXP_SH + "\n"
+        freq0 += 't0=$(livetx | tr \'\\n\' \' \'); t0=${t0% }; log "TXP0 ${t0:-none}"\n'
+        checks += ('t1=$(livetx | tr \'\\n\' \' \'); t1=${t1% }; log "TXP ${t1:-none}"\n'
+                   'if [ -z "$t1" ]; then\n'
+                   '  [ "$dropped" = 1 ] || { log "NOTLIVE the radio reports no transmit power and the link did not restart"; ok=0; }\n'
+                   f'else case " $t1 " in *"={w} "*) ;; *) [ "$t1" != "$t0" ] || '
+                   '{ log "NOTLIVE the radio still transmits the same power ($t1); its country limit for this '
+                   'channel and antenna allows no more, or it did not apply the change"; ok=0; } ;; esac; fi\n')
     return f"""#!/bin/sh
 ST={_TMP}.state; BAK={_TMP}.bak
 log() {{ echo "$(cut -d' ' -f1 /proc/uptime) $*" >> $ST; }}
@@ -596,7 +625,8 @@ def _run(p, login, on_done):
             if cfg.get(e["key"]) != e["old"]:
                 raise FixError(f"{e['key']} changed since the preview ({e['old']} → {cfg.get(e['key'])}) — nothing done")
         body = script(p["edits"], p["min_peers"], p["wait_s"],
-                      verify_restart=p.get("verify_restart", False), verify_freq=p.get("verify_freq"))
+                      verify_restart=p.get("verify_restart", False), verify_freq=p.get("verify_freq"),
+                      verify_power=p.get("verify_power"))
         rc, _o, err = airos._ssh(ip, user, pw, f"cat > {_TMP}.sh && chmod 700 {_TMP}.sh && rm -f {_TMP}.state && "
                                                f"bgnd -r nwfix -- /bin/sh {_TMP}.sh && echo STARTED",
                                  stdin_data=body, timeout=30)

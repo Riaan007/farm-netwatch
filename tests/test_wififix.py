@@ -32,6 +32,10 @@ IW_FILE = os.path.join(STUBS, "iw")            # present = iwconfig reports it t
 STUCK_FILE = os.path.join(STUBS, "stuck")      # present = the restart drops the link but keeps the old channel
 NOOP_FILE = os.path.join(STUBS, "noop")        # present = soft restart applies nothing
 DROP_FILE = os.path.join(STUBS, "drop")        # wstalist answers "no peers" this many more times
+TX_FILE = os.path.join(STUBS, "tx")            # present = the radio reports its live transmit power (dBm)
+TXCAP_FILE = os.path.join(STUBS, "txcap")      # the most the country limit lets it transmit
+NODROP_FILE = os.path.join(STUBS, "nodrop")    # present = the restart applies without dropping the link
+                                               # (a power change on an airOS 6 LiteBeam M5, Tri-Lectro)
 
 
 def cfg_text(over=None):
@@ -107,19 +111,24 @@ def stubs():
                                        f'while [ $i -lt $n ]; do printf \'{{"uptime": %s, "remote":{{}}}},\' $u; i=$((i+1)); done; printf "]"')
     # mca-status reports the frequency the radio RUNS: what the last soft restart applied,
     # in the format FMT_FILE gives (airOS builds differ); iwconfig reports it in GHz
-    w(os.path.join(STUBS, "mca-status"), f'[ -f {LIVE_FILE} ] || exit 0; f=$(cat {LIVE_FILE}); '
+    w(os.path.join(STUBS, "mca-status"), f'[ -f {TX_FILE} ] && echo "wlanTxPower=$(cat {TX_FILE})"; '
+                                         f'[ -f {LIVE_FILE} ] || exit 0; f=$(cat {LIVE_FILE}); '
                                          f'if [ -f {FMT_FILE} ]; then printf "$(cat {FMT_FILE})" "$f"; else echo "freq=$f"; fi')
-    w(os.path.join(STUBS, "iwconfig"), f'[ -f {IW_FILE} ] && [ -f {LIVE_FILE} ] || exit 0; f=$(cat {LIVE_FILE}); '
+    w(os.path.join(STUBS, "iwconfig"), f'[ -f {IW_FILE} ] || exit 0; '
                                        f'echo "ath0  IEEE 802.11na  ESSID:\\"LAN\\""; '
-                                       f'echo "      Mode:Master  Frequency:${{f%???}}.${{f#?}} GHz  Access Point: 18:E8:29:30:39:00"')
+                                       f'if [ -f {LIVE_FILE} ]; then f=$(cat {LIVE_FILE}); '
+                                       f'echo "      Mode:Master  Frequency:${{f%???}}.${{f#?}} GHz  Access Point: 18:E8:29:30:39:00"; fi; '
+                                       f'[ -f {TX_FILE} ] && echo "      Bit Rate:144.4 Mb/s   Tx-Power=$(cat {TX_FILE}) dBm"; exit 0')
     w(os.path.join(STUBS, "sleep"), "exit 0")
     w(os.path.join(STUBS, "cfgmtd"), f'cp /tmp/running.cfg {FLASH}')
     # a real test-mode restart re-associates the link (connection time resets) and makes the
     # config live; NOOP_FILE makes it a radio that only "accepts" the command
     # airOS 6 (like the real Tri-Lectro radios): the link drops for a while and comes back,
     # and wstalist "uptime" does NOT reset (it is the peer's own uptime)
-    w("/usr/etc/rc.d/rc.softrestart", f'[ -f {NOOP_FILE} ] && exit 0; echo 1 > {DROP_FILE}; '
-                                       f'[ -f {STUCK_FILE} ] || sed -n "s/^radio.1.freq=//p" /tmp/system.cfg > {LIVE_FILE}; exit 0')
+    w("/usr/etc/rc.d/rc.softrestart", f'[ -f {NOOP_FILE} ] && exit 0; [ -f {NODROP_FILE} ] || echo 1 > {DROP_FILE}; '
+                                       f'[ -f {STUCK_FILE} ] || sed -n "s/^radio.1.freq=//p" /tmp/system.cfg > {LIVE_FILE}; '
+                                       f'if [ -f {TX_FILE} ]; then p=$(sed -n "s/^radio.1.txpower=//p" /tmp/system.cfg); '
+                                       f'c=$(cat {TXCAP_FILE} 2>/dev/null || echo 99); [ "$p" -gt "$c" ] && p=$c; echo $p > {TX_FILE}; fi; exit 0')
 
 
 def set_peers(n):
@@ -246,7 +255,8 @@ class Planning(unittest.TestCase):
                                               wsta(1, "LiteBeam M5"), {"center": None, "tx": "7"})})
         p = wififix.plan("power", self.tgt(), lambda k: LOGIN, params={"dbm": 14})
         self.assertEqual(p["edits"], [{"key": "radio.1.txpower", "old": "7", "new": "14"}])
-        self.assertTrue(p["verify_restart"])
+        self.assertEqual(p["verify_power"], 14)
+        self.assertFalse(p.get("verify_restart"))
         self.assertEqual(p["label"], "Set transmit power")
         self.assertTrue(any("37 dBm EIRP" in n for n in p["notes"]), p["notes"])
         self.assertIn("radio.1.txpower", p["radio_cfg"])
@@ -344,7 +354,8 @@ class OnTheRadio(unittest.TestCase):
     def setUp(self):
         self._ssh, self._poll = airos._ssh, wififix.POLL_S
         wififix.POLL_S = 0.05
-        for p in (FLASH, "/tmp/nwfix.state", ASSOC_FILE, LIVE_FILE, NOOP_FILE, DROP_FILE, FMT_FILE, IW_FILE, STUCK_FILE):
+        for p in (FLASH, "/tmp/nwfix.state", ASSOC_FILE, LIVE_FILE, NOOP_FILE, DROP_FILE, FMT_FILE, IW_FILE, STUCK_FILE,
+                  TX_FILE, TXCAP_FILE, NODROP_FILE):
             if os.path.exists(p):
                 os.remove(p)
 
@@ -467,6 +478,46 @@ class OnTheRadio(unittest.TestCase):
         flash = open(FLASH).read()
         self.assertIn("radio.1.txpower=14", flash)
         self.assertIn("radio.1.obey=enabled", flash)
+
+    def put(self, path, value=""):
+        with open(path, "w") as f:
+            f.write(str(value))
+
+    def test_power_direct_saved_when_the_radio_transmits_it_without_a_drop(self):
+        # the real Tri-Lectro LiteBeam M5: the power changes, the link never drops
+        self.put(TX_FILE, 20)
+        self.put(NODROP_FILE)
+        self.put(IW_FILE)
+        job, radios = self.run_m5("power", {"dbm": 14})
+        self.assertEqual(job["verdict"], "applied", job)
+        self.assertIn("radio.1.txpower=14", open(FLASH).read())
+        self.assertIn("TXP iw=14 mca=14", "\n".join(job.get("log") or []))
+
+    def test_power_direct_capped_but_moved_is_saved(self):
+        self.put(TX_FILE, 20)
+        self.put(TXCAP_FILE, 22)
+        self.put(NODROP_FILE)
+        job, radios = self.run_m5("power", {"dbm": 25})
+        self.assertEqual(job["verdict"], "applied", job)
+        self.assertIn("TXP mca=22", "\n".join(job.get("log") or []))
+
+    def test_power_direct_unchanged_on_air_is_put_back(self):
+        # obey on and already at the country limit: the setting moves, the radio does not
+        self.put(TX_FILE, 20)
+        self.put(TXCAP_FILE, 20)
+        self.put(NODROP_FILE)
+        job, radios = self.run_m5("power", {"dbm": 25})
+        self.assertEqual(job["verdict"], "reverted", job)
+        self.assertIn("still transmits the same power", job["msg"])
+        self.assertFalse(os.path.exists(FLASH))
+        self.assertIn("radio.1.txpower=20", radios.radios["10.0.0.1"][0])
+
+    def test_power_direct_without_a_reading_needs_the_link_to_restart(self):
+        self.put(NODROP_FILE)
+        job, radios = self.run_m5("power", {"dbm": 14})
+        self.assertEqual(job["verdict"], "reverted", job)
+        self.assertIn("reports no transmit power", job["msg"])
+        self.assertFalse(os.path.exists(FLASH))
 
     def test_power_direct_put_back_when_not_live(self):
         job, radios = self.run_m5("power", {"dbm": 14}, noop=True)
