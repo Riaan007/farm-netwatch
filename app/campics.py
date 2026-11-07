@@ -34,6 +34,7 @@ locks accounts after a few wrong passwords.
 import collections
 import hashlib
 import os
+import re
 import threading
 import time
 
@@ -85,6 +86,12 @@ _SOF = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 
 
 class BadPicture(Exception):
     pass
+
+
+class UseRecorder(BadPicture):
+    """Not a failure: this camera's small pictures are crops, so its recorder's
+    picture is the one to use (see _fetch_direct). If the recorder then can't
+    give one either, the camera's own full picture is read after all."""
 
 
 def jpeg_size(b):
@@ -161,6 +168,25 @@ def _size_params(wh):
 
 
 PANORAMA_RATIO = 2.5    # main stream wider than this = a 180° panorama (32:9 = 3.56)
+NVR_BAD_RETRY = 6 * 3600   # a recorder that refused a channel's picture outright is asked again after this
+
+
+_GENERIC_LENS = re.compile(r"^\s*(ip\s*)?(camera|cam|channel|ch|lens|video|d)\s*0*\d*\s*$", re.I)
+
+
+def _lens_name(name, model=""):
+    """A camera's own name for one of its video inputs, when it is a real one
+    ("CENTRE 180"), not a default ("Camera 01", "IPCamera 02") or its model."""
+    n = (name or "").strip()
+    if not n or _GENERIC_LENS.match(n) or (model and n.lower() == model.lower()):
+        return ""
+    return n[:60]
+
+
+def _nvr_refuses(caps):
+    """The recorder refused this channel's picture — both of its streams — not long
+    ago (V4.1.18 at Tri-Lectro, for the 180° cameras on it among others)."""
+    return caps.get("nvr_pic") == "bad" and time.time() - (caps.get("nvr_bad_ts") or 0) < NVR_BAD_RETRY
 
 
 def _panorama(caps):
@@ -409,7 +435,7 @@ class Engine:
         # Last resort for such a camera: one frame off its RTSP stream (needs ffmpeg).
         rtsp_ok = bool(gen_login and camrtsp.available() and (rtsp_override or caps.get("rtsp") != "none"))
         via_ok = bool(nvr and nlg and not nlg["refused"] and nvr.get("online") and chan.get("online") is not False)
-        if own_ok and caps.get("thumb") == "none" and via_ok:
+        if own_ok and caps.get("thumb") == "none" and via_ok and not _nvr_refuses(caps):
             route = "nvr"                     # this firmware can't send small pictures
         elif own_ok:
             route = "direct"
@@ -448,7 +474,9 @@ class Engine:
         # (read with its own login) — whichever says more. View 1 is the camera itself.
         sibs = list(sibs or ([chan] if chan else []))
         n_views = min(MAX_VIEWS, max(len(sibs), int(caps.get("inputs") or 1), 1))
-        views = [{"n": i, "name": (sibs[i - 1].get("name") if i <= len(sibs) else "") or f"Lens {i}",
+        own_names = caps.get("input_names") or {}
+        views = [{"n": i, "name": (sibs[i - 1].get("name") if i <= len(sibs) else "")
+                  or _lens_name(own_names.get(i) or own_names.get(str(i)) or "", model) or f"Lens {i}",
                   "picture": self._pic_meta(self.view_key(key, i))} for i in range(1, n_views + 1)]
         e = {"key": key, "kind": "channel" if d is None else "camera", "ip": ip,
              "mac": (d or {}).get("mac") or "", "name": str(name or key)[:80], "model": model, "firmware": firmware,
@@ -576,19 +604,28 @@ class Engine:
             order = ["direct"] if e["_own_ok"] else []
         if not order:
             raise BadPicture("no way to this view's picture")
-        last = None
-        for route in order:
+        last, nvr_failed, again = None, False, False
+        for route in order + ["direct-again"]:
+            if route == "direct-again":
+                # The camera passed its picture to the recorder (a panorama's own small
+                # pictures are crops) and the recorder failed: the camera's whole picture.
+                if not (again and nvr_failed):
+                    break
+                route = "direct"
             try:
                 with self._sem:
                     if route == "direct":
-                        return self._fetch_direct(e, full)
+                        return self._fetch_direct(e, full, nvr_failed)
                     if route == "own-generic":
                         return self._fetch_generic(e, full)
                     if route == "own-rtsp":
                         return self._fetch_rtsp(e, full)
                     return self._fetch_nvr(e, full)
+            except UseRecorder as ex:
+                last, again = ex, True
             except (hikisapi.LoginRefused, hikisapi.Unreachable, hikisapi.TooBig, BadPicture) as ex:
                 last = ex
+                nvr_failed = nvr_failed or route == "nvr"
         raise last
 
     def _client(self, d):
@@ -636,7 +673,7 @@ class Engine:
             raise BadPicture("the device's answer was not a picture")
         return Pic(r.content, time.time(), route, wh[0], wh[1])
 
-    def _fetch_direct(self, e, full):
+    def _fetch_direct(self, e, full, nvr_failed=False):
         d = e["_d"]
         cl = self._client(d)
         caps = self._caps_for(cl, d["key"])
@@ -657,10 +694,12 @@ class Engine:
             # its sub-stream size 1920x536 each cut a window out of the picture).
             # So no small picture from the camera: its NVR's (the whole view,
             # squeezed — the page draws it in the camera's shape), else full size.
+            # A recorder that refuses the channel (Tri-Lectro's V4.1.18 for .65/.71/.72)
+            # means full size too — never "no picture" for a camera we can log in to.
             if caps.get("thumb") != "none":
                 self._set_caps(d["key"], thumb="none")
-            if e.get("_via_ok") and 1 in (e.get("_vchans") or {}):
-                raise BadPicture("a panorama's small pictures are crops — using its recorder")
+            if e.get("_via_ok") and 1 in (e.get("_vchans") or {}) and not nvr_failed and not _nvr_refuses(caps):
+                raise UseRecorder("a panorama's small pictures are crops — using its recorder")
             return self._pic(cl.get(PIC_PATH, max_bytes=FULL_MAX), "direct")
         want = caps.get("thumb")
         if want == "none":
@@ -772,12 +811,19 @@ class Engine:
         if c and time.time() - c["ts"] < CAPS_TTL:
             return dict(c)
         new = {"ts": time.time(), "main": None, "sub": None, "thumb": (c or {}).get("thumb"),
-               "inputs": (c or {}).get("inputs")}
-        try:                       # how many video inputs (lenses) the camera has
+               "inputs": (c or {}).get("inputs"), "input_names": (c or {}).get("input_names") or {}}
+        try:                       # how many video inputs (lenses) the camera has, and their own names
             r = cl.get("/ISAPI/System/Video/inputs/channels", max_bytes=256 << 10)
             root = hikisapi.parse(r.content) if r.ok else None
             if root is not None:
-                new["inputs"] = sum(1 for el in root.iter() if hikisapi.tag(el) == "VideoInputChannel") or 1
+                chans = [el for el in root.iter() if hikisapi.tag(el) == "VideoInputChannel"]
+                new["inputs"] = len(chans) or 1
+                names = {}
+                for el in chans:
+                    i, nm = hikisapi.child_text(el, "id"), _lens_name(hikisapi.child_text(el, "name"))
+                    if i.isdigit() and nm:
+                        names[int(i)] = nm
+                new["input_names"] = names
         except (hikisapi.Unreachable, hikisapi.TooBig):
             pass
         for sid, name in (("101", "main"), ("102", "sub")):
@@ -790,7 +836,8 @@ class Engine:
             if w.isdigit() and h.isdigit() and int(w) and int(h):
                 new[name] = (int(w), int(h))
         with self._lock:
-            if (c or {}).get("main") != new["main"] or (c or {}).get("inputs") != new["inputs"]:
+            if ((c or {}).get("main") != new["main"] or (c or {}).get("inputs") != new["inputs"]
+                    or (c or {}).get("input_names") != new["input_names"]):
                 self._list = (0, None)           # the listing carries the camera's shape and views
             self._caps[key] = new
         return dict(new)
@@ -827,6 +874,10 @@ class Engine:
                     if r2.status == 200 and jpeg_size(r2.content):
                         self._set_caps(ck, nvr_pic="main")
                         r = r2
+                    elif r2.status in (400, 403, 404) or (r2.status == 200 and not jpeg_size(r2.content)):
+                        # Neither stream: remembered, so a camera with its own login is read
+                        # straight away next time instead of asking twice on every refresh.
+                        self._set_caps(ck, nvr_pic="bad", nvr_bad_ts=time.time())
         return self._pic(r, "nvr")
 
     # ---- memory -----------------------------------------------------------------------

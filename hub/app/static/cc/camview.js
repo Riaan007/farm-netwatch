@@ -149,6 +149,7 @@
       const badges = (why && WHY[why] ? `<span class="cv-badge ${why === "offline" ? "cv-bad" : "cv-warn"}">${esc(WHY[why])}</span>` : "")
         + (h && h.sev !== "info" ? `<span class="cv-badge ${SEV[h.sev]}" title="${esc(h.text)}">${esc(h.short || h.text)}</span>` : "")
         + (vs.length > 1 ? `<span class="cv-badge cv-dim" title="${esc(c.views.map((v) => v.name).join(" + "))}">${vs.length} lenses</span>` : "")
+        + (isPtz(c) ? `<span class="cv-badge cv-via" title="Pan, tilt and zoom — steer it on its camera page">PTZ</span>` : "")
         + (c.route === "nvr" ? `<span class="cv-badge cv-via" title="${esc("Through " + ((c.nvr && c.nvr.name) || "its recorder") + (c.nvr ? ", channel " + c.nvr.channel : ""))}">NVR</span>` : "");
       const ph = c.route || c.picture ? "Loading…" : emptyChan(c) ? "No camera on this channel" : esc(c.why_text || "No picture");
       return `<article class="cv-tile ${c.online ? "" : "cv-off"}" data-k="${esc(k)}" tabindex="0" role="button" aria-label="${esc(c.name)}">
@@ -553,7 +554,9 @@
     const cpHost = root.querySelector("[data-copy]");
     const cpanel = cpHost ? copyPanel(cpHost, opts.stdBase(g), c, similarOf(g, c), vs) : null;
     const ptzHost = root.querySelector("[data-ptz]");
-    const ppanel = ptzHost ? ptzPanel(ptzHost, opts.apiBase(g, c), vs, names, () => { if (!st.dead) setTimeout(() => get("thumb", true), 700); }) : null;
+    const ppanel = ptzHost ? ptzPanel(ptzHost, opts.apiBase(g, c), vs, names, { root, stage: root.querySelector(".cv-stage"), box: boxOf,
+      fig: (n) => root.querySelector(`.cv-view[data-v="${n}"]`), video: root.querySelector('[data-act="video"]'), live: () => !!vid.el,
+      refresh: (n) => { if (!st.dead) getView(n, st.full ? "full" : "thumb", true); } }) : null;
     return {
       destroy() {
         st.dead = true; clearInterval(ages); clearTimeout(st.timer); stopVideo("");
@@ -1588,8 +1591,40 @@
 
   // ---- PTZ (Phase 4b): each press is one short move the camera stops by itself, so a
   // dropped connection can never leave it turning. Holding a button repeats the move.
-  function ptzPanel(el, base, views, names, onMoved) {
-    const st = { dead: false, lens: 0, info: null, timer: null, busy: false, speed: 50 };
+  // ---- PTZ console: the lens that moves, steered on its own picture ----------------------
+  // A PTZ camera gets its controls right under the pictures. On a 2-lens one (Tri-Lectro's
+  // DS-2SE7C425MWG-EB/26: a PTZ lens + a fixed 180° lens) the moving lens is shown big and
+  // the wide lens beside it as the overview. Click the moving lens's picture to point it
+  // there and drag a box to zoom into it (when the camera says it can), scroll to zoom,
+  // arrow keys to nudge. The camera's ~40 "special presets" are sorted into places,
+  // patrols and scans, camera functions, and maintenance (reboot, limits, OSD menu), which
+  // always asks first — the site refuses those without a confirm too.
+  const PTZ_MODEL = /^I?DS-2(DE|DF|DY|SE|SF)/i;
+  const isPtz = (c) => PTZ_MODEL.test(c.model || "") || /\bptz\b/i.test(c.name || "");
+  const SETUP_NOTE = {
+    92: "starts setting the pan and tilt limits by hand",
+    93: "saves the pan and tilt limits set by hand",
+    94: "restarts the camera — it is offline for a minute or two",
+    95: "opens the camera's own menu on its video (for a joystick or a monitor)",
+  };
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  // The same sorting as the site's hiksettings._preset_kind, for a site that is older
+  // than this page (the hub shows every farm's cameras, and they update one at a time).
+  const PTZ_TOUR = new Set([35, 36, 37, 38, 41, 42, 43, 44, 45, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105]);
+  const PTZ_SETUP = new Set([92, 93, 94, 95]);
+  const PTZ_RISKY = /\b(reboot|restart|limits?|osd|menu|default|reset|factory|format)\b/i;     // whole words: not "Preset"
+  const PTZ_FUNC = /\b(light|demist|defog|wiper|heat(er|ing)?|fan|ir|infrared|day|night|flip|origin|focus|lens|init(ial)?|track(ing)?|wash(er)?|clean(ing)?|alarm|park|home)\b/i;
+  function presetKind(p) {
+    if (p.kind) return p.kind;
+    const id = +p.id, n = p.name || "";
+    if (PTZ_SETUP.has(id) || (id >= 33 && id <= 105 && PTZ_RISKY.test(n))) return "setup";
+    if (PTZ_TOUR.has(id)) return "tour";
+    if (id >= 33 && id <= 46) return "function";
+    if (id >= 47 && id <= 91 && PTZ_FUNC.test(n) && !/^\s*preset\s*\d+\s*$/i.test(n)) return "function";
+    return "preset";
+  }
+  function ptzPanel(el, base, views, names, hk) {
+    const st = { dead: false, lens: 0, info: null, timer: null, busy: false, speed: 50, rt: [], ask: null, drag: null, aim: null };
     (async () => {
       for (const n of views) {
         try {
@@ -1599,42 +1634,164 @@
         } catch (e) { return; }
       }
       if (!st.info || st.dead) return;
+      setup();
       paint();
     })();
+    const kinds = (k) => (st.info.presets || []).filter((p) => presetKind(p) === k);
+    const byId = (id) => { const p = (st.info.presets || []).find((x) => x.id === id) || { id, name: "Preset " + id }; return Object.assign({}, p, { kind: presetKind(p) }); };
+
+    function setup() {
+      const multi = views.length > 1, j = st.info;
+      hk.root.classList.add("cv-hasptz");
+      el.classList.add("cv-ptzsec");
+      hk.stage.appendChild(el);                          // the controls sit right under the pictures
+      views.forEach((n) => {
+        const f = hk.fig(n); if (!f) return;
+        f.classList.add(n === st.lens ? "cv-ptzlens" : "cv-overview");
+        const cap = f.querySelector("figcaption");
+        if (cap && multi) cap.insertAdjacentHTML("afterbegin", n === st.lens
+          ? `<span class="cv-lenstag cv-lt-ptz">PTZ · this lens moves</span> ` : `<span class="cv-lenstag">Wide view · fixed</span> `);
+      });
+      const box = hk.box(st.lens);
+      if (!box || !j.can_move) return;
+      const tip = j.can_point ? "Click to point the camera here · drag a box to zoom in · scroll to zoom" : "Scroll to zoom · arrow keys move it";
+      box.insertAdjacentHTML("beforeend", `<div class="cv-aim${j.can_point ? " cv-canpoint" : ""}" tabindex="0" role="application" aria-label="${esc((names[st.lens] || "PTZ lens") + ": " + tip)}">
+        <span class="cv-aimtip">${esc(tip)}</span><span class="cv-aimbox" hidden></span><span class="cv-aimdot" hidden></span><span class="cv-aimbusy" hidden>Moving…</span></div>`);
+      st.aim = box.querySelector(".cv-aim");
+      wireAim(st.aim);
+    }
+
     function paint() {
       const j = st.info, dis = j.can_move ? "" : " disabled", ax = j.axes || {};
+      const places = kinds("preset"), tours = kinds("tour"), funcs = kinds("function"), setupL = kinds("setup");
+      const stop = tours.find((p) => /\bstop\b/i.test(p.name)), runs = tours.filter((p) => p !== stop);
       const btn = (a, label, aria) => `<button type="button" class="cv-btn cv-ptzb" data-mv="${a}" aria-label="${aria}"${dis}>${label}</button>`;
+      const opt = (list) => list.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+      const live = hk.video && st.lens === 1 && j.can_move;
       el.hidden = false;
-      el.innerHTML = `<div class="cv-setd cv-ptz"><div class="cv-ptzhead"><h3>🎮 Move the camera</h3><span class="cv-dimtx">${views.length > 1 ? esc(names[st.lens] || "Lens " + st.lens) + " · " : ""}${j.route === "nvr" ? "through the recorder" : "straight to the camera"}${j.guessed ? " · the recorder didn't say what it can do, so try a small move" : ""}</span></div>
+      el.innerHTML = `<div class="cv-setd cv-ptz">
+        <div class="cv-ptzhead"><h3>🎮 PTZ</h3><span class="cv-dimtx">${views.length > 1 ? `moves ${esc(names[st.lens] || "lens " + st.lens)} · ` : ""}${j.route === "nvr" ? "through the recorder" : "straight to the camera"}${j.guessed ? " · the recorder didn't say what it can do, so try a small move" : ""}</span>
+          ${live ? `<button type="button" class="cv-btn cv-ptzlive" data-pv>🎥 Steer with live video</button>` : ""}</div>
         ${j.can_move ? "" : `<p class="cv-setmsg">${esc(j.why_not || "")} You can look, not move.</p>`}
         <div class="cv-ptzrow">
           ${ax.pan || ax.tilt ? `<div class="cv-ptzpad"><span></span>${ax.tilt ? btn("0,1,0", "▲", "Up") : "<span></span>"}<span></span>${ax.pan ? btn("-1,0,0", "◀", "Left") : "<span></span>"}<span class="cv-ptzc">●</span>${ax.pan ? btn("1,0,0", "▶", "Right") : "<span></span>"}<span></span>${ax.tilt ? btn("0,-1,0", "▼", "Down") : "<span></span>"}<span></span></div>` : ""}
-          ${ax.zoom ? `<div class="cv-ptzz">${btn("0,0,1", "＋", "Zoom in")}${btn("0,0,-1", "－", "Zoom out")}</div>` : ""}
-          <label class="cv-dimtx">Speed <select class="cv-q cv-setin" data-speed${dis}>${[[20, "Slow"], [50, "Medium"], [90, "Fast"]].map(([v, l]) => `<option value="${v}"${v === st.speed ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+          ${ax.zoom ? `<div class="cv-ptzz">${btn("0,0,1", "+", "Zoom in")}${btn("0,0,-1", "−", "Zoom out")}</div>` : ""}
+          <div class="cv-ptzside">
+            <div class="cv-ptzspd"><span class="cv-dimtx">Speed</span><span class="cv-seg" role="group" aria-label="Speed">${[[20, "Slow"], [50, "Medium"], [90, "Fast"]].map(([v, l]) => `<button type="button" data-spd="${v}" aria-pressed="${v === st.speed}"${dis}>${l}</button>`).join("")}</span></div>
+            ${j.can_move ? `<p class="cv-ptztip">${j.can_point ? "Or steer on the picture: <b>click</b> a spot to point the camera there, <b>drag a box</b> to zoom into it (drag up-left to zoom out), <b>scroll</b> to zoom." : "Or on the picture: <b>scroll</b> to zoom, <b>arrow keys</b> to move."} Hold a button to keep moving.</p>` : ""}
+          </div>
         </div>
-        ${(j.presets || []).length ? `<div class="cv-ptzpre"><span class="cv-dimtx">Go to:</span>${j.presets.map((p) => `<button type="button" class="cv-btn" data-pre="${p.id}"${dis}>${esc(p.name)}</button>`).join("")}</div>` : ""}
+        <div class="cv-ptzgrp"><span class="cv-ptzl">Presets</span><div class="cv-ptzchips">${places.length ? places.map((p) => `<button type="button" class="cv-btn" data-pre="${p.id}"${dis}>${esc(p.name)}</button>`).join("") : `<span class="cv-dimtx">None saved on the camera yet.</span>`}</div></div>
+        ${runs.length || stop ? `<div class="cv-ptzgrp"><span class="cv-ptzl">Patrols and scans</span><div class="cv-ptzchips">${runs.length ? `<select class="cv-q cv-setin" data-tour aria-label="Patrol or scan"${dis}>${opt(runs)}</select><button type="button" class="cv-btn" data-run="tour"${dis}>▶ Start</button>` : ""}${stop ? `<button type="button" class="cv-btn" data-pre="${stop.id}"${dis}>■ ${esc(stop.name)}</button>` : ""}</div></div>` : ""}
+        ${funcs.length ? `<div class="cv-ptzgrp"><span class="cv-ptzl">Camera</span><div class="cv-ptzchips"><select class="cv-q cv-setin" data-func aria-label="Camera function"${dis}>${opt(funcs)}</select><button type="button" class="cv-btn" data-run="func"${dis}>Do it</button></div></div>` : ""}
+        ${setupL.length ? `<details class="cv-ptzmaint"><summary>Maintenance <span class="cv-dimtx">· ${setupL.length} · each one asks first</span></summary><div class="cv-ptzchips">${setupL.map((p) => `<button type="button" class="cv-btn cv-ptzwarn" data-setup="${p.id}"${dis}>${esc(p.name)}</button>`).join("")}</div></details>` : ""}
+        <div class="cv-ptzask" data-ask role="alertdialog" aria-live="assertive" hidden></div>
         <p class="cv-setmsg" data-pmsg aria-live="polite"></p></div>`;
     }
+
     const say = (t, cls) => { const m = el.querySelector("[data-pmsg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (cls || ""); } };
-    async function send(body) {
+    function busy(on) { const b = st.aim && st.aim.querySelector(".cv-aimbusy"); if (b) b.hidden = !on; }
+    function later(ms) {                       // the moving lens's picture, once it has got there
+      st.rt.forEach(clearTimeout);
+      st.rt = [];
+      if (hk.live() || st.dead) return;
+      st.rt.push(setTimeout(() => hk.refresh(st.lens), ms));
+      if (ms > 1500) st.rt.push(setTimeout(() => hk.refresh(st.lens), ms + 3000));
+    }
+    function ask(p) {
+      const a = el.querySelector("[data-ask]"); if (!a) return;
+      st.ask = p;
+      if (!p) { a.hidden = true; a.innerHTML = ""; return; }
+      a.hidden = false;
+      a.innerHTML = `<b>⚠ ${esc(p.name)}</b><span>${esc(SETUP_NOTE[p.id] || "changes how the camera itself is set up")}.</span>
+        <span class="cv-ptzyn"><button type="button" class="cv-btn cv-ptzwarn" data-yes>Yes, do it</button><button type="button" class="cv-btn" data-no>Cancel</button></span>`;
+      a.querySelector("[data-no]").focus();
+    }
+    async function send(body, msg, settle) {
       if (st.busy) return;
-      st.busy = true;
-      try { await jcall(`${base}/ptz`, { method: "POST", body: JSON.stringify(Object.assign({ lens: st.lens, route: st.info.route }, body)) }); say(""); onMoved(); }
-      catch (e) { stopHold(); say(e.message, "cv-warn"); }
-      finally { st.busy = false; }
+      st.busy = true; busy(true);
+      if (msg) say(msg);
+      try {
+        await jcall(`${base}/ptz`, { method: "POST", body: JSON.stringify(Object.assign({ lens: st.lens, route: st.info.route }, body)) });
+        if (msg) say(body.action === "goto" ? `Sent: ${body.name || "preset " + body.preset}.` : "");
+        later(settle || 1200);
+      } catch (e) {
+        stopHold();
+        if (e.body && e.body.needs_confirm && body.action === "goto") ask(byId(body.preset));
+        else say(e.message, "cv-warn");
+      } finally { st.busy = false; busy(false); }
     }
     function move(dir) { const [p, t, z] = dir.split(",").map(Number); send({ action: "move", pan: p * st.speed, tilt: t * st.speed, zoom: z * st.speed, ms: 500 }); }
+    function goto(p) { send({ action: "goto", preset: p.id, name: p.name }, `Going to ${p.name}…`, p.kind === "preset" ? 2500 : 1500); }
     function stopHold() { clearInterval(st.timer); st.timer = null; }
+
+    function wireAim(a) {
+      const can = st.info.can_point, ax = st.info.axes || {};
+      const at = (e) => { const r = a.getBoundingClientRect(); return [clamp01((e.clientX - r.left) / r.width), clamp01((e.clientY - r.top) / r.height)]; };
+      const pct = (v) => (v * 100).toFixed(2) + "%";
+      function drawBox() {
+        const b = a.querySelector(".cv-aimbox"), d = st.drag;
+        if (!d || (Math.abs(d.p1[0] - d.p0[0]) < 0.02 && Math.abs(d.p1[1] - d.p0[1]) < 0.02)) { b.hidden = true; return; }
+        b.hidden = false;
+        b.classList.toggle("cv-out", d.p1[0] < d.p0[0]);
+        Object.assign(b.style, { left: pct(Math.min(d.p0[0], d.p1[0])), top: pct(Math.min(d.p0[1], d.p1[1])),
+          width: pct(Math.abs(d.p1[0] - d.p0[0])), height: pct(Math.abs(d.p1[1] - d.p0[1])) });
+      }
+      function dot(p) {
+        const m = a.querySelector(".cv-aimdot");
+        Object.assign(m.style, { left: pct(p[0]), top: pct(p[1]) });
+        m.hidden = false;
+        clearTimeout(m._t); m._t = setTimeout(() => { m.hidden = true; }, 1600);
+      }
+      a.addEventListener("pointerdown", (e) => {
+        if (!can || e.button !== 0) return;
+        e.preventDefault();
+        try { a.setPointerCapture(e.pointerId); } catch (err) { /* synthetic events */ }
+        const p = at(e);
+        st.drag = { p0: p, p1: p };
+      });
+      a.addEventListener("pointermove", (e) => { if (st.drag) { st.drag.p1 = at(e); drawBox(); } });
+      a.addEventListener("pointerup", () => {
+        const d = st.drag; if (!d) return;
+        st.drag = null; drawBox();
+        const spot = Math.abs(d.p1[0] - d.p0[0]) < 0.02 && Math.abs(d.p1[1] - d.p0[1]) < 0.02;
+        if (spot) dot(d.p0);
+        send({ action: "point", box: spot ? [d.p0[0], d.p0[1], d.p0[0], d.p0[1]] : [d.p0[0], d.p0[1], d.p1[0], d.p1[1]] },
+          spot ? "Pointing the camera there…" : d.p1[0] < d.p0[0] ? "Zooming out…" : "Zooming into the box…", 1600);
+      });
+      a.addEventListener("pointercancel", () => { st.drag = null; drawBox(); });
+      a.addEventListener("wheel", (e) => { if (!ax.zoom) return; e.preventDefault(); move(`0,0,${e.deltaY < 0 ? 1 : -1}`); }, { passive: false });
+      a.addEventListener("keydown", (e) => {
+        const k = { ArrowUp: "0,1,0", ArrowDown: "0,-1,0", ArrowLeft: "-1,0,0", ArrowRight: "1,0,0", "+": "0,0,1", "=": "0,0,1", "-": "0,0,-1", PageUp: "0,0,1", PageDown: "0,0,-1" }[e.key];
+        if (k) { e.preventDefault(); move(k); }
+      });
+    }
+
     el.addEventListener("pointerdown", (e) => {
       const b = e.target.closest("[data-mv]"); if (!b || b.disabled) return;
       e.preventDefault(); stopHold(); move(b.dataset.mv);
       st.timer = setInterval(() => move(b.dataset.mv), 450);
     });
     ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => el.addEventListener(ev, stopHold));
-    el.addEventListener("keydown", (e) => { const b = e.target.closest("[data-mv]"); if (b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); move(b.dataset.mv); } });
-    el.addEventListener("change", (e) => { if (e.target.matches("[data-speed]")) st.speed = +e.target.value; });
-    el.addEventListener("click", (e) => { const b = e.target.closest("[data-pre]"); if (b && !b.disabled) { say("Going to " + b.textContent + "…"); send({ action: "goto", preset: +b.dataset.pre }); } });
-    return { destroy() { st.dead = true; stopHold(); } };
+    el.addEventListener("keydown", (e) => {
+      const b = e.target.closest("[data-mv]"); if (b && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); move(b.dataset.mv); }
+      if (e.key === "Escape" && st.ask) ask(null);
+    });
+    el.addEventListener("click", (e) => {
+      const t = e.target;
+      const sp = t.closest("[data-spd]");
+      if (sp && !sp.disabled) { st.speed = +sp.dataset.spd; el.querySelectorAll("[data-spd]").forEach((x) => x.setAttribute("aria-pressed", String(x === sp))); return; }
+      if (t.closest("[data-pv]")) { if (hk.video) hk.video.click(); return; }
+      const pre = t.closest("[data-pre]");
+      if (pre && !pre.disabled) { goto(byId(+pre.dataset.pre)); return; }
+      const run = t.closest("[data-run]");
+      if (run && !run.disabled) { const s = el.querySelector(run.dataset.run === "tour" ? "[data-tour]" : "[data-func]"); if (s) goto(byId(+s.value)); return; }
+      const su = t.closest("[data-setup]");
+      if (su && !su.disabled) { ask(byId(+su.dataset.setup)); return; }
+      if (t.closest("[data-no]")) { ask(null); say(""); return; }
+      if (t.closest("[data-yes]") && st.ask) { const p = st.ask; ask(null); send({ action: "goto", preset: p.id, name: p.name, confirm: true }, `${p.name}…`, 2500); }
+    });
+    return { destroy() { st.dead = true; stopHold(); st.rt.forEach(clearTimeout); } };
   }
 
   window.CamView = { mount, camera, ago, firmwareLibrary, fetchPic: (lid, url) => queue(lid, () => fetchPic(url)) };

@@ -128,9 +128,13 @@ def api_camera_change_undo(key, cid):
 @bp.route("/api/cameras/<path:key>/ptz", methods=["GET", "POST"])
 @guard
 def api_camera_ptz(key):
-    """GET ?lens=1: what PTZ the camera has and its presets.
+    """GET ?lens=1: what PTZ the camera has and its presets (each with a kind:
+    preset | function | tour | setup).
     POST {lens, action: "move", pan, tilt, zoom (-100..100), ms} — a move that stops by
-    itself — or {action: "goto", preset}. Needs the site's "Camera settings" switch."""
+    itself — or {action: "goto", preset, name, confirm} (a "setup" one — reboot, limits,
+    OSD menu — needs confirm: true), or {action: "point", box: [x1, y1, x2, y2]} (shares
+    of the picture from its top-left: a spot to centre on, or a box to zoom into).
+    Needs the site's "Camera settings" switch."""
     try:
         if request.method == "GET":
             return jsonify(settings.ptz(key, int(request.args.get("lens") or 1),
@@ -139,7 +143,8 @@ def api_camera_ptz(key):
         return jsonify(settings.ptz_do(key, int(b.get("lens") or 1), str(b.get("action") or ""),
                                        pan=b.get("pan", 0), tilt=b.get("tilt", 0), zoom=b.get("zoom", 0),
                                        ms=b.get("ms", 500), preset=b.get("preset"), who=_who(),
-                                       route=str(b.get("route") or "") or None))
+                                       route=str(b.get("route") or "") or None, box=b.get("box"),
+                                       confirm=b.get("confirm") is True, name=str(b.get("name") or "")))
     except ValueError:
         return jsonify({"ok": False, "error": "lens must be a number"}), 400
     except hiksettings.SettingsError as e:

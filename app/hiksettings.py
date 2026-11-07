@@ -1595,19 +1595,26 @@ class Settings:
         if not any(axes.values()) and (PTZ_MODEL.match(e.get("model") or "") or "ptz" in (e.get("name") or "").lower()):
             axes, guessed = {"pan": True, "tilt": True, "zoom": True}, True
         plist = []
-        for p in (presets if presets is not None else [])[:256]:
+        for p in (presets if presets is not None else [])[:300]:
             pid = _val(_child(p, "id")) or ""
             if not pid.isdigit() or _val(_child(p, "enabled")) == "false":
                 continue
-            plist.append({"id": int(pid), "name": (_val(_child(p, "presetName")) or f"Preset {pid}")[:40]})
+            name = (_val(_child(p, "presetName")) or f"Preset {pid}")[:40]
+            plist.append({"id": int(pid), "name": name, "kind": _preset_kind(int(pid), name)})
         has = any(axes.values())
+        # Click to aim / drag a box to zoom: only where the camera itself says it can.
+        point = has and caps is not None and (_val(_child(caps, "isSupportPosition3D")) or "").lower() == "true"
         return {"ok": True, "key": key, "lens": int(lens), "route": use, "has_ptz": has, "axes": axes, "guessed": guessed,
-                "presets": plist[:64] if has else [], "can_move": self.enabled() and has,
+                "presets": plist[:120] if has else [], "can_move": self.enabled() and has, "can_point": bool(point),
                 "why_not": "" if self.enabled() else "Camera settings are turned off for this site (Settings → Cameras)."}
 
-    def ptz_do(self, key, lens=1, action="", pan=0, tilt=0, zoom=0, ms=500, preset=None, who="", route=None):
+    def ptz_do(self, key, lens=1, action="", pan=0, tilt=0, zoom=0, ms=500, preset=None, who="", route=None,
+               box=None, confirm=False, name=""):
         """One move (pan/tilt/zoom -100..100 for at most PTZ_MAX_MS — the camera stops by
-        itself, so a lost connection can't leave it turning), or go to a preset."""
+        itself, so a lost connection can't leave it turning), go to a preset, or "point":
+        box = [x1, y1, x2, y2] as shares (0..1) of the picture from its top-left — one
+        point centres the camera there, a box zooms into it (the camera's 3D
+        positioning). A maintenance preset (reboot, limits, OSD menu) needs confirm."""
         if not self.enabled():
             raise SettingsError("Camera settings are turned off for this site (Settings → Cameras).", 403)
         e, use, ch, cl, sem, hist_dev = self._target(key, lens, route)
@@ -1626,7 +1633,21 @@ class Settings:
         elif action == "goto":
             if not re.fullmatch(r"\d{1,3}", str(preset or "")) or not 1 <= int(preset) <= 300:
                 raise SettingsError("not a preset number")
-            what = f"went to preset {int(preset)}"
+            label = str(name or "")[:40]
+            if _preset_kind(int(preset), label) == "setup" and confirm is not True:
+                raise SettingsError("This one restarts the camera or changes its set-up — confirm it first.", 400,
+                                    {"needs_confirm": True})
+            what = f"went to preset {int(preset)}" + (f" ({label})" if label else "")
+        elif action == "point":
+            try:
+                x1, y1, x2, y2 = (float(v) for v in list(box or [])[:4])
+            except (TypeError, ValueError):
+                raise SettingsError("box must be four numbers from 0 to 1") from None
+            if not all(0 <= v <= 1 for v in (x1, y1, x2, y2)):
+                raise SettingsError("box must be four numbers from 0 to 1")
+            what = "pointed at a spot" if (abs(x2 - x1) < 0.02 and abs(y2 - y1) < 0.02) else "zoomed to a box"
+            if what == "pointed at a spot":
+                x2, y2 = x1, y1
         else:
             raise SettingsError("unknown PTZ action")
         lock = self._lock_for(key + "#ptz")
@@ -1636,6 +1657,13 @@ class Settings:
             with sem:
                 if action == "goto":
                     ok, _rb, msg = _status(cl.request("PUT", f"{base}/presets/{int(preset)}/goto", data=b"",
+                                                      headers={"Content-Type": "application/xml"}, max_bytes=16 << 10))
+                elif action == "point":
+                    body = (f'<?xml version="1.0" encoding="UTF-8"?><position3D xmlns="{HIK_NS}">'
+                            f'<StartPoint><positionX>{_pos3d(x1)}</positionX><positionY>{_pos3d(y1, True)}</positionY></StartPoint>'
+                            f'<EndPoint><positionX>{_pos3d(x2)}</positionX><positionY>{_pos3d(y2, True)}</positionY></EndPoint>'
+                            f'</position3D>').encode()
+                    ok, _rb, msg = _status(cl.request("PUT", base + "/position3D", data=body,
                                                       headers={"Content-Type": "application/xml"}, max_bytes=16 << 10))
                 else:
                     body = (f'<?xml version="1.0" encoding="UTF-8"?><PTZData xmlns="{HIK_NS}"><pan>{p}</pan><tilt>{t}</tilt>'
@@ -1672,7 +1700,7 @@ class Settings:
         once per camera every PTZ_LOG_GAP seconds (a session of nudges is one line)."""
         now = time.time()
         k = e["key"]
-        if what.startswith("moved") and now - self._ptz_logged.get(k, 0) < PTZ_LOG_GAP:
+        if what.startswith(("moved", "pointed", "zoomed")) and now - self._ptz_logged.get(k, 0) < PTZ_LOG_GAP:
             return
         self._ptz_logged[k] = now
         if self.on_change and dev:
@@ -2178,6 +2206,41 @@ PTZ_LOG_GAP = 600
 PTZ_AXES = (("pan", "ContinuousPanTiltSpace/XRange"), ("tilt", "ContinuousPanTiltSpace/YRange"),
             ("zoom", "ContinuousZoomSpace/ZRange"))
 PTZ_MODEL = re.compile(r"^I?DS-2(DE|DF|DY|SE|SF)", re.I)
+# Hikvision's "special presets": calling 33–105 runs a function, it is not a place.
+# 33 auto-flip, 34 back to origin, 35–38 patrol 1–4, 39/40 day/night, 41–44 pattern
+# 1–4, 45 one-touch patrol, 46 day/night auto, 92/93 manual limits, 94 remote reboot,
+# 95 OSD menu, 96 stop a scan, 97–101 scans, 102–105 patrol 5–8 (the names come from
+# the camera — e.g. Tri-Lectro's DS-2SE7C425MWG-EB/26 lists 47–49 as its alarm light
+# and demist). Between 47 and 91 a model may keep plain presets, so there the name
+# decides.
+PTZ_TOUR_IDS = frozenset(list(range(35, 39)) + list(range(41, 46)) + list(range(96, 106)))
+PTZ_SETUP_IDS = frozenset((92, 93, 94, 95))     # never one click: limits, reboot, OSD menu
+# Whole words only: "reset" must not match inside "Preset 60".
+PTZ_RISKY_NAME = re.compile(r"\b(reboot|restart|limits?|osd|menu|default|reset|factory|format)\b", re.I)
+PTZ_FUNC_NAME = re.compile(r"\b(light|demist|defog|wiper|heat(er|ing)?|fan|ir|infrared|day|night|flip|origin|focus|lens|"
+                           r"init(ial)?|track(ing)?|wash(er)?|clean(ing)?|alarm|park|home)\b", re.I)
+
+
+def _preset_kind(pid, name):
+    """preset (a place the camera looks at) | function | tour (patrols, patterns,
+    scans) | setup (careful: reboot, limits, OSD menu — needs a confirm)."""
+    if PTZ_RISKY_NAME.search(name or "") and 33 <= pid <= 105:
+        return "setup"
+    if pid in PTZ_SETUP_IDS:
+        return "setup"
+    if pid in PTZ_TOUR_IDS:
+        return "tour"
+    if 33 <= pid <= 46:
+        return "function"
+    if 47 <= pid <= 91 and PTZ_FUNC_NAME.search(name or "") and not re.fullmatch(r"\s*preset\s*\d+\s*", name or "", re.I):
+        return "function"
+    return "preset"
+
+
+def _pos3d(v, flip=False):
+    """A 0..1 share of the picture as the camera's 3D-positioning number (0..255,
+    counted from the bottom-left corner, as Hikvision's screen coordinates are)."""
+    return max(0, min(255, round(((1 - v) if flip else v) * 255)))
 
 
 def _ptz_base(use, lens, ch):

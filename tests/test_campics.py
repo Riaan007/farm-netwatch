@@ -135,15 +135,48 @@ class Inventory(Rig):
         finally:
             cam.stop()
 
+    def test_a_panorama_whose_recorder_refuses_its_picture_is_read_whole_from_its_own_login(self):
+        # Tri-Lectro .65/.71/.72 (DS-2CD2T87G2P-LSU/SL on a V4.1.18 NVR): the recorder
+        # answers 400 to both of the channel's pictures. Then the camera's own full
+        # picture (the whole view) is the picture, from the very first read on — and
+        # the recorder is not asked twice more on every refresh.
+        cam = Device(main=(5120, 1440), sub=(1920, 536), sizes=[(640, 360), (1920, 536)]).start()
+        try:
+            self.nvr.channels.append({"id": "7", "name": "Office gate", "ip": cam.addr, "online": True, "no_pic": True})
+            self.e._nvr_read_at.clear()
+            self.e._read_nvrs()
+            self.devs.append({"key": "aa:07", "ip": cam.addr, "category": "camera", "vendor": HIK, "online": True, "ports": [80, 554, 8000]})
+            creds.set_("aa:07", "admin", "pw")
+            self.e._list = (0, None)
+            p, flags, err, st = self.pic("aa:07")
+            self.assertEqual(st, 200, err)
+            self.assertEqual((p.w, p.h, p.route), (5120, 1440, "direct"))
+            c = self.cams()["aa:07"]
+            self.assertEqual((c["route"], c["why"], c["fail"]), ("direct", "", ""))
+            self.assertFalse([h for h in cam.hits if "videoResolutionWidth" in h[1]], "asked the panorama for a crop")
+            time.sleep(campics.FRESH_MIN_S + 0.05)
+            before = len(self.nvr.hits)
+            p, *_ = self.pic("aa:07", fresh=True)
+            self.assertEqual((p.w, p.h, p.route), (5120, 1440, "direct"))
+            self.assertFalse([h for h in self.nvr.hits[before:] if "/picture" in h[1]], "the refusing recorder was asked again")
+            # Some hours later the recorder gets another chance (a firmware update may fix it).
+            self.e._caps["aa:07"]["nvr_bad_ts"] -= campics.NVR_BAD_RETRY + 1
+            self.e._list = (0, None)
+            self.assertEqual(self.cams()["aa:07"]["route"], "nvr")
+        finally:
+            cam.stop()
+
     def test_a_2_lens_camera_with_its_own_login_shows_both_inputs(self):
-        cam = Device(inputs=2, main=(2688, 1520), sub=(640, 360), sizes=[(640, 360)]).start()
+        # Its own names for the lenses (Tri-Lectro's TandemVu: "CENTRE PTZ" + "CENTRE 180") —
+        # a default like "Camera 01" is no name at all.
+        cam = Device(inputs=2, main=(2688, 1520), sub=(640, 360), sizes=[(640, 360)], input_names=["Camera 01", "CENTRE 180"]).start()
         try:
             self.devs.append({"key": "aa:06", "ip": cam.addr, "category": "camera", "vendor": HIK, "online": True, "ports": [80, 554, 8000]})
             creds.set_("aa:06", "admin", "pw")
             self.e._list = (0, None)
             self.pic("aa:06")                                                # learns its 2 video inputs
             self.e._list = (0, None)
-            self.assertEqual([v["n"] for v in self.cams()["aa:06"]["views"]], [1, 2])
+            self.assertEqual([(v["n"], v["name"]) for v in self.cams()["aa:06"]["views"]], [(1, "Lens 1"), (2, "CENTRE 180")])
             p, *_ = self.pic("aa:06", view=2)
             self.assertEqual((p.w, p.h, p.route), (384, 288, "direct"))
             self.assertTrue(any(h[1] == "/ISAPI/Streaming/channels/202/picture" for h in cam.hits))

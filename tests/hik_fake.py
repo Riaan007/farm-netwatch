@@ -49,11 +49,12 @@ def _digest_params(h):
 
 class Device:
     def __init__(self, user="admin", password="pw", auth="digest", main=(2688, 1520), sub=(640, 360),
-                 sizes=((640, 360),), size_mode="list", channels=None, sub_picture=False, inputs=1):
+                 sizes=((640, 360),), size_mode="list", channels=None, sub_picture=False, inputs=1, input_names=None):
         self.user, self.password, self.auth = user, password, auth
         self.main, self.sub, self.sizes, self.size_mode = main, sub, set(sizes), size_mode
         self.sub_picture = sub_picture
         self.inputs = inputs                 # video inputs (lenses); lens 2+ sends a 384x288 (thermal-sized) picture
+        self.input_names = list(input_names or [])   # the camera's own name per input ("Camera 01" when unset)
         # health (hikhealth): disks [(status, capacity MB)], clock, password flags,
         # oldest recording per channel (epoch; 0 = none), channel numbers + offset (old NVRs: 33..)
         self.disks = [("ok", 5723166)]
@@ -259,12 +260,14 @@ class Device:
             return self._send(req, 200, '<PTZChanelCap xmlns="http://www.hikvision.com/ver20/XMLSchema"><ContinuousPanTiltSpace>'
                                         '<XRange><Min>-100</Min><Max>100</Max></XRange><YRange><Min>-100</Min><Max>100</Max></YRange>'
                                         '</ContinuousPanTiltSpace><ContinuousZoomSpace><ZRange><Min>-100</Min><Max>100</Max></ZRange>'
-                                        '</ContinuousZoomSpace><maxPresetNum>255</maxPresetNum></PTZChanelCap>')
+                                        '</ContinuousZoomSpace><maxPresetNum>255</maxPresetNum>'
+                                        + ('<isSupportPosition3D>true</isSupportPosition3D>' if self.ptz.get("point") else '')
+                                        + '</PTZChanelCap>')
         if path.endswith("/presets") and req.command == "GET":
             items = "".join(f"<PTZPreset><enabled>true</enabled><id>{i}</id><presetName>{n}</presetName></PTZPreset>"
                             for i, n in self.ptz.get("presets", []))
             return self._send(req, 200, f'<PTZPresetList xmlns="http://www.hikvision.com/ver20/XMLSchema">{items}</PTZPresetList>')
-        if req.command == "PUT" and (path.endswith("/goto") or path.endswith("/continuous")):
+        if req.command == "PUT" and (path.endswith("/goto") or path.endswith("/continuous") or path.endswith("/position3D")):
             return self._send(req, 200, ok)
         if req.command == "PUT" and path.endswith("/momentary"):
             if not self.ptz.get("momentary", True):
@@ -579,7 +582,9 @@ class Device:
                                         f'<videoResolutionWidth>{w}</videoResolutionWidth>'
                                         f'<videoResolutionHeight>{h}</videoResolutionHeight></Video></StreamingChannel>')
         if path == "/ISAPI/System/Video/inputs/channels" and not self.channels:
-            items = "".join(f"<VideoInputChannel><id>{i}</id></VideoInputChannel>" for i in range(1, self.inputs + 1))
+            items = "".join(f"<VideoInputChannel><id>{i}</id><inputPort>{i}</inputPort>"
+                            f"<name>{(self.input_names[i - 1] if i <= len(self.input_names) else f'Camera {i:02d}')}</name>"
+                            f"</VideoInputChannel>" for i in range(1, self.inputs + 1))
             return self._send(req, 200, f'<VideoInputChannelList xmlns="http://www.hikvision.com/ver20/XMLSchema">{items}</VideoInputChannelList>')
         for n in range(2, self.inputs + 1):
             if path in (f"/ISAPI/Streaming/channels/{n}02/picture", f"/ISAPI/Streaming/channels/{n}01/picture") and not self.channels:
@@ -613,6 +618,9 @@ class Device:
                                 f"</InputProxyChannelStatus>" for c in self.channels)
                 return self._send(req, 200, f"<InputProxyChannelStatusList>{items}</InputProxyChannelStatusList>")
             for c in self.channels:
+                if c.get("no_pic") and path in (f"/ISAPI/Streaming/channels/{c['id']}02/picture",
+                                                f"/ISAPI/Streaming/channels/{c['id']}01/picture"):
+                    return self._send(req, 400, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")   # V4.1.18, some channels
                 if path == f"/ISAPI/Streaming/channels/{c['id']}02/picture" and c.get("no_sub"):
                     return self._send(req, 400, "<ResponseStatus><statusCode>4</statusCode></ResponseStatus>")
                 if path == f"/ISAPI/Streaming/channels/{c['id']}02/picture":

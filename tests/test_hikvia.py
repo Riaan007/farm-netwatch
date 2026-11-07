@@ -141,7 +141,42 @@ class Ptz(Rig):
         self.own()
         p = self.s.ptz("aa:01")
         self.assertEqual((p["has_ptz"], p["guessed"], p["axes"]), (True, False, {"pan": True, "tilt": True, "zoom": True}))
-        self.assertEqual(p["presets"], [{"id": 1, "name": "Gate"}, {"id": 3, "name": "Dam"}])
+        self.assertEqual(p["presets"], [{"id": 1, "name": "Gate", "kind": "preset"}, {"id": 3, "name": "Dam", "kind": "preset"}])
+        self.assertFalse(p["can_point"])                     # the camera didn't say it can aim at a spot
+
+    def test_special_presets_are_sorted_and_the_maintenance_ones_need_a_confirm(self):
+        # Tri-Lectro's DS-2SE7C425MWG-EB/26 lists ~40 of these next to its 7 presets.
+        self.own(presets=[(1, "Gate"), (33, "Auto-flip"), (36, "Call patrol 2"), (47, "Alarm light on"), (50, "Shed"),
+                          (60, "Preset 60"), (94, "Remote reboot"), (96, "Stop a scan"), (120, "Far gate")])
+        kinds = {p["id"]: p["kind"] for p in self.s.ptz("aa:01")["presets"]}
+        self.assertEqual(kinds, {1: "preset", 33: "function", 36: "tour", 47: "function", 50: "preset",
+                                 60: "preset", 94: "setup", 96: "tour", 120: "preset"})   # "Preset" is no "reset"
+        with self.assertRaises(hiksettings.SettingsError) as c:
+            self.s.ptz_do("aa:01", 1, "goto", preset=94, name="Remote reboot")
+        self.assertTrue(c.exception.extra.get("needs_confirm"))
+        self.assertFalse([p for m, p, _b in self.cam.ptz_calls if m == "PUT"], "a reboot went out without a confirm")
+        self.s.ptz_do("aa:01", 1, "goto", preset=94, name="Remote reboot", confirm=True, who="hub")
+        self.assertEqual(self.cam.ptz_calls[-1][:2], ("PUT", "/ISAPI/PTZCtrl/channels/1/presets/94/goto"))
+        self.assertEqual(self.hist[-1][1]["fields"][0]["shown_after"], "went to preset 94 (Remote reboot)")
+        self.s.ptz_do("aa:01", 1, "goto", preset=36, name="Call patrol 2")       # a patrol needs no confirm
+
+    def test_click_to_aim_and_drag_a_box_to_zoom(self):
+        self.own(point=True)
+        self.assertTrue(self.s.ptz("aa:01")["can_point"])
+        self.s.ptz_do("aa:01", 1, "point", box=[0.75, 0.25, 0.75, 0.25], who="site page")
+        m, path, body = self.cam.ptz_calls[-1]
+        self.assertEqual((m, path), ("PUT", "/ISAPI/PTZCtrl/channels/1/position3D"))
+        # 0..255 from the bottom-left: right of centre and ABOVE it = a big Y.
+        self.assertIn("<StartPoint><positionX>191</positionX><positionY>191</positionY></StartPoint>", body)
+        self.assertIn("<EndPoint><positionX>191</positionX><positionY>191</positionY></EndPoint>", body)
+        self.s.ptz_do("aa:01", 1, "point", box=[0.1, 0.1, 0.4, 0.3])
+        body = self.cam.ptz_calls[-1][2]
+        self.assertIn("<StartPoint><positionX>26</positionX><positionY>230</positionY></StartPoint>", body)
+        self.assertIn("<EndPoint><positionX>102</positionX><positionY>178</positionY></EndPoint>", body)
+        self.assertEqual(self.hist[-1][1]["fields"][0]["shown_after"], "pointed at a spot")   # one History line per session
+        for bad in (None, [0.1, 0.2], [0.1, 0.2, 1.5, 0.3], ["a", 0, 0, 0]):
+            with self.assertRaises(hiksettings.SettingsError):
+                self.s.ptz_do("aa:01", 1, "point", box=bad)
 
     def test_a_move_stops_by_itself_and_is_capped(self):
         self.own()
