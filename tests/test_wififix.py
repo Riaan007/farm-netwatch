@@ -240,6 +240,41 @@ class Planning(unittest.TestCase):
                                                   wsta(1), {"center": None})})
             wififix.plan("country", self.tgt(), lambda k: LOGIN, params={"country": 710})
 
+    def test_power_direct_value(self):
+        # Tri-Lectro gate link 2026-11-07: one end 7 dBm, the other 21 — set both to a chosen value
+        airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg({"radio.1.txpower": "7", "radio.1.antenna.gain": "23"}),
+                                              wsta(1, "LiteBeam M5"), {"center": None, "tx": "7"})})
+        p = wififix.plan("power", self.tgt(), lambda k: LOGIN, params={"dbm": 14})
+        self.assertEqual(p["edits"], [{"key": "radio.1.txpower", "old": "7", "new": "14"}])
+        self.assertTrue(p["verify_restart"])
+        self.assertEqual(p["label"], "Set transmit power")
+        self.assertTrue(any("37 dBm EIRP" in n for n in p["notes"]), p["notes"])
+        self.assertIn("radio.1.txpower", p["radio_cfg"])
+        for bad in (0, 28, "x"):
+            with self.assertRaisesRegex(wififix.FixError, "1–27"):
+                wififix.plan("power", self.tgt(), lambda k: LOGIN, params={"dbm": bad})
+        airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg({"radio.1.txpower": "14"}), wsta(1), {"center": None})})
+        with self.assertRaisesRegex(wififix.FixError, "already set to 14"):
+            wififix.plan("power", self.tgt(), lambda k: LOGIN, params={"dbm": 14})
+
+    def test_power_direct_turns_country_limits_back_on_only_when_asked(self):
+        over = {"radio.1.txpower": "21", "radio.1.obey": "disabled", "radio.1.reg_obey": "disabled"}
+        airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(over), wsta(1), {"center": None})})
+        with self.assertRaisesRegex(wififix.FixError, "does not obey"):
+            wififix.plan("power", self.tgt(), lambda k: LOGIN, params={"dbm": 14})
+        p = wififix.plan("power", self.tgt(), lambda k: LOGIN, params={"dbm": 14, "obey": True})
+        self.assertEqual({e["key"]: e["new"] for e in p["edits"]},
+                         {"radio.1.txpower": "14", "radio.1.obey": "enabled", "radio.1.reg_obey": "enabled"})
+        # same power, limits off: switching them on alone is still a change
+        airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(dict(over, **{"radio.1.txpower": "14"})), wsta(1), {"center": None})})
+        p = wififix.plan("power", self.tgt(), lambda k: LOGIN, params={"dbm": 14, "obey": True})
+        self.assertEqual([e["key"] for e in p["edits"]], ["radio.1.obey", "radio.1.reg_obey"])
+
+    def test_power_direct_needs_test_mode(self):
+        airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1), {"center": None, "probe": "0\n/sbin/cfgmtd"})})
+        with self.assertRaisesRegex(wififix.FixError, "test mode"):
+            wififix.plan("power", self.tgt(), lambda k: LOGIN, params={"dbm": 10})
+
     def test_airos6_fixes_need_test_mode_on_the_radio(self):
         for probe in ("0\n/sbin/cfgmtd", "1\n", ""):
             airos._ssh = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1), {"center": None, "probe": probe})})
@@ -360,8 +395,8 @@ class OnTheRadio(unittest.TestCase):
         self.assertEqual(done[0]["verdict"], "refused")
         self.assertFalse(any(c.startswith("cat > /tmp/nwfix.sh") for c in radios.commands))
 
-    def run_m5(self, kind, params, noop=False):
-        radios = FakeRadios({"10.0.0.1": (m5_cfg(), wsta(1, "NanoBeam M5"),
+    def run_m5(self, kind, params, noop=False, over=None):
+        radios = FakeRadios({"10.0.0.1": (m5_cfg(over), wsta(1, "NanoBeam M5"),
                                           {"center": "5190", "freq": "5180", "mode": "ap"})})
         airos._ssh = radios
         p = wififix.plan(kind, {"key": "m5", "ip": "10.0.0.1", "name": "NanoBeam"}, lambda k: LOGIN,
@@ -424,6 +459,20 @@ class OnTheRadio(unittest.TestCase):
         self.assertIn("mca=5180", job["msg"])
         self.assertFalse(os.path.exists(FLASH))
         self.assertIn("radio.1.freq=5180", radios.radios["10.0.0.1"][0])
+
+    def test_power_direct_saved_with_limits_on(self):
+        job, radios = self.run_m5("power", {"dbm": 14, "obey": True},
+                                  over={"radio.1.txpower": "21", "radio.1.obey": "disabled"})
+        self.assertEqual(job["verdict"], "applied", job)
+        flash = open(FLASH).read()
+        self.assertIn("radio.1.txpower=14", flash)
+        self.assertIn("radio.1.obey=enabled", flash)
+
+    def test_power_direct_put_back_when_not_live(self):
+        job, radios = self.run_m5("power", {"dbm": 14}, noop=True)
+        self.assertEqual(job["verdict"], "reverted", job)
+        self.assertFalse(os.path.exists(FLASH))
+        self.assertIn("radio.1.txpower=20", radios.radios["10.0.0.1"][0])
 
     def test_ntp_adds_lines_and_saves(self):
         job, radios = self.run_m5("ntp", {})

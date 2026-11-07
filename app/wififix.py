@@ -198,6 +198,49 @@ def _needs_test_mode(r, name):
                        f"Netwatch will not change it; use airOS's own Test button")
 
 
+def _power_direct(out, r, cfg, target, params):
+    """Set the transmit power to a chosen dBm (Tri-Lectro 2026-11-07: the gate link
+    ran 7 dBm at one end and 21 at the other; matching either end was wrong).
+    obey=True also switches "obey country limits" back on where it is off, so the
+    radio itself keeps under the legal EIRP for its channel and antenna."""
+    dbm = _int(params.get("dbm"))
+    if dbm is None or not 1 <= dbm <= 27:
+        raise FixError("transmit power must be 1–27 dBm")
+    _needs_test_mode(r, target["name"])
+    mine = _int(cfg.get("radio.1.txpower"))
+    if mine is None:
+        raise FixError("transmit power is not in the radio's config (automatic power?) — set it in airOS by hand")
+    obey_off = [k for k in ("radio.1.obey", "radio.1.reg_obey") if k in cfg and cfg[k] != "enabled"]
+    if "radio.1.obey" not in cfg:
+        raise FixError(f"{target['name']}'s config has no radio.1.obey — set its power in airOS by hand")
+    if obey_off and not params.get("obey"):
+        raise FixError(f"{target['name']} does not obey the country power limits — tick that Netwatch may switch "
+                       f"them back on, or set its power in airOS by hand")
+    if mine == dbm and not obey_off:
+        raise FixError(f"{target['name']} is already set to {dbm} dBm")
+    if mine != dbm:
+        out["edits"].append(_edit(cfg, "radio.1.txpower", dbm))
+        out["lines"].append(f"Transmit power on {target['name']}: {mine} → {dbm} dBm")
+    for k in obey_off:
+        out["edits"].append(_edit(cfg, k, "enabled", text=True))
+    if obey_off:
+        out["lines"].append("Obey country limits: off → on (the radio keeps under the legal power for its "
+                            "country, channel and antenna by itself)")
+    gain, loss = _int(cfg.get("radio.1.antenna.gain")), _int(cfg.get("radio.1.cable.loss")) or 0
+    if gain is not None:
+        out["notes"].append(f"About {dbm + gain - loss} dBm EIRP with the {gain} dBi antenna"
+                            + (f" and {loss} dB cable loss" if loss else "")
+                            + " — the country limit may lower the real power")
+    live = _int(_live(r, "txPower"))
+    if live is not None and live != mine:
+        out["notes"].append(f"The radio transmits {live} dBm now (country limit or automatic power)")
+    if mine is not None and dbm > mine:
+        out["notes"].append("Raising power can add interference for other links on this tower")
+    out["verify_restart"] = True
+    out["label"] = "Set transmit power"
+    out["radio_cfg"] = {k: v for k, v in sorted(cfg.items()) if k.startswith("radio.")}
+
+
 # ---- planning --------------------------------------------------------------
 def plan(kind, target, login_for, find_device=None, params=None):
     """Build a plan (nothing written). target: {key, ip, name}; login_for(key)
@@ -233,30 +276,33 @@ def plan(kind, target, login_for, find_device=None, params=None):
                         + ", ".join(p.get("name") or p.get("ip") or p.get("mac") for p in peers)]
 
     elif kind == "power":
-        other = params.get("match")
-        if not other:
-            raise FixError("which radio's power should be matched?")
-        ol = login_for(other["key"])
-        if not ol:
-            raise FixError(f"no SSH login saved for {other['name']}")
-        o = read(other["ip"], ol["username"], ol["password"])
-        mine, theirs = _int(cfg.get("radio.1.txpower")), _int(o["cfg"].get("radio.1.txpower"))
-        if mine is None or theirs is None:
-            raise FixError("transmit power is not in the radio's config (automatic power?) — set it in airOS by hand")
-        if mine == theirs:
-            raise FixError(f"both are already set to {mine} dBm")
-        if not 1 <= theirs <= 30:
-            raise FixError(f"{other['name']}'s power ({theirs} dBm) is outside what Netwatch will set")
-        if cfg.get("radio.1.obey", "enabled") != "enabled":
-            raise FixError(f"{target['name']} does not obey the country power limits — set its power in airOS by hand")
-        live = _int(_live(r, "txPower"))
-        out["edits"].append(_edit(cfg, "radio.1.txpower", theirs))
-        out["lines"] = [f"Transmit power on {target['name']}: {mine} → {theirs} dBm (same as {other['name']})"]
-        if live is not None and live != mine:
-            out["notes"].append(f"The radio transmits {live} dBm now (country limit or automatic power), "
-                                f"so the real change may be smaller")
-        if theirs > mine:
-            out["notes"].append("Raising power can add interference for other links on this tower")
+        if params.get("dbm") is not None:
+            _power_direct(out, r, cfg, target, params)
+        else:
+            other = params.get("match")
+            if not other:
+                raise FixError("which radio's power should be matched?")
+            ol = login_for(other["key"])
+            if not ol:
+                raise FixError(f"no SSH login saved for {other['name']}")
+            o = read(other["ip"], ol["username"], ol["password"])
+            mine, theirs = _int(cfg.get("radio.1.txpower")), _int(o["cfg"].get("radio.1.txpower"))
+            if mine is None or theirs is None:
+                raise FixError("transmit power is not in the radio's config (automatic power?) — set it in airOS by hand")
+            if mine == theirs:
+                raise FixError(f"both are already set to {mine} dBm")
+            if not 1 <= theirs <= 30:
+                raise FixError(f"{other['name']}'s power ({theirs} dBm) is outside what Netwatch will set")
+            if cfg.get("radio.1.obey", "enabled") != "enabled":
+                raise FixError(f"{target['name']} does not obey the country power limits — set its power in airOS by hand")
+            live = _int(_live(r, "txPower"))
+            out["edits"].append(_edit(cfg, "radio.1.txpower", theirs))
+            out["lines"] = [f"Transmit power on {target['name']}: {mine} → {theirs} dBm (same as {other['name']})"]
+            if live is not None and live != mine:
+                out["notes"].append(f"The radio transmits {live} dBm now (country limit or automatic power), "
+                                    f"so the real change may be smaller")
+            if theirs > mine:
+                out["notes"].append("Raising power can add interference for other links on this tower")
 
     elif kind == "country":
         code = _int(params.get("country"))
