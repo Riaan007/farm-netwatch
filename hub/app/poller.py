@@ -31,6 +31,7 @@ import conflicts as conflictutil
 import hubconfig
 import kuma_status
 import notify
+import telegram
 import sitehistory
 import siteapi
 
@@ -86,6 +87,8 @@ class Poller:
         self._last_prune = 0
         self._mon = None       # monitored-device alert state (lazy, see _check_monitored)
         self._mon_lock = threading.Lock()
+        self._tg_mon_refs = {}   # (site_id, device key) -> Telegram incident ref (in memory only)
+        self._tg_ref_open = {}   # incident ref -> device keys still down
 
     # ---- public API used by the web layer --------------------------------
     def update_device(self, site_id, key, **fields):
@@ -310,8 +313,10 @@ class Poller:
                 fire = "online"
 
         self._maybe_alert_offline(sid, site, fire, miss)
+        telegram.on_poll(site, status is not None)
         if status is not None:
             self._maybe_alert_dhcp(sid, site, status)
+            telegram.after_status(site, status, timeout)
 
         total = len(devices) if devices else None
         online = sum(1 for d in devices if d.get("online")) if devices else None
@@ -355,11 +360,16 @@ class Poller:
                 self._snap.setdefault(sid, {})["offline_alerted"] = True
             notify.push(alerts, f"Site offline: {name}",
                         f"The Central Hub can't reach '{name}' over the VPN.",
-                        priority="high", tags=["red_circle"])
+                        priority="high", tags=["red_circle"], site=sid, level="critical",
+                        tg_title="Hub can't reach this site over the VPN",
+                        ref=f"offline:{sid}",
+                        site_buttons=[[("🌐 Internet", "internet"), ("🔗 Hub link", "hub"), ("🖥 Pi", "pi")]])
         else:
             notify.push(alerts, f"Site back online: {name}",
                         f"'{name}' is reachable from the hub again.",
-                        tags=["white_check_mark"])
+                        tags=["white_check_mark"], site=sid,
+                        tg_title="Reachable from the hub again",
+                        reply_ref=f"offline:{sid}", resolves=[f"offline:{sid}"])
 
     def _maybe_alert_dhcp(self, sid, site, status):
         """ntfy when a site's DHCP guard reports a NEW rogue DHCP server, or when
@@ -389,11 +399,13 @@ class Poller:
             notify.push(alerts, f"Rogue DHCP server: {name}",
                         "\n".join(lines) + "\n\nDevices that take its addresses drop off the farm "
                         "network. Find the unit and switch its DHCP off, or set it to AP/bridge mode.",
-                        priority="high", tags=["rotating_light"])
+                        priority="high", tags=["rotating_light"], site=sid,
+                        tg_title="Rogue DHCP server", ref=f"dhcp:{sid}")
         elif cleared:
             notify.push(alerts, f"Rogue DHCP server gone: {name}",
                         f"Only the farm's own router answers DHCP at '{name}' again.",
-                        tags=["white_check_mark"])
+                        tags=["white_check_mark"], site=sid, tg_title="Rogue DHCP server gone",
+                        reply_ref=f"dhcp:{sid}", resolves=[f"dhcp:{sid}"])
 
     def _maybe_alert_conflict(self, sid, site, conflict_ips, reachable, have_devices):
         """ntfy + log when a site gains a NEW live IP conflict, or when all
@@ -424,11 +436,13 @@ class Poller:
             notify.push(alerts, f"IP conflict: {name}",
                         f"Two devices are answering the same address at the same "
                         f"time at '{name}': {ips}. Give one device a unique IP.",
-                        priority="high", tags=["warning"])
+                        priority="high", tags=["warning"], site=sid, tg_title="IP conflict",
+                        ref=f"conflict:{sid}")
         elif cleared:
             notify.push(alerts, f"IP conflict cleared: {name}",
                         f"All IP-address conflicts at '{name}' are resolved.",
-                        tags=["white_check_mark"])
+                        tags=["white_check_mark"], site=sid, tg_title="IP conflicts cleared",
+                        reply_ref=f"conflict:{sid}", resolves=[f"conflict:{sid}"])
 
     def _fetch_devices(self, sid, site, timeout):
         started = time.time()
@@ -549,16 +563,51 @@ class Poller:
             title = (f"{name}: {_dev_label(mon[went[0]])} is offline" if len(went) == 1
                      else f"{name}: {len(went)} monitored devices offline")
             print(f"[poller] {sid}: monitored offline: {', '.join(sorted(went))}", flush=True)
+            ref = f"mon:{sid}:{now}"
+            with self._mon_lock:
+                for k in went:
+                    self._tg_mon_refs[(sid, k)] = ref
+                self._tg_ref_open[ref] = set(went)
             notify.push(alerts, title,
                         lines(went, lambda k: f"last seen {_span(now - since[k])} ago"),
-                        priority="high", tags=["red_circle"])
+                        priority="high", tags=["red_circle"], site=sid,
+                        tg_title=(f"{_dev_label(mon[went[0]])} is offline" if len(went) == 1
+                                  else f"{len(went)} monitored devices offline"),
+                        ref=ref, site_buttons=_device_buttons(went))
         if back:
             title = (f"{name}: {_dev_label(mon[back[0]])} is back online" if len(back) == 1
                      else f"{name}: {len(back)} monitored devices back online")
             print(f"[poller] {sid}: monitored back: {', '.join(sorted(back))}", flush=True)
+            reply, closed = None, []
+            with self._mon_lock:
+                for k in sorted(back, key=order):
+                    ref = self._tg_mon_refs.pop((sid, k), None)
+                    if not ref:
+                        continue
+                    reply = reply or ref
+                    left = self._tg_ref_open.get(ref)
+                    if left is not None:
+                        left.discard(k)
+                        if not left:
+                            del self._tg_ref_open[ref]
+                            closed.append(ref)
             notify.push(alerts, title,
                         lines(back, lambda k: f"was offline {_span(now - was_down[k])}"),
-                        tags=["white_check_mark"])
+                        site_buttons=_device_buttons(back),
+                        tags=["white_check_mark"], site=sid,
+                        tg_title=(f"{_dev_label(mon[back[0]])} is back online" if len(back) == 1
+                                  else f"{len(back)} monitored devices back online"),
+                        reply_ref=reply, resolves=closed)
+
+
+def _device_buttons(keys):
+    """One device: its history + "tell me when it changes" (callback data is
+    the device key; keys too long for Telegram's 64 bytes get no button)."""
+    if len(keys) != 1 or len(f"c:history:{keys[0]}") > 64:
+        return None
+    k = keys[0]
+    return [[("📶 Ping", f"ping:{k}"), ("🧪 Test", f"test:{k}")],
+            [("🕘 History", f"history:{k}"), ("👀 Tell me when it changes", f"tellme:{k}")]]
 
 
 poller = Poller()

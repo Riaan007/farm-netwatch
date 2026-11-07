@@ -704,3 +704,12 @@ button.chip.mv:hover { background: rgba(16, 185, 129, .24); }
   .tm-ph { grid-template-columns: minmax(0, 1fr) auto; }
   .tm-ph > span:nth-child(2) { display: none; }
 }
+
+/* Settings → Telegram rows: buttons wrap under the text on a phone */
+.alist.tg-list li { grid-template-columns: auto minmax(0, 1fr) auto; }
+.alist.tg-list .t, .alist.tg-list .d { overflow-wrap: anywhere; }
+.alist.tg-list .tg-btns { flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+@media (max-width: 720px) {
+  .alist.tg-list li { grid-template-columns: auto minmax(0, 1fr); }
+  .alist.tg-list .tg-btns { grid-column: 1 / -1; justify-content: flex-start; }
+}

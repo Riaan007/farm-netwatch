@@ -40,6 +40,7 @@ import setupip
 import radiomon
 import restart
 import siteauth
+import tgsite
 import useractivity
 import switchmon
 import sysmon
@@ -70,6 +71,7 @@ guard = siteauth.required            # a logged-in person or the hub key
 app.register_blueprint(topology_routes.bp)
 # Cameras tab (pictures): app/campics.py behind app/camera_routes.py.
 app.register_blueprint(camera_routes.bp)
+app.register_blueprint(tgsite.bp)            # /api/telegram[/test], /api/alerts/recent
 topology_routes.providers.update(
     routers=lambda: {k: {"ts": v["view"].get("read_ts"), "ports": v["view"].get("port_macs") or {}}
                      for k, v in list(_ROUTER_CACHE.items()) if v["view"].get("ok")},
@@ -145,7 +147,23 @@ def api_status():
         "server_ip": kuma.lan_ip(),   # this Pi's own LAN address, shown in the UI
         "dhcp_guard": dhcpguard.monitor.summary(),   # rogue DHCP servers; the hub alerts on these
         "auth": siteauth.state(request, session),   # booleans; the hub claims on hub_key_set=false
+        "alerts_log": tgsite.alerts_marker(),        # the hub mirrors new alerts into its Ops group
+        "telegram": _tg_status_public(),
     })
+
+
+def _tg_status_public():
+    """Telegram state for /api/status. Fingerprint + chat only for the hub key or
+    the site login (the hub uses them to see whether its copy is here)."""
+    if not siteauth.allowed(request, session):
+        return {"supported": True}
+    st = tgsite.status()
+    return {"supported": True, "token_fp": st["token_fp"], "chat_id": st["chat_id"],
+            "enabled": st["enabled"], "queued": st["queued"], "last_ok": st["last_ok"],
+            "last_error": st["last_error"], "dead": st["dead"],
+            "people_fp": st["people_fp"], "listener": st["listener"], "hb_fp": st["hb_fp"],
+            "opts": st["opts"], "maint_until": st["maint_until"],
+            "link": st["link"]}
 
 
 # ---- login (see siteauth.py) -------------------------------------------------
@@ -295,6 +313,7 @@ def api_test_ntfy():
         priority="high", tags=["white_check_mark", "satellite"],
         actions=[notify._cmd_action("Status", alerts, "status"),
                  notify._cmd_action("Quick scan", alerts, "quickscan")] if topic else None,
+        telegram=False,
     )
     return jsonify({"ok": mid is not None,
                     "detail": "Sent — check your phone." if mid else "ntfy rejected the message."})
@@ -2890,6 +2909,7 @@ def main():
     camera_routes.settings.start(campics.engine, config.load, on_change=_camera_setting_audit)
     camera_routes.bulk.start(campics.engine, config.load)
     publicip.start()               # this site's public IP, every 15 min
+    tgsite.start(app)              # Telegram: alerts to this site's group + the read-only bot
     port = int(os.environ.get("NETWATCH_PORT", "8090"))
     app.run(host="0.0.0.0", port=port, threaded=True)
 

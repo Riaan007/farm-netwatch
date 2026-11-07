@@ -32,6 +32,7 @@ import publicip
 import sitehistory
 import siteapi
 import switches
+import telegram
 import topology
 import timeapi
 import timekeeping
@@ -60,6 +61,7 @@ app.register_blueprint(topology.bp)       # /api/hub/sites/<id>/topology[/…] �
 app.register_blueprint(timeapi.bp)        # /api/hub/time/… — time keeping per farm (timekeeping.py)
 app.register_blueprint(cameras.bp)        # /api/hub/sites/<id>/cameras[/…/picture] — camera pictures
 app.register_blueprint(camconfig.bp)      # /api/hub/sites/<id>/cameras/<key>/backups[/…] — device backups (camconfig.py)
+app.register_blueprint(telegram.bp)       # /api/hub/telegram[/ops|/sites/<id>][/pair|/unpair|/test] — Telegram bots + groups
 app.register_blueprint(camfw.bp)          # /api/hub/firmware[/…] + …/cameras/<key>/firmware — firmware library and updates (camfw.py)
 
 _OPEN_PATHS = {"/login", "/api/login", "/api/auth-state", "/api/health", "/app.css"}
@@ -221,6 +223,13 @@ def _site_card(site):
     }
 
 
+def _site_card_bg(site):
+    """_site_card for code outside a web request (the Telegram Ops bot): the card
+    builds its proxy links from request.host, so give it a request of its own."""
+    with app.test_request_context("/"):
+        return _site_card(site)
+
+
 def _site_geo(site_cfg):
     """{lat, lon} from the site's own config (Settings -> Site GPS), or None."""
     try:
@@ -297,7 +306,7 @@ def api_alerts():
 def api_alerts_test():
     ok = notify.push(hubconfig.load()["alerts"], "Hub test alert",
                      "ntfy is wired up — site-offline and monitored-device alerts arrive here.",
-                     tags=["bell"])
+                     tags=["bell"], telegram_too=False)
     return jsonify({"ok": bool(ok),
                     "error": None if ok else "No topic set, or ntfy unreachable."})
 
@@ -1678,6 +1687,7 @@ def main():
     backups.encrypt_existing()             # older plaintext backups -> encrypted
     tunnels.manager.start()                # device-tunnel relay manager
     vpnfw.start()                          # VPN client isolation (re-asserted every 60 s)
+    telegram.start(_site_card_bg, poller.snapshot)   # Telegram: outbox + the Ops bot (hubbot.py)
     poller.start()
     publicip.start()                       # each site's public IP, from the tunnels (every 60 s)
     timekeeping.start()                    # activity feeds + draft builder (every 30 s)

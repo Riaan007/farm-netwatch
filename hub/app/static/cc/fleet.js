@@ -610,12 +610,12 @@
   const settings = {
     tab: "sites",
     enter(tab) {
-      this.tab = ["sites", "alerts"].includes(tab) ? tab : "sites";
+      this.tab = ["sites", "alerts", "telegram"].includes(tab) ? tab : "sites";
       CC.setCrumbs([{ label: "Overview", href: "#/" }, { label: "Settings" }]);
       view().innerHTML = `<div class="ph"><div><div class="eyebrow">Hub</div><h1>Settings</h1></div></div>
-        <nav class="tabs" aria-label="Settings"><a href="#/settings/sites" class="${this.tab === "sites" ? "on" : ""}">Sites</a><a href="#/settings/alerts" class="${this.tab === "alerts" ? "on" : ""}">Alerts & AI</a></nav>
+        <nav class="tabs" aria-label="Settings"><a href="#/settings/sites" class="${this.tab === "sites" ? "on" : ""}">Sites</a><a href="#/settings/alerts" class="${this.tab === "alerts" ? "on" : ""}">Alerts & AI</a><a href="#/settings/telegram" class="${this.tab === "telegram" ? "on" : ""}">Telegram</a></nav>
         <div id="st-body"></div>`;
-      this.tab === "sites" ? this.sites() : this.alerts();
+      if (this.tab === "sites") this.sites(); else if (this.tab === "telegram") this.telegram(); else this.alerts();
     },
     update() { if (this.tab === "sites" && $("#st-sites")) this.drawSites(); },
     async sites() {
@@ -697,6 +697,137 @@
       if (!(await CC.confirm(`Remove ${site.name || site.id}?`, `The hub stops watching this site. The farm Pi itself keeps running.${extra}`, { ok: "Remove site", danger: true }))) return;
       try { await api(`/api/hub/sites/${site.id}`, { method: "DELETE" }); CC.toast("Site removed", "ok"); await this.loadSites(); CC.load({ deep: true }); }
       catch (e) { CC.toast(e.message, "bad"); }
+    },
+    // Telegram: the Ops bot + one bot per site (hub/app/telegram.py). Tokens are write-only:
+    // the API only ever says @botname + whether one is saved.
+    async telegram() {
+      $("#st-body").innerHTML = `<section class="panel"><div class="phd"><h2>${icon("bell")} Telegram groups</h2></div>
+        <div class="pbd"><p class="muted" style="margin:0 0 6px">One bot and one group per site, plus the Ops group for you and your technicians. A site sends its own alerts to its group straight over the farm's internet, so the group still hears from it when the VPN is down. The hub adds what only it can see (site offline, monitored devices, IP conflicts, rogue DHCP), and copies every site's alerts into the Ops group.</p>
+        <p class="note" style="margin:0">Make each bot with <b>@BotFather</b> (<span class="mono">/newbot</span>), keep privacy mode on, add the bot to its group, then <b>Pair</b> here.</p></div>
+        <div id="tg-rows"><div class="pbd"><div class="skel" style="height:80px"></div></div></div></section>`;
+      $("#tg-rows").onchange = async (e) => {
+        const c = e.target.closest("input[data-tgopt]"); if (!c) return;
+        if (c.dataset.tgopt === "actions" && c.checked && !(await CC.confirm("Allow fixes from Telegram?", "Operators and admins on this group's People list can then restart devices and power-cycle PoE ports from Telegram. Every fix asks Yes/Cancel first, uses the same safety switches as this page (Restart devices, Manage switches), and is logged.", { ok: "Allow fixes" }))) { c.checked = false; return; }
+        if (c.dataset.tgopt === "pictures" && c.checked && !(await CC.confirm("Camera pictures in Telegram?", "Anyone on this group's People list can then ask for a camera picture. Telegram keeps the pictures on its servers, so only switch this on where the client agreed (POPIA).", { ok: "Switch on" }))) { c.checked = false; return; }
+        const body = c.dataset.tgopt === "digest" ? { no_digest: !c.checked } : { [c.dataset.tgopt]: c.checked };
+        try { await api(`/api/hub/telegram/sites/${encodeURIComponent(c.dataset.target)}`, { method: "POST", body }); CC.toast("Saved — the site gets it on its next poll", "ok"); }
+        catch (err) { c.checked = !c.checked; CC.toast(err.message, "bad"); }
+      };
+      $("#tg-rows").onclick = (e) => {
+        const b = e.target.closest("button[data-tg]"); if (!b) return;
+        const url = b.dataset.target === "ops" ? "/api/hub/telegram/ops" : `/api/hub/telegram/sites/${encodeURIComponent(b.dataset.target)}`;
+        this.tgAction(b, b.dataset.tg, url, b.dataset.name);
+      };
+      await this.tgLoad();
+    },
+    async tgLoad() {
+      let j;
+      try { j = await api("/api/hub/telegram"); } catch (e) { $("#tg-rows").innerHTML = `<div class="pbd bad note">${esc(e.message)}</div>`; return; }
+      const row = (target, name, r, isSite) => {
+        const state = !r.configured ? `<span class="b unk">No bot</span>`
+          : !r.paired ? `<span class="b warn">Not paired</span>`
+          : r.dead ? `<span class="b bad" title="${esc(r.dead)}">Removed from group</span>`
+          : !r.enabled ? `<span class="b unk">Paused</span>`
+          : `<span class="b ok">Sending</span>`;
+        const site = !isSite || !r.configured ? ""
+          : r.site_supports === false ? ` · <span class="warn">site image too old — update the Pi</span>`
+          : r.site_supports && !r.site_in_sync ? ` · <span class="dim">copying to the site…</span>`
+          : r.site_supports ? ` · site has it` : ` · <span class="dim">site not reachable now</span>`;
+        const err = r.last_error || r.site_last_error;
+        const btn = (act, label, cls = "") => `<button class="btn sm ${cls}" data-tg="${act}" data-target="${esc(target)}" data-name="${esc(name)}">${label}</button>`;
+        return `<li><span class="sev ${r.paired && r.enabled && !r.dead ? "info" : "unk"}">${icon(isSite ? "site" : "bell")}</span>
+          <div style="min-width:0"><div class="t">${esc(name)} ${state}</div>
+          <div class="d">${r.bot ? `<span class="mono">@${esc(r.bot)}</span>` : "no bot token"}${r.paired ? ` · group “${esc(r.chat_title || "?")}”` : ""}${r.queued ? ` · ${r.queued} waiting` : ""}${site}</div>
+          ${isSite && r.configured ? `<div class="d"><label class="chk" style="display:inline-flex;margin-right:14px"><input type="checkbox" data-tgopt="pictures" data-target="${esc(target)}" ${r.pictures ? "checked" : ""}> Camera pictures in this group</label><label class="chk" style="display:inline-flex;margin-right:14px"><input type="checkbox" data-tgopt="capped" data-target="${esc(target)}" ${r.capped ? "checked" : ""}> Data-capped line (no speed tests)</label><label class="chk" style="display:inline-flex;margin-right:14px"><input type="checkbox" data-tgopt="actions" data-target="${esc(target)}" ${r.actions ? "checked" : ""}> Fixes from Telegram (restart, PoE)</label><label class="chk" style="display:inline-flex"><input type="checkbox" data-tgopt="digest" data-target="${esc(target)}" ${r.no_digest ? "" : "checked"}> Daily report at 07:00</label></div>` : ""}
+          ${err ? `<div class="d bad">${esc(err)}</div>` : ""}${r.paired && !(r.people || []).length ? `<div class="d warn">Nobody may ask the bot anything yet — add people (they show up under People after they send /whoami in the group).</div>` : ""}</div>
+          <div class="row tg-btns">${btn("token", r.configured ? "Change bot" : "Add bot")}${r.configured ? btn("pair", r.paired ? "Pair again" : "Pair", r.paired ? "" : "pri") : ""}${r.paired ? btn("test", "Test") : ""}${r.configured ? btn("people", `People${(r.people || []).length ? " (" + r.people.length + ")" : ""}${r.listener && (r.listener.requests || []).length ? " · " + r.listener.requests.length + " asking" : ""}`, r.listener && (r.listener.requests || []).length ? "pri" : "") : ""}${r.configured ? btn(r.enabled ? "pause" : "resume", r.enabled ? "Pause" : "Resume") : ""}${r.configured ? `<button class="btn sm danger" data-tg="remove" data-target="${esc(target)}" data-name="${esc(name)}" aria-label="Remove the bot for ${esc(name)}">${icon("x")}</button>` : ""}</div></li>`;
+      };
+      this.tgData = j;
+      $("#tg-rows").innerHTML = `<ul class="alist tg-list">${row("ops", "FarmCamSA Ops (all sites)", j.ops, false)}${(j.sites || []).map((s) => row(s.id, s.name, s, true)).join("")}</ul>`;
+    },
+    async tgAction(btn, act, url, name) {
+      try {
+        if (act === "token") {
+          const d = CC.dialog(`<div class="dhd"><div><h2>Bot for ${esc(name)}</h2><p>Paste the token @BotFather gave you</p></div><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div>
+            <form class="dbd" id="tg-tok"><label class="fld">Bot token<input class="inp mono" name="token" type="password" autocomplete="off" required placeholder="123456789:AA…"></label>
+            <p class="note" style="margin:0">Checked with Telegram before it is saved. It is never shown again; a new bot means pairing its group again.</p>
+            <div class="bad note" id="tg-tok-err"></div>
+            <div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn pri">Save</button></div></form>`, { cls: "modal" });
+          $("#tg-tok", d).onsubmit = async (e) => {
+            e.preventDefault();
+            await CC.busy(e.submitter, async () => {
+              try { const r = await api(url, { method: "POST", body: { token: e.target.token.value.trim() }, timeout: 20000 }); d.close(); CC.toast(`Saved — @${r.bot}`, "ok"); this.tgLoad(); }
+              catch (err) { $("#tg-tok-err", d).textContent = err.message; }
+            });
+          };
+          return;
+        }
+        if (act === "pair") {
+          const r = await api(url + "/pair", { method: "POST" });
+          const d = CC.dialog(`<div class="dhd"><div><h2>Pair a group with ${esc(name)}</h2><p>Valid for 10 minutes</p></div><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div>
+            <div class="dbd"><p style="margin:0">Add the bot to the group, then send this message in the group:</p>
+            <p class="mono" style="font-size:1.4em;margin:10px 0" id="tg-code">/pair ${esc(r.code)}</p>
+            <div class="row"><button class="btn sm" id="tg-copy">Copy</button></div>
+            <p class="note" id="tg-pair-st" aria-live="polite" style="margin:10px 0 0">Waiting for the message…</p></div>
+            <div class="dft"><button class="btn" data-close>Close</button></div>`, { cls: "modal" });
+          $("#tg-copy", d).onclick = (e) => CC.copy(`/pair ${r.code}`, e.currentTarget);
+          const poll = async () => {
+            if (!d.isConnected && !d.open) return;
+            let j; try { j = await api("/api/hub/telegram"); } catch { setTimeout(poll, 4000); return; }
+            const t = btn.dataset.target === "ops" ? j.ops : (j.sites || []).find((s) => s.id === btn.dataset.target);
+            const p = t && t.pairing;
+            if (p && p.status === "paired") { $("#tg-pair-st", d).innerHTML = `✅ Paired with “${esc(p.chat_title)}”.`; this.tgLoad(); return; }
+            if (p && p.status !== "waiting") { $("#tg-pair-st", d).innerHTML = `<span class="bad">${esc(p.error || "Pairing stopped.")}</span>`; return; }
+            setTimeout(poll, 3000);
+          };
+          setTimeout(poll, 3000);
+          return;
+        }
+        if (act === "people") { this.tgPeople(btn.dataset.target, url, name); return; }
+        if (act === "test") { await CC.busy(btn, () => api(url + "/test", { method: "POST" })); CC.toast("Test sent — check the group.", "ok"); return; }
+        if (act === "pause" || act === "resume") { await api(url, { method: "POST", body: { enabled: act === "resume" } }); this.tgLoad(); return; }
+        if (act === "remove") {
+          if (!(await CC.confirm(`Remove the bot for ${name}?`, "Alerts stop going to its Telegram group. The site gets the change on its next poll.", { ok: "Remove", danger: true }))) return;
+          await api(url, { method: "DELETE" }); CC.toast("Removed", "ok"); this.tgLoad();
+        }
+      } catch (e) { CC.toast(e.message, "bad"); }
+    },
+    // Who may ask a group's bot: Telegram user id → viewer / operator / admin. People who
+    // tried without being listed show up as requests (name + id from Telegram).
+    tgPeople(target, url, name) {
+      const find = () => { const j = this.tgData || {}; return target === "ops" ? j.ops : (j.sites || []).find((s) => s.id === target); };
+      const roleSel = (cur) => `<select class="inp" data-role>${["viewer", "operator", "admin"].map((r) => `<option value="${r}" ${r === cur ? "selected" : ""}>${r}</option>`).join("")}</select>`;
+      const d = CC.dialog(`<div class="dhd"><div><h2>People · ${esc(name)}</h2><p>Who may ask this group's bot</p></div><button class="btn icon ghost" data-close aria-label="Close">${icon("x")}</button></div>
+        <div class="dbd" id="tg-pp"></div><div class="dft"><button class="btn" data-close>Done</button></div>`, { cls: "modal wide" });
+      const draw = () => {
+        const r = find() || {};
+        const ppl = r.people || [], req = (r.listener && r.listener.requests) || [];
+        $("#tg-pp", d).innerHTML = `<p class="note" style="margin:0 0 8px">Anyone can find their id by sending <span class="mono">/whoami</span> in the group. <b>viewer</b> = look only; <b>operator</b> = also tests and fixes (later phases); <b>admin</b> = everything.</p>
+          ${req.length ? `<div class="sect"><h3>Asking for access</h3><ul class="alist tg-list">${req.map((q) => `<li><span class="sev warn">${icon("bell")}</span><div style="min-width:0"><div class="t">${esc(q.name)} ${q.username ? `<span class="dim">@${esc(q.username)}</span>` : ""}</div><div class="d"><span class="mono">${esc(q.id)}</span> · tried ${esc(q.text)} ${CC.ago ? esc(CC.ago(q.ts)) : ""}</div></div>
+            <div class="row tg-btns">${roleSel("viewer")}<button class="btn sm pri" data-add="${esc(q.id)}" data-name="${esc(q.name)}">Add</button></div></li>`).join("")}</ul></div>` : ""}
+          <div class="sect"><h3>Allowed</h3>${ppl.length ? `<ul class="alist tg-list">${ppl.map((p) => `<li><span class="sev info">${icon("site")}</span><div style="min-width:0"><div class="t">${esc(p.name || "?")}</div><div class="d mono">${esc(p.id)}</div></div>
+            <div class="row tg-btns">${roleSel(p.role)}<button class="btn sm" data-set="${esc(p.id)}" data-name="${esc(p.name || "")}">Save</button><button class="btn sm danger" data-rm="${esc(p.id)}" aria-label="Remove ${esc(p.name || p.id)}">${icon("x")}</button></div></li>`).join("")}</ul>` : `<p class="muted" style="margin:0">Nobody yet.</p>`}</div>
+          <form class="sect" id="tg-add"><h3>Add by id</h3><div class="row" style="flex-wrap:wrap"><input class="inp mono" name="id" placeholder="Telegram id" inputmode="numeric" required style="max-width:160px"><input class="inp" name="name" placeholder="Name" style="max-width:200px">${roleSel("viewer")}<button class="btn pri">Add</button></div><div class="bad note" id="tg-add-err"></div></form>`;
+      };
+      const save = async (person, remove) => {
+        await api(url, { method: "POST", body: remove ? { remove_person: remove } : { person } });
+        await this.tgLoad(); draw();
+      };
+      d.addEventListener("click", async (e) => {
+        const b = e.target.closest("button[data-add],button[data-set],button[data-rm]"); if (!b) return;
+        const role = b.closest("li") && $("[data-role]", b.closest("li")) ? $("[data-role]", b.closest("li")).value : "viewer";
+        try {
+          if (b.dataset.rm) { await save(null, b.dataset.rm); return; }
+          await CC.busy(b, () => save({ id: b.dataset.add || b.dataset.set, name: b.dataset.name, role }));
+          CC.toast("Saved — the site gets it on its next poll", "ok");
+        } catch (err) { CC.toast(err.message, "bad"); }
+      });
+      d.addEventListener("submit", async (e) => {
+        e.preventDefault(); const f = e.target;
+        try { await save({ id: f.id.value.trim(), name: f.name.value.trim(), role: $("[data-role]", f).value }); }
+        catch (err) { $("#tg-add-err", d).textContent = err.message; }
+      });
+      draw();
     },
     async alerts() {
       $("#st-body").innerHTML = `<div class="grid2" style="align-items:start">

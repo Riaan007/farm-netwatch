@@ -10,12 +10,21 @@ back to the same topic, so tapping "Deep scan" on a phone publishes
 """
 import requests
 
+import tgsite
+
 
 def _server(cfg_alerts):
     return (cfg_alerts.get("ntfy_server") or "https://ntfy.sh").rstrip("/")
 
 
-def push(cfg_alerts, title, message, priority="default", tags=None, actions=None):
+def push(cfg_alerts, title, message, priority="default", tags=None, actions=None,
+         level=None, telegram=True, ops=True):
+    """ntfy push + (since the Telegram phase 1) the same alert to this site's
+    Telegram group and the hub's alert log. `level` overrides the level the
+    ntfy priority implies; `telegram=False` is for ntfy-only messages (tests);
+    `ops=False` keeps it out of the hub's Ops group (chatty, site-only news)."""
+    if telegram:
+        tgsite.alert(level or tgsite.level_for(priority), title, message, ops=ops)
     topic = (cfg_alerts or {}).get("ntfy_topic", "").strip()
     if not topic:
         return None
@@ -65,6 +74,8 @@ def notify_new_device(cfg_alerts, dev):
         priority="high",
         tags=["warning", "satellite"],
         actions=actions,
+        level="info",          # Telegram: a quiet line in the site's group, not in Ops
+        ops=False,
     )
 
 

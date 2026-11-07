@@ -153,8 +153,20 @@ def user_ok(sess):
         and hmac.compare_digest(str(sess.get("site_auth")), str(d.get("epoch", "")))
 
 
+# In-process callers (the Telegram bot reading this site's own API through
+# Flask's test client): a random secret that never leaves this process.
+INTERNAL_HEADER = "X-Netwatch-Internal"
+INTERNAL_SECRET = secrets.token_urlsafe(32)
+
+
+def internal_ok(req):
+    sent = req.headers.get(INTERNAL_HEADER, "")
+    return bool(sent) and req.remote_addr == "127.0.0.1" and \
+        hmac.compare_digest(sent, INTERNAL_SECRET)
+
+
 def allowed(req, sess):
-    return hub_ok(req) or user_ok(sess)
+    return hub_ok(req) or user_ok(sess) or internal_ok(req)
 
 
 def state(req, sess):

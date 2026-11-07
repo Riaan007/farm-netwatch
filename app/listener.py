@@ -46,7 +46,8 @@ class NtfyListener:
         if not result:
             return
         cfg = config.load()
-        mid = notify.push(cfg["alerts"], "Netwatch", RESULT_PREFIX + result, tags=["wrench"])
+        mid = notify.push(cfg["alerts"], "Netwatch", RESULT_PREFIX + result, tags=["wrench"],
+                          telegram=False)
         self._note(mid)
 
     def loop(self):
