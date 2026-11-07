@@ -4271,6 +4271,7 @@
             'monitoring':{icon:'🔔', label:'Monitoring changed', cls:'text-cyan-300 bg-cyan-500/15'},
             'restart':  {icon:'⟳', label:'Restarted',          cls:'text-violet-300 bg-violet-500/15'},
             'wifi_fix': {icon:'📡', label:'Wi-Fi fix',          cls:'text-amber-300 bg-amber-500/15'},
+            'vpn_heal': {icon:'🔧', label:'Hub link repair',    cls:'text-cyan-300 bg-cyan-500/15'},
             'camera_setting': {icon:'📷', label:'Camera setting', cls:'text-amber-300 bg-amber-500/15'},
             'rogue_dhcp':     {icon:'🚨', label:'Rogue DHCP server', cls:'text-rose-300 bg-rose-500/15'},
             'rogue_dhcp_gone':{icon:'✅', label:'Rogue DHCP gone',   cls:'text-emerald-300 bg-emerald-500/15'},
@@ -4335,6 +4336,12 @@
                 if(d.who) bits.push('by ' + d.who);
                 if(d.result && d.result !== 'ok') bits.push(d.result === 'partial' ? 'not every change kept' : 'not done');
                 if(d.error) bits.push(d.error);
+            }
+            if(e.type==='vpn_heal'){
+                bits.push(({rehandshake:'hub stopped answering — fresh handshake sent', new_port:'still down — tunnel moved to a new port', recovered:'link back'})[d.step] || d.step || '');
+                if(d.down_min !== undefined) bits.push(d.down_min + ' min down');
+                if(d.tried) bits.push('after: ' + d.tried);
+                if(d.detail && d.ok === false) bits.push('failed: ' + d.detail);
             }
             if(e.type==='wifi_fix'){
                 bits.push(({applied:'applied and saved', reverted:'undone by the radio — peers did not come back', refused:'not done'})[d.result] || d.result || '');

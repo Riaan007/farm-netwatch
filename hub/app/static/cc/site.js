@@ -248,7 +248,7 @@
     },
   };
 
-  const EV = { new: ["New device", "info"], offline: ["Went offline", "bad"], online: ["Came online", "ok"], ip_change: ["IP changed", "warn"], replaced: ["Address taken over", "warn"], switch: ["Switch", "info"], restart: ["Restarted", "info"], wifi_fix: ["Wi-Fi fix", "warn"], camera_setting: ["Camera setting", "warn"] };
+  const EV = { new: ["New device", "info"], offline: ["Went offline", "bad"], online: ["Came online", "ok"], ip_change: ["IP changed", "warn"], replaced: ["Address taken over", "warn"], switch: ["Switch", "info"], restart: ["Restarted", "info"], wifi_fix: ["Wi-Fi fix", "warn"], camera_setting: ["Camera setting", "warn"], vpn_heal: ["Hub link repair", "info"] };
   function eventsList(evs, { compact = false } = {}) {
     if (!evs.length) return `<div class="empty"><b>No events</b>Nothing recorded for this filter.</div>`;
     // The same device flipping the same way every scan (phones with private
@@ -267,7 +267,8 @@
       const who = e.name || (e.detail && e.detail.type_label) || e.vendor || e.hostname || e.mac || "Unknown device";
       const det = e.detail || {};
       const extra = e.type === "wifi_fix" ? esc([det.result, det.changes].filter(Boolean).join(" · "))
-        : e.type === "camera_setting" ? esc([det.camera_setting + (det.undo_of ? " (undo)" : ""), det.changes, det.who ? "by " + det.who : ""].filter(Boolean).join(" · ")) : e.type === "switch" && CC.switchEventText ? esc(CC.switchEventText(e)) : compact ? "" : [e.mac, e.hostname, det.model, det.ports, det.prev_name || det.prev_vendor || det.prev_mac ? "replaced " + (det.prev_name || det.prev_vendor || det.prev_mac) : ""].filter(Boolean).map(esc).join(" · ");
+        : e.type === "camera_setting" ? esc([det.camera_setting + (det.undo_of ? " (undo)" : ""), det.changes, det.who ? "by " + det.who : ""].filter(Boolean).join(" · ")) : e.type === "vpn_heal" ? esc([{ rehandshake: "fresh handshake sent", new_port: "moved to a new port", recovered: "link back" }[det.step] || det.step, det.down_min !== undefined ? det.down_min + " min down" : "", det.tried ? "after " + det.tried : ""].filter(Boolean).join(" · "))
+        : e.type === "switch" && CC.switchEventText ? esc(CC.switchEventText(e)) : compact ? "" : [e.mac, e.hostname, det.model, det.ports, det.prev_name || det.prev_vendor || det.prev_mac ? "replaced " + (det.prev_name || det.prev_vendor || det.prev_mac) : ""].filter(Boolean).map(esc).join(" · ");
       return `<li><span class="b ${tone === "info" ? "info" : tone} nodot" style="min-width:${compact ? 0 : 128}px;justify-content:center">${label}</span><div style="min-width:0"><div class="t" style="font-weight:600">${esc(who)} <span class="mono dim">${esc(e.ip || "")}</span></div>${extra ? `<div class="d">${extra}</div>` : ""}</div><span class="note" title="${esc(CC.when(e.ts))}" style="text-align:right;white-space:nowrap">${CC.ago(e.ts)}${e.__n ? `<br><span class="b warn nodot" title="Repeated since ${esc(CC.when(e.__first))}">×${e.__n}</span>` : ""}</span></li>`;
     }).join("")}</ul>`;
   }
