@@ -214,6 +214,8 @@ def status():
                 info["tx_bytes"] = int(f[6]) if f[6].isdigit() else 0
     if info["connected"]:
         info["hub_reachable"] = _ping()
+    import vpnheal          # late: vpnheal imports this module
+    info["self_heal"] = vpnheal.status()
     return info
 
 
