@@ -77,6 +77,12 @@ DEFAULTS = {
     },
     "vpn": {
         "mode": "none",            # none | tailscale | wireguard
+        # Hub tunnel self-repair (vpnheal.py): when the hub stops answering while
+        # this site's internet works, re-handshake after heal_after_min, then try a
+        # new source port, repeating every heal_repeat_min. Never restarts wg0.
+        "self_heal": True,
+        "heal_after_min": 5,
+        "heal_repeat_min": 15,
     },
     # Feature switches. airos_change_ip exposes the SSH "Change IP" action on
     # Ubiquiti airOS radios. It shipped off while the SSH path was unproven;

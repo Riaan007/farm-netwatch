@@ -21,6 +21,7 @@ import discovery
 import hikvision
 import history
 import hubvpn
+import vpnheal
 import identify
 import kuma
 import mikrotik
@@ -1911,7 +1912,28 @@ class Scanner:
             hub_up, hub_rtt = _icmp_rtt("10.8.0.1")
             rows.append(("__hub__", hub_up, hub_rtt))
             self._check_hub_link(cfg, hub_up)
+            seen = {k: up for k, up, _ in rows}
+            internet_ok = seen.get("__inet__gateway", True) and (
+                seen.get("__inet__8.8.8.8") or seen.get("__inet__1.1.1.1"))
+            vpnheal.check(cfg, hub_up, bool(internet_ok),
+                          log=self._log_vpn_heal, notify_fn=self._notify_vpn_heal(cfg))
         history.record_beats(rows)
+
+    @staticmethod
+    def _log_vpn_heal(what, detail):
+        """History row for a tunnel self-repair step (vpnheal.py)."""
+        history.log_events([history.build_event(
+            "vpn_heal", {"key": "__hub__", "ip": "10.8.0.1", "name": "Central Hub VPN"},
+            {"step": what, **detail})])
+
+    @staticmethod
+    def _notify_vpn_heal(cfg):
+        alerts = cfg.get("alerts", {})
+        if not alerts.get("notify_hub_offline", True):
+            return None
+        site = cfg.get("site", {}).get("name") or "This site"
+        return lambda text: notify.push(alerts, "🔧 Hub link repaired", f"{site}: {text}",
+                                        tags=["wrench"])
 
     def _check_hub_link(self, cfg, up):
         """Notify (once) when the VPN link to the Central Hub drops or recovers."""
