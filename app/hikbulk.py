@@ -25,6 +25,7 @@ import time
 import uuid
 
 import hiksecurity
+import hikrecord
 import hiksettings
 
 DATA_DIR = os.environ.get("NETWATCH_DATA", "/data")
@@ -290,12 +291,54 @@ class Jobs:
         job.update(source=src["key"], values=from_vals)
         return self._begin(job)
 
+    def start_record(self, recorder, channels, want, who="", pause_s=None, stop_on_fail=False):
+        """Set how ONE recorder records chosen channels (its own record tracks, so a camera
+        that several recorders record is changed only on this one). want: {on: true/false,
+        mode: "C" continuous / "M" motion (the whole week), stream: "main"/"sub",
+        pre, post (seconds)} — only what is given is changed."""
+        self._need_enabled()
+        devs = {d["key"]: d for d in self._devices()}
+        rec = devs.get(str(recorder or ""))
+        if rec is None or rec["kind"] != "recorder":
+            raise BulkError("unknown recorder", 404)
+        w = want if isinstance(want, dict) else {}
+        clean = {}
+        if w.get("on") in (True, False):
+            clean["on"] = w["on"]
+        if w.get("mode") in ("C", "M"):
+            clean["mode"] = w["mode"]
+        if w.get("stream") in ("main", "sub"):
+            clean["stream"] = w["stream"]
+        for k, opts in (("pre", hikrecord.PRE), ("post", hikrecord.POST)):
+            if w.get(k) not in (None, ""):
+                if str(w[k]) not in opts:
+                    raise BulkError(f"{k}: one of {', '.join(opts)} seconds")
+                clean[k] = str(w[k])
+        if not clean:
+            raise BulkError("choose what to set")
+        chs = sorted({int(x) for x in (channels or []) if str(x).isdigit() and 0 < int(x) <= 256})
+        if not chs:
+            raise BulkError("choose the channels")
+        items = [{"key": rec["key"], "name": f"{rec['name']} · channel {n}", "kind": "recorder", "lens": 1,
+                  "section": f"track{n}"} for n in chs]
+        if len(items) > MAX_ITEMS:
+            raise BulkError(f"at most {MAX_ITEMS} changes in one job")
+        pause, sof = self._opts(pause_s, stop_on_fail)
+        words = {"C": "continuous all week", "M": "motion all week"}
+        label = "Recording on " + rec["name"] + ": " + ", ".join(filter(None, [
+            ("on" if clean.get("on") else "off") if "on" in clean else "", words.get(clean.get("mode"), ""),
+            f"{clean['stream']} stream" if "stream" in clean else "",
+            f"{clean['pre']} s before" if "pre" in clean else "", f"{clean['post']} s after" if "post" in clean else ""]))
+        job = self._new("record", label, who, pause, sof, items)
+        job.update(values=clean)
+        return self._begin(job)
+
     def start_undo(self, jid, who=""):
         self._need_enabled()
         j = self.get(jid)
         if not j:
             raise BulkError("unknown job", 404)
-        if j["kind"] not in ("rule", "copy"):
+        if j["kind"] not in ("rule", "copy", "record"):
             raise BulkError("only a job that changed something can be undone")
         if j.get("undone_by"):
             raise BulkError("this job was already undone", 409)
@@ -434,6 +477,33 @@ class Jobs:
         if job["kind"] == "copy":
             r = s.apply(it["key"], it["lens"], it["section"], job["values"][it["section"]], who=who, confirm=True,
                         lenient=True)
+            self._result(it, r)
+            return
+        if job["kind"] == "record":
+            w, sec = job["values"], it["section"]
+            cur = s.values(it["key"], 1, [sec])["values"].get(sec)
+            if cur is None:
+                it["status"], it["message"] = "failed", "the recorder has no recording for this channel"
+                return
+            T = "t." + hikrecord.X
+            changes = {}
+            if "on" in w:
+                changes[T + "enableSchedule"] = "true" if w["on"] else "false"
+            if "mode" in w:
+                changes["t.TrackSchedule/ScheduleBlockList/ScheduleBlock"] = hikrecord.week_all(w["mode"])
+                if w.get("on") is not False:
+                    changes[T + "enableSchedule"] = "true"
+            for k, f in (("pre", T + "PreRecordTimeSeconds"), ("post", T + "PostRecordTimeSeconds")):
+                if k in w:
+                    changes[f] = w[k]
+            src = cur.get("t.SrcDescriptor/SrcUrl")
+            if "stream" in w and src:
+                changes["t.SrcDescriptor/SrcUrl"] = hikrecord.stream_url(src, w["stream"])
+            changes = {f: v for f, v in changes.items() if str(cur.get(f)) != str(v)}
+            if not changes:
+                it["status"], it["message"] = "unchanged", "already set"
+                return
+            r = s.apply(it["key"], 1, sec, changes, who=who, confirm=True, lenient=True)
             self._result(it, r)
             return
         raise BulkError("unknown job kind")

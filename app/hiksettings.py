@@ -28,6 +28,7 @@ import campics
 import creds
 import hikchannels
 import hikdetect
+import hikalarms
 import hikexplorer
 import hikrecord
 import hikisapi
@@ -1386,35 +1387,34 @@ class Settings:
         out, memo, labels, errors = {}, {}, {}, {}
         wanted = None if section_ids is None else set(section_ids)
         with sem:
-            for g in self._groups(e):
-                for sec in sections(lens, g, ch):
-                    if (wanted is not None and sec["id"] not in wanted) or sec["id"] in out:
+            for sec in self._sections_for(e, lens, ch, wanted):
+                if (wanted is not None and sec["id"] not in wanted) or sec["id"] in out:
+                    continue
+                if sec.get("device") and int(lens) != 1:
+                    continue
+                if sec["id"] in hiksecurity.SECTION_IDS:
+                    if ch is not None:
                         continue
-                    if sec.get("device") and int(lens) != 1:
-                        continue
-                    if sec["id"] in hiksecurity.SECTION_IDS:
-                        if ch is not None:
-                            continue
-                        c2 = self._admin_client(e["_d"])
-                    else:
-                        c2 = cl
-                    try:
-                        _d, fields, errs = self._section(c2, {**sec, "optional": sec.get("optional") or "|".join(sec["docs"])},
-                                                         with_caps=False, memo=memo, skip_missing=True)
-                    except _Missing:
-                        continue
-                    except hikisapi.LoginRefused as ex:
-                        raise SettingsError(str(ex) or "the device refused the saved login", 403) from None
-                    except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
-                        raise SettingsError(f"the device did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
-                    except Exception as ex:  # noqa: BLE001 - one odd section must not hide the rest
-                        if wanted is not None:
-                            raise
-                        errors[sec["id"]] = f"{ex.__class__.__name__}: {ex}"[:200]
-                        continue
-                    if fields:
-                        out[sec["id"]] = {f["id"]: f.get("value") for f in fields}
-                        labels.update({f["id"]: (sec["label"] + " · " + f["label"]) for f in fields})
+                    c2 = self._admin_client(e["_d"])
+                else:
+                    c2 = cl
+                try:
+                    _d, fields, errs = self._section(c2, {**sec, "optional": sec.get("optional") or "|".join(sec["docs"])},
+                                                     with_caps=False, memo=memo, skip_missing=True)
+                except _Missing:
+                    continue
+                except hikisapi.LoginRefused as ex:
+                    raise SettingsError(str(ex) or "the device refused the saved login", 403) from None
+                except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
+                    raise SettingsError(f"the device did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+                except Exception as ex:  # noqa: BLE001 - one odd section must not hide the rest
+                    if wanted is not None:
+                        raise
+                    errors[sec["id"]] = f"{ex.__class__.__name__}: {ex}"[:200]
+                    continue
+                if fields:
+                    out[sec["id"]] = {f["id"]: f.get("value") for f in fields}
+                    labels.update({f["id"]: (sec["label"] + " · " + f["label"]) for f in fields})
         d = e.get("_d") or {}
         return {"key": key, "name": e.get("name"), "route": use, "channel": ch, "recorder": bool(e.get("_recorder")),
                 "netwatch_name": (d.get("name") or e.get("name") or "")[:32], "values": out, "labels": labels,
@@ -1437,7 +1437,7 @@ class Settings:
         e, use, ch, cl, sem, hist_dev = self._target(key, lens, route)
         if risky:
             cl = self._admin_client(e["_d"])
-        sec = next((s for g in self._groups(e) for s in sections(lens, g, ch) if s["id"] == section), None)
+        sec = self._section_spec(e, lens, ch, section)
         if sec is None:
             raise SettingsError("unknown settings section" + (" (not available through the recorder)" if ch else ""))
         if sec["risk"] == "careful" and not confirm:
@@ -1831,12 +1831,16 @@ class Settings:
                 "confirm_word": hiksecurity.CONFIRM_WORD}
 
     def channel_do(self, key, action, ch=None, camera=None, ip=None, port=None, who="", confirm_text="", undo_of=None,
-                   track=None):
+                   track=None, name=None, chs=None):
         """fix_login / move (new address, port) / add (a Netwatch camera) / remove one
         channel. The channel's password always comes from Netwatch's saved admin login
         for the camera at that address."""
-        if action not in ("fix_login", "move", "add", "remove"):
+        if action not in ("fix_login", "move", "add", "remove", "rename", "remove_dead"):
             raise SettingsError("unknown channel action")
+        if action == "rename":
+            name = re.sub(r"\s+", " ", str(name or "")).strip()
+            if not name or len(name) > 32:
+                raise SettingsError("a channel name is 1–32 characters")
         if not self.enabled():
             raise SettingsError("Camera settings are turned off for this site (Settings → Cameras).", 403)
         self._risky_gate(confirm_text, undo=bool(undo_of))
@@ -1855,7 +1859,7 @@ class Settings:
                 cl = self._admin_client(d)
                 rows = hikchannels.listing(cl)
                 cur = next((r for r in rows if r["id"] == int(ch or 0)), None) if action != "add" else None
-                if action != "add" and cur is None:
+                if action not in ("add", "remove_dead") and cur is None:
                     raise SettingsError(f"the recorder has no channel {ch}", 404)
 
                 def login_for(addr):
@@ -1941,6 +1945,52 @@ class Settings:
                                           result="ok" if back else "partial")
                     msg = (f"Done — channel {num} records {name}." if back else
                            f"Added as channel {num}, but it is not connected yet.")
+                elif action == "rename":
+                    if name == cur["name"]:
+                        return {"ok": True, "unchanged": True, "message": "Nothing to change."}
+                    # a channel is never written without its password (see hikchannels), so a
+                    # rename needs the login Netwatch has for the camera at that address
+                    u, pw = login_for(cur["ip"])
+                    doc = hikchannels._doc(cl, cur["id"])
+                    hikchannels._set_child(doc, "name", name, hikchannels._ns(doc))
+                    hikchannels.put_channel(cl, H, cur["id"], hikchannels._set_login(doc, u, pw))
+                    now = next((r for r in hikchannels.listing(cl) if r["id"] == cur["id"]), {})
+                    kept = now.get("name") == name
+                    rows_l = [{"id": "name", "label": f"Channel {cur['id']} name", "before": cur["name"], "after": name,
+                               "shown_before": cur["name"], "shown_after": now.get("name") or "—", "written": True, "kept": kept}]
+                    entry = self._log_job(e, d, "channels", f"Recorder channel {cur['id']}: renamed", rows_l, who,
+                                          undo={"action": "rename", "ch": cur["id"], "name": cur["name"]},
+                                          undo_of=undo_of, result="ok" if kept else "partial")
+                    msg = "Done." if kept else "The recorder did not keep the new name."
+                elif action == "remove_dead":
+                    # Several channels at once, but ONLY ones nothing answers on: not connected
+                    # and no device Netwatch knows at that address (Tri-Lectro: 10 such).
+                    want = sorted({int(x) for x in (chs or []) if str(x).isdigit()})
+                    if not want:
+                        raise SettingsError("choose the channels to remove")
+                    by_id = {r["id"]: r for r in rows}
+                    gone, refused = [], []
+                    for n in want:
+                        r = by_id.get(n)
+                        if r is None:
+                            refused.append(f"{n} (no such channel)")
+                        elif r["online"] or (r["ip"] and r["ip"] in by_ip):
+                            refused.append(f"{n} {r['name']} (a camera answers there — remove it on its own)")
+                        else:
+                            hikchannels.delete_channel(cl, H, n, (creds.get_admin(key)["password"] or creds.get(key)["password"]))
+                            gone.append(r)
+                    left = {r["id"] for r in hikchannels.listing(cl)}
+                    rows_l = [{"id": f"ch{r['id']}", "label": f"Channel {r['id']}", "before": r["ip"], "after": "",
+                               "shown_before": f"{r['name']} ({r['ip'] or 'no address'})",
+                               "shown_after": "removed" if r["id"] not in left else "STILL THERE",
+                               "written": True, "kept": r["id"] not in left} for r in gone]
+                    if not rows_l:
+                        raise SettingsError("nothing removed: " + "; ".join(refused), 409)
+                    ok_all = all(x["kept"] for x in rows_l)
+                    entry = self._log_job(e, d, "channels", f"Recorder: {len(gone)} empty channel(s) removed", rows_l, who,
+                                          undo=None, undo_of=undo_of, result="ok" if ok_all else "partial")
+                    msg = (f"Removed {len(gone)} empty channel(s)." + (" Left: " + "; ".join(refused) if refused else "")
+                           + ("" if ok_all else " The recorder still lists some of them."))
                 else:   # remove
                     tr = cl.get(f"/ISAPI/ContentMgmt/record/tracks/{cur['id']}01", max_bytes=MAX_DOC)
                     keep_track = tr.text if tr.status == 200 and hikisapi.parse(tr.content) is not None else None
@@ -1967,6 +2017,152 @@ class Settings:
             self._risky_lock.release()
             lock.release()
         return {"ok": entry["result"] == "ok", "change": entry, "message": msg}
+
+    # ---- a recorder's own sections Netwatch builds per channel -----------------------------
+    def _section_spec(self, e, lens, ch, section):
+        """One section's spec. On a recorder, "track<N>" is channel N's recording track
+        (the recorder's own record of that channel — hikrecord.track_section), so the
+        recorder page can read and change every channel in one place; a camera's own
+        Recording tab goes through its MAIN recorder, and a camera can be recorded by
+        several (Tri-Lectro: up to three)."""
+        sec = next((s for g in self._groups(e) for s in sections(lens, g, ch) if s["id"] == section), None)
+        m = re.fullmatch(r"track(\d{1,3})", str(section or ""))
+        if sec is None and m and e.get("_recorder") and ch is None and 1 <= int(m.group(1)) <= 256:
+            sec = hikrecord.track_section(int(m.group(1)))
+        return sec
+
+    def _sections_for(self, e, lens, ch, wanted):
+        out = [sec for g in self._groups(e) for sec in sections(lens, g, ch)]
+        if wanted and e.get("_recorder") and ch is None:
+            have = {x["id"] for x in out}
+            out += [self._section_spec(e, lens, ch, sid) for sid in sorted(wanted) if sid not in have
+                    and self._section_spec(e, lens, ch, sid) is not None]
+        return out
+
+    # ---- the recorder page: every channel's recording, alarms, restart --------------------
+    def recording(self, key):
+        """Every channel of a recorder with how the recorder records it (read only)."""
+        e, _use, _ch, cl, sem, d = self._target(key, 1, "direct")
+        if not e.get("_recorder"):
+            raise SettingsError("this is for a recorder", 400)
+        try:
+            with sem:
+                rows = hikchannels.listing(cl)
+        except hikisapi.LoginRefused as ex:
+            raise SettingsError(str(ex) or "the recorder refused the saved login", 403) from None
+        except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
+            raise SettingsError(f"the recorder did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+        vals = self.values(key, 1, [f"track{r['id']}" for r in rows])["values"] if rows else {}
+        T = "t." + hikrecord.X
+        out = []
+        for r in rows:
+            v = vals.get(f"track{r['id']}")
+            if v is None:
+                out.append({**r, "track": None})
+                continue
+            week = v.get("t.TrackSchedule/ScheduleBlockList/ScheduleBlock")
+            src = v.get("t.SrcDescriptor/SrcUrl") or ""
+            out.append({**r, "track": {
+                "on": v.get(T + "enableSchedule") == "true", "week": week, "schedule": hikrecord.week_summary(week),
+                "pre": v.get(T + "PreRecordTimeSeconds"), "post": v.get(T + "PostRecordTimeSeconds"),
+                "stream": hikrecord.stream_of(src), "days": v.get("t.Duration"), "audio": v.get(T + "SaveAudio") == "true"}})
+        return {"ok": True, "key": key, "name": e.get("name"), "channels": out, "can_change": self.enabled(),
+                "why_not": "" if self.enabled() else "Camera settings are turned off for this site (Settings → Cameras).",
+                "modes": [{"code": k, "label": lbl} for _m, k, lbl in hikrecord.MODES[:3]]}
+
+    def alarms(self, key):
+        e, _use, _ch, cl, sem, _d = self._target(key, 1, "direct")
+        if not e.get("_recorder"):
+            raise SettingsError("this is for a recorder", 400)
+        try:
+            with sem:
+                evs = hikalarms.read(cl)
+        except hikisapi.LoginRefused as ex:
+            raise SettingsError(str(ex) or "the recorder refused the saved login", 403) from None
+        except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
+            raise SettingsError(f"the recorder did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+        return {"ok": True, "key": key, "events": evs, "methods": [{"id": m, "label": lb} for m, lb, _t in hikalarms.METHODS],
+                "can_change": self.enabled(),
+                "why_not": "" if self.enabled() else "Camera settings are turned off for this site (Settings → Cameras)."}
+
+    def alarm_set(self, key, event, methods, who="", undo_of=None):
+        """Set which of Netwatch's actions (beep, tell the app, email) one event has.
+        Read back; in History with Undo."""
+        if not self.enabled():
+            raise SettingsError("Camera settings are turned off for this site (Settings → Cameras).", 403)
+        if event not in hikalarms.EVENT_IDS:
+            raise SettingsError("unknown event")
+        want = [m for m in hikalarms.METHOD_IDS if m in set(methods or [])]
+        if set(methods or []) - set(hikalarms.METHOD_IDS):
+            raise SettingsError("unknown action")
+        e, _use, _ch, cl, sem, d = self._target(key, 1, "direct")
+        if not e.get("_recorder"):
+            raise SettingsError("this is for a recorder", 400)
+        lock = self._lock_for(key)
+        if not lock.acquire(blocking=False):
+            raise SettingsError("another change on this recorder is still running", 409)
+        label = dict((x[0], x[1]) for x in hikalarms.EVENTS)[event]
+        path = f"/ISAPI/Event/triggers/{event}"
+        try:
+            with sem:
+                r = cl.get(path, max_bytes=hikalarms.MAX_DOC)
+                doc = hikisapi.parse(r.content) if r.status == 200 else None
+                if doc is None:
+                    raise SettingsError(f"the recorder has no '{label}' alarm", 404)
+                before = [m for m in hikalarms.methods_of(doc) if m in hikalarms.METHOD_IDS]
+                if before == want:
+                    return {"ok": True, "unchanged": True, "message": "Nothing to change."}
+                w = cl.request("PUT", path, data=serialize(hikalarms.build(doc, want)),
+                               headers={"Content-Type": "application/xml"}, max_bytes=64 << 10)
+                ok, _rb, msg = _status(w)
+                if not ok:
+                    raise SettingsError(f"the recorder refused: {msg}", 502)
+                r2 = cl.get(path, max_bytes=hikalarms.MAX_DOC)
+                got = hikalarms.methods_of(hikisapi.parse(r2.content)) if r2.status == 200 else []
+                got = [m for m in got if m in hikalarms.METHOD_IDS]
+        except hikisapi.LoginRefused as ex:
+            raise SettingsError(str(ex) or "the recorder refused the saved login", 403) from None
+        except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
+            raise SettingsError(f"the recorder did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+        finally:
+            lock.release()
+        names = dict((m, lb) for m, lb, _t in hikalarms.METHODS)
+        shown = lambda ms: ", ".join(names[m] for m in ms) or "nothing"       # noqa: E731
+        kept = sorted(got) == sorted(want)
+        rows = [{"id": event, "label": f"When: {label}", "before": before, "after": want,
+                 "shown_before": shown(before), "shown_after": shown(got), "written": True, "kept": kept}]
+        entry = self._log_job(e, d, "alarms", f"Recorder alarm: {label}", rows, who,
+                              undo={"event": event, "methods": before}, undo_of=undo_of, result="ok" if kept else "partial")
+        entry["risk"] = "careful"
+        return {"ok": kept, "change": entry, "message": "Done." if kept else "The recorder did not keep every action."}
+
+    def restart(self, key, who="", confirm_text=""):
+        """Restart a recorder (or camera). Needs "Risky camera work" and the typed word:
+        a recorder records nothing for the minute or two it takes."""
+        if not self.enabled():
+            raise SettingsError("Camera settings are turned off for this site (Settings → Cameras).", 403)
+        self._risky_gate(confirm_text)
+        e, _use, _ch, _cl, sem, d = self._target(key, 1, "direct")
+        lock = self._lock_for(key)
+        if not lock.acquire(blocking=False):
+            raise SettingsError("another change on this device is still running", 409)
+        try:
+            with sem:
+                cl = self._admin_client(d)
+                ok, _rb, msg = _status(cl.request("PUT", "/ISAPI/System/reboot", data=b"",
+                                                  headers={"Content-Type": "application/xml"}, max_bytes=16 << 10))
+        except hikisapi.LoginRefused as ex:
+            raise SettingsError(str(ex) or "the device refused the saved login", 403) from None
+        except (hikisapi.Unreachable, hikisapi.TooBig) as ex:
+            raise SettingsError(f"the device did not answer ({str(ex) or ex.__class__.__name__})", 502) from None
+        finally:
+            lock.release()
+        if not ok:
+            raise SettingsError(f"the device refused: {msg}", 502)
+        rows = [{"id": "restart", "label": "Restart", "before": "", "after": "", "shown_before": "running",
+                 "shown_after": "restarting", "written": True, "kept": True}]
+        entry = self._log_job(e, d, "restart", "Restarted from Netwatch", rows, who)
+        return {"ok": True, "change": entry, "message": "Restarting — it is back in a minute or two."}
 
     def _channels_using(self, ip, user):
         """[(recorder entry, device, admin client, [channel ids], [channels with another user])]
@@ -2187,7 +2383,10 @@ class Settings:
             if not u:
                 raise SettingsError("this change can't be undone", 409)
             return self.channel_do(key, u["action"], ch=u.get("ch"), ip=u.get("ip"), port=u.get("port"),
-                                   who=who, undo_of=cid, track=u.get("track"))
+                                   who=who, undo_of=cid, track=u.get("track"), name=u.get("name"))
+        if c.get("section") == "alarms":
+            u = c.get("undo") or {}
+            return self.alarm_set(key, u.get("event"), u.get("methods") or [], who=who, undo_of=cid)
         if c.get("section") == "account":
             if c.get("no_undo"):
                 raise SettingsError("a removal can't be undone — set the account up again", 409)

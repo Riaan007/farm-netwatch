@@ -339,7 +339,7 @@ class Health:
         if drift is not None and abs(drift) > CLOCK_WARN_S:
             out.append({"id": "clock", "sev": "warn", "short": "Clock wrong",
                         "text": f"{who} clock is {_mins(drift)} {'fast' if drift > 0 else 'slow'}",
-                        "fix": "Set its time server (Phase 3 will do this from Netwatch)."})
+                        "fix": "Let it take its time from the internet: its Time settings → South Africa time from the internet."})
         if tz_wrong:
             out.append({"id": "tz", "sev": "warn", "short": "Wrong time zone",
                         "text": f"{who} time zone is {t['tz']}, not {tz}",

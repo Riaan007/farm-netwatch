@@ -171,15 +171,55 @@ def api_camera_account(key):
 def api_recorder_channels(key):
     """A recorder's channels (hikchannels.py). GET: each channel's camera, address,
     login user and state, matched to Netwatch's devices, and the cameras Netwatch could
-    add. POST {action: fix_login|move|add|remove, ch, camera, ip, port, confirm_text}:
+    add. POST {action: fix_login|move|add|remove|rename|remove_dead, ch, camera, ip, port,
+    name (rename), chs (remove_dead: several channels nothing answers on), confirm_text}:
     the channel's password always comes from Netwatch's saved admin login."""
     try:
         if request.method == "GET":
             return jsonify(settings.channels(key))
         b = request.get_json(force=True, silent=True) or {}
+        chs = b.get("chs")
         return jsonify(settings.channel_do(key, str(b.get("action") or ""), ch=b.get("ch"), camera=b.get("camera"),
                                            ip=b.get("ip"), port=b.get("port"), who=_who(),
-                                           confirm_text=str(b.get("confirm_text") or "")[:20]))
+                                           confirm_text=str(b.get("confirm_text") or "")[:20],
+                                           name=b.get("name"), chs=chs if isinstance(chs, list) else None))
+    except hiksettings.SettingsError as e:
+        return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/recording")
+@guard
+def api_recorder_recording(key):
+    """Every channel of a recorder with how THIS recorder records it (read only; changes
+    go as a job: POST /api/camera-jobs {kind: "record", recorder, channels, want})."""
+    try:
+        return jsonify(settings.recording(key))
+    except hiksettings.SettingsError as e:
+        return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/alarms", methods=["GET", "POST"])
+@guard
+def api_recorder_alarms(key):
+    """A recorder's own alarms (hikalarms.py). GET: each event and its actions (beep, tell
+    the app, email) and the ones this recorder takes. POST {event, methods: [...]}."""
+    try:
+        if request.method == "GET":
+            return jsonify(settings.alarms(key))
+        b = request.get_json(force=True, silent=True) or {}
+        m = b.get("methods")
+        return jsonify(settings.alarm_set(key, str(b.get("event") or ""), m if isinstance(m, list) else [], who=_who()))
+    except hiksettings.SettingsError as e:
+        return _err(e)
+
+
+@bp.route("/api/cameras/<path:key>/restart", methods=["POST"])
+@guard
+def api_device_restart(key):
+    """Restart a recorder or camera: needs "Risky camera work" and the typed word."""
+    b = request.get_json(force=True, silent=True) or {}
+    try:
+        return jsonify(settings.restart(key, who=_who(), confirm_text=str(b.get("confirm_text") or "")[:20]))
     except hiksettings.SettingsError as e:
         return _err(e)
 
@@ -256,6 +296,9 @@ def api_camera_jobs():
             return jsonify(bulk.start_rule(b.get("rule"), keys, who=_who(), pause_s=b.get("pause_s"),
                                            stop_on_fail=b.get("stop_on_fail") is True,
                                            confirm_text=str(b.get("confirm_text") or "")[:20]))
+        if kind == "record":
+            return jsonify(bulk.start_record(str(b.get("recorder") or ""), b.get("channels"), b.get("want"), who=_who(),
+                                             pause_s=b.get("pause_s"), stop_on_fail=b.get("stop_on_fail")))
         if kind == "copy":
             secs = [str(x) for x in b.get("sections") or [] if isinstance(x, str)]
             return jsonify(bulk.start_copy(str(b.get("source") or ""), int(b.get("lens") or 1), secs, keys, who=_who(),

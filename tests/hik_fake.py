@@ -429,7 +429,7 @@ class Device:
             if "<password>" not in body or "<serialNumber>" in body:
                 return self._bad(req, 400, "badXmlContent")       # never blank a channel's password
             c.update(ip=tag("ipAddress") or c["ip"], user=tag("userName"), pw=tag("password"),
-                     port=int(tag("managePortNo") or 8000))
+                     port=int(tag("managePortNo") or 8000), name=tag("name") or c.get("name", ""))
             if c.get("cam") is not None and c["cam"].addr != c["ip"]:
                 c["cam"] = next((d for d in self.known_cams if d.addr == c["ip"]), None)
             return self._send(req, 200, self.OK)
@@ -475,7 +475,7 @@ class Device:
         now = time.time()
         if now < getattr(self, "down_until", 0):
             return self._sent(req, 503, "<down/>")
-        if path == "/ISAPI/System/deviceInfo":
+        if path == "/ISAPI/System/deviceInfo" and not (self.settings and path in self.settings):
             fw, build = getattr(self, "fw", ("V5.7.3", "build 220112"))
             return self._sent(req, 200, f'<DeviceInfo xmlns="http://www.hikvision.com/ver20/XMLSchema"><model>{getattr(self, "model", "DS-2CD2046G2-IU")}</model>'
                                         f"<firmwareVersion>{fw}</firmwareVersion><firmwareReleasedDate>{build}</firmwareReleasedDate></DeviceInfo>")

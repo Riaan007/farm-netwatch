@@ -133,6 +133,50 @@
 .cv-disks { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 12.5px; }
 .cv-disks th, .cv-disks td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--cv-line); }
 .cv-disks th { color: var(--cv-muted); font-weight: 600; }
+/* the recorder console (camview.js recPanel + render's tabs, 2026-11-07) */
+.cv-rc { margin: 0 0 12px; padding: 14px 16px; border: 1px solid rgba(34, 211, 238, .35); border-radius: 12px; background: var(--cv-card); display: grid; gap: 12px; }
+.cv-rchead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 14px; }
+.cv-rchead h3 { margin: 0; font-size: 17px; font-weight: 750; }
+.cv-rchead p { margin: 3px 0 0; }
+.cv-rchead .cv-badge { height: 24px; padding: 0 10px; font-size: 12px; }
+.cv-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.cv-kpi { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--cv-line); background: rgba(2, 6, 23, .35); min-width: 0; }
+.cv-kpi span { color: var(--cv-muted); font-size: 12px; font-weight: 650; }
+.cv-kpi b { font-size: 21px; font-weight: 800; color: var(--cv-ink); font-variant-numeric: tabular-nums; }
+.cv-kpi b i { font-style: normal; font-size: 13px; font-weight: 600; color: var(--cv-muted); }
+.cv-kpi small { color: var(--cv-muted); font-size: 12px; }
+.cv-kpi.cv-kwarn { border-color: rgba(251, 191, 36, .4); } .cv-kpi.cv-kwarn small { color: #fde68a; }
+.cv-kpi.cv-kbad { border-color: rgba(244, 63, 94, .45); } .cv-kpi.cv-kbad small { color: #fecdd3; }
+.cv-needs { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.cv-needs .cv-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 6px 0 6px 10px; }
+.cv-needs .cv-h > div { display: grid; gap: 2px; min-width: 0; flex: 1 1 260px; }
+.cv-needs .cv-btn { height: 30px; }
+.cv-rtabs { margin: 0 0 14px; }
+.cv-tabbar { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; border-bottom: 1px solid var(--cv-line2); padding-bottom: 0; }
+.cv-tabbar button { flex: none; height: 38px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--cv-muted); font-size: 13.5px; font-weight: 650; cursor: pointer; white-space: nowrap; }
+.cv-tabbar button:hover { color: var(--cv-ink); }
+.cv-tabbar button[aria-selected="true"] { color: #cffafe; border-bottom-color: var(--cv-cyan); }
+.cv-tabbar button:focus-visible { outline: 2px solid var(--cv-cyan); outline-offset: -2px; border-radius: 6px; }
+.cv-tabpane > .cv-set:first-child { margin-top: 12px; }
+.cv-pad { padding: 12px 14px; }
+.cv-tsum { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; color: var(--cv-muted); font-size: 13px; }
+.cv-tsum b { color: var(--cv-ink); }
+.cv-rect td { vertical-align: top; }
+.cv-ch tr.cv-chdead td { opacity: .62; }
+.cv-recbox, .cv-chbox { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--cv-line2); border-radius: 10px; background: rgba(2, 6, 23, .3); }
+.cv-chbox { margin: 0 0 12px; }
+.cv-chbox p { margin: 0 0 6px; }
+.cv-recform { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 8px 0; }
+.cv-recform label { display: flex; align-items: center; gap: 6px; color: var(--cv-muted); font-size: 12.5px; }
+.cv-chdeadl { display: flex; flex-wrap: wrap; gap: 6px; }
+.cv-tog { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--cv-line2); background: rgba(148, 163, 184, .06); color: var(--cv-ink2); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.cv-tog:has(input:checked) { border-color: rgba(34, 211, 238, .55); background: rgba(34, 211, 238, .12); color: #cffafe; }
+.cv-tog:has(input:disabled) { opacity: .6; cursor: default; }
+.cv-tog input { accent-color: #22d3ee; margin: 0; }
+.cv-alarms { display: grid; gap: 2px; }
+.cv-alrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px; padding: 9px 4px; border-bottom: 1px solid var(--cv-line); }
+.cv-alrow .cv-setl { flex: 1 1 240px; }
+.cv-alsw { display: flex; flex-wrap: wrap; gap: 6px; }
 .cv-rtx small + small { margin-top: 1px; }
 
 /* camera settings panel (Phase 3) */

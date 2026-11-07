@@ -134,6 +134,33 @@ class Channels(Rig):
         self.assertTrue(self.s.undo("aa:09", out["change"]["id"])["ok"])
         self.assertIsNone(self.ch(2))
 
+    def test_rename_a_channel_then_undo(self):
+        out = self.s.channel_do("aa:09", "rename", ch=1, name="  Front   gate ", confirm_text=WORD, who="site page")
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(self.ch(1)["name"], "Front gate")
+        self.assertEqual(self.ch(1)["pw"], "Cam-pw-1", "the channel kept its login")
+        self.assertNotIn("Cam-pw-1", self.all_text(out))
+        self.assertTrue(self.s.undo("aa:09", out["change"]["id"])["ok"])
+        self.assertEqual(self.ch(1)["name"], "Gate")
+        with self.assertRaises(hiksettings.SettingsError):               # no saved login for that address
+            self.s.channel_do("aa:09", "rename", ch=3, name="Shed 2", confirm_text=WORD)
+        with self.assertRaises(hiksettings.SettingsError):
+            self.s.channel_do("aa:09", "rename", ch=1, name="x" * 33, confirm_text=WORD)
+
+    def test_empty_channels_go_together_but_never_a_connected_one(self):
+        self.nvr.channels.append({"id": "4", "name": "IPCamera 04", "ip": "10.9.9.8", "user": "admin", "pw": "x", "online": False})
+        out = self.s.channel_do("aa:09", "remove_dead", chs=[1, 3, 4], confirm_text=WORD, who="site page")
+        self.assertTrue(out["ok"], out)
+        self.assertEqual([c["id"] for c in self.nvr.channels], ["1"], "only the dead ones went")
+        self.assertIn("1 Gate", out["message"])
+        self.assertEqual(len(out["change"]["fields"]), 2)
+        with self.assertRaises(hiksettings.SettingsError):
+            self.s.undo("aa:09", out["change"]["id"])
+        with self.assertRaises(hiksettings.SettingsError):
+            self.s.channel_do("aa:09", "remove_dead", chs=[1], confirm_text=WORD)
+        with self.assertRaises(hiksettings.SettingsError):
+            self.s.channel_do("aa:09", "remove_dead", chs=[3])            # the typed word
+
     def test_refusals(self):
         with self.assertRaises(hiksettings.SettingsError) as c:
             self.s.channel_do("aa:09", "fix_login", ch=1)

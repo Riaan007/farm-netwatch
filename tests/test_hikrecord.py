@@ -120,7 +120,7 @@ class RecorderOwn(Rig):
     def test_the_recorder_reads_its_disk_settings(self):
         r = self.s.read("aa:09", 1, "recorder")
         self.assertTrue(r["recorder"])
-        self.assertEqual([s["id"] for s in r["sections"]], ["storage"])
+        self.assertEqual([s["id"] for s in r["sections"]], ["name", "storage"])      # name: the recorder page, 2026-11-07
         f = fields(r, "storage")
         self.assertEqual((f["x.LoopEnable"]["kind"], f["x.LoopEnable"]["value"], f["x.LoopEnable"]["editable"]), ("bool", "true", True))
 

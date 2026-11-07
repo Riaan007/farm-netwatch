@@ -180,6 +180,18 @@ class HubCameras(unittest.TestCase):
         anon = server.app.test_client()
         self.assertEqual(anon.post("/api/hub/sites/farm/cameras/aa:01/ptz", json=body).status_code, 401)
 
+    def test_the_recorder_page_calls_are_forwarded(self):
+        self.c.get("/api/hub/sites/farm/cameras/aa:09/recording")
+        self.assertTrue(FakeSite.calls[-1][0].startswith("/api/cameras/aa%3A09/recording"))
+        self.c.get("/api/hub/sites/farm/cameras/aa:09/alarms")
+        self.assertTrue(FakeSite.calls[-1][0].startswith("/api/cameras/aa%3A09/alarms"))
+        for path, body in (("alarms", {"event": "diskfull", "methods": ["beep"]}), ("restart", {"confirm_text": "CHANGE"})):
+            r = self.c.post(f"/api/hub/sites/farm/cameras/aa:09/{path}", json=body)
+            self.assertEqual((FakeSite.calls[-1][0], r.get_json()["echo"]), (f"/api/cameras/aa%3A09/{path}", body))
+        anon = server.app.test_client()
+        self.assertEqual(anon.post("/api/hub/sites/farm/cameras/aa:09/restart", json={}).status_code, 401)
+        self.assertEqual(anon.get("/api/hub/sites/farm/cameras/aa:09/recording").status_code, 401)
+
     def test_channels_and_the_password_job_are_forwarded(self):
         self.c.get("/api/hub/sites/farm/cameras/aa:09/channels")
         self.assertTrue(FakeSite.calls[-1][0].startswith("/api/cameras/aa%3A09/channels"))

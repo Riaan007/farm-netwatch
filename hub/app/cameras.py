@@ -353,6 +353,24 @@ def site_recorder_channels(site_id, key):
                     backup_key=key if body else None)
 
 
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/recording")
+def site_recorder_recording(site_id, key):
+    """Every channel's recording on one recorder (it reads up to 64 documents: slow)."""
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/recording", "GET", timeout=(5, 120))
+
+
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/alarms", methods=["GET", "POST"])
+def site_recorder_alarms(site_id, key):
+    body = (request.get_json(silent=True) or {}) if request.method == "POST" else None
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/alarms", request.method, body, timeout=(5, 60))
+
+
+@bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/restart", methods=["POST"])
+def site_device_restart(site_id, key):
+    return _forward(site_id, f"/api/cameras/{quote(key, safe='')}/restart", "POST",
+                    request.get_json(silent=True) or {}, timeout=(5, 60))
+
+
 @bp.route("/api/hub/sites/<site_id>/cameras/<path:key>/password", methods=["GET", "POST"])
 def site_camera_password(site_id, key):
     """The password job — the site Pi does it; the hub only forwards (never logs bodies)."""

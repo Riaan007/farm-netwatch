@@ -166,21 +166,34 @@
       const foot = r.footage_min_days != null ? `≈${Math.floor(r.footage_min_days)} days footage` : "";
       const h = worst(r.health);
       const line = [foot, disks].filter(Boolean).join(" · ");
-      return `<button type="button" class="cv-rec ${st.nvr === r.key ? "cv-on" : ""}" data-nvr="${esc(r.key)}" title="Show this recorder's health and only its cameras">
-        <span class="cv-dot ${s[0]}"></span><span class="cv-rtx"><b>${esc(r.name)}</b><small>${esc([r.model, r.ip].filter(Boolean).join(" · "))}</small><span class="cv-rst ${s[0]}">${esc(s[1])}</span>${line ? `<small>${esc(line)}</small>` : ""}${h && h.sev !== "info" ? `<span class="cv-rst ${SEV[h.sev]}">${esc(h.short || h.text)}${(r.health || []).filter((x) => x.sev !== "info").length > 1 ? " +" + ((r.health || []).filter((x) => x.sev !== "info").length - 1) : ""}</span>` : ""}</span></button>`;
+      return `<button type="button" class="cv-rec ${st.nvr === r.key ? "cv-on" : ""}" data-nvr="${esc(r.key)}" title="Open this recorder: its health, channels, recording, alarms and set-up">
+        <span class="cv-dot ${s[0]}"></span><span class="cv-rtx"><b>${esc(r.name)}</b><small>${esc([r.model && r.model !== r.name ? r.model : "", r.ip].filter(Boolean).join(" · "))}</small><span class="cv-rst ${s[0]}">${esc(s[1])}</span>${line ? `<small>${esc(line)}</small>` : ""}${h && h.sev !== "info" ? `<span class="cv-rst ${SEV[h.sev]}">${esc(h.short || h.text)}${(r.health || []).filter((x) => x.sev !== "info").length > 1 ? " +" + ((r.health || []).filter((x) => x.sev !== "info").length - 1) : ""}</span>` : ""}</span></button>`;
     }
 
+    // The recorder console (2026-11-07): an overview that says what needs a look, each with
+    // a button that opens the tab where it is fixed; the tabs themselves are built in
+    // render() (they keep their state across the grid's re-renders).
+    const REC_FIX = { clock: "time", tz: "time", lost: "channels", rec: "recording", disk: "disks", footage: "disks", pw: "logins" };
+    const REC_FIXLABEL = { time: "Set the clock", channels: "Tidy the channels", recording: "Check the recording", disks: "Look at the disks", logins: "Logins" };
     function recPanel(r) {
-      const hs = (r.health || []).map((h) => `<li class="cv-h ${SEV[h.sev] || ""}"><b>${esc(h.text)}</b>${h.fix ? `<small>${esc(h.fix)}</small>` : ""}</li>`).join("");
-      const disks = (r.disks || []).map((d) => `<tr><td>${esc(d.name || "Disk " + d.id)}</td><td class="${["ok", "idle", "sleep", "sleeping", "standby", "normal"].includes(d.status) ? "" : "cv-warn"}">${esc(d.status || "—")}</td><td>${d.capacity_gb != null ? esc(d.capacity_gb) + " GB" : "—"}</td></tr>`).join("");
-      return `<section class="cv-recpanel">
-        <div><h3>${esc(r.name)} <span class="cv-dimtx">${esc([r.model, r.firmware].filter(Boolean).join(" · "))}</span></h3>
-          ${hs ? `<ul class="cv-hlist">${hs}</ul>` : `<p class="cv-dimtx">${r.health_ts ? "No problems found." : "Health not read yet — it is read every 15 minutes."}</p>`}</div>
-        <div><dl class="cv-facts">
-          <dt>Cameras</dt><dd>${r.channels_online} of ${r.channels} connected${r.recording_off ? ` · <span class="cv-warn">${r.recording_off} not recording</span>` : ""}</dd>
-          <dt>Footage</dt><dd>${r.footage_min_days != null ? `shortest ≈${Math.floor(r.footage_min_days)} days` : "not read yet (daily)"}${r.footage_ts ? ` <span class="cv-dimtx">(${esc(ago(r.footage_ts))})</span>` : ""}</dd>
-          ${r.health_ts ? `<dt>Checked</dt><dd>${esc(ago(r.health_ts))}</dd>` : ""}
-        </dl>${disks ? `<table class="cv-disks"><thead><tr><th>Disk</th><th>Status</th><th>Size</th></tr></thead><tbody>${disks}</tbody></table>` : ""}</div>
+      const sz = (gb) => (gb >= 1000 ? (gb / 1000).toFixed(1) + " TB" : gb + " GB");
+      const diskBad = (r.disks || []).some((d) => !["ok", "idle", "sleep", "sleeping", "standby", "normal"].includes(d.status));
+      const kpi = (label, val, sub, cls) => `<div class="cv-kpi ${cls || ""}"><span>${esc(label)}</span><b>${val}</b>${sub ? `<small>${sub}</small>` : ""}</div>`;
+      const needs = (r.health || []).filter((h) => h.sev !== "info");
+      const status = !r.online ? ["cv-bad", "Offline"] : r.login_refused ? ["cv-warn", "Login refused"] : !r.has_login ? ["cv-warn", "No login saved"]
+        : needs.some((h) => h.sev === "crit") ? ["cv-bad", "Needs a look"] : needs.length ? ["cv-warn", "Needs a look"] : ["cv-ok", "All good"];
+      return `<section class="cv-rc">
+        <div class="cv-rchead"><div><h3>${esc(r.name)}</h3><p class="cv-dimtx">${esc([r.model && r.model !== r.name ? r.model : "", r.firmware, r.ip].filter(Boolean).join(" · "))}${r.health_ts ? ` · checked ${esc(ago(r.health_ts))}` : ""}</p></div>
+          <span class="cv-badge ${status[0]}">${status[1]}</span></div>
+        <div class="cv-kpis">
+          ${kpi("Cameras", r.channels ? `${r.channels_online} <i>of ${r.channels}</i>` : "—", r.channels ? (r.channels_offline ? `${r.channels_offline} not connected` : "all connected") : "reading…", r.channels_offline ? "cv-kwarn" : "")}
+          ${kpi("Recording", r.recording_off ? `${r.recording_off} <i>off</i>` : r.channels ? "All" : "—", r.recording_off ? "channels not recording" : "channels recording", r.recording_off ? "cv-kbad" : "")}
+          ${kpi("Footage", r.footage_min_days != null ? `≈${Math.floor(r.footage_min_days)} <i>days</i>` : "—", r.footage_min_days != null ? "shortest kept" : "read once a day", "")}
+          ${kpi("Disks", r.disks ? (r.disks.length ? `${r.disks.length} · ${sz(r.disk_gb || 0)}` : "None") : "—", r.disks ? (r.disks.length ? (diskBad ? "a disk needs a look" : "all healthy") : "nothing is recorded") : "", diskBad || (r.disks && !r.disks.length) ? "cv-kbad" : "")}
+        </div>
+        ${needs.length ? `<ul class="cv-needs">${needs.map((h) => { const t = REC_FIX[h.id]; return `<li class="cv-h ${SEV[h.sev] || ""}"><div><b>${esc(h.text)}</b>${h.fix ? `<small>${esc(h.fix)}</small>` : ""}</div>${t && r.has_login && opts.apiBase ? `<button type="button" class="cv-btn" data-rtab="${t}">${esc(REC_FIXLABEL[t])} →</button>` : ""}</li>`; }).join("")}</ul>`
+          : `<p class="cv-dimtx">${r.health_ts ? "Nothing needs a look." : "Health not read yet — it is read every 15 minutes."}</p>`}
+        ${r.has_login ? "" : `<p class="cv-setmsg cv-warn">Save this recorder's admin login (Logins at the top of the page) to manage it from here.</p>`}
       </section>`;
     }
 
@@ -249,19 +262,47 @@
         let p = st.recSet.get(id);
         if (!p) {
           const g = groups().find((x) => String(x.id) === ph.dataset.g); if (!g) return;
-          const host = document.createElement("div"); host.className = "cv-recset";
-          host.innerHTML = `<section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section><section class="cv-set"></section>${opts.backupBase ? `<section class="cv-set"></section>` : ""}${opts.fwBase ? `<section class="cv-set" data-fw></section>` : ""}<section class="cv-set" data-disk></section>`;
-          const base = opts.apiBase(g, { key: ph.dataset.recset, kind: "recorder" }), [h1, h2, h3, h4, h5] = host.children;
-          const dpan = disksPanel(host.querySelector("[data-disk]"), base + "/disks", true);
-          const fh = host.querySelector("[data-fw]");
-          const fpan = fh ? firmwarePanel(fh, opts.fwBase(g, { key: ph.dataset.recset, kind: "recorder" }), opts.fwLib) : null;
-          const a = settingsPanel(h1, base, { key: ph.dataset.recset }, () => {},
-            { group: "recorder", title: "⚙ Recorder settings", sub: "what it does when its disks are full" });
-          const b = settingsPanel(h2, base, { key: ph.dataset.recset }, () => {},
-            { group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" });
-          const cpan = channelsPanel(h3, base), xpan = explorerPanel(h4, base);
-          const bpan = h5 && opts.backupBase && !h5.hasAttribute("data-disk") && !h5.hasAttribute("data-fw") ? backupsPanel(h5, opts.backupBase(g, { key: ph.dataset.recset, kind: "recorder" })) : null;
-          p = { host, ctl: { destroy() { a.destroy(); b.destroy(); cpan.destroy(); xpan.destroy(); if (bpan) bpan.destroy(); if (fpan) fpan.destroy(); dpan.destroy(); } } };
+          const rk = ph.dataset.recset, dev = { key: rk, kind: "recorder" }, base = opts.apiBase(g, dev);
+          const rec = ((g.data && g.data.recorders) || []).find((x) => x.key === rk) || {};
+          const TABS = [["channels", "📹 Channels"], ["recording", "⏺ Recording"], ["alarms", "🔔 Alarms"], ["disks", "💽 Disks"],
+            ["time", "🕒 Time"], ["logins", "🔐 Logins"], ["maint", "🛠 Maintenance"]];
+          const host = document.createElement("div"); host.className = "cv-rtabs";
+          host.innerHTML = `<div class="cv-tabbar" role="tablist" aria-label="Recorder">${TABS.map(([t, l]) => `<button type="button" role="tab" data-rt="${t}" aria-selected="false">${l}</button>`).join("")}</div>
+            ${TABS.map(([t]) => `<div class="cv-tabpane" role="tabpanel" data-rp="${t}" hidden></div>`).join("")}`;
+          const made = {}, ctls = [];
+          const open = (sec) => { const d = sec && sec.querySelector("details"); if (d && !d.open) d.open = true; };
+          const pane = (t) => host.querySelector(`[data-rp="${t}"]`);
+          const add = (t) => { const sec = document.createElement("section"); sec.className = "cv-set"; pane(t).appendChild(sec); return sec; };
+          const build = {
+            channels: () => { const a = add("channels"); ctls.push(channelsPanel(a, base)); open(a); },
+            recording: () => { ctls.push(recordingPanel(add("recording"), base, opts.stdBase ? opts.stdBase(g) : null, rec)); },
+            alarms: () => { ctls.push(alarmsPanel(add("alarms"), base)); },
+            disks: () => { const a = add("disks"); ctls.push(disksPanel(a, base + "/disks", true)); open(a); },
+            time: () => { const a = add("time"); ctls.push(settingsPanel(a, base, dev, () => {}, { group: "clock", title: "🕒 The recorder's clock", sub: "time zone · time from the internet" })); open(a); },
+            logins: () => { const a = add("logins"); ctls.push(settingsPanel(a, base, dev, () => {}, { group: "security", title: "🔐 Logins and security", sub: "users · ports · Hik-Connect · the Netwatch account" })); open(a); },
+            maint: () => {
+              const a = add("maint"); ctls.push(settingsPanel(a, base, dev, () => {}, { group: "recorder", title: "⚙ Name and disks", sub: "the recorder's name · what it does when its disks are full" })); open(a);
+              ctls.push(restartPanel(add("maint"), base, rec.name || "the recorder"));
+              if (opts.fwBase) ctls.push(firmwarePanel(add("maint"), opts.fwBase(g, dev), opts.fwLib));
+              if (opts.backupBase) ctls.push(backupsPanel(add("maint"), opts.backupBase(g, dev)));
+              ctls.push(explorerPanel(add("maint"), base));
+            },
+          };
+          const show = (t) => {
+            if (!build[t]) t = "channels";
+            if (!made[t]) { made[t] = true; build[t](); }
+            host.querySelectorAll("[data-rt]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.rt === t)));
+            host.querySelectorAll("[data-rp]").forEach((x) => { x.hidden = x.dataset.rp !== t; });
+            mem.set(pre + ".rtab", t);
+          };
+          host.addEventListener("click", (e) => { const b = e.target.closest("[data-rt]"); if (b) show(b.dataset.rt); });
+          host.addEventListener("keydown", (e) => {
+            const b = e.target.closest("[data-rt]"); if (!b || !["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+            const all = [...host.querySelectorAll("[data-rt]")], i = all.indexOf(b), n = all[(i + (e.key === "ArrowRight" ? 1 : all.length - 1)) % all.length];
+            n.focus(); show(n.dataset.rt);
+          });
+          show(mem.get(pre + ".rtab", "channels"));
+          p = { host, show, ctl: { destroy() { ctls.forEach((c) => c && c.destroy && c.destroy()); } } };
           st.recSet.set(id, p);
         }
         ph.replaceWith(p.host);
@@ -333,6 +374,12 @@
       if (e.target.closest("[data-clear-nvr]")) { st.nvr = ""; render(); return; }
       const sz = e.target.closest("[data-size]");
       if (sz) { st.size = sz.dataset.size; mem.set(pre + ".size", st.size); render(); return; }
+      const rt = e.target.closest("[data-rtab]");
+      if (rt) {
+        const p = [...st.recSet.entries()].find(([k]) => k.endsWith("|" + st.nvr));
+        if (p) { p[1].show(rt.dataset.rtab); p[1].host.scrollIntoView({ behavior: "smooth", block: "start" }); }
+        return;
+      }
       const nv = e.target.closest("[data-nvr]");
       if (nv) { st.nvr = st.nvr === nv.dataset.nvr ? "" : nv.dataset.nvr; render(); return; }
       const a = e.target.closest("[data-act]");
@@ -1013,25 +1060,43 @@
     det.addEventListener("toggle", () => { if (det.open && !st.data) load(); });
     async function load() {
       body.innerHTML = `<p class="cv-dimtx">Reading the recorder's channels…</p>`;
-      try { st.data = await jcall(`${base}/channels`); if (!st.dead) paint(); }
+      try { st.data = await jcall(`${base}/channels`); st.deadSel = null; if (!st.dead) paint(); }
       catch (e) { if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.status === 404 || e.status === 501 ? "This site's Netwatch is too old for this — update it." : e.message)}</p>`; }
     }
-    const stateOf = (r) => r.online ? `<span class="cv-okt">connected</span>` : `<span class="cv-warn">${esc(r.state || "not connected")}</span>`;
+    // the recorder's own words for a channel (chanDetectResult), said plainly
+    const CHSTATE = { networkUnreachable: "nothing answers", passwordError: "wrong password", ipcStreamFail: "no video from the camera",
+      notExist: "no camera there", connecting: "connecting…", userLocked: "camera locked the login", ipConflict: "address clash",
+      offline: "not connected", ipcStreamNotMatch: "stream mismatch", resolutionNotSupport: "resolution not supported" };
+    const stateOf = (r) => r.online ? `<span class="cv-okt">connected</span>` : `<span class="cv-warn" title="${esc(r.state || "")}">${esc(CHSTATE[r.state] || r.state || "not connected")}</span>`;
     function paint() {
       const d = st.data, can = d.can_change;
       let h = can ? "" : `<p class="cv-setmsg">${esc(d.why_not)} You can look, not change.</p>`;
+      // Channels nothing answers on: not connected and no device Netwatch knows at that address.
+      const dead = d.channels.filter((r) => r.online === false && !r.netwatch);
+      if (dead.length) {
+        if (!st.deadSel) st.deadSel = new Set(dead.map((r) => r.id));
+        h += `<div class="cv-chbox"><p><b>${dead.length} empty channel${dead.length > 1 ? "s" : ""}</b> <span class="cv-dimtx">— nothing answers at ${dead.length > 1 ? "these addresses" : "this address"} and Netwatch has never seen a device there</span></p>
+          <div class="cv-chdeadl">${dead.map((r) => `<label class="cv-tog"><input type="checkbox" data-dead="${r.id}"${st.deadSel.has(r.id) ? " checked" : ""}${can ? "" : " disabled"}><span>${esc(r.id)} · ${esc(r.name || "—")} <small class="cv-dimtx">${esc(r.ip || "")}</small></span></label>`).join("")}</div>
+          ${can ? `<div class="cv-setact"><button type="button" class="cv-btn" data-ask="remove_dead"${st.deadSel.size ? "" : " disabled"}>Remove ${st.deadSel.size} empty channel${st.deadSel.size === 1 ? "" : "s"}</button><span class="cv-dimtx">A named one (not "IPCamera 05") was a real camera once — check on site whether it hangs somewhere without power first.</span></div>` : ""}</div>`;
+      }
+      const renamable = d.channels.filter((r) => r.netwatch && r.netwatch.name && r.netwatch.name !== r.name && r.login_known);
+      if (renamable.length && can) h += `<div class="cv-chbox"><p><b>${renamable.length} channel name${renamable.length > 1 ? "s differ" : " differs"} from Netwatch</b> <span class="cv-dimtx">— e.g. ${esc(renamable[0].name || "—")} → ${esc(renamable[0].netwatch.name)}</span></p><div class="cv-setact"><button type="button" class="cv-btn" data-ask="names">Use Netwatch's names on the recorder</button></div></div>`;
       h += `<div class="cv-chwrap"><table class="cv-ch"><thead><tr><th>Ch</th><th>Camera</th><th>Address</th><th>Login</th><th>State</th>${can ? "<th></th>" : ""}</tr></thead><tbody>${d.channels.map((r) => `<tr>
         <td>${esc(r.id)}</td><td>${esc(r.name)}${r.netwatch && r.netwatch.name !== r.name ? `<br><small class="cv-dimtx">Netwatch: ${esc(r.netwatch.name)}</small>` : ""}</td>
         <td>${esc(r.ip)}${r.port && r.port !== 8000 ? ":" + esc(r.port) : ""}</td><td>${esc(r.user)}${r.login_known ? "" : ` <small class="cv-dimtx">(no login in Netwatch)</small>`}</td><td>${stateOf(r)}</td>
-        ${can ? `<td class="cv-chact">${r.login_known ? `<button type="button" class="cv-btn" data-ask="fix_login" data-ch="${esc(r.id)}">Fix login</button>` : ""}<button type="button" class="cv-btn" data-ask="move" data-ch="${esc(r.id)}">Move</button><button type="button" class="cv-btn" data-ask="remove" data-ch="${esc(r.id)}">Remove</button></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
+        ${can ? `<td class="cv-chact">${r.login_known ? `<button type="button" class="cv-btn" data-ask="fix_login" data-ch="${esc(r.id)}">Fix login</button><button type="button" class="cv-btn" data-ask="rename" data-ch="${esc(r.id)}">Rename</button>` : ""}<button type="button" class="cv-btn" data-ask="move" data-ch="${esc(r.id)}">Move</button><button type="button" class="cv-btn" data-ask="remove" data-ch="${esc(r.id)}">Remove</button></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
       if (can && d.addable.length && d.free) h += `<div class="cv-setact"><select class="cv-sel" data-addcam>${d.addable.map((c) => `<option value="${esc(c.key)}">${esc(c.name)} (${esc(c.ip)})</option>`).join("")}</select><button type="button" class="cv-btn" data-ask="add">Add to this recorder</button><span class="cv-dimtx">${esc(d.free)} free channel${d.free === 1 ? "" : "s"}</span></div>`;
       if (st.ask) {
         const a = st.ask, r = d.channels.find((x) => x.id === a.ch) || {};
-        const what = a.action === "fix_login" ? `Give channel ${esc(a.ch)} (${esc(r.name)}) the login Netwatch has for ${esc(r.ip)} (${esc(r.login_user)})?`
+        const nrows = d.channels.filter((x) => x.netwatch && x.netwatch.name && x.netwatch.name !== x.name && x.login_known);
+        const what = a.action === "remove_dead" ? `Remove ${a.chs.length} empty channel${a.chs.length > 1 ? "s" : ""} (${esc(a.chs.join(", "))}) from this recorder?`
+          : a.action === "names" ? `Rename ${nrows.length} channel${nrows.length > 1 ? "s" : ""} on the recorder to their Netwatch names?`
+          : a.action === "rename" ? `Rename channel ${esc(a.ch)} (${esc(r.name)}) on the recorder`
+          : a.action === "fix_login" ? `Give channel ${esc(a.ch)} (${esc(r.name)}) the login Netwatch has for ${esc(r.ip)} (${esc(r.login_user)})?`
           : a.action === "remove" ? `Remove channel ${esc(a.ch)} (${esc(r.name)}, ${esc(r.ip)}) from this recorder?`
           : a.action === "add" ? `Add ${esc(a.label)} to this recorder, with the login Netwatch has for it?`
           : `Move channel ${esc(a.ch)} (${esc(r.name)}) to another camera address`;
-        h += `<div class="cv-setprev"><p><b>${what}</b></p>${a.action === "remove" ? `<p class="cv-warn">The recorder stops recording this camera. Its old footage stays until it is overwritten.</p>` : ""}${a.action === "move" ? `<div class="cv-pwrow"><input class="cv-pwin" data-mip placeholder="New address" value="${esc(r.ip)}" aria-label="New address"><input class="cv-pwin" data-mport placeholder="Port" value="${esc(r.port || 8000)}" aria-label="Port" style="width:6rem"></div><p class="cv-dimtx">Netwatch gives the channel the login it has for the camera at the new address.</p>` : ""}
+        h += `<div class="cv-setprev"><p><b>${what}</b></p>${a.action === "remove" ? `<p class="cv-warn">The recorder stops recording this camera. Its old footage stays until it is overwritten.</p>` : ""}${a.action === "remove_dead" ? `<p class="cv-dimtx">Nothing records on them now. This can't be undone — a channel can be added again later.</p>` : ""}${a.action === "names" ? `<ul class="cv-chglist">${nrows.map((x) => `<li>${esc(x.id)}: ${esc(x.name || "—")} → <b>${esc(x.netwatch.name.slice(0, 32))}</b></li>`).join("")}</ul>` : ""}${a.action === "rename" ? `<div class="cv-pwrow"><input class="cv-pwin" data-newname maxlength="32" value="${esc((r.netwatch && r.netwatch.name) || r.name)}" aria-label="New name"></div><p class="cv-dimtx">Shown on the recorder's screen and in its playback. Netwatch gives the channel the camera's saved login while it writes.</p>` : ""}${a.action === "move" ? `<div class="cv-pwrow"><input class="cv-pwin" data-mip placeholder="New address" value="${esc(r.ip)}" aria-label="New address"><input class="cv-pwin" data-mport placeholder="Port" value="${esc(r.port || 8000)}" aria-label="Port" style="width:6rem"></div><p class="cv-dimtx">Netwatch gives the channel the login it has for the camera at the new address.</p>` : ""}
           <p class="cv-dimtx">Type <b>${esc(d.confirm_word)}</b> to go ahead.</p><div class="cv-setact"><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type ${esc(d.confirm_word)}"><button type="button" class="cv-btn cv-on" data-go>Go ahead</button><button type="button" class="cv-btn" data-back>Back</button></div></div>`;
       }
       h += `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
@@ -1044,18 +1109,200 @@
       const a = st.ask, w = ((body.querySelector("[data-word]") || {}).value || "").trim().toUpperCase();
       const b = { action: a.action, ch: a.ch, camera: a.camera, confirm_text: w };
       if (a.action === "move") { b.ip = (body.querySelector("[data-mip]") || {}).value; b.port = (body.querySelector("[data-mport]") || {}).value; }
+      if (a.action === "remove_dead") b.chs = a.chs;
+      if (a.action === "rename") b.name = (body.querySelector("[data-newname]") || {}).value;
+      if (a.action === "names") {
+        const todo = st.data.channels.filter((x) => x.netwatch && x.netwatch.name && x.netwatch.name !== x.name && x.login_known);
+        st.busy = true; let done = 0;
+        for (const x of todo) {
+          say(`Renaming channel ${x.id} (${done + 1} of ${todo.length})…`, "");
+          try { await jcall(`${base}/channels`, { method: "POST", body: JSON.stringify({ action: "rename", ch: x.id, name: x.netwatch.name.slice(0, 32), confirm_text: w }) }); done++; }
+          catch (e) { st.busy = false; say(`Stopped at channel ${x.id}: ${e.message}`, "cv-warn"); return; }
+        }
+        st.busy = false; st.ask = null; await load(); say(`Done — ${done} channel${done === 1 ? "" : "s"} renamed (each is in History with Undo).`, "cv-okt"); return;
+      }
       st.busy = true; say("Working on the recorder — it can take up to a minute for the channel to connect…", "");
       try {
         const j = await jcall(`${base}/channels`, { method: "POST", body: JSON.stringify(b) });
         st.busy = false; st.ask = null; await load(); say(j.message || "Done.", j.ok ? "cv-okt" : "cv-warn");
       } catch (e) { st.busy = false; say(e.message, "cv-warn"); }
     }
+    body.addEventListener("change", (e) => {
+      const c = e.target.closest("[data-dead]"); if (!c) return;
+      if (c.checked) st.deadSel.add(+c.dataset.dead); else st.deadSel.delete(+c.dataset.dead);
+      paint();
+    });
     body.addEventListener("click", (e) => {
       const bt = e.target.closest("button"); if (!bt || bt.disabled) return;
-      if (bt.dataset.ask === "add") { const s = body.querySelector("[data-addcam]"); st.ask = { action: "add", camera: s.value, label: s.options[s.selectedIndex].text }; st.msg = null; paint(); }
+      if (bt.dataset.ask === "remove_dead") { st.ask = { action: "remove_dead", chs: [...st.deadSel].sort((x, y) => x - y) }; st.msg = null; paint(); }
+      else if (bt.dataset.ask === "names") { st.ask = { action: "names" }; st.msg = null; paint(); }
+      else if (bt.dataset.ask === "add") { const s = body.querySelector("[data-addcam]"); st.ask = { action: "add", camera: s.value, label: s.options[s.selectedIndex].text }; st.msg = null; paint(); }
       else if (bt.dataset.ask) { st.ask = { action: bt.dataset.ask, ch: +bt.dataset.ch }; st.msg = null; paint(); }
       else if (bt.hasAttribute("data-go")) go();
       else if (bt.hasAttribute("data-back")) { st.ask = null; paint(); }
+    });
+    return { destroy() { st.dead = true; } };
+  }
+
+  // ---- the recorder page's own panels (2026-11-07) ----------------------------------------
+  // Recording: every channel and how THIS recorder records it (a camera can be recorded by
+  // several), then "set the chosen channels to …" as one job — read back, in History, and
+  // the whole job can be undone. Only what is chosen is changed.
+  const SCHED_CLS = { continuous: "cv-okt", motion: "", event: "", mixed: "", off: "cv-warn", custom: "cv-dimtx" };
+  function recordingPanel(el, base, jobBase, rec) {
+    const st = { data: null, dead: false, busy: false, job: null, msg: null, sel: new Set(), stopWatch: null };
+    el.innerHTML = `<div class="cv-setd cv-pad"><div class="cv-ptzhead"><h3>⏺ How this recorder records each camera</h3><span class="cv-dimtx">its own recording of every channel — a camera other recorders also record is changed here only</span></div><div data-b><p class="cv-dimtx">Reading every channel's recording (one document each)…</p></div></div>`;
+    const body = el.querySelector("[data-b]");
+    async function load() {
+      try { st.data = await jcall(`${base}/recording`); } catch (e) { if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.status === 404 ? "This site's Netwatch is too old for this — update it." : e.message)}</p>`; return; }
+      if (!st.dead) paint();
+    }
+    load();
+    const opt = (v, l, cur) => `<option value="${esc(v)}"${String(cur) === String(v) ? " selected" : ""}>${esc(l)}</option>`;
+    function paint() {
+      const d = st.data, rows = d.channels || [], can = d.can_change && !!jobBase;
+      const off = rows.filter((r) => r.track && !r.track.on).length;
+      let h = `<div class="cv-tsum"><span><b>${rows.length}</b> channels</span><span><b>${rows.filter((r) => r.track && r.track.on).length}</b> recording</span>${off ? `<span class="cv-warn"><b>${off}</b> not recording</span>` : ""}<span><b>${rows.filter((r) => r.track && r.track.stream === "sub").length}</b> on the sub stream</span></div>`;
+      if (!can) h += `<p class="cv-setmsg">${esc(d.why_not || "")} You can look, not change.</p>`;
+      h += `<div class="cv-chwrap"><table class="cv-ch cv-rect"><thead><tr>${can ? `<th><input type="checkbox" data-all aria-label="Choose all"></th>` : ""}<th>Ch</th><th>Camera</th><th>Records</th><th>When</th><th>Stream</th><th>Before / after</th><th>Keeps</th></tr></thead><tbody>${rows.map((r) => {
+        const t = r.track;
+        const when = !t ? `<span class="cv-dimtx">no recording set up</span>` : `<span class="${SCHED_CLS[t.schedule.kind] || ""}">${esc(t.schedule.text)}</span>`;
+        return `<tr class="${r.online === false ? "cv-chdead" : ""}">${can ? `<td><input type="checkbox" data-ch="${r.id}"${st.sel.has(r.id) ? " checked" : ""}${t ? "" : " disabled"} aria-label="Channel ${r.id}"></td>` : ""}
+          <td>${esc(r.id)}</td><td>${esc(r.name || "—")}<br><small class="cv-dimtx">${esc(r.ip || "")}${r.online === false ? " · not connected" : ""}</small></td>
+          <td>${!t ? "—" : t.on ? `<span class="cv-okt">Yes</span>` : `<span class="cv-warn">No</span>`}</td><td>${when}</td>
+          <td>${t ? esc({ main: "Main", sub: "Sub", third: "Third", dual: "Main + sub" }[t.stream] || "—") : "—"}</td>
+          <td>${t && t.pre != null ? `${esc(t.pre)} s / ${esc(t.post)} s` : "—"}</td><td>${t && t.days != null ? (t.days === "0" ? "until full" : esc(t.days) + " days") : "—"}</td></tr>`;
+      }).join("")}</tbody></table></div>`;
+      if (can) {
+        h += `<div class="cv-recbox"><p class="cv-setl"><b>Set the chosen channels to</b> <small class="cv-dimtx">${st.sel.size ? `${st.sel.size} chosen` : "choose channels in the table"} · only what you set changes</small></p>
+          <div class="cv-recform">
+            <label>Record <select class="cv-q cv-setin" data-w="on">${opt("", "leave")}${opt("1", "yes")}${opt("0", "no")}</select></label>
+            <label>When <select class="cv-q cv-setin" data-w="mode">${opt("", "leave")}${opt("C", "continuous, all week")}${opt("M", "on motion, all week")}</select></label>
+            <label>Stream <select class="cv-q cv-setin" data-w="stream">${opt("", "leave")}${opt("main", "main (sharp)")}${opt("sub", "sub (saves disk)")}</select></label>
+            <label>Before <select class="cv-q cv-setin" data-w="pre">${opt("", "leave")}${["0", "5", "10", "15", "20", "25", "30"].map((v) => opt(v, v + " s")).join("")}</select></label>
+            <label>After <select class="cv-q cv-setin" data-w="post">${opt("", "leave")}${["5", "10", "30", "60", "120", "300", "600"].map((v) => opt(v, v + " s")).join("")}</select></label>
+          </div>
+          <p class="cv-dimtx">Motion recording needs motion detection on in each camera's Detection panel. "Before" and "after" only count for motion.</p>
+          <div class="cv-setact"><button type="button" class="cv-btn cv-on" data-recgo${st.busy ? " disabled" : ""}>Change ${st.sel.size || ""} channel${st.sel.size === 1 ? "" : "s"}</button><button type="button" class="cv-btn" data-pick="off">Choose the ones not recording</button><button type="button" class="cv-btn" data-pick="none">Choose none</button></div></div>`;
+      }
+      if (st.job) h += jobHtml(st.job, true);
+      h += `<p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      const keep = [...body.querySelectorAll("[data-w]")].reduce((o, x) => (o[x.dataset.w] = x.value, o), {});
+      body.innerHTML = h;
+      Object.entries(keep).forEach(([k, v]) => { const x = body.querySelector(`[data-w="${k}"]`); if (x) x.value = v; });
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    function follow(id) {
+      if (st.stopWatch) st.stopWatch();
+      st.stopWatch = watchJob(jobBase, id, (j) => { st.job = j; if (j.state !== "queued" && j.state !== "running") { st.busy = false; load(); } paint(); }, () => st.dead);
+    }
+    body.addEventListener("change", (e) => {
+      const c = e.target.closest("[data-ch]");
+      if (c) { if (c.checked) st.sel.add(+c.dataset.ch); else st.sel.delete(+c.dataset.ch); paint(); return; }
+      if (e.target.closest("[data-all]")) { const on = e.target.checked; st.sel = new Set(on ? st.data.channels.filter((r) => r.track).map((r) => r.id) : []); paint(); }
+    });
+    body.addEventListener("click", async (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled) return;
+      if (b.dataset.jstop || b.dataset.jundo) { jobAction(jobBase, b, say, (j) => { st.job = j; follow(j.id); }); return; }
+      if (b.dataset.pick) { st.sel = new Set(b.dataset.pick === "off" ? st.data.channels.filter((r) => r.track && !r.track.on).map((r) => r.id) : []); paint(); return; }
+      if (!b.hasAttribute("data-recgo") || st.busy) return;
+      const w = {};
+      body.querySelectorAll("[data-w]").forEach((x) => { if (x.value !== "") w[x.dataset.w] = x.dataset.w === "on" ? x.value === "1" : x.value; });
+      if (!st.sel.size) return say("Choose the channels first (the boxes in the table).", "cv-warn");
+      if (!Object.keys(w).length) return say("Choose what to set — everything says “leave”.", "cv-warn");
+      st.busy = true; say("Starting…", "");
+      try {
+        const j = await jcall(`${jobBase}/camera-jobs`, { method: "POST", body: JSON.stringify({ kind: "record", recorder: rec.key || st.data.key, channels: [...st.sel], want: w }) });
+        st.job = j.job; st.sel = new Set(); say("", ""); paint(); follow(j.job.id);
+      } catch (err) { st.busy = false; say(err.message, "cv-warn"); }
+    });
+    return { destroy() { st.dead = true; if (st.stopWatch) st.stopWatch(); } };
+  }
+
+  // Alarms: what the recorder itself does when a disk fills or fails, its cable is pulled,
+  // an address clashes, wrong passwords are tried or a recording fails. Each switch is one
+  // change (read back, in History, with Undo here).
+  const ALARM_GOOD = { diskfull: ["beep", "center"], diskerror: ["beep", "center"], nicbroken: ["beep"], recordingfailure: ["beep", "center"], illaccess: ["center"] };
+  function alarmsPanel(el, base) {
+    const st = { data: null, dead: false, busy: false, msg: null, last: null };
+    el.innerHTML = `<div class="cv-setd cv-pad"><div class="cv-ptzhead"><h3>🔔 When something goes wrong with the recorder</h3><span class="cv-dimtx">beep on site · tell the app (Hik-Connect) · email</span></div><div data-b><p class="cv-dimtx">Reading the recorder's alarms…</p></div></div>`;
+    const body = el.querySelector("[data-b]");
+    async function load() {
+      try { st.data = await jcall(`${base}/alarms`); } catch (e) { if (!st.dead) body.innerHTML = `<p class="cv-setmsg cv-warn">${esc(e.status === 404 ? "This site's Netwatch is too old for this — update it." : e.message)}</p>`; return; }
+      if (!st.dead) paint();
+    }
+    load();
+    function paint() {
+      const d = st.data, names = Object.fromEntries((d.methods || []).map((m) => [m.id, m.label])), dis = d.can_change && !st.busy ? "" : " disabled";
+      const silent = d.events.filter((ev) => !ev.methods.some((m) => ev.can.includes(m)));
+      let h = d.can_change ? "" : `<p class="cv-setmsg">${esc(d.why_not || "")} You can look, not change.</p>`;
+      if (silent.length) h += `<p class="cv-setmsg cv-warn">${silent.length} of these do nothing at all now: ${esc(silent.map((x) => x.label.toLowerCase()).join(", "))}.</p>`;
+      h += `<div class="cv-alarms">${d.events.map((ev) => `<div class="cv-alrow"><div class="cv-setl"><b>${esc(ev.label)}</b><small>${esc(ev.why)}</small></div>
+        <div class="cv-alsw">${ev.can.map((m) => `<label class="cv-tog"><input type="checkbox" data-ev="${esc(ev.id)}" data-m="${esc(m)}"${ev.methods.includes(m) ? " checked" : ""}${dis}><span>${esc(names[m] || m)}</span></label>`).join("")}</div></div>`).join("")}</div>
+        <p class="cv-dimtx">“Tell the app” reaches Hik-Connect and any platform watching the recorder. Email only works once the recorder has a mail server set up.</p>
+        ${d.can_change ? `<div class="cv-setact"><button type="button" class="cv-btn" data-good${dis}>Use the FarmCamSA alarms</button><span class="cv-dimtx">disk full, disk error and failed recording beep and tell the app; a pulled cable beeps; wrong passwords tell the app</span></div>` : ""}
+        ${st.last ? `<div class="cv-setact"><span class="cv-dimtx">Last change: ${esc(st.last.label)}</span><button type="button" class="cv-btn" data-undo${dis}>Undo</button></div>` : ""}
+        <p class="cv-setmsg" data-msg aria-live="polite"></p>`;
+      body.innerHTML = h;
+      if (st.msg) say(st.msg[0], st.msg[1]);
+    }
+    function say(t, c) { st.msg = [t, c]; const m = body.querySelector("[data-msg]"); if (m) { m.textContent = t; m.className = "cv-setmsg " + (c || ""); } }
+    async function set(ev, methods) {
+      const j = await jcall(`${base}/alarms`, { method: "POST", body: JSON.stringify({ event: ev, methods }) });
+      if (j.change) st.last = { id: j.change.id, label: j.change.section_label };
+      const row = st.data.events.find((x) => x.id === ev); if (row && !j.unchanged) row.methods = methods.slice();
+      return j;
+    }
+    body.addEventListener("change", async (e) => {
+      const c = e.target.closest("[data-ev]"); if (!c || st.busy) return;
+      const ev = st.data.events.find((x) => x.id === c.dataset.ev);
+      const want = [...body.querySelectorAll(`[data-ev="${c.dataset.ev}"]:checked`)].map((x) => x.dataset.m);
+      st.busy = true; say(`Changing “${ev.label}”…`, ""); paint();
+      try { const j = await set(ev.id, want); st.busy = false; say(j.message || "Done.", j.ok === false ? "cv-warn" : "cv-okt"); }
+      catch (err) { st.busy = false; say(err.message, "cv-warn"); }
+      paint();
+    });
+    body.addEventListener("click", async (e) => {
+      const b = e.target.closest("button"); if (!b || b.disabled || st.busy) return;
+      if (b.hasAttribute("data-good")) {
+        st.busy = true; paint();
+        let n = 0;
+        try {
+          for (const ev of st.data.events) {
+            const want = (ALARM_GOOD[ev.id] || []).filter((m) => ev.can.includes(m));
+            const keep = ev.methods.filter((m) => !["beep", "center"].includes(m));       // email stays as it is
+            const all = [...new Set([...want, ...keep])];
+            if (ALARM_GOOD[ev.id] && all.sort().join() !== ev.methods.slice().sort().join()) { say(`Changing “${ev.label}”…`, ""); await set(ev.id, all); n++; }
+          }
+          say(n ? `Done — ${n} alarm${n > 1 ? "s" : ""} changed (each is in History with its own Undo).` : "Already set like that.", "cv-okt");
+        } catch (err) { say(err.message, "cv-warn"); }
+        st.busy = false; paint(); return;
+      }
+      if (b.hasAttribute("data-undo") && st.last) {
+        st.busy = true; paint();
+        try { await jcall(`${base}/changes/${encodeURIComponent(st.last.id)}/undo`, { method: "POST", body: JSON.stringify({ confirm: true }) }); st.last = null; say("Undone.", "cv-okt"); await load(); }
+        catch (err) { say(err.message, "cv-warn"); }
+        st.busy = false; paint();
+      }
+    });
+    return { destroy() { st.dead = true; } };
+  }
+
+  // Restart: the typed word, like every risky job; the recorder records nothing meanwhile.
+  function restartPanel(el, base, name) {
+    const st = { open: false, dead: false };
+    el.innerHTML = `<details class="cv-setd"><summary><h3>🔄 Restart</h3><span class="cv-dimtx">when it misbehaves — it records nothing for a minute or two</span></summary><div class="cv-setb" data-b>
+      <p>Restart <b>${esc(name)}</b>? Every camera on it stops recording until it is back (usually 1–3 minutes).</p>
+      <p class="cv-dimtx">Needs “Risky camera work” (Settings → Cameras). Type <b>CHANGE</b> to go ahead.</p>
+      <div class="cv-setact"><input class="cv-word" data-word autocomplete="off" spellcheck="false" aria-label="Type CHANGE"><button type="button" class="cv-btn cv-ptzwarn" data-go>Restart it</button></div>
+      <p class="cv-setmsg" data-msg aria-live="polite"></p></div></details>`;
+    const msg = el.querySelector("[data-msg]");
+    el.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-go]"); if (!b || b.disabled) return;
+      b.disabled = true; msg.textContent = "Asking it to restart…"; msg.className = "cv-setmsg";
+      try { const j = await jcall(`${base}/restart`, { method: "POST", body: JSON.stringify({ confirm_text: (el.querySelector("[data-word]").value || "").trim().toUpperCase() }) }); msg.textContent = j.message; msg.className = "cv-setmsg cv-okt"; }
+      catch (err) { msg.textContent = err.message; msg.className = "cv-setmsg cv-warn"; b.disabled = false; }
     });
     return { destroy() { st.dead = true; } };
   }
@@ -1076,7 +1323,7 @@
     const live = j.state === "queued" || j.state === "running";
     return `<div class="cv-job"><p><b>${esc(j.label)}</b> — ${esc(JSTATE[j.state] || j.state)}${live ? ` (${items.filter((i) => !["pending", "running"].includes(i.status)).length} of ${items.length || j.total})` : ""}${sum ? ` · ${esc(sum)}` : ""}${j.note ? ` <span class="cv-dimtx">(${esc(j.note)})</span>` : ""}${j.undone_by ? ` <span class="cv-dimtx">· undone</span>` : ""}</p>
       ${items.length ? `<ul class="cv-jobl">${items.map((i) => `<li class="cv-js-${esc(i.status)}"><b>${esc(i.name)}</b> ${esc(ISTATE[i.status] || i.status)}${i.message && i.status !== "ok" ? ` <span class="cv-dimtx">— ${esc(i.message)}</span>` : ""}</li>`).join("")}</ul>` : ""}
-      <div class="cv-setact">${live ? `<button type="button" class="cv-btn" data-jstop="${esc(j.id)}">Stop after this device</button>` : ""}${withUndo && !live && (j.kind === "rule" || j.kind === "copy") && !j.undone_by && items.some((i) => i.change_id) ? `<button type="button" class="cv-btn" data-jundo="${esc(j.id)}">Undo this whole job</button>` : ""}</div></div>`;
+      <div class="cv-setact">${live ? `<button type="button" class="cv-btn" data-jstop="${esc(j.id)}">Stop after this device</button>` : ""}${withUndo && !live && ["rule", "copy", "record"].includes(j.kind) && !j.undone_by && items.some((i) => i.change_id) ? `<button type="button" class="cv-btn" data-jundo="${esc(j.id)}">Undo this whole job</button>` : ""}</div></div>`;
   }
   // Poll one job until it ends; onTick(job) on every read.
   function watchJob(base, id, onTick, dead) {
