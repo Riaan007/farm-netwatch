@@ -70,6 +70,10 @@ FIXES = {
             "warn": "The radio restarts its wireless for about 30 seconds. If the link is not back within 2 minutes "
                     "the old settings are put back by itself."},
 }
+# The options a fix may be given through the API (anything else is dropped). ONE list,
+# kept next to plan() so a new option cannot be added here but forgotten in server.py
+# (Tri-Lectro 2026-11-07: dbm/obey were dropped by the route and the fix never saw them).
+PARAMS = ("freq", "width", "accept_unverified", "country", "txpower", "server", "timezone", "dbm", "obey")
 COUNTRIES = {710: "South Africa", 826: "United Kingdom", 840: "United States", 516: "Namibia", 72: "Botswana"}
 # Keys outside radio.1.* that the airOS 6 fixes may edit, and which of them may be ADDED when missing.
 _EXTRA_KEYS = {"radio.countrycode", "ntpclient.status", "ntpclient.1.status", "ntpclient.1.server", "system.timezone"}

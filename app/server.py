@@ -667,7 +667,7 @@ def api_wifi_fix_preview():
     if wififix.running(target["key"]):
         return jsonify({"ok": False, "error": "a fix on this radio is still running", "job": wififix.state(target["key"])}), 409
     raw = body.get("params") if isinstance(body.get("params"), dict) else {}
-    params = {k: raw[k] for k in ("freq", "width", "accept_unverified", "country", "txpower", "server", "timezone") if k in raw}
+    params = {k: raw[k] for k in wififix.PARAMS if k in raw}
     if isinstance(raw.get("match"), dict):
         m = _radio_target(str(raw["match"].get("key") or ""))
         if not m:

@@ -488,5 +488,39 @@ class OnTheRadio(unittest.TestCase):
             wififix.take(tok)
 
 
+class ThroughTheApi(unittest.TestCase):
+    """The site route passes every option plan() reads (a dropped one silently
+    turned "set 14 dBm" into "which radio should be matched?" at Tri-Lectro)."""
+
+    def test_route_passes_every_planned_option(self):
+        from unittest import mock
+        import config
+        import server
+        import siteauth
+        key = "k" * 43
+        siteauth.set_hub_key(key)
+        cfg = config.load()
+        cfg.setdefault("features", {})["wifi_fix"] = True
+        seen = {}
+
+        def fake_plan(kind, target, login_for, find_device=None, params=None):
+            seen.update(params or {})
+            return {"kind": kind, "edits": []}
+        with mock.patch.object(config, "load", return_value=cfg), \
+                mock.patch.object(server, "_radio_target", return_value={"key": "r", "ip": "10.0.0.1", "name": "R"}), \
+                mock.patch.object(wififix, "plan", side_effect=fake_plan):
+            r = server.app.test_client().post(
+                "/api/wifi/fix/preview", environ_base={"REMOTE_ADDR": "192.168.0.50"},
+                headers={siteauth.HEADER: key},
+                json={"kind": "power", "radio": "r", "params": {"dbm": 14, "obey": True, "rm -rf": 1}})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(seen, {"dbm": 14, "obey": True})
+        # every option a plan branch reads with params.get("...") is on the API's list
+        import inspect
+        import re as _re
+        read = set(_re.findall(r'params\.get\("([a-z_]+)"', inspect.getsource(wififix)))
+        self.assertLessEqual(read - {"match"}, set(wififix.PARAMS))
+
+
 if __name__ == "__main__":
     unittest.main()
